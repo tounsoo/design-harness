@@ -1,0 +1,1 @@
+{ "what": "A built-in the measuring code calls, changed through an alias", "expect": [{ "rule": "no-ambient-globals", "message": "data/rooms.ts:18:1 assigns to a property" }] }

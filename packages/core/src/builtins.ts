@@ -8,10 +8,10 @@ import type { RuleSpec } from "./rules/types";
  * TARGET_MIN_PX) must be in the project's inputs.
  *
  * Every rule here is data. The ones whose type is a named check rather than a
- * selector rule are `page-structure`, the two `flow` checks, the six
+ * selector rule are `page-structure`, `isolation`, the two `flow` checks, the six
  * `rendered` checks and the five membership subjects: each reads something a
  * selector cannot (the page kit's slots, the flow graph, a rendered snapshot,
- * the manifest and the import list).
+ * the manifest and the import list, what the source reaches).
  */
 export const BUILT_IN_RULES: readonly RuleSpec[] = [
   // lint:product-ui and check:inventories
@@ -40,6 +40,8 @@ export const BUILT_IN_RULES: readonly RuleSpec[] = [
   { type: "count", id: "no-page-inside-a-page", scope: "page", select: { page: true }, max: 0, description: "One page does one job: it never renders another page." },
   { type: "count", id: "no-primary-on-collection-or-content", scope: "page", pages: { kinds: ["collection", "content"] }, select: { role: "primary-action" }, max: 0, description: "A collection or content page holds no primary action." },
   { type: "count", id: "visible-questions", scope: "page", select: { role: "question", notInside: { role: "disclosure" } }, max: { cap: "MAX_VISIBLE_QUESTIONS" }, description: "A page asks at most MAX_VISIBLE_QUESTIONS questions outside a disclosure." },
+  // A prototype runs in the frame that measures it: it reaches only its imports and plain built-ins.
+  { type: "isolation", id: "no-ambient-globals", description: "Prototype code reaches only its imports and plain language built-ins: no browser globals, frame plumbing, DOM handles or computed property reads." },
   // The fail-closed net under every per-page count: what no page reaches cannot be counted.
   { type: "reachable", id: "counted-parts-reached", select: { anyOf: [{ role: "action" }, { role: "disclosure" }, { role: "question" }] }, description: "Every action, disclosure and question is rendered from a page, so the per-page rules count it." },
   // check:state-coverage and check:step-budget

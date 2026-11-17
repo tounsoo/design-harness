@@ -122,7 +122,7 @@ test("the legal prototype passes every rule, the rendered rules included", async
     ["target-size", "pass"],
     ["text-contrast", "pass"],
   ]);
-  assert.equal(value.rules.length, 32);
+  assert.equal(value.rules.length, 33);
   assert.equal(await page.getByTestId("report-status").textContent(), "pass");
 });
 
@@ -288,7 +288,7 @@ test("the board opens a frame at full size and the project view reads the config
     await page.getByRole("button", { name: "Back to board" }).click();
     await page.getByRole("tab", { name: "Project" }).click();
     await page.getByRole("heading", { name: "Component library" }).waitFor();
-    for (const text of ["@tounsoo/todae 0.10.1", "primary-action", "Room details", "TARGET_MIN_PX", "Rules in force (31)", "No proposals yet"]) {
+    for (const text of ["@tounsoo/todae 0.10.1", "primary-action", "Room details", "TARGET_MIN_PX", "Rules in force (32)", "No proposals yet"]) {
       assert.ok((await page.locator(".project").textContent()).includes(text), `the project view shows ${text}`);
     }
     await shot(page, `project-${colorScheme}`);

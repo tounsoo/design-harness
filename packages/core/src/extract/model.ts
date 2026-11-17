@@ -76,11 +76,27 @@ export type ModuleLoad = {
   readonly names: readonly string[];
 };
 
+/**
+ * Something prototype code reaches beyond its imports and plain language
+ * built-ins, found by reading the source: a global, a property name that
+ * leads to the frame's window, document or a constructor, a property read by
+ * a computed key, a write to a property, a DOM handle, or `import.meta`.
+ * `reason` says why it is refused.
+ */
+export type AmbientUse = {
+  readonly kind: "global" | "member" | "computed" | "write" | "dom" | "meta";
+  readonly name: string;
+  readonly reason: string;
+  readonly at: SourceLocation;
+};
+
 export type PrototypeModel = {
   /** Every manifest page that resolved, by id. */
   readonly pages: readonly PageModel[];
   /** Every JSX element written in the prototype's files, as written: nesting is the source's, and local components are not expanded. */
   readonly source: readonly ElementNode[];
   readonly loads: readonly ModuleLoad[];
+  /** Every use of something beyond the prototype's imports, in every file. */
+  readonly ambient: readonly AmbientUse[];
   readonly problems: readonly ExtractionProblem[];
 };

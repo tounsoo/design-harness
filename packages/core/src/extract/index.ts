@@ -1,7 +1,8 @@
 import type * as t from "@babel/types";
 import type { ComponentRef, Prototype } from "../prototype/types";
 import { Evaluator } from "./evaluator";
-import type { ElementNode, ExtractionProblem, ModuleLoad, PageModel, PrototypeModel } from "./model";
+import { scanAmbient } from "./ambient";
+import type { AmbientUse, ElementNode, ExtractionProblem, ModuleLoad, PageModel, PrototypeModel } from "./model";
 import { isScript, locationOf, parseModule, visit, type ModuleInfo } from "./modules";
 import { scanSource } from "./source-scan";
 import type { Value } from "./values";
@@ -63,13 +64,15 @@ export function extractPrototype(prototype: Prototype, library: string): Prototy
 
   const source: ElementNode[] = [];
   const loads: ModuleLoad[] = [];
+  const ambient: AmbientUse[] = [];
   for (const module of modules.values()) {
     source.push(...scanSource(evaluator, evaluator.moduleEnv(module), module.program));
     loads.push(...module.loads);
+    ambient.push(...scanAmbient(module));
     problems.push(...elementFactories(module));
   }
 
-  return { pages, source, loads, problems };
+  return { pages, source, loads, ambient, problems };
 }
 
 /** `createElement` and `cloneElement` build elements no JSX shows, so nothing a rule reads can be trusted around them. */

@@ -1,0 +1,1 @@
+{ "what": "Prototype code posts a message to the app from its own frame", "expect": [{ "rule": "no-ambient-globals", "message": "uses window, which is the frame's window or document" }] }

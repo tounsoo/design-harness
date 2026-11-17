@@ -1,0 +1,1 @@
+{ "what": "A path from a function to the Function constructor", "expect": [{ "rule": "no-ambient-globals", "message": "reads .constructor, which leads from a value to a constructor or a prototype" }] }
