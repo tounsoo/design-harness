@@ -20,12 +20,12 @@ export default tseslint.config(
   },
   {
     files: ["**/scripts/**/*.mjs", "apps/web/e2e/**/*.mjs"],
-    languageOptions: { globals: { console: "readonly", process: "readonly", setTimeout: "readonly", clearTimeout: "readonly", URL: "readonly" } },
+    languageOptions: { globals: { console: "readonly", process: "readonly", setTimeout: "readonly", clearTimeout: "readonly", URL: "readonly", Headers: "readonly", Response: "readonly", ReadableStream: "readonly", TextEncoder: "readonly" } },
   },
   {
     // End-to-end tests also pass functions to the browser, which run with its globals.
     files: ["apps/web/e2e/**/*.mjs"],
-    languageOptions: { globals: { window: "readonly", self: "readonly", document: "readonly", localStorage: "readonly", indexedDB: "readonly", fetch: "readonly" } },
+    languageOptions: { globals: { window: "readonly", self: "readonly", document: "readonly", localStorage: "readonly", sessionStorage: "readonly", indexedDB: "readonly", fetch: "readonly" } },
   },
   {
     files: ["packages/core/src/**/*.ts"],

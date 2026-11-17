@@ -13,6 +13,7 @@
     "e2e": "npm run build && node e2e/run.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.10.0",
     "@babel/parser": "^7.29.0",
     "@design-harness/core": "0.0.0",
     "@tounsoo/todae": "0.10.1",
