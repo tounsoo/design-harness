@@ -39,6 +39,7 @@ export { formatIssues, parseProjectConfig, parsePrototype, parseSnapshots } from
 
 export type { ElementKind, ElementNode, ExtractionProblem, ModuleLoad, PageModel, PropValue, PrototypeModel, SourceLocation } from "./extract/model";
 export { PAGE_KIT, extractPrototype } from "./extract";
+export { isScript, resolvePath } from "./extract/modules";
 
 export type { CheckReport, CheckStatus, Finding, RuleReport, RuleStatus } from "./engine/report";
 export { EXTRACT_RULE } from "./engine/report";

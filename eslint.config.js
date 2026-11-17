@@ -8,7 +8,7 @@ const environmentGlobals = ["window", "document", "navigator", "location", "loca
 }));
 
 export default tseslint.config(
-  { ignores: ["**/dist/**", "node_modules/**", "coverage/**", "packages/*/examples/**/prototypes/**"] },
+  { ignores: ["**/dist/**", "node_modules/**", "coverage/**", "packages/*/examples/**/prototypes/**", "apps/web/public/vendor/**"] },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
