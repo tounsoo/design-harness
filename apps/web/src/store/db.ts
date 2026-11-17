@@ -9,9 +9,11 @@ import type { PrototypeRecord } from "./project-file";
  */
 
 export const DB_NAME = "design-harness";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const PROJECTS = "projects";
 const PROTOTYPES = "prototypes";
+/** The agent chat of each prototype: what was said, and the API history. Never the API key, which has its own database. */
+const CHATS = "chats";
 
 type ProjectRow = { readonly id: string; readonly config: unknown };
 type PrototypeRow = { readonly projectId: string; readonly id: string; readonly name: string; readonly prototype: unknown };
@@ -44,6 +46,7 @@ export class Store {
       const db = req.result;
       if (!db.objectStoreNames.contains(PROJECTS)) db.createObjectStore(PROJECTS, { keyPath: "id" });
       if (!db.objectStoreNames.contains(PROTOTYPES)) db.createObjectStore(PROTOTYPES, { keyPath: ["projectId", "id"] }).createIndex("projectId", "projectId");
+      if (!db.objectStoreNames.contains(CHATS)) db.createObjectStore(CHATS, { keyPath: ["projectId", "prototypeId"] });
     };
     return new Store(await request(req));
   }
@@ -80,6 +83,24 @@ export class Store {
   async putPrototype(record: PrototypeRecord): Promise<void> {
     const tx = this.db.transaction(PROTOTYPES, "readwrite");
     tx.objectStore(PROTOTYPES).put({ projectId: record.projectId, id: record.id, name: record.name, prototype: record.prototype } satisfies PrototypeRow);
+    await done(tx);
+  }
+
+  async putProject(config: ProjectConfig): Promise<void> {
+    const tx = this.db.transaction(PROJECTS, "readwrite");
+    tx.objectStore(PROJECTS).put({ id: config.id, config } satisfies ProjectRow);
+    await done(tx);
+  }
+
+  /** A prototype's saved chat, unvalidated: the chat checks its own shape. */
+  async chat(projectId: string, prototypeId: string): Promise<unknown> {
+    const row = (await request(this.db.transaction(CHATS).objectStore(CHATS).get([projectId, prototypeId]))) as { record?: unknown } | undefined;
+    return row?.record ?? null;
+  }
+
+  async putChat(projectId: string, prototypeId: string, record: unknown): Promise<void> {
+    const tx = this.db.transaction(CHATS, "readwrite");
+    tx.objectStore(CHATS).put({ projectId, prototypeId, record });
     await done(tx);
   }
 

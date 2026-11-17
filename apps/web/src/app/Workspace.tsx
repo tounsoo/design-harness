@@ -1,6 +1,12 @@
 import { Alert, Badge, Button, Field, Stack, Tabs, Text } from "@tounsoo/todae";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { Finding, ProjectConfig, Prototype } from "@design-harness/core";
+import { AgentController, type ChatRecord, type ChatStore } from "../agent/controller";
+import type { KeyVault } from "../agent/key-vault";
+import { waitForMeasured } from "../agent/measure";
+import type { AgentSettings } from "../agent/models";
+import { loadSettings, saveSettings } from "../agent/settings";
+import type { AgentHost } from "../agent/tools";
 import { frameKey } from "../runtime/session";
 import type { Store } from "../store/db";
 import { exportFileName, exportProject, importProject, type Imported, type PrototypeRecord } from "../store/project-file";
@@ -16,6 +22,7 @@ const EDIT_DEBOUNCE_MS = 300;
 
 type Props = {
   readonly store: Store;
+  readonly vault: KeyVault;
   readonly config: ProjectConfig;
   readonly prototypes: readonly PrototypeRecord[];
   readonly problems: readonly string[];
@@ -25,25 +32,46 @@ type Props = {
 /** Where the code view points: a file, and a line in it when a finding named one. */
 export type CodeTarget = { readonly file: string; readonly line?: number; readonly column?: number };
 
-export function Workspace({ store, config, prototypes: initial, problems, onImported }: Props) {
+/** A prototype's chat, kept in the project store beside it. */
+function chatStore(store: Store, projectId: string, prototypeId: string): ChatStore {
+  return {
+    // The controller checks the record's shape and reports one it cannot read.
+    load: async () => (await store.chat(projectId, prototypeId)) as ChatRecord | null,
+    save: (record) => store.putChat(projectId, prototypeId, record),
+  };
+}
+
+export function Workspace({ store, vault, config: initialConfig, prototypes: initial, problems, onImported }: Props) {
   const session = useMemo(() => createSession(), []);
   useEffect(() => () => session.dispose(), [session]);
   const state = useSyncExternalStore(session.subscribe, session.getState);
 
-  const [records, setRecords] = useState(initial);
+  // The config changes when the agent drafts a proposal. Refs hold the newest values for the agent's tools between renders.
+  const [config, setConfigState] = useState(initialConfig);
+  const configRef = useRef(config);
+  const [records, setRecordsState] = useState(initial);
+  const recordsRef = useRef(records);
+  const setRecords = useCallback((update: (items: readonly PrototypeRecord[]) => readonly PrototypeRecord[]) => {
+    recordsRef.current = update(recordsRef.current);
+    setRecordsState(recordsRef.current);
+  }, []);
   const [currentId, setCurrentId] = useState(initial[0]?.id ?? "");
   const current = records.find((record) => record.id === currentId) ?? records[0];
+  const [settings, setSettings] = useState<AgentSettings>(() => loadSettings());
+  const settingsRef = useRef(settings);
   const [center, setCenter] = useState<"canvas" | "project">("canvas");
   const [side, setSide] = useState<"checks" | "code">("checks");
   const [selected, setSelected] = useState<Finding | null>(null);
   const [code, setCode] = useState<CodeTarget>({ file: firstFile(current?.prototype) });
   const [notice, setNotice] = useState<{ tone: "success" | "critical"; title: string; lines: readonly string[] } | null>(null);
 
-  // A new revision for each settled edit; the first one at once.
+  // A new revision for each settled edit; the first one at once. The agent's changes start theirs at once, so they are skipped here.
   const prototype = current?.prototype;
   const first = useRef(true);
   useEffect(() => {
     if (!prototype) return;
+    const running = session.current();
+    if (running && running.prototype === prototype && running.config === config) return;
     if (first.current) {
       first.current = false;
       session.update(config, prototype);
@@ -65,8 +93,58 @@ export function Workspace({ store, config, prototypes: initial, problems, onImpo
       setSelected(null);
       setRecords((items) => items.map((item) => (item.id === currentId ? { ...item, prototype: next } : item)));
     },
-    [currentId],
+    [currentId, setRecords],
   );
+
+  // The agent's view of the app, for the prototype open now: its changes are revisions at once, and its checks wait for every frame.
+  const host = useMemo((): AgentHost => {
+    const prototypeOf = () => recordsRef.current.find((record) => record.id === currentId)?.prototype ?? recordsRef.current[0]?.prototype;
+    return {
+      config: () => configRef.current,
+      prototype: () => {
+        const value = prototypeOf();
+        if (!value) throw new Error("no prototype is open");
+        return value;
+      },
+      apply: (next) => {
+        setSelected(null);
+        setRecords((items) => items.map((item) => (item.id === currentId ? { ...item, prototype: next } : item)));
+        session.update(configRef.current, next);
+        const after = session.getState();
+        return { revision: after.revision, compileProblems: after.compileProblems };
+      },
+      saveConfig: async (next) => {
+        configRef.current = next;
+        setConfigState(next);
+        await store.putProject(next);
+      },
+      measured: (signal) =>
+        waitForMeasured(
+          session,
+          () => {
+            const value = prototypeOf();
+            if (!value) throw new Error("no prototype is open");
+            return { config: configRef.current, prototype: value };
+          },
+          signal,
+        ),
+      now: () => new Date().toISOString(),
+    };
+  }, [currentId, session, store, setRecords]);
+
+  const controller = useMemo(
+    () => new AgentController({ host, store: chatStore(store, initialConfig.id, currentId), key: () => vault.get(), settings: () => settingsRef.current }),
+    [host, store, vault, initialConfig.id, currentId],
+  );
+  useEffect(() => {
+    void controller.load();
+    return () => controller.stop();
+  }, [controller]);
+  const changeSettings = useCallback((next: AgentSettings) => {
+    settingsRef.current = next;
+    setSettings(next);
+    saveSettings(next);
+  }, []);
 
   const select = useCallback(
     (finding: Finding | null) => {
@@ -88,7 +166,7 @@ export function Workspace({ store, config, prototypes: initial, problems, onImpo
   );
 
   const download = () => {
-    const blob = new Blob([exportProject(config, records)], { type: "application/json" });
+    const blob = new Blob([exportProject(configRef.current, recordsRef.current)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -201,7 +279,7 @@ export function Workspace({ store, config, prototypes: initial, problems, onImpo
       )}
 
       <div className="app-body">
-        <ChatPanel />
+        <ChatPanel controller={controller} vault={vault} settings={settings} onSettings={changeSettings} />
         <main className="app-main" aria-label={center === "canvas" ? "Canvas" : "Project"}>
           {/* The board stays laid out under the project view, so frames keep their viewport and keep measuring. */}
           <div className="app-main-pane" data-inactive={center === "canvas" ? undefined : ""} aria-hidden={center === "canvas" ? undefined : true}>

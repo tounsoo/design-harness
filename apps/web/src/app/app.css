@@ -15,7 +15,7 @@ body, .app-theme { background: var(--todae-color-bg-canvas); color: var(--todae-
 .app-header { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--todae-space-4); padding: var(--todae-space-2) var(--todae-space-4); border-block-end: 1px solid var(--todae-color-border-subtle); background: var(--todae-color-bg-surface); }
 .app-header-end { justify-self: end; }
 .app-notices { display: grid; gap: var(--todae-space-2); padding: var(--todae-space-2) var(--todae-space-4); }
-.app-body { flex: 1; display: grid; grid-template-columns: 264px minmax(0, 1fr) minmax(360px, 30%); min-height: 0; }
+.app-body { flex: 1; display: grid; grid-template-columns: minmax(300px, 360px) minmax(0, 1fr) minmax(340px, 28%); min-height: 0; }
 .app-main { position: relative; min-width: 0; min-height: 0; background: var(--todae-color-bg-subtle); }
 .app-main-pane { position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0; }
 /* Kept laid out, not display: none, so its frames keep their viewports while the project view is on top. */
@@ -27,9 +27,26 @@ body, .app-theme { background: var(--todae-color-bg-canvas); color: var(--todae-
 .app-side-panel { flex: 1; min-height: 0; overflow: auto; padding: var(--todae-space-3); }
 .app-side-panel[hidden] { display: none; }
 
-.chat { display: flex; flex-direction: column; gap: var(--todae-space-3); padding: var(--todae-space-3); border-inline-end: 1px solid var(--todae-color-border-subtle); background: var(--todae-color-bg-surface); min-height: 0; }
+/* The agent chat: Todae's Conversation, Message, Disclosure, CodeBlock and Alert parts. This sheet places them, and adds what Todae has no part for: a bordered row for a tool call, a check or thinking, and a wrapping, height-capped code block. */
+.chat { display: flex; flex-direction: column; gap: var(--todae-space-2); padding: var(--todae-space-3); border-inline-end: 1px solid var(--todae-color-border-subtle); background: var(--todae-color-bg-surface); min-height: 0; min-width: 0; }
 .chat-title { font-size: var(--todae-text-h5-font-size, 1rem); margin: 0; }
-.chat-empty { flex: 1; }
+.chat-busy { margin-inline-start: auto; }
+.chat-small { font-size: 0.8125rem; margin: 0; }
+.chat-key, .chat-settings { padding: var(--todae-space-2); border: 1px solid var(--todae-color-border-subtle); border-radius: var(--todae-radius-md); background: var(--todae-color-bg-canvas); }
+.chat-settings-body { padding-block-start: var(--todae-space-2); }
+.chat-setting { flex: 1; min-width: 0; }
+.chat-conversation { flex: 1; min-height: 0; display: grid; }
+.chat-viewport { min-height: 0; }
+.chat-hint { margin: var(--todae-space-2) 0; font-size: 0.875rem; }
+.chat-items { display: grid; gap: var(--todae-space-2); min-width: 0; }
+.chat-text { margin: 0; }
+.chat-tool, .chat-checks, .chat-thinking { border: 1px solid var(--todae-color-border-subtle); border-radius: var(--todae-radius-sm); padding: 2px var(--todae-space-2); background: var(--todae-color-bg-canvas); min-width: 0; font-size: 0.8125rem; }
+.chat-tool-head { display: inline-flex; align-items: center; gap: var(--todae-space-2); min-width: 0; }
+.chat-tool-title { overflow-wrap: anywhere; }
+/* Todae's CodeBlock scrolls sideways; in a narrow chat a tool's JSON wraps instead, and a long result scrolls in a capped box. */
+.chat-pre { margin-block: var(--todae-space-1); max-height: 16rem; overflow: auto; font-size: 0.75rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-actions { flex-wrap: wrap; align-items: center; gap: var(--todae-space-2); }
+.chat-composer { display: grid; gap: var(--todae-space-2); }
 
 .board { display: flex; flex-direction: column; min-height: 0; height: 100%; }
 .board-toolbar { padding: var(--todae-space-2) var(--todae-space-4); border-block-end: 1px solid var(--todae-color-border-subtle); background: var(--todae-color-bg-surface); }
