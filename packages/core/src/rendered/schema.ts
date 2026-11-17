@@ -16,7 +16,7 @@ const rect = obj({ x: num(), y: num(), width: num({ min: 0 }), height: num({ min
 
 const element = obj(
   { role: str(), name: str({ nonEmpty: false }), tag: str(), rect, interactive: bool, visible: bool },
-  { inline: bool, headingLevel: int({ min: 1 }), text: obj({ px: num({ min: 0 }), weight: num({ min: 0 }), color: rgba, backgrounds: arr(rgba) }) },
+  { inline: bool, disabled: bool, headingLevel: int({ min: 1 }), text: obj({ px: num({ min: 0 }), weight: num({ min: 0 }), color: rgba, backgrounds: arr(rgba) }, { overImage: bool }) },
 );
 
-export const snapshotSchema: Check<RenderedSnapshot> = obj({ scenario: slug, view: slug, scrollWidth: num({ min: 0 }), canvas: rgba, elements: arr(element) });
+export const snapshotSchema: Check<RenderedSnapshot> = obj({ scenario: slug, view: slug, scrollWidth: num({ min: 0 }), canvas: rgba, elements: arr(element) }, { viewportWidth: num({ min: 0 }) });

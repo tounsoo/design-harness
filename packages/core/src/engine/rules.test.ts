@@ -195,4 +195,42 @@ describe("rendered rules", () => {
     const crowded = base.map((item) => ({ ...item, elements: [...item.elements, link(100), link(116)] }));
     expect(messages(checkPrototype({ config: configWith(rendered), prototype: legal, snapshots: crowded }), "target-size")).toHaveLength(4);
   });
+
+  it("point each finding about one element at it, by its index in the snapshot", () => {
+    const base = legalSnapshots().filter((item) => item.scenario === "rooms-list");
+    const skipped = base.map((item) => (item.view === "phone" ? { ...item, elements: item.elements.map((element) => (element.name === "Harbor" && element.headingLevel === 2 ? { ...element, headingLevel: 4 } : element)) } : item));
+    const report = checkPrototype({ config: configWith(rendered), prototype: legal, snapshots: skipped });
+    const finding = report.findings.find((item) => item.rule === "headings");
+    const phone = skipped.find((item) => item.view === "phone");
+    expect(finding?.element).toBeDefined();
+    expect(phone?.elements[finding?.element ?? -1]?.name).toBe("Harbor");
+  });
+
+  const contrast: RuleSpec[] = [{ type: "rendered", id: "text-contrast", check: "contrast" }];
+  const rooms = () => legalSnapshots().filter((item) => item.scenario === "rooms-list");
+  const faint = (edit: Record<string, unknown>) =>
+    rooms().map((item) => ({ ...item, elements: item.elements.map((element) => (element.name.startsWith("Pick a free room") && element.text ? { ...element, ...edit, text: { ...element.text, color: [200, 200, 200, 1] as const } } : element)) }));
+
+  it("exempt text in a control that is turned off from contrast, as WCAG 1.4.3 does", () => {
+    expect(messages(checkPrototype({ config: configWith(contrast), prototype: legal, snapshots: faint({}) }), "text-contrast")).toHaveLength(2);
+    expect(checkPrototype({ config: configWith(contrast), prototype: legal, snapshots: faint({ disabled: true }) }).status).toBe("pass");
+  });
+
+  it("cannot measure contrast over a background image, so it says so instead of passing", () => {
+    const overImage = rooms().map((item) => ({ ...item, elements: item.elements.map((element) => (element.name.startsWith("Pick a free room") && element.text ? { ...element, text: { ...element.text, overImage: true } } : element)) }));
+    expect(messages(checkPrototype({ config: configWith(contrast), prototype: legal, snapshots: overImage }), "text-contrast")).toEqual([
+      `unverifiable: At 1280 by 900: "Pick a free room to book or hold." is painted over a background image or gradient, so its contrast cannot be measured. Put the text on a background colour.`,
+      `unverifiable: At 390 by 844: "Pick a free room to book or hold." is painted over a background image or gradient, so its contrast cannot be measured. Put the text on a background colour.`,
+    ]);
+  });
+
+  it("measure sideways scroll against the width left beside a vertical scrollbar", () => {
+    const sideways: RuleSpec[] = [{ type: "rendered", id: "no-sideways-scroll", check: "no-sideways-scroll" }];
+    const narrowed = rooms().map((item) => (item.view === "phone" ? { ...item, scrollWidth: 385, viewportWidth: 375 } : item));
+    expect(messages(checkPrototype({ config: configWith(sideways), prototype: legal, snapshots: narrowed }), "no-sideways-scroll")).toEqual([
+      "violation: At 390 by 844: the page is 385 CSS px wide in a 375 CSS px view (390 less a 15 CSS px scrollbar), so it scrolls sideways.",
+    ]);
+    const fits = rooms().map((item) => (item.view === "phone" ? { ...item, scrollWidth: 375, viewportWidth: 375 } : item));
+    expect(checkPrototype({ config: configWith(sideways), prototype: legal, snapshots: fits }).status).toBe("pass");
+  });
 });

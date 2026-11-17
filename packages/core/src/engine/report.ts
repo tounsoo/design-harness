@@ -19,6 +19,8 @@ export type Finding = {
   readonly scenario?: string;
   readonly state?: string;
   readonly view?: string;
+  /** On a rendered finding about one element: its index in the snapshot's `elements`, so the element can be pointed at on the page. */
+  readonly element?: number;
 };
 
 /** `not-run`: the rule needs input the check was not given, such as rendered snapshots. */
@@ -62,6 +64,7 @@ function compareFindings(a: Finding, b: Finding): number {
     compareStrings(a.page ?? "", b.page ?? "") ||
     compareStrings(a.scenario ?? "", b.scenario ?? "") ||
     compareStrings(a.view ?? "", b.view ?? "") ||
+    (a.element ?? -1) - (b.element ?? -1) ||
     compareStrings(a.kind, b.kind) ||
     compareStrings(a.message, b.message)
   );
@@ -72,7 +75,7 @@ export function sortFindings(findings: readonly Finding[]): Finding[] {
   const seen = new Set<string>();
   const out: Finding[] = [];
   for (const finding of [...findings].sort(compareFindings)) {
-    const key = JSON.stringify([finding.rule, finding.kind, finding.message, finding.file, finding.line, finding.column, finding.page, finding.scenario, finding.view]);
+    const key = JSON.stringify([finding.rule, finding.kind, finding.message, finding.file, finding.line, finding.column, finding.page, finding.scenario, finding.view, finding.element]);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(finding);

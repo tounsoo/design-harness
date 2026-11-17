@@ -34,42 +34,60 @@ export function evaluateRendered(rule: RenderedRule, ctx: CheckContext): Outcome
         continue;
       }
       const at = `At ${view.width} by ${view.height}`;
-      for (const message of measure(rule, snapshot, { width: view.width, height: view.height }, ctx)) findings.push({ ...base, kind: "violation", message: `${at}: ${message}` });
+      for (const item of measure(rule, snapshot, { width: view.width, height: view.height }, ctx)) {
+        findings.push({ ...base, ...(item.element !== undefined ? { element: item.element } : {}), kind: item.kind ?? "violation", message: `${at}: ${item.message}` });
+      }
     }
   }
   return { findings };
 }
 
-function measure(rule: RenderedRule, snapshot: RenderedSnapshot, view: { width: number; height: number }, ctx: CheckContext): string[] {
-  const shown = snapshot.elements.filter((element) => element.visible);
+/** One thing a rendered rule found: its message, and the index in the snapshot's elements of the element it is about, when it is about one. */
+type Measured = { readonly message: string; readonly element?: number; readonly kind?: "unverifiable" };
+
+function measure(rule: RenderedRule, snapshot: RenderedSnapshot, view: { width: number; height: number }, ctx: CheckContext): Measured[] {
+  const indexed = snapshot.elements.map((element, index) => ({ element, index }));
+  const shown = indexed.filter(({ element }) => element.visible);
   const label = (name: string, role: string) => (name ? `${role} "${name}"` : `a ${role}`);
   switch (rule.check) {
     case "target-size": {
       const min = bound(rule.minPx, ctx);
-      const targets = shown.filter((element) => element.interactive);
+      const targets = shown.filter(({ element }) => element.interactive);
+      const boxes = targets.map(({ element }) => element);
       return targets
-        .filter((target) => !target.inline && (target.rect.width < min || target.rect.height < min) && failsSpacing(target, targets, min))
-        .map((target) => `${label(target.name, target.role)} is ${Math.round(target.rect.width)}×${Math.round(target.rect.height)} CSS px, under ${min}, and fails the spacing exception.`);
+        .filter(({ element }) => !element.inline && (element.rect.width < min || element.rect.height < min) && failsSpacing(element, boxes, min))
+        .map(({ element, index }) => ({ element: index, message: `${label(element.name, element.role)} is ${Math.round(element.rect.width)}×${Math.round(element.rect.height)} CSS px, under ${min}, and fails the spacing exception.` }));
     }
-    case "headings":
-      return headingProblems(
-        snapshot.elements.filter((element) => element.headingLevel !== undefined).map((element) => ({ text: element.name, level: element.headingLevel ?? 2, shown: element.visible })),
-      );
+    case "headings": {
+      const headings = indexed.filter(({ element }) => element.headingLevel !== undefined);
+      return headingProblems(headings.map(({ element }) => ({ text: element.name, level: element.headingLevel ?? 2, shown: element.visible }))).map((problem) => {
+        const element = problem.index === undefined ? undefined : headings[problem.index]?.index;
+        return element === undefined ? { message: problem.message } : { message: problem.message, element };
+      });
+    }
     case "contrast":
-      return shown.flatMap((element) => {
-        if (!element.text || element.name.trim() === "") return [];
+      return shown.flatMap(({ element, index }): Measured[] => {
+        // WCAG 1.4.3 exempts text in a control that is turned off.
+        if (!element.text || element.name.trim() === "" || element.disabled) return [];
+        if (element.text.overImage) return [{ element: index, kind: "unverifiable", message: `"${element.name}" is painted over a background image or gradient, so its contrast cannot be measured. Put the text on a background colour.` }];
         const { ratio, needs, foreground, background } = textContrast(element.text, snapshot.canvas);
-        return ratio + 1e-9 < needs ? [`"${element.name}" is ${hex(foreground)} on ${hex(background)}, a contrast of ${ratio.toFixed(2)}:1, under ${needs}:1.`] : [];
+        return ratio + 1e-9 < needs ? [{ element: index, message: `"${element.name}" is ${hex(foreground)} on ${hex(background)}, a contrast of ${ratio.toFixed(2)}:1, under ${needs}:1.` }] : [];
       });
     case "accessible-names":
-      return shown.filter((element) => element.interactive && element.name.trim() === "").map((element) => `a ${element.role} (<${element.tag}>) at ${Math.round(element.rect.x)}, ${Math.round(element.rect.y)} has no accessible name.`);
+      return shown
+        .filter(({ element }) => element.interactive && element.name.trim() === "")
+        .map(({ element, index }) => ({ element: index, message: `a ${element.role} (<${element.tag}>) at ${Math.round(element.rect.x)}, ${Math.round(element.rect.y)} has no accessible name.` }));
     case "first-view": {
       const action = textOf(rule.action, ctx, undefined);
       return shown
-        .filter((element) => element.interactive && element.name === action && element.rect.y + element.rect.height > view.height)
-        .map((element) => `"${action}" is at ${Math.round(element.rect.y)} to ${Math.round(element.rect.y + element.rect.height)} CSS px, below the first view of ${view.height}.`);
+        .filter(({ element }) => element.interactive && element.name === action && element.rect.y + element.rect.height > view.height)
+        .map(({ element, index }) => ({ element: index, message: `"${action}" is at ${Math.round(element.rect.y)} to ${Math.round(element.rect.y + element.rect.height)} CSS px, below the first view of ${view.height}.` }));
     }
-    case "no-sideways-scroll":
-      return snapshot.scrollWidth > view.width + 0.5 ? [`the page is ${Math.round(snapshot.scrollWidth)} CSS px wide in a ${view.width} CSS px view, so it scrolls sideways.`] : [];
+    case "no-sideways-scroll": {
+      // A vertical scrollbar beside the page narrows what it lays out in.
+      const width = Math.min(view.width, snapshot.viewportWidth ?? view.width);
+      const narrowed = width < view.width ? ` (${view.width} less a ${Math.round(view.width - width)} CSS px scrollbar)` : "";
+      return snapshot.scrollWidth > width + 0.5 ? [{ message: `the page is ${Math.round(snapshot.scrollWidth)} CSS px wide in a ${Math.round(width)} CSS px view${narrowed}, so it scrolls sideways.` }] : [];
+    }
   }
 }

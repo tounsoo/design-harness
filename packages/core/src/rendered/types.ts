@@ -1,8 +1,8 @@
 /**
  * What a page looked like when it was rendered: one snapshot per scenario and
- * view. Producing a snapshot from a live page is a later milestone; the rules
- * here read only this data, so they are pure and can be tested with
- * hand-written snapshots.
+ * view. The web app produces them from the live DOM inside each sandboxed
+ * frame; the rules here read only this data, so they are pure and can be
+ * tested with hand-written snapshots too.
  */
 
 /** A colour as sRGB channels from 0 to 255 and alpha from 0 to 1. */
@@ -18,6 +18,8 @@ export type TextPaint = {
   readonly color: Rgba;
   /** Background colours under the text, innermost first, down to the first opaque one. */
   readonly backgrounds: readonly Rgba[];
+  /** True when an image or gradient is painted under the text before an opaque colour, so its contrast cannot be read from colours. */
+  readonly overImage?: boolean;
 };
 
 export type RenderedElement = {
@@ -34,6 +36,8 @@ export type RenderedElement = {
   readonly visible: boolean;
   /** True for a link inside a sentence, which WCAG 2.5.8 exempts from the target size. */
   readonly inline?: boolean;
+  /** True for a control that is turned off, or text inside one, which WCAG 1.4.3 exempts from contrast. */
+  readonly disabled?: boolean;
   /** 1 to 6 for a heading, from its tag or aria-level. */
   readonly headingLevel?: number;
   /** Present on an element that paints text of its own. */
@@ -46,6 +50,12 @@ export type RenderedSnapshot = {
   readonly view: string;
   /** The width of the page's content, which is more than the view's width when the page scrolls sideways. */
   readonly scrollWidth: number;
+  /**
+   * The width the page lays out in: the view's width less a vertical
+   * scrollbar, when the browser draws one beside the page rather than over
+   * it. Without it, the view's width is assumed.
+   */
+  readonly viewportWidth?: number;
   /** The canvas colour under every background. */
   readonly canvas: Rgba;
   /** Elements in document order. */
