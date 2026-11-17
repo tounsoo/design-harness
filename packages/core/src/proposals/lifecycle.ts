@@ -24,10 +24,15 @@ export type RefusalCode =
   | "unproven-rule"
   | "passing-example-fails"
   | "failing-example-passes"
-  | "fails-for-another-reason";
+  | "fails-for-another-reason"
+  | "breaks-adopted-example";
 
-/** Why a step was refused, precisely enough to fix: which example, and what happened instead. */
-export type Refusal = { readonly code: RefusalCode; readonly message: string; readonly example?: string; readonly findings?: readonly Finding[] };
+/**
+ * Why a step was refused, precisely enough to fix: which example, and what
+ * happened instead. `proposal` names an earlier adopted proposal when the
+ * example is one of its examples rather than the refused proposal's own.
+ */
+export type Refusal = { readonly code: RefusalCode; readonly message: string; readonly proposal?: string; readonly example?: string; readonly findings?: readonly Finding[] };
 
 export type Stamp = { readonly at: string; readonly by?: string; readonly note?: string };
 
@@ -98,6 +103,12 @@ export type ExampleRun = {
   readonly expect: "pass" | "fail";
   readonly ok: boolean;
   readonly detail: string;
+  /**
+   * Set on a failing example whose rule is no longer in force because an
+   * adopted proposal removed it: the example has nothing left to prove, so it
+   * is retired rather than broken, and `ok` is true.
+   */
+  readonly retiredBy?: string;
 };
 
 export type Adoption = {
@@ -105,8 +116,12 @@ export type Adoption = {
   readonly classification: Classification;
   /** Caller-supplied prototypes that fail a rule, or carry a finding, they did not before. */
   readonly newlyFailing: readonly NewlyFailing[];
-  /** Examples of earlier adopted proposals that no longer behave as they did. */
-  readonly brokenExamples: readonly ExampleRun[];
+  /**
+   * Failing examples of earlier adopted proposals that this proposal retires:
+   * it removes the rule they exist to prove. Any other earlier example that
+   * stops behaving as it did makes `adopt` refuse.
+   */
+  readonly retiredExamples: readonly ExampleRun[];
 };
 
 function checkExample(config: ProjectConfig, example: PassingExample): CheckReport {
@@ -137,7 +152,10 @@ function flagged(report: CheckReport, example: FailingExample): { ok: true } | {
  * must pass every rule of the new config; every failing example must fail
  * the rule it names, with the message it names, and no other rule; and every
  * rule the proposal adds must be named by a failing example, so each is
- * shown to fire. Pure: time and who are the caller's.
+ * shown to fire. Every example of an earlier adopted proposal must still
+ * behave as it did, unless the proposal removes the rule a failing example
+ * exists to prove, which retires that example. Pure: time and who are the
+ * caller's.
  */
 export function adopt(config: ProjectConfig, id: string, stamp: Stamp, existing: readonly ExistingPrototype[] = []): Result<Adoption, Refusal> {
   const proposal = config.proposals.find((item) => item.id === id);
@@ -198,6 +216,15 @@ export function adopt(config: ProjectConfig, id: string, stamp: Stamp, existing:
   }
 
   const adopted = replace(candidate, stamped(proposal, "adopted", stamp));
+  const earlier = rerunExamples(adopted).filter((item) => item.proposal !== id);
+  const broken = earlier.find((item) => !item.ok);
+  if (broken) {
+    return refuse(
+      "breaks-adopted-example",
+      `adopting "${id}" breaks ${broken.expect === "pass" ? "passing" : "failing"} example "${broken.example}" of adopted proposal "${broken.proposal}": ${broken.detail}`,
+      { proposal: broken.proposal, example: broken.example },
+    );
+  }
   const newlyFailing: NewlyFailing[] = [];
   for (const item of [...existing].sort((a, b) => compareStrings(a.name, b.name))) {
     const snapshots = item.snapshots ? { snapshots: item.snapshots } : {};
@@ -209,19 +236,24 @@ export function adopt(config: ProjectConfig, id: string, stamp: Stamp, existing:
     const findings = after.findings.filter((finding) => !known.has(JSON.stringify(finding)));
     if (rules.length > 0 || findings.length > 0) newlyFailing.push({ name: item.name, rules, findings });
   }
-  const brokenExamples = rerunExamples(adopted).filter((item) => !item.ok && item.proposal !== id);
-  return { ok: true, value: { config: adopted, classification: classifyProposal(proposal, config), newlyFailing, brokenExamples } };
+  const retiredExamples = earlier.filter((item) => item.retiredBy === id);
+  return { ok: true, value: { config: adopted, classification: classifyProposal(proposal, config), newlyFailing, retiredExamples } };
 }
 
 /**
  * Re-runs every adopted proposal's examples against the config as it is now:
  * passing examples must still pass every rule, and failing examples must
  * still be flagged by their rule. Later rules may add other reasons to fail,
- * so a failing example is not held to failing for its rule alone here.
+ * so a failing example is not held to failing for its rule alone here. A
+ * failing example whose rule is not in force because an adopted proposal
+ * removed it is retired: `ok`, with `retiredBy` naming that proposal.
  */
 export function rerunExamples(config: ProjectConfig): ExampleRun[] {
   const runs: ExampleRun[] = [];
   const adopted = config.proposals.filter((proposal) => proposal.status === "adopted").sort((a, b) => compareStrings(a.id, b.id));
+  const inForce = new Set(config.rules.map((rule) => rule.id));
+  const removedBy = (rule: string, owner: string): string | undefined =>
+    inForce.has(rule) ? undefined : adopted.find((proposal) => proposal.id !== owner && proposal.rules.remove.includes(rule))?.id;
   for (const proposal of adopted) {
     for (const example of [...proposal.examples.pass].sort((a, b) => compareStrings(a.name, b.name))) {
       const failed = checkExample(config, example).rules.filter((rule) => rule.status === "fail");
@@ -234,6 +266,11 @@ export function rerunExamples(config: ProjectConfig): ExampleRun[] {
       });
     }
     for (const example of [...proposal.examples.fail].sort((a, b) => compareStrings(a.name, b.name))) {
+      const retiredBy = removedBy(example.flaggedBy.rule, proposal.id);
+      if (retiredBy !== undefined) {
+        runs.push({ proposal: proposal.id, example: example.name, expect: "fail", ok: true, detail: `retired: proposal "${retiredBy}" removed rule "${example.flaggedBy.rule}", which it proves`, retiredBy });
+        continue;
+      }
       const result = flagged(checkExample(config, example), example);
       runs.push({ proposal: proposal.id, example: example.name, expect: "fail", ok: result.ok, detail: result.ok ? `flagged by "${example.flaggedBy.rule}"` : result.detail });
     }

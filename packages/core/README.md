@@ -142,9 +142,10 @@ No step is skipped, and `adopted` and `declined` are final. Every function takes
 
 - there is at least one passing and one failing example, and every rule the proposal adds is named by a failing example;
 - every passing example passes every rule of the new config, and runs every new rule;
-- every failing example fails its named rule, with its message, and no other rule.
+- every failing example fails its named rule, with its message, and no other rule;
+- every example of an earlier adopted proposal still behaves as it did: its passing examples pass every rule, and its failing examples are still flagged by their rule. The one exception is a failing example whose rule this proposal removes: the example has nothing left to prove, so it is retired, not broken.
 
-A refusal names the example and what happened instead, such as `failing example "only-one" is not flagged as it must be: "one-toast-per-page" passed it`. On success it returns the new config with the proposal adopted, a deterministic `classification` (`adds`, `tightens`, or `loosens-or-removes`, with each change's reason), the caller's `existing` prototypes that newly fail, and any earlier adopted examples the change breaks. `rerunExamples(config)` re-runs every adopted proposal's examples against the config as it is now.
+A refusal names the example and what happened instead, such as `failing example "only-one" is not flagged as it must be: "one-toast-per-page" passed it`, or, for an earlier proposal's example, `adopting "no-toasts" breaks passing example "one-toast" of adopted proposal "toast": ...` with `proposal` and `example` set on the refusal. Replacing a rule with another of the same id is not a removal: the earlier examples are held to the new rule. On success it returns the new config with the proposal adopted, a deterministic `classification` (`adds`, `tightens`, or `loosens-or-removes`, with each change's reason), the caller's `existing` prototypes that newly fail, and the earlier examples it retires. `rerunExamples(config)` re-runs every adopted proposal's examples against the config as it is now, and marks a failing example `retiredBy` the adopted proposal that removed its rule.
 
 ## Size
 
