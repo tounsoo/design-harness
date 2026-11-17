@@ -42,21 +42,24 @@ Todae's roles, from the example:
 
 `Prototype` ([`src/prototype/types.ts`](src/prototype/types.ts)) is `files` (path to TSX text), `pages` (id, page type, and the component: a file and an export name), `layouts` (id and component), `scenarios` (id, flow state, page), and `flow` (`states`, and per task a `start` and its `transitions`). The flow is data, so the step budget is a graph search rather than a run of reducer code.
 
-A page fills its page type's slots with `Slot` from the page kit, `@design-harness/page`:
+A page fills its page type's slots with `Slot` from the page kit, `@design-harness/page`. When a page is rendered for a scenario, it receives that scenario as props, `PageProps`: `scenario` (its id) and `state` (its flow state). That is the whole contract between a scenario and a page:
 
 ```tsx
-import { Slot } from "@design-harness/page";
+import { Slot, type PageProps } from "@design-harness/page";
 import { Button, Text } from "@tounsoo/todae";
 
-export function BookingPage() {
+export function BookingPage({ state }: PageProps) {
   return (
     <>
       <Slot name="title"><Text.Root as="h1">Lantern</Text.Root></Slot>
+      <Slot name="facts">{state === "booked" && <Text.Root as="p">Booked until 3 pm</Text.Root>}</Slot>
       <Slot name="action"><Button.Root variant="primary">Book room</Button.Root></Slot>
     </>
   );
 }
 ```
+
+The extractor reads code, not one scenario: a page's props are unknown to it, so what a page shows in any state is in its model, marked conditional, and every rule counts it. A primary action shown only when `state === "held"` still counts toward the page's one primary action, and a prop whose value depends on the state (`variant={state === "held" ? "primary" : "secondary"}`) makes the rule report that it cannot tell. The imports rule allows `Slot` and the `PageProps` type from the page kit.
 
 ## The page model
 

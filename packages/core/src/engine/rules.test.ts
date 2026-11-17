@@ -116,7 +116,7 @@ describe("membership", () => {
       "pages/home.tsx": `import "@tounsoo/todae/styles.css";\nimport { useState } from "react";\nimport { Slot, Page } from "@design-harness/page";\nimport { x } from "./missing";\nimport lodash from "lodash";\nexport const Home = () => null;`,
     });
     expect(messages(report)).toEqual([
-      expect.stringContaining("imports Page from @design-harness/page, which exports only Slot"),
+      expect.stringContaining("imports Page from @design-harness/page, which exports only Slot and the PageProps type"),
       expect.stringContaining(`imports "./missing", which is not a file in the prototype`),
       expect.stringContaining(`imports "lodash", which is not the project's library`),
     ]);
