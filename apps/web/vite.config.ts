@@ -16,6 +16,7 @@ const source = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 function frameRuntime(): Plugin {
   const bundle = async (entry: string, format: "iife" | "esm", external: string[]) => {
     const result = await build({
+      absWorkingDir: source("."),
       entryPoints: [source(entry)],
       bundle: true,
       format,
@@ -40,7 +41,7 @@ function frameRuntime(): Plugin {
     async load(id) {
       if (id !== RESOLVED) return null;
       const [boot, kit] = await Promise.all([bundle("./src/frame/boot.ts", "iife", []), bundle("./src/frame/kit.tsx", "esm", ["react", "react/jsx-runtime", "react-dom", "react-dom/client"])]);
-      for (const input of [...boot.inputs, ...kit.inputs]) if (!input.includes("node_modules")) this.addWatchFile(source(`../../${input}`));
+      for (const input of [...boot.inputs, ...kit.inputs]) if (!input.includes("node_modules")) this.addWatchFile(source(`./${input}`));
       return `export const boot = ${JSON.stringify(boot.code)};\nexport const kit = ${JSON.stringify(kit.code)};\n`;
     },
   };
