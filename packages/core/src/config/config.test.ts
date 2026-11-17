@@ -25,6 +25,17 @@ describe("the project config", () => {
     ]);
   });
 
+  it("names the library and React by exact version, and its stylesheets by path inside the package", () => {
+    const library = { ...nook.library, package: "Todae", version: "^0.10.1", react: "19", stylesheets: ["/dist/todae.css", "../secret.css"] };
+    expect(issues(parseProjectConfig(json({ ...nook, library })))).toEqual([
+      '$.library.package: expected an npm package name such as "@tounsoo/todae", got "Todae"',
+      '$.library.version: expected an exact version such as "1.2.3", not a range, got "^0.10.1"',
+      '$.library.react: expected an exact version such as "1.2.3", not a range, got "19"',
+      '$.library.stylesheets[0]: expected a path inside the package such as "dist/todae.css", got "/dist/todae.css"',
+      '$.library.stylesheets[1]: expected a path inside the package such as "dist/todae.css", got "../secret.css"',
+    ]);
+  });
+
   it("rejects a rule with a misspelled field instead of ignoring it", () => {
     const rules = [{ type: "count", id: "x", scope: "page", select: { role: "primary-action" }, maxx: 1 }];
     expect(issues(parseProjectConfig(json({ ...nook, rules })))).toEqual([

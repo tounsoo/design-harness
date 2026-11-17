@@ -23,7 +23,7 @@ The worked example is [`examples/nook/`](examples/nook/): Nook, a room booking a
 
 | Field | What it holds |
 | --- | --- |
-| `library` | The npm `package` and `version`, and `roles`: which parts and prop values are the `action`, `primary-action`, `secondary-action`, `disclosure`, `disclosure-summary` and `question`. Rules select by role, so they hold for any library. |
+| `library` | The npm `package` and its exact `version`, the exact `react` version it renders with, optional `stylesheets` (paths inside the package, such as `dist/todae.css`) and `schemeAttribute` (the root attribute that switches it to a view's colour scheme, such as Todae's `data-appearance`), and `roles`: which parts and prop values are the `action`, `primary-action`, `secondary-action`, `disclosure`, `disclosure-summary` and `question`. Rules select by role, so they hold for any library. Versions are exact, never ranges, so a prototype renders with the same code on every load. |
 | `inventories` | `components` (the library's top-level exports a prototype may render), `layouts` (ids), `pageTypes` (each with `kind` `action`, `collection` or `content`, its `slots`, its `chrome` slots, and for `action` its `primarySlot`), `flowStates`. |
 | `inputs` | `tasks` (success state, max steps), `ranking` (rank 1 is the primary action), `disclosedSections`, and `caps`: named numbers rules read, each with the direction that is `stricter`. |
 | `views` | The viewports rendered snapshots are expected at. |
