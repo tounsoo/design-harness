@@ -1,0 +1,1 @@
+{ "what": "A file that does not parse", "expect": [{ "rule": "extract", "message": "pages/notes.tsx does not parse" }] }

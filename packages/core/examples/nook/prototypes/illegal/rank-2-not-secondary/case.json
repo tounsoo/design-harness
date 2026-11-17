@@ -1,0 +1,9 @@
+{
+  "what": "Hold room as a ghost button",
+  "expect": [
+    {
+      "rule": "rank-2-secondary",
+      "message": "Button.Root \"Hold room\" at pages/booking.tsx:28:9 is an action reading the rank-2 action \"Hold room\", so it must be a secondary action"
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+{ "what": "A style prop on the room cards' stack", "expect": [{ "rule": "no-inline-styles", "message": "element with a style prop" }] }

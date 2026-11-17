@@ -1,0 +1,17 @@
+{
+  "what": "Hold room's variant is chosen at runtime between primary and secondary, so its rank, the primary count and whether the page's primary is the rank-1 action cannot be told",
+  "expect": [
+    {
+      "rule": "rank-2-secondary",
+      "message": "chosen at runtime"
+    },
+    {
+      "rule": "one-primary-per-page",
+      "message": "Cannot tell whether Button.Root \"Hold room\""
+    },
+    {
+      "rule": "primary-is-rank-1",
+      "message": "Cannot tell whether Button.Root \"Hold room\""
+    }
+  ]
+}

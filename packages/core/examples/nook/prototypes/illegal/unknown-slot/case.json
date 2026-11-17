@@ -1,0 +1,1 @@
+{ "what": "A footer slot, which the booking page type does not have", "expect": [{ "rule": "page-structure", "message": "Page \"booking\" fills slot \"footer\"" }] }
