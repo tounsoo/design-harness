@@ -1,6 +1,6 @@
 # Agent notes
 
-design-harness is a browser-only web app for prototyping product UI with an agent, inside guardrails. It has the core library, `packages/core`, and the web app, `apps/web`: the shell and the canvas, with a code view standing in for the agent, which comes next.
+design-harness is a browser-only web app for prototyping product UI with an agent, inside guardrails. It has the core library, `packages/core`, and the web app, `apps/web`: the shell, the canvas, a code view, and the agent chat on the person's own Anthropic API key.
 
 ## Set up
 
@@ -18,7 +18,7 @@ It runs `typecheck` (each workspace's `tsc`: the library against the ES2022 lib 
 npm run e2e
 ```
 
-builds the app and runs `apps/web/e2e/run.mjs` in Chromium: every frame renders, the legal prototype passes every rule, an edit's finding is pointed at in its file or frame, the same prototype gives the same report on reload, export and import round-trip, packages load by URL from a CDN-shaped origin, and a frame cannot reach the app. It uses the `playwright` package and Chromium the environment provides (on `NODE_PATH`), so it is not in CI: a CI job would need Playwright added as a dev dependency and its Chromium installed. Run it before pushing a change to `apps/web` or to what core says about rendered pages.
+builds the app and runs `apps/web/e2e/run.mjs` in Chromium: every frame renders, the legal prototype passes every rule, an edit's finding is pointed at in its file or frame, the same prototype gives the same report on reload, export and import round-trip, packages load by URL from a CDN-shaped origin, a frame cannot reach the app, and the agent's whole loop runs against a fake Anthropic API at api.anthropic.com's address (edits, failing checks fed back, proposals, stop, errors, refusals, undo, and the key's absence from frames, exports and storage). It uses the `playwright` package and Chromium the environment provides (on `NODE_PATH`), so it is not in CI: a CI job would need Playwright added as a dev dependency and its Chromium installed. Run it before pushing a change to `apps/web` or to what core says about rendered pages.
 
 ## The two rules not to break
 
@@ -38,8 +38,8 @@ When the extractor cannot resolve something a rule depends on, the rule reports 
 - `packages/core/src/proposals/`: proposal operations, classification and lifecycle.
 - `packages/core/examples/nook/`: the worked example project and its legal and illegal prototypes, which are the engine's regression fixtures.
 - `packages/core/README.md`: the config, the rule vocabulary and the proposal lifecycle.
-- `apps/web/`: the browser app. `src/app/` is the UI, built with Todae; `src/runtime/` the parent side of the frames (the check session, the frame protocol, the frame document and its sandbox, the TSX transform, the package sources); `src/frame/` what runs inside a frame (the boot script, the page kit `@design-harness/page` and its default shell, the snapshot collector); `src/store/` IndexedDB and the project file; `e2e/` the end-to-end tests. `apps/web/README.md` documents the frame protocol, the scenario contract, the package-source interface and the isolation model.
+- `apps/web/`: the browser app. `src/app/` is the UI, built with Todae; `src/agent/` the agent (the API client and request, the tools and their input validation, the append-only history, the turn loop, the key vault); `src/runtime/` the parent side of the frames (the check session, the frame protocol, the frame document and its sandbox, the TSX transform, the package sources); `src/frame/` what runs inside a frame (the boot script, the page kit `@design-harness/page` and its default shell, the snapshot collector); `src/store/` IndexedDB (projects, prototypes, chats) and the project file; `e2e/` the end-to-end tests and `e2e/fake-anthropic.mjs`, the fake Anthropic API every agent test runs against; `test/` helpers for the app's unit tests. `apps/web/README.md` documents the agent, the frame protocol, the scenario contract, the package-source interface and the isolation model.
 
-Nothing in `apps/web` decides pass or fail: it renders, measures and shows `checkPrototype`'s report unchanged. Prototype code runs only in frames sandboxed without `allow-same-origin`, and talks to the app only by validated `postMessage`; keep it that way.
+Nothing in `apps/web` decides pass or fail: it renders, measures and shows `checkPrototype`'s report unchanged, and the agent gets that report; no model decides. Prototype code runs only in frames sandboxed without `allow-same-origin`, and talks to the app only by validated `postMessage`; keep it that way. The API key stays in the app's memory and its own IndexedDB database, never in a prototype, export, frame, log or error message. Tests never call the real Anthropic API.
 
 A new illegal fixture is a folder under `packages/core/examples/nook/prototypes/illegal/` with a `case.json` (what it shows, and the rule and message fragment that must flag it) and the files it replaces under `files/`. It must fail for that reason and no other.
