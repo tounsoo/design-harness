@@ -232,18 +232,23 @@ test("a frame cannot reach the app: no parent DOM, storage, cookies or network",
     page,
     "pages/rooms.tsx",
     (text) =>
-      `try { window.parent.document.body.setAttribute("data-pwned", "1"); } catch {}\ntry { window.top.localStorage.setItem("pwned", "1"); } catch {}\ntry { localStorage.setItem("pwned", "1"); } catch {}\n${text}`,
+      `try { window.parent.document.body.setAttribute("data-pwned", "1"); } catch {}\ntry { window.top.localStorage.setItem("pwned", "1"); } catch {}\ntry { localStorage.setItem("pwned", "1"); } catch {}\n` +
+      `try { eval("1"); document.documentElement.dataset.evalProbe = "ran"; } catch (error) { document.documentElement.dataset.evalProbe = error.name; }\n` +
+      `try { new Function("return 1")(); document.documentElement.dataset.functionProbe = "ran"; } catch (error) { document.documentElement.dataset.functionProbe = error.name; }\n${text}`,
   );
   await measured(page, 2);
   assert.equal(await page.evaluate(() => document.body.getAttribute("data-pwned")), null);
   assert.equal(await page.evaluate(() => localStorage.getItem("pwned")), null);
+  const flagged = (await report(page)).findings.filter((item) => item.rule === "no-ambient-globals").map((item) => item.message);
+  assert.ok(flagged.some((message) => message.startsWith("pages/rooms.tsx:1:7 uses window")), `core refuses the prototype that reaches for the app: ${flagged.join(" | ")}`);
 
   const sandboxes = await page.locator("iframe").evaluateAll((elements) => elements.map((element) => element.getAttribute("sandbox")));
   assert.equal(sandboxes.length, 8);
   assert.ok(sandboxes.every((value) => value === "allow-scripts"));
 
+  const codeFromStrings = [];
   for (const frame of page.frames().filter((item) => item !== page.mainFrame())) {
-    const probe = await frame.evaluate(async () => {
+    const { strings, ...probe } = await frame.evaluate(async () => {
       const attempt = async (fn) => {
         try {
           const value = await fn();
@@ -261,6 +266,16 @@ test("a frame cannot reach the app: no parent DOM, storage, cookies or network",
         indexedDB: await attempt(() => indexedDB.open("design-harness")),
         cookie: await attempt(() => document.cookie),
         fetch: await attempt(() => fetch(document.referrer || "/").then((response) => response.status)),
+        // What the prototype's own code saw when it tried to turn strings into code (only the rooms page loads it).
+        strings: [document.documentElement.dataset.evalProbe, document.documentElement.dataset.functionProbe],
+        inlineHandler: await new Promise((resolve) => {
+          const image = document.createElement("img");
+          image.setAttribute("onerror", "document.body.dataset.ran = 'yes'");
+          image.src = "data:,broken";
+          document.body.append(image);
+          setTimeout(() => resolve(document.body.dataset.ran ?? "blocked"), 200);
+        }),
+        channelInDom: document.documentElement.getAttribute("data-channel") ?? "hidden",
       };
     });
     assert.deepEqual(probe, {
@@ -272,8 +287,15 @@ test("a frame cannot reach the app: no parent DOM, storage, cookies or network",
       indexedDB: "SecurityError",
       cookie: "SecurityError",
       fetch: "TypeError",
+      inlineHandler: "blocked",
+      channelInDom: "hidden",
     });
+    if (strings[0] !== undefined) codeFromStrings.push(strings);
   }
+  assert.deepEqual(codeFromStrings, [
+    ["EvalError", "EvalError"],
+    ["EvalError", "EvalError"],
+  ], "the CSP refuses eval and the Function constructor to prototype code in both rooms frames");
 });
 
 test("the board opens a frame at full size and the project view reads the config", async ({ browser, base }) => {
@@ -365,7 +387,7 @@ for (const item of selected) {
     console.log(`ok   ${item.name} (${Date.now() - started} ms)`);
   } catch (error) {
     failed += 1;
-    console.log(`FAIL ${item.name} (${Date.now() - started} ms)\n     ${error instanceof Error ? (error.stack ?? error.message).split("\n").slice(0, 6).join("\n     ") : String(error)}`);
+    console.log(`FAIL ${item.name} (${Date.now() - started} ms)\n     ${error instanceof Error ? (error.stack ?? error.message).split("\n").slice(0, 30).join("\n     ") : String(error)}`);
   }
 }
 await browser.close();

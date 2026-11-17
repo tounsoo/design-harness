@@ -62,6 +62,8 @@ export type SessionOptions = {
   readonly settleMs?: number;
   /** A random channel id; injectable for tests. */
   readonly channel?: () => string;
+  /** A random script nonce for each frame document; injectable for tests. */
+  readonly nonce?: () => string;
 };
 
 /** An iframe in the DOM for one frame. `ready` is set once its boot script says it listens: a message sent before then is lost. */
@@ -100,6 +102,11 @@ export class Session {
   private set(patch: Partial<SessionState>): void {
     this.state = { ...this.state, ...patch };
     for (const listener of this.listeners) listener();
+  }
+
+  /** The config and prototype of the current revision, or null before the first. */
+  current(): { readonly config: ProjectConfig; readonly prototype: Prototype; readonly revision: number } | null {
+    return this.config && this.prototype ? { config: this.config, prototype: this.prototype, revision: this.state.revision } : null;
   }
 
   /** Starts a new revision for this config and prototype. */
@@ -149,6 +156,7 @@ export class Session {
     this.channels.set(channel, key);
     const html = frameDocument({
       channel,
+      nonce: this.options.nonce?.() ?? crypto.randomUUID().replace(/-/g, ""),
       parentOrigin: this.options.parentOrigin,
       boot: this.options.boot,
       scheme: spec.view.scheme,
@@ -205,8 +213,8 @@ export class Session {
       this.sendIfReady(key);
       return;
     }
-    // A frame answers for the generation it was rendered at; anything else is stale.
-    if (message.generation !== attached.generation) return;
+    // A frame answers once, for the generation it was rendered at; anything else is stale or a second word.
+    if (message.generation !== attached.generation || this.state.frameStates[key]?.state !== "rendering") return;
     clearTimeout(attached.timer);
     if (message.type === "snapshot") this.setFrame(key, { state: "measured", snapshot: message.snapshot });
     else this.setFrame(key, { state: "failed", stage: message.stage, message: message.message });

@@ -95,6 +95,21 @@ describe("a session", () => {
     expect(session.getState().revision).toBe(2);
   });
 
+  it("takes a frame's first answer only: a later message on its channel cannot replace its snapshot", async () => {
+    const { session, frames, mount, send } = harness();
+    session.update(nook, legal);
+    mount();
+    await flush();
+    const key = frameKey("rooms-list", "desktop");
+    send(key, { type: "error", generation: 1, stage: "render", message: "early" });
+    expect(session.getState().frameStates[key]).toEqual({ state: "waiting" });
+    send(key, { type: "ready" });
+    send(key, { type: "snapshot", generation: 1, snapshot: snapshotOf("rooms-list", "desktop") });
+    send(key, { type: "error", generation: 1, stage: "render", message: "late" });
+    expect(session.getState().frameStates[key]).toMatchObject({ state: "measured" });
+    expect(frames.size).toBe(8);
+  });
+
   it("fails every frame when packages cannot load, and core then reports each scenario and view unmeasured", async () => {
     const { session } = harness(fakeSource(true));
     session.update(nook, legal);

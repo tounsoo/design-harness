@@ -24,6 +24,11 @@ installDeterminism(globalThis);
 const root = document.documentElement;
 const channel = root.dataset.channel ?? "";
 const parentOrigin = root.dataset.parentOrigin ?? "";
+// The import map is an inline script, so it needs the document's nonce. Read before any prototype code runs.
+const nonce = (document.currentScript as HTMLScriptElement | null)?.nonce ?? "";
+// The channel lives on only in this closure: prototype code cannot read it from the DOM to speak for the frame.
+root.removeAttribute("data-channel");
+root.removeAttribute("data-parent-origin");
 
 let started = false;
 let generation = -1;
@@ -70,6 +75,7 @@ function addImportMap(request: RenderRequest): void {
   }
   const map = document.createElement("script");
   map.type = "importmap";
+  map.nonce = nonce;
   map.textContent = JSON.stringify({ imports });
   document.head.append(map);
 }
