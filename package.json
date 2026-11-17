@@ -14,7 +14,10 @@
     "lint": "eslint .",
     "test": "vitest run",
     "check": "npm run typecheck && npm run lint && npm run test",
-    "bundle:core": "npm run bundle --workspace @design-harness/core"
+    "bundle:core": "npm run bundle --workspace @design-harness/core",
+    "dev": "npm run dev --workspace @design-harness/web",
+    "build": "npm run build --workspace @design-harness/web",
+    "e2e": "npm run e2e --workspace @design-harness/web"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
