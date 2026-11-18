@@ -7,9 +7,11 @@ import { isRecord, type JsonValue } from "./json";
  * typed, so one layout can be drawn many times with different data. A
  * layout file declares them under `params`; inside the layout,
  * `{ "$param": "name" }` reads one, as a prop's value, as the list a
- * `repeat` draws (`"repeat": { "param": "name" }`), or as an entry of
- * `children` for a slot. A page sets them on its instance: scalar and list
- * values as props of the `Layout` element, slot content in its `slots`.
+ * `repeat` draws (`"repeat": { "param": "name" }`), as an entry of
+ * `children` for a slot, or in a condition as its source or the value it
+ * compares with; `${$param:name}` reads one inside a `$template`. A page
+ * sets them on its instance: scalar and list values as props of the
+ * `Layout` element, slot content in its `slots`.
  *
  * This is core's own format, not json-render's: core expands every instance
  * before it builds the page model or the spec a frame draws, so neither the

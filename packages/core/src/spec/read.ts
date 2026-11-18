@@ -14,7 +14,8 @@ import { LAYOUT_ID_PROP, PARAM_STATE, checkParamValue, conditionParamProblems, i
  * (`root`, `elements` of `{ type, props, children }`, optional `state`), with
  * the subset of its expressions that keeps a spec data: no `$computed`
  * functions, no watchers, no custom actions. A layout file may also declare
- * `params`, and read them with `{ "$param": name }` (params.ts); a Layout
+ * `params`, and read them with `{ "$param": name }`, in a condition too, and
+ * with `${$param:name}` in a template (params.ts); a Layout
  * element sets them. Two expressions are core's own and never reach
  * json-render: `$param`, and `$scopedId`, an element id unique per instance.
  * Core expands both before anything renders (expand.ts).
