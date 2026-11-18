@@ -306,6 +306,7 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
         <Examples views={views} config={renderConfig} status={proposal.status} focus={focusExample} onFocused={() => setFocusExample(null)} />
 
         {live && <Impact impact={impact} measuring={existing === null} dryRun={dryRun} prototypes={prototypes} onOpenPrototype={onOpenPrototype} />}
+        {live && <OtherFrames items={otherFrames} />}
 
         <section aria-labelledby="review-class" className="review-section">
           <Text.Root as="h2" id="review-class">
@@ -934,6 +935,23 @@ function SourceLine({ view, finding }: { readonly view: ExampleView; readonly fi
 }
 
 /** Which of the project's prototypes would newly fail once it is adopted, with what core finds. */
+/**
+ * The frames that measure the project's other prototypes for the impact:
+ * laid out at their views' sizes, so they measure as the board would, but
+ * not shown. Without them those sessions would wait forever for frames.
+ */
+function OtherFrames({ items }: { readonly items: readonly Measured[] }) {
+  return (
+    <div className="impact-frames" aria-hidden="true" data-testid="impact-frames">
+      {items.flatMap((item) =>
+        item.state.frames.map((spec) => (
+          <FrameCard key={`${item.key}:${spec.key}`} session={item.session} spec={spec} revision={item.state.revision} frameState={item.state.frameStates[spec.key] ?? { state: "waiting" }} scale={0.25} focused={false} hidden selected={false} label={item.id} />
+        )),
+      )}
+    </div>
+  );
+}
+
 function Impact({ impact, measuring, dryRun, prototypes, onOpenPrototype }: { readonly impact: readonly NewlyFailing[] | null; readonly measuring: boolean; readonly dryRun: ReturnType<typeof dryRunAdoption> | null; readonly prototypes: readonly PrototypeRecord[]; readonly onOpenPrototype: (id: string, finding?: Finding) => void }) {
   return (
     <section aria-labelledby="review-impact" className="review-section" data-testid="review-impact">
