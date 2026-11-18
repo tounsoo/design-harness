@@ -1,0 +1,50 @@
+{
+  "harness": {
+    "canvas": {
+      "$description": "The board behind the prototype's frames: a quiet surface with a faint dot grid.",
+      "bg": { "$type": "color", "$value": { "$ref": "#/color/gray/950/$value" } },
+      "dot": { "$type": "color", "$value": { "$ref": "#/color/gray/800/$value" } }
+    },
+    "shadow": {
+      "$description": "Elevation: raised for artboards and cards that sit on a surface, floating for bars that hover over the canvas.",
+      "raised": {
+        "$type": "shadow",
+        "$value": [
+          {
+            "color": { "colorSpace": "oklch", "components": [0.05, 0, 0], "alpha": 0.4 },
+            "offsetX": { "value": 0, "unit": "px" },
+            "offsetY": { "value": 1, "unit": "px" },
+            "blur": { "value": 2, "unit": "px" },
+            "spread": { "value": 0, "unit": "px" }
+          },
+          {
+            "color": { "colorSpace": "oklch", "components": [0.05, 0, 0], "alpha": 0.4 },
+            "offsetX": { "value": 0, "unit": "px" },
+            "offsetY": { "value": 4, "unit": "px" },
+            "blur": { "value": 12, "unit": "px" },
+            "spread": { "value": -2, "unit": "px" }
+          }
+        ]
+      },
+      "floating": {
+        "$type": "shadow",
+        "$value": [
+          {
+            "color": { "colorSpace": "oklch", "components": [0.05, 0, 0], "alpha": 0.4 },
+            "offsetX": { "value": 0, "unit": "px" },
+            "offsetY": { "value": 2, "unit": "px" },
+            "blur": { "value": 4, "unit": "px" },
+            "spread": { "value": 0, "unit": "px" }
+          },
+          {
+            "color": { "colorSpace": "oklch", "components": [0.05, 0, 0], "alpha": 0.5 },
+            "offsetX": { "value": 0, "unit": "px" },
+            "offsetY": { "value": 12, "unit": "px" },
+            "blur": { "value": 32, "unit": "px" },
+            "spread": { "value": -8, "unit": "px" }
+          }
+        ]
+      }
+    }
+  }
+}

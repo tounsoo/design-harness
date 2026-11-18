@@ -1,0 +1,9 @@
+{
+  "button": {
+    "base": {
+      "font": {
+        "size": { "$type": "dimension", "$value": { "$ref": "#/font/size/2/$value" } }
+      }
+    }
+  }
+}

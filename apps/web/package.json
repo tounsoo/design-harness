@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "vendor": "node scripts/build-vendor.mjs",
+    "tokens": "todae-tokens build --resolver tokens/resolver.json --css src/theme/todae-theme.css --types src/theme/todae-theme.types.ts --catalog ../../node_modules/.cache/design-harness/tokens.catalog.json",
     "dev": "npm run vendor && vite",
     "build": "npm run vendor && vite build",
     "preview": "vite preview",
@@ -20,6 +21,7 @@
     "@json-render/react": "0.23.1",
     "@tounsoo/todae": "0.11.3",
     "dom-accessibility-api": "0.7.1",
+    "lucide-react": "1.74.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "sucrase": "3.35.1",

@@ -1,0 +1,104 @@
+{
+  "harness": {
+    "$description": "design-harness's own tokens, read by the app's layout CSS.",
+    "canvas": {
+      "dot-gap": {
+        "$type": "dimension",
+        "$value": {
+          "value": 20,
+          "unit": "px"
+        }
+      },
+      "padding": {
+        "$type": "dimension",
+        "$value": {
+          "$ref": "#/space/8/$value"
+        }
+      },
+      "row-gap": {
+        "$type": "dimension",
+        "$value": {
+          "$ref": "#/space/10/$value"
+        }
+      },
+      "frame-gap": {
+        "$type": "dimension",
+        "$value": {
+          "$ref": "#/space/8/$value"
+        }
+      }
+    },
+    "artboard": {
+      "radius": {
+        "$type": "dimension",
+        "$value": {
+          "$ref": "#/radius/md/$value"
+        }
+      },
+      "label-gap": {
+        "$type": "dimension",
+        "$value": {
+          "$ref": "#/space/2/$value"
+        }
+      },
+      "selected": {
+        "$type": "color",
+        "$value": {
+          "$ref": "#/color/status/critical/border/$value"
+        }
+      }
+    },
+    "floating": {
+      "radius": {
+        "$type": "dimension",
+        "$value": {
+          "$ref": "#/radius/lg/$value"
+        }
+      },
+      "bg": {
+        "$type": "color",
+        "$value": {
+          "$ref": "#/color/bg/elevated/$value"
+        }
+      }
+    },
+    "panel": {
+      "bg": {
+        "$type": "color",
+        "$value": {
+          "$ref": "#/color/bg/surface/$value"
+        }
+      },
+      "padding": {
+        "$type": "dimension",
+        "$value": {
+          "$ref": "#/space/4/$value"
+        }
+      },
+      "header-height": {
+        "$type": "dimension",
+        "$value": {
+          "value": 3,
+          "unit": "rem"
+        }
+      }
+    },
+    "edge": {
+      "$description": "Edges that mark a row's tone, and the rule beside a quoted message.",
+      "status": {
+        "$type": "dimension",
+        "$value": {
+          "value": 3,
+          "unit": "px"
+        }
+      },
+      "quote": {
+        "$type": "dimension",
+        "$value": {
+          "value": 2,
+          "unit": "px"
+        }
+      }
+    }
+  }
+}
