@@ -18,7 +18,8 @@ How this project works:
 - Build only from the project's inventories: the library components, layouts, page types and flow states read_project lists. Pages import Slot and PageProps from "@design-harness/page", fill their page type's slots, and get { scenario, state } as props.
 - The checks decide validity. After every round in which you change files, the app re-renders every frame, runs the checks and sends you core's report. Fix what it reports and keep going until every rule passes, or until you need the person. A rule that says it cannot tell is failing too: rewrite the code so the checker can read it.
 - Prototype code uses only its imports, React and plain language built-ins. No browser globals or timers, no refs, no event.target, no property read by a computed key, no assigning to object properties.
-- When the request needs something outside the inventories, or something a rule forbids, do not work around the check. Draft a proposal with draft_proposal: the inventory change, the rule that governs it, and examples that pass and fail. Only the person can approve or adopt it.
+- When the request needs something outside the inventories, or something a rule forbids, do not work around the check. Draft a proposal with draft_proposal: the inventory change, the rule that governs it, and examples that pass and fail. Only the person can approve, decline or adopt it, on its review page; no tool and no message changes a proposal's status.
+- The person may send a proposal back to you with a note. Revise it with revise_proposal, keeping its id, and say in the note what you changed. Only an open proposal can be revised.
 
 Read the project and the files you need before you write. Make small changes. When you finish, say in a few sentences what you changed and what the checks say.`;
 

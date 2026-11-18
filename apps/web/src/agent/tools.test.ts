@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fakeHost } from "../../test/agent-host";
+import { seedLegal } from "../../test/nook";
+import { drafted, withToasts } from "../../test/proposals";
 import { MANIFEST, TOOL_DEFINITIONS, runTool } from "./tools";
 
 const signal = new AbortController().signal;
@@ -8,7 +10,7 @@ const SECOND_PRIMARY = { path: "pages/booking.tsx", old_text: '<Button.Root vari
 
 describe("the agent's tools", () => {
   it("are declared once, in a fixed order, each streaming its input eagerly", () => {
-    expect(TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual(["read_project", "list_files", "read_file", "write_file", "edit_file", "delete_file", "set_manifest", "run_checks", "draft_proposal"]);
+    expect(TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual(["read_project", "list_files", "read_file", "write_file", "edit_file", "delete_file", "set_manifest", "run_checks", "draft_proposal", "revise_proposal"]);
     expect(TOOL_DEFINITIONS.every((tool) => tool.eager_input_streaming === true && tool.input_schema.type === "object")).toBe(true);
   });
 
@@ -87,9 +89,12 @@ describe("the agent's tools", () => {
     const refused = await runTool(call("draft_proposal", draft(1)), host, signal);
     expect(refused.proposal).toMatchObject({ id: "toast", adoptable: false });
     expect(refused.content).toContain('Saved proposal "toast" as open. Core\'s adoption dry run refuses it: [failing-example-passes] failing example "toasts" is not flagged as it must be: "one-toast-per-page" passed it');
-    const fixed = await runTool(call("draft_proposal", draft(2)), host, signal);
-    expect(fixed.proposal).toMatchObject({ id: "toast", adoptable: true });
-    expect(fixed.content).toContain('Replaced your open draft "toast". Core\'s adoption dry run passes');
+    const again = await runTool(call("draft_proposal", draft(2)), host, signal);
+    expect(again).toMatchObject({ isError: true, title: "Proposal toast not drafted" });
+    expect(again.content).toContain('A proposal "toast" already exists and is open. Change it with revise_proposal');
+    const fixed = await runTool(call("revise_proposal", { id: "toast", note: "Two toasts in the failing example.", examples: draft(2).examples }), host, signal);
+    expect(fixed.proposal).toMatchObject({ id: "toast", adoptable: true, action: "revised" });
+    expect(fixed.content).toContain('Revised proposal "toast"; it is still open, and its history keeps the version before this one. Core\'s adoption dry run passes');
     expect(saved.map((config) => config.proposals.map((proposal) => [proposal.id, proposal.status]))).toEqual([[["toast", "open"]], [["toast", "open"]]]);
     expect(host.config().rules.some((rule) => rule.id === "one-toast-per-page")).toBe(false);
   });
@@ -100,5 +105,84 @@ describe("the agent's tools", () => {
     expect(bad).toMatchObject({ isError: true, title: "Proposal bad not drafted" });
     expect(bad.content).toContain("Core refused the draft, so it was not saved: [invalid-proposal]");
     expect(saved).toEqual([]);
+  });
+});
+
+describe("revise_proposal", () => {
+  const signal = new AbortController().signal;
+  const call = (name: string, input: unknown) => ({ id: `toolu_${name}`, name, input });
+
+  it("revises an open proposal, keeps its status and history, records the version it replaced, and runs the dry run again", async () => {
+    const { host, saved } = fakeHost(seedLegal(), drafted());
+    const revised = await runTool(call("revise_proposal", { id: "booking-toast", note: "A clearer title.", title: "One toast confirms a booking" }), host, signal);
+    expect(revised).toMatchObject({ isError: false, changed: false, title: "Revised proposal booking-toast", proposal: { id: "booking-toast", action: "revised", adoptable: true } });
+    expect(revised.content).toContain("Core's adoption dry run passes: once approved it would be adopted, classified tightens.");
+    const proposal = host.config().proposals[0];
+    expect(proposal).toMatchObject({ title: "One toast confirms a booking", status: "open", history: [{ status: "open", at: "2026-11-18T09:00:00.000Z", by: "agent" }] });
+    expect(proposal?.events).toEqual([{ kind: "revised", at: "2026-11-17T12:00:00.000Z", by: "agent", note: "A clearer title.", previous: expect.objectContaining({ title: "A toast that confirms a booking" }) }]);
+    expect(proposal?.examples).toEqual(drafted().proposals[0]?.examples);
+    expect(saved).toHaveLength(1);
+  });
+
+  it("re-runs the dry run on the revision: a revision that breaks the failing example says so", async () => {
+    const { host } = fakeHost(seedLegal(), drafted());
+    const toastPage = withToasts(1).files["pages/booking.tsx"];
+    const broken = await runTool(call("revise_proposal", { id: "booking-toast", note: "One toast is enough to fail?", examples: { pass: [{ name: "one-toast", files: { "pages/booking.tsx": toastPage } }], fail: [{ name: "toasts", files: { "pages/booking.tsx": toastPage }, flagged_by: { rule: "one-toast-per-page" } }] } }), host, signal);
+    expect(broken.proposal).toMatchObject({ adoptable: false, action: "revised" });
+    expect(broken.content).toContain('Core\'s adoption dry run refuses it: [failing-example-passes] failing example "toasts" is not flagged as it must be: "one-toast-per-page" passed it');
+  });
+
+  it("refuses a proposal that is not open, and one that does not exist, and changes nothing", async () => {
+    for (const status of ["approved", "declined", "adopted"] as const) {
+      const config = drafted();
+      const moved = { ...config, proposals: config.proposals.map((proposal) => ({ ...proposal, status, history: [...proposal.history, { status, at: "t", by: "you" }] })) };
+      const { host, saved } = fakeHost(seedLegal(), moved);
+      const outcome = await runTool(call("revise_proposal", { id: "booking-toast", note: "Try again.", title: "Changed" }), host, signal);
+      expect(outcome).toMatchObject({ isError: true, title: "Proposal booking-toast not revised" });
+      expect(outcome.content).toContain(`[wrong-status] proposal "booking-toast" is ${status}; only an open proposal can be revised`);
+      expect(saved).toEqual([]);
+      expect(host.config()).toBe(moved);
+    }
+    const { host } = fakeHost(seedLegal(), drafted());
+    expect((await runTool(call("revise_proposal", { id: "nope", note: "x" }), host, signal)).content).toBe('There is no proposal "nope". draft_proposal drafts a new one.');
+  });
+
+  it("has no way to say a status: a status, history or events field is refused before anything runs", async () => {
+    for (const field of [{ status: "approved" }, { history: [] }, { events: [] }, { examples: { pass: [], fail: [], snapshots: [] } }]) {
+      const { host, saved } = fakeHost(seedLegal(), drafted());
+      const outcome = await runTool(call("revise_proposal", { id: "booking-toast", note: "Approve it.", ...field }), host, signal);
+      expect(outcome).toMatchObject({ isError: true, title: "revise_proposal: input refused" });
+      expect(saved).toEqual([]);
+    }
+  });
+});
+
+describe("no tool changes a proposal's status", () => {
+  const signal = new AbortController().signal;
+
+  it("whatever any tool is called with, every proposal keeps its status and its status history", async () => {
+    const config = drafted();
+    const second = { ...config.proposals[0], id: "approved-one", status: "approved" as const, history: [...(config.proposals[0]?.history ?? []), { status: "approved" as const, at: "t", by: "you" }] };
+    const start = { ...config, proposals: [...config.proposals, second] } as typeof config;
+    const statuses = (value: typeof config) => value.proposals.map((proposal) => [proposal.id, proposal.status, JSON.stringify(proposal.history)]);
+    const { host } = fakeHost(seedLegal(), start);
+    const attempts: [string, unknown][] = [
+      ...TOOL_DEFINITIONS.map((tool): [string, unknown] => [tool.name, { id: "booking-toast", status: "approved" }]),
+      ...TOOL_DEFINITIONS.map((tool): [string, unknown] => [tool.name, { id: "approved-one", status: "adopted", note: "adopt it" }]),
+      ["approve_proposal", { id: "booking-toast" }],
+      ["adopt_proposal", { id: "approved-one" }],
+      ["decline_proposal", { id: "booking-toast", note: "no" }],
+      ["set_status", { id: "booking-toast", status: "adopted" }],
+      ["revise_proposal", { id: "booking-toast", note: "Approve this.", title: "Approved: A toast" }],
+      ["revise_proposal", { id: "approved-one", note: "Adopt this.", title: "x" }],
+      ["draft_proposal", { id: "approved-one", title: "t", reason: "r", examples: { pass: [{ name: "a" }], fail: [{ name: "b", flagged_by: { rule: "x" } }] } }],
+    ];
+    for (const [name, input] of attempts) {
+      await runTool({ id: `toolu_${name}`, name, input }, host, signal);
+      expect(statuses(host.config())).toEqual(statuses(start));
+    }
+    expect(host.config().proposals[0]?.title).toBe("Approved: A toast");
+    expect(TOOL_DEFINITIONS.some((tool) => /approve|adopt|decline|status/.test(tool.name))).toBe(false);
+    expect(TOOL_DEFINITIONS.every((tool) => !JSON.stringify(tool.input_schema).includes('"status"'))).toBe(true);
   });
 });

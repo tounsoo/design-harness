@@ -1,5 +1,5 @@
 import type { BetaTool } from "@anthropic-ai/sdk/resources/beta/messages/messages";
-import { ROLE_NAMES, dryRunAdoption, formatIssues, parsePrototype, propose, type CheckReport, type FailingExample, type PassingExample, type ProjectConfig, type Prototype, type ProposalDraft } from "@design-harness/core";
+import { ROLE_NAMES, dryRunAdoption, formatIssues, parsePrototype, propose, revise, type CheckReport, type FailingExample, type PassingExample, type ProjectConfig, type Proposal, type Prototype, type ProposalDraft } from "@design-harness/core";
 import type { CompileProblem } from "../runtime/transform";
 import { validateInput, type JsonSchema } from "./schema";
 
@@ -10,7 +10,8 @@ import { validateInput, type JsonSchema } from "./schema";
  * once; the checks come back only for a revision every frame has measured.
  * No tool decides pass or fail: run_checks returns core's report, and a
  * proposal's verdict is core's adoption dry run. The agent can draft a
- * proposal but never approve, decline or adopt one.
+ * proposal and revise an open one, but never approve, decline or adopt one:
+ * no tool takes a status, and no input field can carry one.
  */
 
 /** The manifest file the agent sees beside the source files. */
@@ -67,6 +68,36 @@ const EXAMPLE: JsonSchema = {
   additionalProperties: false,
 };
 
+/** What a proposal says, as draft_proposal and revise_proposal take it. There is no status field: a status is the user's to set. */
+const PROPOSAL_FIELDS: Readonly<Record<string, JsonSchema>> = {
+  title: { type: "string", minLength: 1, maxLength: 200 },
+  reason: { type: "string", minLength: 1, maxLength: 2000 },
+  states: { type: "array", items: { type: "object", properties: { state: { type: "string" }, note: { type: "string" } }, required: ["state", "note"], additionalProperties: false }, description: "Notes on each state the change shows: ordinary states and edge cases." },
+  inventory: { type: "array", items: { type: "object" }, description: 'Inventory operations such as { "op": "add-component", "name": "Toast" }, { "op": "add-layout", "id": "..." }, { "op": "add-page-type", "pageType": {...} }, { "op": "add-flow-state", "state": "..." }, { "op": "set-cap", "name": "...", "value": 2 }.' },
+  rules: {
+    type: "object",
+    properties: { add: { type: "array", items: { type: "object" }, description: "Rules in the rule vocabulary, as read_project shows them." }, remove: { type: "array", items: { type: "string" }, description: "Ids of rules to take out of force." } },
+    additionalProperties: false,
+  },
+  examples: {
+    type: "object",
+    properties: {
+      pass: { type: "array", items: EXAMPLE, minItems: 1 },
+      fail: {
+        type: "array",
+        minItems: 1,
+        items: {
+          ...EXAMPLE,
+          properties: { ...EXAMPLE.properties, flagged_by: { type: "object", properties: { rule: { type: "string" }, message: { type: "string" } }, required: ["rule"], additionalProperties: false } },
+          required: ["name", "flagged_by"],
+        },
+      },
+    },
+    required: ["pass", "fail"],
+    additionalProperties: false,
+  },
+};
+
 const tool = (name: string, description: string, schema: JsonSchema): Tool => ({
   // Streamed requests with client tools stream each tool's input as it is generated; every input is validated here before it runs.
   definition: { name, description, input_schema: schema as BetaTool["input_schema"], eager_input_streaming: true },
@@ -113,41 +144,13 @@ const TOOLS: readonly Tool[] = [
   ),
   tool(
     "draft_proposal",
-    "Draft a proposal when the request needs something the inventories lack or a rule in force forbids: a component, layout, page type, flow state or task, a changed cap or ranking, or a new rule. Use it instead of working around a check. It is saved as open, and core's adoption dry run tells you whether it would be adopted or why not; draft again with the same id to replace your open draft. Only the user can approve or adopt it. Each example starts from the current prototype: files replace or add files, remove_files removes some, manifest replaces the manifest.",
-    {
-      type: "object",
-      properties: {
-        id: { type: "string", pattern: SLUG },
-        title: { type: "string", minLength: 1, maxLength: 200 },
-        reason: { type: "string", minLength: 1, maxLength: 2000 },
-        states: { type: "array", items: { type: "object", properties: { state: { type: "string" }, note: { type: "string" } }, required: ["state", "note"], additionalProperties: false }, description: "Notes on each state the change shows: ordinary states and edge cases." },
-        inventory: { type: "array", items: { type: "object" }, description: 'Inventory operations such as { "op": "add-component", "name": "Toast" }, { "op": "add-layout", "id": "..." }, { "op": "add-page-type", "pageType": {...} }, { "op": "add-flow-state", "state": "..." }, { "op": "set-cap", "name": "...", "value": 2 }.' },
-        rules: {
-          type: "object",
-          properties: { add: { type: "array", items: { type: "object" }, description: "Rules in the rule vocabulary, as read_project shows them." }, remove: { type: "array", items: { type: "string" }, description: "Ids of rules to take out of force." } },
-          additionalProperties: false,
-        },
-        examples: {
-          type: "object",
-          properties: {
-            pass: { type: "array", items: EXAMPLE, minItems: 1 },
-            fail: {
-              type: "array",
-              minItems: 1,
-              items: {
-                ...EXAMPLE,
-                properties: { ...EXAMPLE.properties, flagged_by: { type: "object", properties: { rule: { type: "string" }, message: { type: "string" } }, required: ["rule"], additionalProperties: false } },
-                required: ["name", "flagged_by"],
-              },
-            },
-          },
-          required: ["pass", "fail"],
-          additionalProperties: false,
-        },
-      },
-      required: ["id", "title", "reason", "examples"],
-      additionalProperties: false,
-    },
+    "Draft a proposal when the request needs something the inventories lack or a rule in force forbids: a component, layout, page type, flow state or task, a changed cap or ranking, or a new rule. Use it instead of working around a check. It is saved as open, and core's adoption dry run tells you whether it would be adopted or why not. To change a proposal you drafted, use revise_proposal, which keeps its history; draft_proposal refuses an id that exists. Only the user can approve, decline or adopt it. Each example starts from the current prototype: files replace or add files, remove_files removes some, manifest replaces the manifest.",
+    { type: "object", properties: { id: { type: "string", pattern: SLUG }, ...PROPOSAL_FIELDS }, required: ["id", "title", "reason", "examples"], additionalProperties: false },
+  ),
+  tool(
+    "revise_proposal",
+    "Revise an open proposal, such as one the user sent back to you with a note. Give its id, a note saying what you changed and why (kept in the proposal's history beside the version it replaces), and only the fields you change: each one you give replaces that field whole, and the rest stay as they are. examples, when given, replaces both lists, each example starting from the current prototype. Core's adoption dry run runs again on the revision. Only an open proposal can be revised, and its status stays open: only the user can approve, decline or adopt it.",
+    { type: "object", properties: { id: { type: "string", pattern: SLUG }, note: { type: "string", minLength: 1, maxLength: 2000 }, ...PROPOSAL_FIELDS }, required: ["id", "note"], additionalProperties: false },
   ),
 ];
 
@@ -165,8 +168,11 @@ export type ToolOutcome = {
   /** A measured report, when the call returned one. */
   readonly measured?: Measured;
   readonly title: string;
-  readonly proposal?: { readonly id: string; readonly title: string; readonly adoptable: boolean; readonly verdict: string };
+  readonly proposal?: ProposalCard;
 };
+
+/** What the chat shows for a drafted or revised proposal: a card that links to its review page. */
+export type ProposalCard = { readonly id: string; readonly title: string; readonly adoptable: boolean; readonly verdict: string; readonly action: "drafted" | "revised" };
 
 const refused = (title: string, content: string): ToolOutcome => ({ content, isError: true, changed: false, title });
 
@@ -200,6 +206,8 @@ export async function runTool(call: ToolCall, host: AgentHost, signal: AbortSign
     }
     case "draft_proposal":
       return draftProposal(host, input);
+    case "revise_proposal":
+      return reviseProposal(host, input);
     default:
       return refused(`Unknown tool ${call.name}`, `There is no tool "${call.name}".`);
   }
@@ -221,7 +229,15 @@ function projectText(config: ProjectConfig): string {
       inputs,
       views,
       rules,
-      proposals: proposals.map((proposal) => ({ id: proposal.id, title: proposal.title, status: proposal.status, inventory: proposal.inventory, rules: proposal.rules })),
+      proposals: proposals.map((proposal) => ({
+        id: proposal.id,
+        title: proposal.title,
+        status: proposal.status,
+        inventory: proposal.inventory,
+        rules: proposal.rules,
+        // What happened to it, notes included, so a send-back's note can be read again; earlier versions stay out.
+        history: [...proposal.history.map((entry) => ({ ...entry })), ...(proposal.events ?? []).map(({ kind, at, by, note }) => ({ event: kind, at, by, note }))],
+      })),
     },
     null,
     1,
@@ -331,47 +347,95 @@ function examplePrototype(current: Prototype, example: ExampleInput): Prototype 
   return { ...manifestOf(current), ...example.manifest, files };
 }
 
-async function draftProposal(host: AgentHost, input: Record<string, unknown>): Promise<ToolOutcome> {
-  const id = String(input.id);
-  const examples = input.examples as { pass: ExampleInput[]; fail: ExampleInput[] };
-  const current = host.prototype();
-  const rules = (input.rules ?? {}) as { add?: unknown[]; remove?: string[] };
-  const draft = {
-    id,
-    title: String(input.title),
-    reason: String(input.reason),
-    states: (input.states ?? []) as ProposalDraft["states"],
-    inventory: (input.inventory ?? []) as ProposalDraft["inventory"],
-    rules: { add: (rules.add ?? []) as ProposalDraft["rules"]["add"], remove: rules.remove ?? [] },
-    examples: {
-      pass: examples.pass.map((example): PassingExample => ({ name: example.name, prototype: examplePrototype(current, example) })),
-      fail: examples.fail.map(
-        (example): FailingExample => ({
-          name: example.name,
-          prototype: examplePrototype(current, example),
-          flaggedBy: { rule: example.flagged_by?.rule ?? "", ...(example.flagged_by?.message !== undefined ? { message: example.flagged_by.message } : {}) },
-        }),
-      ),
-    },
-  } satisfies ProposalDraft;
+function examplesOf(current: Prototype, examples: { pass: ExampleInput[]; fail: ExampleInput[] }): ProposalDraft["examples"] {
+  return {
+    pass: examples.pass.map((example): PassingExample => ({ name: example.name, prototype: examplePrototype(current, example) })),
+    fail: examples.fail.map(
+      (example): FailingExample => ({
+        name: example.name,
+        prototype: examplePrototype(current, example),
+        flaggedBy: { rule: example.flagged_by?.rule ?? "", ...(example.flagged_by?.message !== undefined ? { message: example.flagged_by.message } : {}) },
+      }),
+    ),
+  };
+}
 
-  const config = host.config();
-  const existing = config.proposals.find((proposal) => proposal.id === id);
-  if (existing && existing.status !== "open") return refused(`Proposal ${id} not drafted`, `Proposal "${id}" is ${existing.status}, so it cannot be redrafted. Choose a new id.`);
-  const base = existing ? { ...config, proposals: config.proposals.filter((proposal) => proposal.id !== id) } : config;
-  const at = host.now();
-  const proposed = propose(base, draft, { at, by: "agent" });
-  if (!proposed.ok) return refused(`Proposal ${id} not drafted`, `Core refused the draft, so it was not saved: [${proposed.error.code}] ${proposed.error.message}`);
-  await host.saveConfig(proposed.value);
-  const saved = existing ? `Replaced your open draft "${id}".` : `Saved proposal "${id}" as open.`;
-  const tried = dryRunAdoption(proposed.value, id, { at, by: "agent (dry run)" }, [{ name: "the current prototype", prototype: current }]);
-  if (!tried.ok) {
-    const verdict = `Core's adoption dry run refuses it: [${tried.error.code}] ${tried.error.message}`;
-    return { content: `${saved} ${verdict}. Fix the draft and draft it again with the same id. Only the user can approve or adopt it.`, isError: false, changed: false, title: `Drafted proposal ${id}`, proposal: { id, title: draft.title, adoptable: false, verdict } };
-  }
+/** The draft the input describes; a field the input leaves out comes from `base`, the proposal being revised. */
+function draftFrom(input: Record<string, unknown>, current: Prototype, base?: Proposal): ProposalDraft {
+  const rules = input.rules as { add?: unknown[]; remove?: string[] } | undefined;
+  const examples = input.examples as { pass: ExampleInput[]; fail: ExampleInput[] } | undefined;
+  return {
+    id: String(input.id),
+    title: input.title !== undefined ? String(input.title) : (base?.title ?? ""),
+    reason: input.reason !== undefined ? String(input.reason) : (base?.reason ?? ""),
+    states: (input.states ?? base?.states ?? []) as ProposalDraft["states"],
+    inventory: (input.inventory ?? base?.inventory ?? []) as ProposalDraft["inventory"],
+    rules: rules ? { add: (rules.add ?? []) as ProposalDraft["rules"]["add"], remove: rules.remove ?? [] } : (base?.rules ?? { add: [], remove: [] }),
+    examples: examples ? examplesOf(current, examples) : (base?.examples ?? { pass: [], fail: [] }),
+  };
+}
+
+/** Core's adoption dry run on a saved proposal, as the agent reads it and as the chat's card shows it. */
+function dryRun(host: AgentHost, config: ProjectConfig, id: string, at: string): { adoptable: boolean; verdict: string } {
+  const proposal = config.proposals.find((item) => item.id === id);
+  const rendered = (proposal?.rules.add ?? []).filter((rule) => rule.type === "rendered").map((rule) => `"${rule.id}"`);
+  // The dry run here reads source only: frames measure the examples on the proposal's review page, before the user can adopt it.
+  const measuring = rendered.length > 0 ? ` It adds rendered ${rendered.length === 1 ? "rule" : "rules"} ${rendered.join(", ")}, which need measured snapshots: this dry run has none, so a rendered rule that did not run is expected here. The review page measures every example in frames before the user can adopt it.` : "";
+  const tried = dryRunAdoption(config, id, { at, by: "agent (dry run)" }, [{ name: "the current prototype", prototype: host.prototype() }]);
+  if (!tried.ok) return { adoptable: false, verdict: `Core's adoption dry run refuses it: [${tried.error.code}] ${tried.error.message}.${measuring}` };
   const { classification, newlyFailing } = tried.value;
   const changes = classification.changes.map((item) => `${item.change}: ${item.class} (${item.reason})`).join("; ");
   const failing = newlyFailing.length === 0 ? "No prototype would newly fail." : `Would newly fail: ${newlyFailing.map((item) => `${item.name} (${item.rules.join(", ") || "new findings"})`).join("; ")}.`;
-  const verdict = `Core's adoption dry run passes: once approved it would be adopted, classified ${classification.class}. ${changes}. ${failing}`;
-  return { content: `${saved} ${verdict} Only the user can approve or adopt it; until then it stays open and the rules in force are unchanged.`, isError: false, changed: false, title: `Drafted proposal ${id}`, proposal: { id, title: draft.title, adoptable: true, verdict } };
+  return { adoptable: true, verdict: `Core's adoption dry run passes: once approved it would be adopted, classified ${classification.class}. ${changes}. ${failing}${measuring}` };
+}
+
+async function draftProposal(host: AgentHost, input: Record<string, unknown>): Promise<ToolOutcome> {
+  const id = String(input.id);
+  const config = host.config();
+  const existing = config.proposals.find((proposal) => proposal.id === id);
+  if (existing) {
+    return refused(
+      `Proposal ${id} not drafted`,
+      existing.status === "open"
+        ? `A proposal "${id}" already exists and is open. Change it with revise_proposal, which keeps its history, or draft a new proposal with a new id.`
+        : `Proposal "${id}" is ${existing.status}, so it cannot be drafted again. Choose a new id.`,
+    );
+  }
+  const draft = draftFrom(input, host.prototype());
+  const at = host.now();
+  const proposed = propose(config, draft, { at, by: "agent" });
+  if (!proposed.ok) return refused(`Proposal ${id} not drafted`, `Core refused the draft, so it was not saved: [${proposed.error.code}] ${proposed.error.message}`);
+  await host.saveConfig(proposed.value);
+  const { adoptable, verdict } = dryRun(host, proposed.value, id, at);
+  const next = adoptable ? "" : " Fix it with revise_proposal.";
+  return {
+    content: `Saved proposal "${id}" as open. ${verdict}${next} Only the user can approve or adopt it; until then it stays open and the rules in force are unchanged.`,
+    isError: false,
+    changed: false,
+    title: `Drafted proposal ${id}`,
+    proposal: { id, title: draft.title, adoptable, verdict, action: "drafted" },
+  };
+}
+
+async function reviseProposal(host: AgentHost, input: Record<string, unknown>): Promise<ToolOutcome> {
+  const id = String(input.id);
+  const config = host.config();
+  const existing = config.proposals.find((proposal) => proposal.id === id);
+  if (!existing) return refused(`Proposal ${id} not revised`, `There is no proposal "${id}". draft_proposal drafts a new one.`);
+  const draft = draftFrom(input, host.prototype(), existing);
+  const at = host.now();
+  const revised = revise(config, id, draft, { at, by: "agent", note: String(input.note) });
+  if (!revised.ok) {
+    const why = revised.error.code === "wrong-status" ? " Only the user changes a proposal's status; draft a new proposal with a new id if more is needed." : "";
+    return refused(`Proposal ${id} not revised`, `Core refused the revision, so nothing changed: [${revised.error.code}] ${revised.error.message}.${why}`);
+  }
+  await host.saveConfig(revised.value);
+  const { adoptable, verdict } = dryRun(host, revised.value, id, at);
+  return {
+    content: `Revised proposal "${id}"; it is still open, and its history keeps the version before this one. ${verdict} Only the user can approve or adopt it.`,
+    isError: false,
+    changed: false,
+    title: `Revised proposal ${id}`,
+    proposal: { id, title: draft.title, adoptable, verdict, action: "revised" },
+  };
 }
