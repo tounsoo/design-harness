@@ -65,6 +65,55 @@ The extractor reads code, not one scenario: a page's props are unknown to it, so
 
 A prototype with `"format": "spec"` is written as [json-render](https://github.com/vercel-labs/json-render) specs instead of TSX: the same manifest, and each page and layout a JSON file holding a flat spec (`root`, `elements` of `{ type, props, children }`, and on a page `state`). A page's root is a `Page` whose `slots` are its page type's; a body slot holds `{ "type": "Layout", "props": { "id": "room-details" } }`. A page reads its scenario at `/scenario/state` and `/scenario/id`.
 
+#### Layouts with parameters
+
+A spec layout is a reusable fragment with typed parameters, so a page draws it many times with different data, as a TSX page renders a layout component with props. The layout file declares them under `params`, and reads them with `{ "$param": name }`:
+
+```json
+{
+  "params": {
+    "label": { "type": "text", "example": "How long?" },
+    "choices": { "type": "list", "of": "option" },
+    "answer": { "type": "binding" },
+    "hint": { "type": "slot", "required": false }
+  },
+  "root": "question",
+  "elements": {
+    "question": { "type": "Stack.Root", "props": { "gap": "condensed" }, "children": ["label", "field", { "$param": "hint" }] },
+    "label": { "type": "Label.Root", "props": { "htmlFor": { "$scopedId": "field" }, "text": { "$param": "label" } }, "children": [] },
+    "field": { "type": "Field.Root", "props": { "id": { "$scopedId": "field" } }, "children": ["select"] },
+    "select": { "type": "Field.Select", "props": { "value": { "$param": "answer" }, "options": { "$param": "choices" } }, "children": [] }
+  }
+}
+```
+
+A page draws an instance with the parameters as the `Layout` element's other props, and a slot's elements in its `slots`:
+
+```json
+"question": { "type": "Layout", "props": { "id": "select-question", "label": "How long?", "choices": { "$state": "/durations" }, "answer": { "$bindState": "/duration" } }, "children": [] }
+```
+
+| Type | A page gives | The layout reads it as |
+| --- | --- | --- |
+| `text`, `number`, `boolean`, `enum` (`values`) | a literal of the type, or an expression that reads the page (`$state`, `$item`, `$index`, `$template` for text, `$cond`) | a prop's value; the prop's schema must take the type (an enum's values must be the prop's) |
+| `list` (`of`: `text`, `number`, `boolean`, `option`, or `{ "record": { field: type } }`) | a literal list, `$state` or `$item` | `"repeat": { "param": name, "key"?: field }`, or a prop such as `options` |
+| `binding` | `{ "$bindState": "/path" }` | a bindable prop: each instance writes its own path |
+| `slot` | element keys in the instance's `slots` | `{ "$param": name }` among an element's `children`, placed once |
+
+A parameter is required unless it has a `default` or `"required": false`; `description` and `example` are for people and the agent. Inside another layout, an instance may pass on its own parameters with `$param` where the types fit.
+
+[`src/spec/params.ts`](src/spec/params.ts) reads the declarations and checks each value an instance gives, and [`src/spec/read.ts`](src/spec/read.ts) checks every use of a parameter against the prop it feeds: a wrong type, a missing required parameter, a parameter the layout lacks, a slot placed twice or nowhere, and an instance of a layout the manifest lacks are each an `extract` finding where they are written. [`src/spec/expand.ts`](src/spec/expand.ts) then expands every instance, deterministically and before anything else reads a page, so the page model and the frame's spec are the same expanded tree and neither sees a parameter:
+
+- an instance's elements are keyed `<instance>/<key>`, with nested instances joined by `/`, so two instances never collide; a key in a file holds no `/`;
+- `{ "$scopedId": "field" }` is `<instance>/field`, an element id unique per instance, and per item, through the repeat's key, inside one keyed repeat (anywhere else it is an `extract` finding, since the id would repeat);
+- a literal list given for a repeat is kept in the page's state at `/params/<instance>/<param>`, where json-render's repeat reads it (`params` is reserved in a page's state, as `scenario` is);
+- a value from outside a layout that reads a repeat item, used inside a repeat of the layout, is an `extract` finding: it would read the layout's item;
+- a layout that draws itself is drawn once, as an unresolved element, and the rules that depend on it say they cannot tell.
+
+Each expanded element keeps where it is written and `via`: the layout uses that draw it, nearest first (`LayoutUse` in [`src/extract/model.ts`](src/extract/model.ts)). A finding about it is at the layout's element, with `via` naming the page's use (or, for an element a page passed into a slot, where the layout places it), and its words name both: `Button.Root "Book room" at layouts/room-details.json:11:5 (in layout "room-details" used at pages/booking.json:21:5)`. A parameter value a rule depends on that core cannot resolve, such as text read from state the page changes, makes the rule say it cannot tell, which fails it, as for any value. `specLayouts(prototype, config)` lists a prototype's layouts with their parameters and uses, and `layoutPreview(prototype, config, id)` writes a one-page prototype that draws one layout alone with its examples, which the web app renders as its preview. Parameters are core's own format, not json-render's: [docs/trials/json-render.md](../../docs/trials/json-render.md#after-the-trial) says why.
+
+Layout membership is unchanged: a layout is in the manifest and in `inventories.layouts`, and adding one is an inventory change with a rule and examples.
+
 `specCatalog(config)` ([`src/spec/catalog.ts`](src/spec/catalog.ts)) is the catalog a spec is written from: the parts of the inventoried components, described in `library.parts` (generated from the library's declarations by [`scripts/describe-library.mjs`](scripts/describe-library.mjs); Todae's is [`libraries/todae-0.10.1.json`](libraries/todae-0.10.1.json)), plus `Page` and `Layout`. Core reads each file with its own JSON parser, which keeps every key's position, validates every element against the catalog ([`src/spec/read.ts`](src/spec/read.ts)), and builds the same page model the extractor builds ([`src/spec/model.ts`](src/spec/model.ts)), so every rule runs unchanged; what the catalog refuses is the `extract` rule's finding and does not render. `resolvePageSpec` gives a frame one page as one spec. Core has no json-render dependency. The legal Nook prototype as specs, and its illegal and refused cases, are under [`examples/nook/prototypes/spec/`](examples/nook/prototypes/spec/). [docs/trials/json-render.md](../../docs/trials/json-render.md) is the trial that built it and what it found.
 
 ## The page model
@@ -167,7 +216,7 @@ The rule is a source rule and cannot see what a library part hands to a callback
 
 ## The report
 
-`CheckReport` ([`src/engine/report.ts`](src/engine/report.ts)) is `{ status, rules, findings }`. Each `RuleReport` is `{ rule, type, status, description?, note?, findings }` with status `pass`, `fail` or `not-run`. A `Finding` is `{ rule, kind, message, file?, line?, column?, page?, scenario?, state?, view?, element? }`; the field names follow agent-design-loop's `Finding`. Rules are ordered with `extract` first and then by id, and findings by rule, file, line, column, page, scenario, view, kind and message, using code-unit order, never the runtime's locale.
+`CheckReport` ([`src/engine/report.ts`](src/engine/report.ts)) is `{ status, rules, findings }`. Each `RuleReport` is `{ rule, type, status, description?, note?, findings }` with status `pass`, `fail` or `not-run`. A `Finding` is `{ rule, kind, message, file?, line?, column?, page?, scenario?, state?, view?, element?, via? }`; the field names follow agent-design-loop's `Finding`, and `via` is set on a finding inside a spec layout instance (above). Rules are ordered with `extract` first and then by id, and findings by rule, file, line, column, page, scenario, view, element, via, kind and message, using code-unit order, never the runtime's locale.
 
 ## Proposals
 
@@ -200,4 +249,4 @@ A refusal names the example and what happened instead, such as `failing example 
 
 ## Size
 
-`npm run bundle:core` bundles the library for the browser platform, which refuses Node built-ins, and prints its size. At this commit it is about 423 KiB minified and 114 KiB gzipped, of which `@babel/parser` is about 310 KiB minified; the proposal review milestone added 9 KiB minified and 2.5 KiB gzipped (rule words, revisions, measured examples). The parser is the one runtime dependency: it parses TSX with positions in the browser, synchronously, with no WebAssembly to load.
+`npm run bundle:core` bundles the library for the browser platform, which refuses Node built-ins, and prints its size. At this commit it is about 471 KiB minified and 129 KiB gzipped, of which `@babel/parser` is about 310 KiB minified; the proposal review milestone added 9 KiB minified and 2.5 KiB gzipped (rule words, revisions, measured examples), the json-render trial 27.5 KiB and 9.3 KiB (the spec format), and layouts with parameters 20.7 KiB and 6.0 KiB (parameters, expansion, the layout summary and preview). The parser is the one runtime dependency: it parses TSX with positions in the browser, synchronously, with no WebAssembly to load.
