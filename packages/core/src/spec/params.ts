@@ -292,6 +292,7 @@ export function checkParamValue(name: string, param: LayoutParam, value: JsonVal
   }
   if (only("$template")) {
     if (param.type !== "text" || typeof value.$template !== "string") bad(param.type === "text" ? "" : ", and $template makes text");
+    else for (const problem of templateParamProblems(value.$template, outer)) fail(`gives "${name}" a $template that reads ${problem}.`, ...path);
     return;
   }
   if (only("$cond", "$else", "$then") && param.type !== "list") {
@@ -310,4 +311,87 @@ export function checkParamValue(name: string, param: LayoutParam, value: JsonVal
 /** True when `name` is a valid `$scopedId` name. */
 export function isScopedIdName(name: unknown): name is string {
   return typeof name === "string" && NAME.test(name);
+}
+
+/** How a `$template` reads a parameter of the layout it is written in: `${$param:name}`. */
+export const TEMPLATE_PARAM = "$param:";
+
+/** The references of a `$template`, in order: what each `${...}` holds. */
+export function templateRefs(template: string): string[] {
+  return [...template.matchAll(/\$\{([^}]*)\}/g)].map((match) => match[1] ?? "");
+}
+
+/**
+ * What is wrong with the parameters a `$template` reads, each the end of a
+ * sentence that starts "... a $template that reads": a parameter outside a
+ * layout, one the layout lacks, or one that is not text, a number or an
+ * enum, which is all a template can put in.
+ */
+export function templateParamProblems(template: string, params: LayoutParams | null): string[] {
+  const out: string[] = [];
+  for (const ref of templateRefs(template)) {
+    if (!ref.startsWith("$")) continue;
+    const name = ref.startsWith(TEMPLATE_PARAM) ? ref.slice(TEMPLATE_PARAM.length) : null;
+    const param = name !== null ? params?.[name] : undefined;
+    if (name === null) out.push(`\${${ref}}, which is not a reference a template here may use: \${/path} reads state, \${field} the repeat item${params ? ", and ${$param:name} a parameter" : ""}`);
+    else if (!params) out.push(`\${${ref}}, but only a layout has parameters`);
+    else if (!param) out.push(`\${${ref}}, which is not a parameter of this layout${Object.keys(params).length > 0 ? ` (${quote(Object.keys(params))})` : ""}`);
+    else if (param.type !== "text" && param.type !== "number" && param.type !== "enum") out.push(`parameter "${name}", but it is ${describeParam(param)}, and a template puts in text, a number or one of an enum's values`);
+  }
+  return out;
+}
+
+/** What a condition compares a parameter as: text (an enum too), a number or a boolean; null for what a condition cannot read. */
+function conditionKind(param: LayoutParam): "text" | "number" | "boolean" | null {
+  switch (param.type) {
+    case "text":
+    case "enum":
+      return "text";
+    case "number":
+    case "boolean":
+      return param.type;
+    default:
+      return null;
+  }
+}
+
+const NUMERIC = ["gt", "gte", "lt", "lte"];
+
+/**
+ * What is wrong with the parameters one condition reads, each the end of a
+ * sentence that starts "has a condition that": `{ "$param": name }` as its
+ * source, or as the value it compares with. A parameter is checked against
+ * its use: alone, a condition tests a boolean; `gt`, `gte`, `lt` and `lte`
+ * compare numbers; a literal it is compared with must be one the parameter
+ * can hold; two parameters compared must hold the same kind of value.
+ */
+export function conditionParamProblems(condition: { readonly [key: string]: JsonValue }, params: LayoutParams | null): string[] {
+  const operator = ["eq", "neq", ...NUMERIC].find((key) => key in condition);
+  const operand = operator === undefined ? undefined : condition[operator];
+  const sourceName = typeof condition.$param === "string" ? condition.$param : undefined;
+  const operandName = isRecord(operand) && Object.keys(operand).length === 1 && typeof operand.$param === "string" ? operand.$param : undefined;
+  const out: string[] = [];
+  const declared = (name: string | undefined): LayoutParam | null => {
+    if (name === undefined) return null;
+    const param = params?.[name];
+    if (!params) out.push(`reads { "$param": ${JSON.stringify(name)} }, but only a layout has parameters`);
+    else if (!param) out.push(`reads { "$param": ${JSON.stringify(name)} }, which is not a parameter of this layout${Object.keys(params).length > 0 ? ` (${quote(Object.keys(params))})` : ""}`);
+    else if (conditionKind(param) === null) out.push(`reads parameter "${name}", which is ${describeParam(param)}; a condition reads a boolean, text, a number or one of an enum's values`);
+    else return param;
+    return null;
+  };
+  const source = declared(sourceName);
+  const other = declared(operandName);
+  if (out.length > 0) return out;
+  const numeric = operator !== undefined && NUMERIC.includes(operator);
+  if (source) {
+    const name = sourceName as string;
+    if (operator === undefined) {
+      if (source.type !== "boolean") out.push(`tests parameter "${name}" alone, but it is ${describeParam(source)}; a condition with no operator tests a boolean, so compare it with "eq" or "neq"`);
+    } else if (numeric && source.type !== "number") out.push(`compares parameter "${name}" with "${operator}", which compares numbers, but it is ${describeParam(source)}`);
+    else if (other) {
+      if (conditionKind(other) !== conditionKind(source)) out.push(`compares parameter "${name}", ${describeParam(source)}, with parameter "${String(operandName)}", ${describeParam(other)}, so they are never equal`);
+    } else if (!isRecord(operand) && !fitsLiteral(source, operand as JsonValue)) out.push(`compares parameter "${name}" with ${JSON.stringify(operand)}, which it never holds: it is ${describeParam(source)}`);
+  } else if (other && numeric && other.type !== "number") out.push(`compares with parameter "${String(operandName)}" using "${operator}", which compares numbers, but it is ${describeParam(other)}`);
+  return out;
 }
