@@ -145,6 +145,7 @@ body, .app-theme { background: var(--todae-color-bg-canvas); color: var(--todae-
 .example-name { margin: 0; font-size: var(--todae-text-h5-font-size, 1rem); font-family: var(--todae-font-family-mono); }
 .example-frames { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--todae-space-4); min-width: 0; overflow: hidden; }
 .example-frames .frame-card { min-width: 0; }
+.impact-frames { position: relative; height: 0; overflow: hidden; }
 .example-detail { overflow-wrap: anywhere; }
 .example-code textarea, .example-code .code-text { min-height: 0; }
 .history-entry { gap: 2px; }
