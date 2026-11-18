@@ -1,0 +1,9 @@
+{
+  "what": "A variant Todae's Button does not have",
+  "expect": [
+    {
+      "rule": "extract",
+      "message": "sets variant to \"danger\"; a Button.Root's variant is one of \"ghost\", \"primary\", \"secondary\""
+    }
+  ]
+}

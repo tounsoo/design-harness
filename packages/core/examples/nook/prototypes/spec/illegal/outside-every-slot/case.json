@@ -1,0 +1,9 @@
+{
+  "what": "A note in the page's children, in none of its slots",
+  "expect": [
+    {
+      "rule": "page-structure",
+      "message": "Text.Root \"Prices include tax\" at pages/booking.json"
+    }
+  ]
+}

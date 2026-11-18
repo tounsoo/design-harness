@@ -1,0 +1,63 @@
+{
+  "what": "Holding a room after booking it: the shortest route to held is 2 steps, but open, book, hold instead is 3, against a budget of 2",
+  "expect": [
+    {
+      "rule": "step-budget",
+      "message": "The route open-room \u2192 book \u2192 hold-instead takes 3 steps, which exceeds max steps 2 for \"hold-room\""
+    }
+  ],
+  "manifest": {
+    "flow": {
+      "states": [
+        "rooms",
+        "room-open",
+        "booked",
+        "held"
+      ],
+      "tasks": [
+        {
+          "task": "book-room",
+          "start": "rooms",
+          "transitions": [
+            {
+              "from": "rooms",
+              "event": "open-room",
+              "to": "room-open"
+            },
+            {
+              "from": "room-open",
+              "event": "book",
+              "to": "booked"
+            }
+          ]
+        },
+        {
+          "task": "hold-room",
+          "start": "rooms",
+          "transitions": [
+            {
+              "from": "rooms",
+              "event": "open-room",
+              "to": "room-open"
+            },
+            {
+              "from": "room-open",
+              "event": "hold",
+              "to": "held"
+            },
+            {
+              "from": "room-open",
+              "event": "book",
+              "to": "booked"
+            },
+            {
+              "from": "booked",
+              "event": "hold-instead",
+              "to": "held"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

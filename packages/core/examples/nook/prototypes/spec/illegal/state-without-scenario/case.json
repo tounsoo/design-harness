@@ -1,0 +1,28 @@
+{
+  "what": "No scenario shows the held state",
+  "expect": [
+    {
+      "rule": "state-coverage",
+      "message": "Flow state \"held\" has no scenario"
+    }
+  ],
+  "manifest": {
+    "scenarios": [
+      {
+        "id": "rooms-list",
+        "state": "rooms",
+        "page": "rooms"
+      },
+      {
+        "id": "lantern-open",
+        "state": "room-open",
+        "page": "booking"
+      },
+      {
+        "id": "lantern-booked",
+        "state": "booked",
+        "page": "booking"
+      }
+    ]
+  }
+}

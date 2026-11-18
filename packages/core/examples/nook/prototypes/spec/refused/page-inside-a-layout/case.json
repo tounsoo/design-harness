@@ -1,0 +1,9 @@
+{
+  "what": "The room details layout puts a Page inside the booking page",
+  "expect": [
+    {
+      "rule": "extract",
+      "message": "element \"rooms-page\" is a Page, which only the root of a page spec can be"
+    }
+  ]
+}

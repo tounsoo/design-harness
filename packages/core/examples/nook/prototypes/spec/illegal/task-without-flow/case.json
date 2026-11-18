@@ -1,0 +1,47 @@
+{
+  "what": "The flow models book-room only, so hold-room is never measured",
+  "expect": [
+    {
+      "rule": "step-budget",
+      "message": "Task \"hold-room\" has no flow"
+    }
+  ],
+  "manifest": {
+    "flow": {
+      "states": [
+        "rooms",
+        "room-open",
+        "booked",
+        "held"
+      ],
+      "tasks": [
+        {
+          "task": "book-room",
+          "start": "rooms",
+          "transitions": [
+            {
+              "from": "rooms",
+              "event": "open-room",
+              "to": "room-open"
+            },
+            {
+              "from": "room-open",
+              "event": "book",
+              "to": "booked"
+            },
+            {
+              "from": "room-open",
+              "event": "hold",
+              "to": "held"
+            },
+            {
+              "from": "held",
+              "event": "book",
+              "to": "booked"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

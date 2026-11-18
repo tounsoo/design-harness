@@ -1,0 +1,12 @@
+{
+  "root": "details",
+  "elements": {
+    "details": {"type": "Disclosure.Root", "props": {}, "children": ["summary", "items", "access"]},
+    "summary": {"type": "Disclosure.Summary", "props": {"text": "Room details"}, "children": []},
+    "items": {"type": "Stack.Root", "props": {"gap": "condensed"}, "repeat": {"statePath": "/room/details"}, "children": ["item"]},
+    "item": {"type": "Text.Root", "props": {"as": "p", "text": {"$item": ""}}, "children": []},
+    "access": {"type": "Disclosure.Root", "props": {}, "children": ["access-summary", "access-note"]},
+    "access-summary": {"type": "Disclosure.Summary", "props": {"text": "Accessibility"}, "children": []},
+    "access-note": {"type": "Text.Root", "props": {"as": "p", "text": "Step-free entrance"}, "children": []}
+  }
+}

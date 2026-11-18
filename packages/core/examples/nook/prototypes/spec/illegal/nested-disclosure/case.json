@@ -1,0 +1,12 @@
+{
+  "what": "A disclosure nested in the room details disclosure, with the per-page cap raised to 2 so only depth fails",
+  "expect": [
+    {
+      "rule": "disclosure-depth",
+      "message": "nests disclosures 2 deep, more than 1 (MAX_DISCLOSURE_DEPTH)"
+    }
+  ],
+  "caps": {
+    "MAX_DISCLOSURES_PER_PAGE": 2
+  }
+}

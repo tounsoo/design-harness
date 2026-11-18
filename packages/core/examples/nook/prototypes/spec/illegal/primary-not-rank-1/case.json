@@ -1,0 +1,13 @@
+{
+  "what": "The primary action reads Reserve, not the rank-1 Book room",
+  "expect": [
+    {
+      "rule": "primary-is-rank-1",
+      "message": "Page \"booking\" has 1 primary action not reading the rank-1 action \"Book room\", more than 0: Button.Root \"Reserve\""
+    },
+    {
+      "rule": "rank-1-shown",
+      "message": "Across its pages, the prototype has 0 primary actions reading the rank-1 action \"Book room\", fewer than 1"
+    }
+  ]
+}

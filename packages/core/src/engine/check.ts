@@ -4,6 +4,7 @@ import type { PrototypeModel } from "../extract/model";
 import type { Prototype } from "../prototype/types";
 import type { RenderedSnapshot } from "../rendered/types";
 import type { RuleSpec, RuleType } from "../rules/types";
+import { specModel } from "../spec/model";
 import type { CheckContext } from "./context";
 import { EXTRACT_RULE, buildReport, sortFindings, type CheckReport, type Finding, type RuleReport } from "./report";
 import { evaluateContainment, evaluatePropValues, evaluateRequires } from "./rules/containment";
@@ -53,7 +54,8 @@ export type CheckInput = {
  */
 export function checkPrototype(input: CheckInput): CheckReport {
   const { config, prototype } = input;
-  const model = input.model ?? extractPrototype(prototype, config.library.package);
+  // A spec prototype has no code to extract: its model is read from its specs, and the same rules run on it.
+  const model = input.model ?? (prototype.format === "spec" ? specModel(prototype, config) : extractPrototype(prototype, config.library.package));
   const ctx: CheckContext = {
     config,
     prototype,

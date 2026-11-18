@@ -1,0 +1,9 @@
+{
+  "what": "A raw button in the rooms intro: the catalog has library parts only",
+  "expect": [
+    {
+      "rule": "extract",
+      "message": "element \"help\" is a button, which is not in the catalog"
+    }
+  ]
+}

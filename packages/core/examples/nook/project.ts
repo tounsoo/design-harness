@@ -1,5 +1,6 @@
+import todae from "../../libraries/todae-0.10.1.json";
 import { BUILT_IN_RULES } from "../../src/builtins";
-import type { ProjectConfig } from "../../src/config/types";
+import type { PartDescription, ProjectConfig } from "../../src/config/types";
 import type { RuleSpec } from "../../src/rules/types";
 
 /**
@@ -37,6 +38,8 @@ export const nook: ProjectConfig = {
       "disclosure-summary": { components: ["Disclosure.Summary"] },
       question: { components: ["Field.Root"] },
     },
+    // Every part of Todae 0.10.1, generated from its declarations, for spec prototypes.
+    parts: todae.parts as Readonly<Record<string, PartDescription>>,
   },
   inventories: {
     components: ["Alert", "Button", "Card", "Disclosure", "EmptyState", "Field", "Label", "Stack", "Text"],

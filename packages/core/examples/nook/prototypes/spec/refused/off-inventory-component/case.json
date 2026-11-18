@@ -1,0 +1,9 @@
+{
+  "what": "A Badge, which the inventory does not list, in the rooms intro: not in the catalog",
+  "expect": [
+    {
+      "rule": "extract",
+      "message": "element \"free\" is a Badge.Root, which is not in the catalog"
+    }
+  ]
+}

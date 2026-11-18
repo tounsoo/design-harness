@@ -1,0 +1,9 @@
+{
+  "what": "The room name's heading level depends on the scenario: h1 when booked, strong otherwise. Core reads every value a $cond can take, so it refuses strong, where the TSX extractor could only say it cannot tell",
+  "expect": [
+    {
+      "rule": "text-as-heading-or-paragraph",
+      "message": "Text.Root \"Lantern\" at pages/booking.json:5:5 sets as to \"strong\""
+    }
+  ]
+}

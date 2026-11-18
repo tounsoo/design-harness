@@ -1,0 +1,41 @@
+{
+  "format": "spec",
+  "pages": [
+    { "id": "booking", "pageType": "booking", "component": { "file": "pages/booking.json", "export": "default" } },
+    { "id": "rooms", "pageType": "rooms", "component": { "file": "pages/rooms.json", "export": "default" } }
+  ],
+  "layouts": [
+    { "id": "room-cards", "component": { "file": "layouts/room-cards.json", "export": "default" } },
+    { "id": "room-details", "component": { "file": "layouts/room-details.json", "export": "default" } },
+    { "id": "select-question", "component": { "file": "layouts/select-question.json", "export": "default" } }
+  ],
+  "scenarios": [
+    { "id": "rooms-list", "state": "rooms", "page": "rooms" },
+    { "id": "lantern-open", "state": "room-open", "page": "booking" },
+    { "id": "lantern-booked", "state": "booked", "page": "booking" },
+    { "id": "lantern-held", "state": "held", "page": "booking" }
+  ],
+  "flow": {
+    "states": ["rooms", "room-open", "booked", "held"],
+    "tasks": [
+      {
+        "task": "book-room",
+        "start": "rooms",
+        "transitions": [
+          { "from": "rooms", "event": "open-room", "to": "room-open" },
+          { "from": "room-open", "event": "book", "to": "booked" },
+          { "from": "room-open", "event": "hold", "to": "held" },
+          { "from": "held", "event": "book", "to": "booked" }
+        ]
+      },
+      {
+        "task": "hold-room",
+        "start": "rooms",
+        "transitions": [
+          { "from": "rooms", "event": "open-room", "to": "room-open" },
+          { "from": "room-open", "event": "hold", "to": "held" }
+        ]
+      }
+    ]
+  }
+}

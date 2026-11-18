@@ -1,0 +1,9 @@
+{
+  "what": "The question layout drawn twice, so two questions sit outside the disclosure",
+  "expect": [
+    {
+      "rule": "visible-questions",
+      "message": "Page \"booking\" has 2 questions outside every disclosure, more than 1 (MAX_VISIBLE_QUESTIONS)"
+    }
+  ]
+}

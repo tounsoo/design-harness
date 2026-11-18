@@ -1,0 +1,33 @@
+{
+  "what": "A scenario that opens a page the manifest does not have",
+  "expect": [
+    {
+      "rule": "state-coverage",
+      "message": "Scenario \"lantern-held\" opens page \"checkout\", which is not a page in the manifest"
+    }
+  ],
+  "manifest": {
+    "scenarios": [
+      {
+        "id": "rooms-list",
+        "state": "rooms",
+        "page": "rooms"
+      },
+      {
+        "id": "lantern-open",
+        "state": "room-open",
+        "page": "booking"
+      },
+      {
+        "id": "lantern-booked",
+        "state": "booked",
+        "page": "booking"
+      },
+      {
+        "id": "lantern-held",
+        "state": "held",
+        "page": "checkout"
+      }
+    ]
+  }
+}

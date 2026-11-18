@@ -12,6 +12,32 @@ export type RoleMapping = {
   readonly prop?: { readonly name: string; readonly values: readonly Literal[]; readonly whenMissing: boolean };
 };
 
+/**
+ * One prop of a library part, as a spec may set it: a JSON scalar of a type,
+ * one of a set of strings, or a list of `{ value, label }` options. `bind`
+ * names the part's callback that reports a new value, so a spec may bind the
+ * prop to state (`{ "$bindState": "/path" }`).
+ */
+export type PropSchema =
+  | { readonly type: "string" | "number" | "boolean"; readonly required: boolean; readonly bind?: string }
+  | { readonly type: "enum"; readonly values: readonly string[]; readonly required: boolean; readonly bind?: string }
+  | { readonly type: "options"; readonly required: boolean };
+
+/**
+ * A part of the library as a spec prototype uses it, generated from the
+ * library's TypeScript declarations (packages/core/scripts/describe-library.mjs).
+ * `content`: `children` takes text and child elements, `options` takes its
+ * options as data, `none` takes nothing. `events`: what a person can do to it.
+ * `needs`: required props a spec cannot give (objects, functions), so a spec
+ * cannot render the part.
+ */
+export type PartDescription = {
+  readonly props: Readonly<Record<string, PropSchema>>;
+  readonly content: "children" | "options" | "none";
+  readonly events?: readonly "press"[];
+  readonly needs?: readonly string[];
+};
+
 export type ComponentLibrary = {
   /** The npm package prototypes import components from, such as `@tounsoo/todae`. */
   readonly package: string;
@@ -28,6 +54,12 @@ export type ComponentLibrary = {
    */
   readonly schemeAttribute?: string;
   readonly roles: Readonly<Record<RoleName, RoleMapping>>;
+  /**
+   * Every part of the library, described for spec prototypes (`Button.Root`
+   * and the like). A spec prototype can use the parts of the inventoried
+   * components; a project without `parts` cannot check one.
+   */
+  readonly parts?: Readonly<Record<string, PartDescription>>;
 };
 
 type PageTypeBase = {

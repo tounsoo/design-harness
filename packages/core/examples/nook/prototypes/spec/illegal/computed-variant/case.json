@@ -1,0 +1,17 @@
+{
+  "what": "Hold room's variant depends on the scenario, primary when held and secondary otherwise, so on this page it is one of both",
+  "expect": [
+    {
+      "rule": "rank-2-secondary",
+      "message": "chosen at runtime"
+    },
+    {
+      "rule": "one-primary-per-page",
+      "message": "Cannot tell whether Button.Root \"Hold room\""
+    },
+    {
+      "rule": "primary-is-rank-1",
+      "message": "Cannot tell whether Button.Root \"Hold room\""
+    }
+  ]
+}
