@@ -46,7 +46,7 @@ describe("the catalog's instructions", () => {
 
 describe("the spec tools", () => {
   it("are the spec mode's tools, with write_spec and patch_spec in place of the file tools", () => {
-    expect(SPEC_TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual(["read_project", "list_files", "read_file", "list_layouts", "write_spec", "patch_spec", "insert_layout", "set_layout_params", "delete_file", "set_manifest", "run_checks", "draft_proposal", "revise_proposal"]);
+    expect(SPEC_TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual(["read_project", "list_files", "read_file", "list_layouts", "write_spec", "patch_spec", "insert_layout", "set_layout_params", "delete_file", "set_manifest", "run_checks", "draft_proposal", "revise_proposal", "propose_variants", "revise_variant", "list_variants"]);
   });
 
   it("patch_spec applies JSON Patch lines through json-render, checks the result against the catalog, and makes a revision", async () => {

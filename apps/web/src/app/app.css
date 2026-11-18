@@ -158,3 +158,20 @@ body, .app-theme { background: var(--todae-color-bg-canvas); color: var(--todae-
 .layout-card-preview { display: grid; gap: var(--todae-space-1); justify-items: start; max-width: 100%; overflow-x: auto; }
 /* Where a finding inside a layout instance is: the layout's element and each use, as buttons above the code. */
 .code-places { padding: var(--todae-space-1) 0; }
+
+/* Variants side by side: Todae's Card, Table, RadioGroup, Badge, Alert and EmptyState. This sheet places them, and adds what Todae has no part for: a grid of columns that hold scaled frames, with the scenarios not shown kept measuring out of sight. */
+.variants { max-width: 120rem; }
+.variants-title, .variants-subtitle, .variant-name { margin: 0; }
+.variants-subtitle { font-size: var(--todae-text-h5-font-size, 1rem); }
+.variant-name { font-size: var(--todae-text-h6-font-size, 0.9375rem); }
+.variants-small { font-size: 0.8125rem; margin: 0; overflow-wrap: anywhere; }
+.variants-picker { min-inline-size: 10rem; }
+.variants-grid { display: grid; gap: var(--todae-space-4); align-items: start; }
+.variants-section { display: grid; gap: var(--todae-space-3); }
+.variant-card { min-width: 0; }
+.variant-card[data-standing="fail"] { box-shadow: 0 0 0 2px var(--todae-color-status-critical-border); }
+.variant-frames { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--todae-space-2); min-width: 0; overflow: hidden; }
+.variant-frames .frame-card { min-width: 0; }
+.variant-report, .variants-history { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--todae-space-2); }
+.variants-table td { vertical-align: middle; }
+.variants-pick[data-undone] { opacity: 0.7; }

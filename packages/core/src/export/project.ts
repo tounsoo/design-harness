@@ -288,6 +288,7 @@ export function exportReactProject(input: ProjectExportInput): { ok: true; value
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
     <title>${input.name.replace(/[<&]/g, "")} (${config.name.replace(/[<&]/g, "")})</title>
   </head>
   <body>

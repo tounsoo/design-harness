@@ -33,7 +33,7 @@ export function variantLabel(id: string): string {
   return id === CURRENT ? "Current" : `Variant ${id.toUpperCase()}`;
 }
 
-/** The ids the next `count` variants get: "a", "b", ... "z", "aa", ..., skipping every id ever used, so a dismissed variant's id is not reused. */
+/** The ids the next `count` variants get: "a", "b", ... "z", "aa", ..., skipping every id in `used`. */
 export function nextVariantIds(used: readonly string[], count: number): string[] {
   const taken = new Set(used);
   const out: string[] = [];

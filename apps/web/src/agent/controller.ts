@@ -28,7 +28,9 @@ export type TurnItem =
   | { readonly kind: "checks"; readonly revision: number; readonly status: CheckStatus; readonly title: string; readonly text: string }
   /** A proposal the agent drafted or revised; `action` is absent on chats saved before revisions existed, which only drafted. */
   | { readonly kind: "proposal"; readonly id: string; readonly title: string; readonly adoptable: boolean; readonly verdict: string; readonly action?: "drafted" | "revised"; readonly needsMeasurement?: true }
-  | { readonly kind: "notice"; readonly text: string };
+  | { readonly kind: "notice"; readonly text: string }
+  /** Variants the agent offered or revised, beside the prototype: a card that opens the comparison. */
+  | { readonly kind: "variants"; readonly page: string; readonly ids: readonly string[]; readonly action: "offered" | "revised" };
 
 export type TurnEnd =
   | { readonly status: "running" }
@@ -239,6 +241,13 @@ export class AgentController {
     await this.save();
   }
 
+  /** Tells the agent something the person did, in its next message, before the person's text: a pick applied or undone. */
+  async note(text: string): Promise<void> {
+    if (this.loading) await this.loading;
+    this.pending.push(text);
+    await this.save();
+  }
+
   private end(id: string, end: TurnEnd): void {
     this.patchTurn(id, () => ({ end }));
   }
@@ -403,6 +412,7 @@ export class AgentController {
       if (current?.kind === "tool") this.setItem(id, now, { ...current, input, status: outcome.isError ? "error" : "done", title: outcome.title, result: outcome.content });
       if (outcome.measured) this.addItem(id, { kind: "checks", revision: outcome.measured.revision, status: outcome.measured.report.status, title: checksTitle(outcome.measured.report), text: outcome.content });
       if (outcome.proposal) this.addItem(id, { kind: "proposal", ...outcome.proposal });
+      if (outcome.variants) this.addItem(id, { kind: "variants", page: outcome.variants.page, ids: outcome.variants.ids, action: call.name === "revise_variant" ? "revised" : "offered" });
     }
     // After a round that changed the prototype, the agent gets the checks for it whether it asked or not.
     const notes: string[] = [];

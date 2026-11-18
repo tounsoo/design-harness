@@ -18,6 +18,7 @@ export function ChatPanel({
   settings,
   onSettings,
   onOpenProposal,
+  onOpenVariants,
   prefill,
 }: {
   readonly controller: AgentController;
@@ -25,6 +26,8 @@ export function ChatPanel({
   readonly settings: AgentSettings;
   readonly onSettings: (next: AgentSettings) => void;
   readonly onOpenProposal: (id: string) => void;
+  /** Opens the Variants view, where the person compares and picks. */
+  readonly onOpenVariants: () => void;
   /** A message put into the box for the person to edit and send, never sent on its own. */
   readonly prefill: { readonly text: string; readonly nonce: number } | null;
 }) {
@@ -91,6 +94,7 @@ export function ChatPanel({
                 key={turn.id}
                 turn={turn}
                 onOpenProposal={onOpenProposal}
+                onOpenVariants={onOpenVariants}
                 running={state.running && index === state.turns.length - 1}
                 canUndo={undoable?.id === turn.id}
                 onUndo={() => void controller.undo(turn.id)}
@@ -217,7 +221,7 @@ function usageText(turn: Turn): string {
   return `${input.toLocaleString()} in${cached} · ${usage.output.toLocaleString()} out · about ${formatCost(turn.cost)}`;
 }
 
-function TurnView({ turn, running, canUndo, onUndo, onRetry, onOpenProposal }: { readonly turn: Turn; readonly running: boolean; readonly canUndo: boolean; readonly onUndo: () => void; readonly onRetry: () => void; readonly onOpenProposal: (id: string) => void }) {
+function TurnView({ turn, running, canUndo, onUndo, onRetry, onOpenProposal, onOpenVariants }: { readonly turn: Turn; readonly running: boolean; readonly canUndo: boolean; readonly onUndo: () => void; readonly onRetry: () => void; readonly onOpenProposal: (id: string) => void; readonly onOpenVariants: () => void }) {
   return (
     <>
       <Message.Root from="user" data-turn={turn.id}>
@@ -230,7 +234,7 @@ function TurnView({ turn, running, canUndo, onUndo, onRetry, onOpenProposal }: {
       <Message.Root from="assistant" streaming={running} data-turn={turn.id} data-end={turn.end.status} className="chat-reply">
         <Message.Content className="chat-items">
           {turn.items.map((item, index) => (
-            <Item key={index} item={item} onOpenProposal={onOpenProposal} />
+            <Item key={index} item={item} onOpenProposal={onOpenProposal} onOpenVariants={onOpenVariants} />
           ))}
           {running && turn.items.length === 0 && (
             <Text.Root as="p" tone="muted">
@@ -313,7 +317,7 @@ function toolTone(status: string): "neutral" | "info" | "success" | "critical" {
   return status === "error" ? "critical" : status === "done" ? "success" : "info";
 }
 
-function Item({ item, onOpenProposal }: { readonly item: TurnItem; readonly onOpenProposal: (id: string) => void }) {
+function Item({ item, onOpenProposal, onOpenVariants }: { readonly item: TurnItem; readonly onOpenProposal: (id: string) => void; readonly onOpenVariants: () => void }) {
   switch (item.kind) {
     case "text":
       return item.text ? (
@@ -377,6 +381,20 @@ function Item({ item, onOpenProposal }: { readonly item: TurnItem; readonly onOp
           <Alert.Actions>
             <Button.Root type="button" variant="secondary" onClick={() => onOpenProposal(item.id)}>
               {`Review ${item.id}`}
+            </Button.Root>
+          </Alert.Actions>
+        </Alert.Root>
+      );
+    case "variants":
+      return (
+        <Alert.Root tone="info" className="chat-variants" data-variants={item.ids.join(" ")}>
+          <Alert.Title>
+            {item.action === "revised" ? "Variant revised" : `${item.ids.length} variants offered`} for page {item.page}: {item.ids.map((id) => id.toUpperCase()).join(", ")}
+          </Alert.Title>
+          <Alert.Description>Kept beside the prototype, which is unchanged. Compare them with their checks and pick slot by slot; only you can apply a pick.</Alert.Description>
+          <Alert.Actions>
+            <Button.Root type="button" variant="secondary" onClick={onOpenVariants}>
+              Compare variants
             </Button.Root>
           </Alert.Actions>
         </Alert.Root>

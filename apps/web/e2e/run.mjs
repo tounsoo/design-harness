@@ -11,12 +11,15 @@
  * E2E_SCREENSHOTS to a folder to save screenshots of the app.
  */
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { createServer } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
-import { preview } from "vite";
+import { strFromU8, unzipSync } from "fflate";
+import { build as viteBuild, preview } from "vite";
 import { errorBody, fakeAnthropic, streamEvents } from "./fake-anthropic.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -198,7 +201,7 @@ test("a newer edit wins over frames still measuring an older one", async ({ brow
 test("export then import round-trips the project", async ({ browser, base }) => {
   const { page } = await openApp(browser, base);
   await measured(page, 1);
-  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export" }).click()]);
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export", exact: true }).click()]);
   assert.equal(download.suggestedFilename(), "nook.design-harness.json");
   const path = await download.path();
   const exported = JSON.parse(readFileSync(path, "utf8"));
@@ -624,7 +627,7 @@ test("the key is in no frame, export, project storage, page storage or log; reme
   const srcdocs = await page.locator("iframe").evaluateAll((items) => items.map((item) => item.getAttribute("srcdoc") ?? ""));
   assert.ok(srcdocs.every((html) => !html.includes(KEY)), "no frame document carries the key");
 
-  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export" }).click()]);
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export", exact: true }).click()]);
   assert.ok(!readFileSync(await download.path(), "utf8").includes(KEY), "the export does not carry the key");
 
   const stored = await page.evaluate(async () => {
@@ -996,7 +999,7 @@ test("a proposal that adds a rendered rule adopts on measured snapshots, and giv
   assert.deepEqual(adopted, [["as-is", "ok", "passes every rule"], ["long-intro", "ok", 'flagged by "harbor-in-first-view"']]);
 
   // The snapshots it was adopted on are stored with the proposal.
-  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export" }).click()]);
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export", exact: true }).click()]);
   const stored = JSON.parse(readFileSync(await download.path(), "utf8")).project.proposals.find((item) => item.id === "harbor-first-view");
   assert.deepEqual([stored.status, stored.examples.pass[0].snapshots.length, stored.examples.fail[0].snapshots.length], ["adopted", 8, 8]);
 
@@ -1561,6 +1564,307 @@ test("a stored project without a library description gets the bundled one on loa
   await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
   await measured(page, 2);
   assert.equal((await report(page)).status, "pass", "the spec prototype is checked with the description the app added");
+});
+
+
+// ---- variants and code export ----------------------------------------------
+
+const BOOKING_SPEC = JSON.parse(SPEC_BOOKING);
+const copy = (value) => JSON.parse(JSON.stringify(value));
+
+/** Three whole booking pages: A asks "For how long?", B leads its facts with the floor, C makes Hold room primary too, which breaks one-primary-per-page. */
+function threeVariants() {
+  const asks = copy(BOOKING_SPEC);
+  asks.elements.question.props.label = "For how long?";
+  const floor = copy(BOOKING_SPEC);
+  floor.elements.seats.props.text = { $template: "${/room/floor}, ${/room/seats} seats" };
+  const twoPrimaries = copy(BOOKING_SPEC);
+  twoPrimaries.elements.hold.props.variant = "primary";
+  return [
+    { note: "Asks for how long", spec: asks },
+    { note: "Leads with the floor", spec: floor },
+    { note: "Both actions primary", spec: twoPrimaries },
+  ];
+}
+
+/** The agent, scripted, offers the three variants of the booking page. */
+async function offerVariants(page, api) {
+  api.script([
+    (body) => {
+      assert.ok(["propose_variants", "revise_variant", "list_variants"].every((name) => body.tools.some((tool) => tool.name === name)), "the spec agent has the variant tools");
+      assert.equal(body.tools.some((tool) => /pick|apply/.test(tool.name)), false, "and none that picks");
+      return toolReply("variants", "propose_variants", { page: "booking", variants: threeVariants() }, "Three ways the booking page could go.");
+    },
+    (body) => {
+      assert.match(lastMessage(body), /Kept 3 variants of page "booking" beside the prototype, which is unchanged/);
+      assert.match(lastMessage(body), /Variant C \(id "c"\): Both actions primary\. Core fails one-primary-per-page/);
+      return textReply("Three variants are on the Variants tab: A asks for how long, B leads with the floor, C makes both actions primary.");
+    },
+  ]);
+  await enterKey(page);
+  await ask(page, "Give me three variants of the booking page");
+  assert.equal(await turnEnded(page), "done");
+  assert.equal(api.left(), 0);
+}
+
+/** Waits until a variant's card has core's verdict on its measured frames, and returns it. */
+async function standing(page, id, expected) {
+  const card = page.locator(`.variant-card[data-variant="${id}"]`);
+  await page.waitForFunction(([selector, wanted]) => document.querySelector(selector)?.getAttribute("data-standing") === wanted, [`.variant-card[data-variant="${id}"]`, expected], { timeout: 90000 });
+  return card;
+}
+
+const pickRadio = (page, slot, label) => page.locator(`[data-testid="variants-picks"] tr[data-slot="${slot}"]`).getByRole("radio", { name: label, exact: true });
+
+test("a scripted agent offers three variants: side by side in measured frames, each with core's report; the failing one cannot be picked until the agent fixes it", async ({ browser, base, api }) => {
+  const { page, errors } = await openSpec(browser, base);
+  const before = await report(page);
+  await offerVariants(page, api);
+  assert.equal(await page.locator(".chat-variants").getAttribute("data-variants"), "a b c");
+  assert.equal(await page.getByTestId("variant-count").textContent(), "3");
+  assert.equal(await page.locator(".checks").getAttribute("data-revision"), "2", "offering variants changes no revision");
+  await page.getByRole("button", { name: "Compare variants" }).click();
+  await standing(page, "current", "pass");
+  await standing(page, "a", "pass");
+  await standing(page, "b", "pass");
+  const failing = await standing(page, "c", "fail");
+  assert.deepEqual(await page.locator(".variant-card").evaluateAll((cards) => cards.map((card) => card.dataset.variant)), ["current", "a", "b", "c"], "the page as it is, then each variant, side by side");
+  // Every scenario and view is measured; the scenario picked is shown.
+  for (const id of ["a", "b", "c"]) {
+    const frames = page.locator(`.variant-card[data-variant="${id}"] .frame-card`);
+    assert.equal(await frames.count(), 8, `${id}: 4 scenarios × 2 views, measured`);
+    assert.deepEqual(await frames.evaluateAll((cards) => cards.filter((card) => !card.hasAttribute("data-hidden")).map((card) => card.dataset.frameKey)), ["lantern-open@desktop", "lantern-open@phone"]);
+    assert.equal(await page.locator(`.variant-card[data-variant="${id}"] .frame-card[data-state="measured"]`).count(), 8);
+  }
+  const askFrame = page.frameLocator('iframe[title="Variant A: lantern-open at desktop"]');
+  assert.equal((await askFrame.locator("label").first().textContent()).trim(), "For how long?");
+  assert.equal((await page.frameLocator('iframe[title="Current: lantern-open at desktop"]').locator("label").first().textContent()).trim(), "How long?");
+  // C fails in core's words, and its report is core's whole report, measured.
+  const message = (await failing.locator('[data-rule="one-primary-per-page"] [data-testid="variant-finding"]').first().textContent()).trim();
+  assert.match(message, /^Page "booking" has 2 primary actions, more than 1/);
+  assert.match(await page.locator('.variant-card[data-variant="a"] [data-testid="variant-report"]').textContent(), /Every rule passes: 33 rules, the rendered ones measured\./);
+  // C cannot be picked in any slot, nor whole.
+  for (const slot of ["title", "facts", "body", "alternate", "action"]) assert.equal(await pickRadio(page, slot, "Variant C").isDisabled(), true, `${slot}: C cannot be picked`);
+  assert.equal(await pickRadio(page, "body", "Variant A").isDisabled(), false);
+  assert.equal(await page.getByRole("button", { name: "Every slot from Variant C" }).isDisabled(), true);
+  await shot(page, "variants-light");
+
+  // Asked to fix it, the agent revises C; once it passes it can be picked.
+  const fixed = copy(BOOKING_SPEC);
+  fixed.elements.hold.props.text = "Hold room";
+  fixed.elements.book.props.text = "Book room";
+  fixed.elements.name.props.as = "h1";
+  fixed.state.room.floor = "Second floor, by the stairs";
+  api.script([
+    (body) => {
+      const text = lastMessage(body);
+      assert.match(text, /Variant C of page "booking" fails core's checks:\n- one-primary-per-page: Page "booking" has 2 primary actions/);
+      assert.match(text, /Fix it with revise_variant, keeping its id "c"/);
+      return toolReply("fix", "revise_variant", { id: "c", spec: fixed, note: "Hold room secondary again; the floor says where" }, "Fixing C.");
+    },
+    (body) => {
+      assert.match(lastMessage(body), /Revised Variant C of page "booking"\. Core passes every rule core checks without frames/);
+      return textReply("C passes now.");
+    },
+  ]);
+  await failing.getByRole("button", { name: "Ask the agent to fix it" }).click();
+  assert.equal(await turnEnded(page), "done");
+  assert.equal(api.left(), 0);
+  await standing(page, "c", "pass");
+  assert.equal(await page.locator('.variant-card[data-variant="c"] [data-testid="variant-note"]').textContent(), "Hold room secondary again; the floor says where");
+  assert.equal(await pickRadio(page, "facts", "Variant C").isDisabled(), false);
+  assert.deepEqual(await report(page), before, "the prototype's own report never changed");
+  assert.deepEqual(errors, []);
+});
+
+test("picking slots from two variants applies a new revision that passes every rule, and undo restores the previous one", async ({ browser, base, api }) => {
+  const { page } = await openSpec(browser, base);
+  await showCode(page, "pages/booking.json");
+  const original = await page.locator('[data-testid="code-editor"]').inputValue();
+  await offerVariants(page, api);
+  await page.getByRole("tab", { name: /Variants/ }).click();
+  await standing(page, "a", "pass");
+  await standing(page, "b", "pass");
+  assert.equal(await page.getByTestId("apply-pick").isDisabled(), true);
+  assert.equal(await page.getByTestId("apply-why").textContent(), "Pick at least one slot from a variant.");
+  await pickRadio(page, "body", "Variant A").check();
+  await pickRadio(page, "facts", "Variant B").check();
+  const combination = page.getByTestId("variant-combination");
+  await combination.waitFor();
+  assert.match(await combination.textContent(), /title from Current, facts from Variant B, body from Variant A, alternate from Current, action from Current\./);
+  await page.waitForFunction(() => document.querySelector('[data-testid="variant-combination"]')?.getAttribute("data-standing") === "pass", null, { timeout: 90000 });
+  const frame = page.frameLocator('iframe[title="The combination: lantern-open at desktop"]');
+  assert.equal((await frame.locator("label").first().textContent()).trim(), "For how long?");
+  assert.equal(await frame.locator("text=Second floor, 6 seats").count(), 1);
+  await shot(page, "variants-pick-light");
+  await page.getByTestId("apply-pick").click();
+  await measured(page, 3);
+  const after = await report(page);
+  assert.equal(after.status, "pass", JSON.stringify(after.findings, null, 1));
+  assert.deepEqual(after.findings, []);
+  await page.getByRole("tab", { name: "Canvas" }).click();
+  const board = page.frameLocator('iframe[title="lantern-open at desktop"]');
+  assert.equal((await board.locator("label").first().textContent()).trim(), "For how long?", "the board draws the pick");
+  assert.equal(await board.locator("text=Second floor, 6 seats").count(), 1);
+  await showCode(page, "pages/booking.json");
+  const picked = await page.locator('[data-testid="code-editor"]').inputValue();
+  assert.notEqual(picked, original);
+  // Recorded with which variant supplied which slot, and kept through a reload.
+  await page.reload();
+  await measured(page, 1);
+  await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
+  await measured(page, 2);
+  await page.getByRole("tab", { name: /Variants/ }).click();
+  const history = page.getByTestId("pick-history");
+  await history.waitFor();
+  assert.match(await history.textContent(), /title from Current, facts from Variant B, body from Variant A, alternate from Current, action from Current/);
+  assert.match(await history.textContent(), /Variant A: Asks for how long · Variant B: Leads with the floor/);
+  await page.getByTestId("undo-pick").click();
+  await measured(page, 3);
+  assert.equal((await report(page)).status, "pass");
+  await showCode(page, "pages/booking.json");
+  assert.equal(await page.locator('[data-testid="code-editor"]').inputValue(), original, "undo restores the page as it was");
+  await page.getByRole("tab", { name: /Variants/ }).click();
+  assert.match(await page.getByTestId("pick-history").textContent(), /\(undone\)/);
+  assert.equal(await page.getByTestId("undo-pick").count(), 0);
+});
+
+test("more like this reaches the agent, naming the variant, and its new variants say whose they are like", async ({ browser, base, api }) => {
+  const { page } = await openSpec(browser, base);
+  await offerVariants(page, api);
+  await page.getByRole("tab", { name: /Variants/ }).click();
+  const b = await standing(page, "b", "pass");
+  const more = threeVariants().slice(0, 2).map((variant, index) => ({ note: `Floor first, take ${index + 1}`, spec: { ...variant.spec, state: { ...variant.spec.state, duration: "60" } } }));
+  api.script([
+    (body) => {
+      const text = lastMessage(body);
+      assert.match(text, /^More variants like Variant B \("Leads with the floor"\) of page "booking": and make the seats stand out\nOffer them with propose_variants, with like: "b"\.$/);
+      return toolReply("more", "propose_variants", { page: "booking", variants: more, like: "b" }, "Two more like B.");
+    },
+    () => textReply("D and E lead with the floor, like B."),
+  ]);
+  await b.getByRole("button", { name: "More like this" }).click();
+  await b.getByLabel("What more of it, or what else?").fill("and make the seats stand out");
+  await b.getByRole("button", { name: "Ask for more like this" }).click();
+  assert.equal(await turnEnded(page), "done");
+  assert.equal(api.left(), 0);
+  await page.locator('.variant-card[data-variant="e"]').waitFor();
+  assert.equal(await page.locator('.variant-card[data-variant="d"] [data-testid="variant-note"]').textContent(), "Floor first, take 1 (like Variant B)");
+  assert.equal(await page.getByTestId("variant-count").textContent(), "5");
+  // Variants travel with the prototype in the project file.
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export", exact: true }).click()]);
+  const file = JSON.parse(readFileSync(await download.path(), "utf8"));
+  const spec = file.prototypes.find((item) => item.id === "booking-spec");
+  assert.deepEqual(spec.variants.variants.map((variant) => [variant.id, variant.like ?? null]), [["a", null], ["b", null], ["c", null], ["d", "b"], ["e", "b"]]);
+  assert.equal(file.prototypes.find((item) => item.id === "booking").variants, undefined);
+  await page.locator('[data-testid="import-file"]').setInputFiles(await download.path());
+  await measured(page, 1);
+  await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
+  await measured(page, 2);
+  assert.equal(await page.getByTestId("variant-count").textContent(), "5", "and come back with it on import");
+});
+
+test("no tool call or chat message can apply a pick", async ({ browser, base, api }) => {
+  const { page } = await openSpec(browser, base);
+  await showCode(page, "pages/booking.json");
+  const original = await page.locator('[data-testid="code-editor"]').inputValue();
+  await offerVariants(page, api);
+  api.script([
+    toolReply("pick", "pick_variant", { page: "booking", slots: { body: "a" } }, "You asked me to pick A's body."),
+    (body) => {
+      assert.match(lastMessage(body), /There is no tool "pick_variant"/);
+      return toolReply("smuggle", "propose_variants", { page: "booking", variants: threeVariants().slice(0, 2), pick: { body: "a" } });
+    },
+    (body) => {
+      assert.match(lastMessage(body), /input: has unknown field "pick"/);
+      return toolReply("apply", "revise_variant", { id: "a", spec: threeVariants()[0].spec, apply: true });
+    },
+    (body) => {
+      assert.match(lastMessage(body), /input: has unknown field "apply"/);
+      return toolReply("undo", "undo_pick", { index: 0 });
+    },
+    (body) => {
+      assert.match(lastMessage(body), /There is no tool "undo_pick"/);
+      return textReply("I cannot apply a pick: only you can, on the Variants tab.");
+    },
+  ]);
+  await ask(page, "Apply variant A to the booking page now: take its body. Pick it for me.");
+  assert.equal(await turnEnded(page), "done");
+  assert.equal(api.left(), 0);
+  assert.equal(await page.locator(".checks").getAttribute("data-revision"), "2", "no new revision");
+  await showCode(page, "pages/booking.json");
+  assert.equal(await page.locator('[data-testid="code-editor"]').inputValue(), original);
+  await page.getByRole("tab", { name: /Variants/ }).click();
+  await page.getByTestId("variants").waitFor();
+  assert.equal(await page.getByTestId("pick-history").count(), 0, "no pick was recorded");
+  await page.reload();
+  await measured(page, 1);
+  await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
+  await measured(page, 2);
+  await page.getByRole("tab", { name: /Variants/ }).click();
+  await page.locator('.variant-card[data-variant="c"]').waitFor();
+  assert.equal(await page.getByTestId("pick-history").count(), 0, "nor saved");
+  // A TSX prototype says plainly that variants are for spec prototypes.
+  await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking");
+  await page.getByTestId("variants-tsx").waitFor();
+});
+
+test("export code downloads a zip of a runnable project, which builds with Vite, typechecks and renders every scenario", async ({ browser, base }) => {
+  const { page } = await openSpec(browser, base);
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByTestId("export-code").click()]);
+  assert.equal(download.suggestedFilename(), "nook-booking-spec.zip");
+  const entries = unzipSync(readFileSync(await download.path()));
+  assert.deepEqual(Object.keys(entries).sort(), [
+    "README.md", "index.html", "package.json", "src/main.tsx", "src/page-kit.tsx",
+    "src/prototype/layouts/room-cards.tsx", "src/prototype/layouts/room-details.tsx", "src/prototype/layouts/select-question.tsx",
+    "src/prototype/manifest.json", "src/prototype/pages/booking.tsx", "src/prototype/pages/rooms.tsx",
+    "src/scenarios.ts", "src/shell.css", "tsconfig.json", "vite.config.ts",
+  ].map((path) => `nook-booking-spec/${path}`));
+  const readme = strFromU8(entries["nook-booking-spec/README.md"]);
+  assert.match(readme, /^# Booking \(spec\)\n\nExported from design-harness on \d{4}-\d\d-\d\dT[\d:.]+Z: prototype "Booking \(spec\)" of project "Nook"/);
+  assert.match(readme, /Core's checks at export: pass: every rule passes\./);
+  assert.deepEqual(JSON.parse(strFromU8(entries["nook-booking-spec/package.json"])).dependencies, { "@tounsoo/todae": "0.10.1", react: "19.3.1", "react-dom": "19.3.1" });
+
+  // Build it with Vite and typecheck it, offline: its packages are this repository's node_modules.
+  const dir = mkdtempSync(join(tmpdir(), "design-harness-export-"));
+  for (const [path, bytes] of Object.entries(entries)) {
+    const target = join(dir, path);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, bytes);
+  }
+  const project = join(dir, "nook-booking-spec");
+  symlinkSync(join(root, "..", "..", "node_modules"), join(project, "node_modules"), "dir");
+  await viteBuild({ root: project, configFile: join(project, "vite.config.ts"), logLevel: "silent" });
+  assert.ok(existsSync(join(project, "dist", "index.html")));
+  const tsc = spawnSync(process.execPath, [join(root, "..", "..", "node_modules", "typescript", "bin", "tsc"), "-p", project], { encoding: "utf8" });
+  assert.equal(tsc.status, 0, `the export typechecks:\n${tsc.stdout}${tsc.stderr}`);
+
+  // Render it in Chromium: each scenario, picked in its switcher.
+  const server = await preview({ root: project, configFile: join(project, "vite.config.ts"), logLevel: "silent", preview: { port: 0, host: "127.0.0.1" } });
+  const url = `http://127.0.0.1:${server.httpServer.address().port}/`;
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const app = await context.newPage();
+  const errors = [];
+  app.on("pageerror", (error) => errors.push(error.message));
+  app.on("console", (message) => message.type() === "error" && errors.push(message.text()));
+  await app.goto(`${url}?scenario=lantern-open`);
+  assert.equal((await app.locator("h1").textContent()).trim(), "Lantern");
+  assert.equal(await app.getByRole("button", { name: "Book room" }).count(), 1);
+  assert.equal(await app.getByLabel("How long?").count(), 1, "the label names its field");
+  await app.getByLabel("How long?").selectOption("60");
+  assert.equal(await app.getByLabel("How long?").inputValue(), "60", "the bound answer changes");
+  await app.getByRole("combobox", { name: "Scenario" }).selectOption("lantern-booked");
+  assert.equal(await app.locator("text=Booked until 3 pm").count(), 1);
+  await app.getByRole("combobox", { name: "Scenario" }).selectOption("rooms-list");
+  assert.equal((await app.locator("h1").textContent()).trim(), "Rooms");
+  assert.deepEqual(await app.getByRole("button").allTextContents(), ["Open Lantern", "Open Harbor"]);
+  await app.getByRole("combobox", { name: "Scenario" }).selectOption("lantern-open");
+  const details = app.locator("details");
+  assert.equal(await details.count(), 1);
+  if (shots) await app.screenshot({ path: join(shots, "export-lantern-open.png") });
+  assert.deepEqual(errors, []);
+  await context.close();
+  await new Promise((resolve) => server.httpServer.close(resolve));
 });
 
 // ---- runner ----------------------------------------------------------------

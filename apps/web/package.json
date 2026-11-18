@@ -20,6 +20,7 @@
     "@json-render/react": "0.23.1",
     "@tounsoo/todae": "0.10.1",
     "dom-accessibility-api": "0.7.1",
+    "fflate": "0.8.3",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "sucrase": "3.35.1",

@@ -1,6 +1,6 @@
 import { Alert, Badge, Button, Field, Stack, Tabs, Text } from "@tounsoo/todae";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { Finding, LayoutUse, ProjectConfig, Prototype } from "@design-harness/core";
+import { NO_VARIANTS, variantLabel, type Finding, type LayoutUse, type PickRecord, type ProjectConfig, type Prototype, type Variant, type VariantState } from "@design-harness/core";
 import { AgentController, type ChatRecord, type ChatStore } from "../agent/controller";
 import { SpecStreamPreview } from "../agent/spec-stream";
 import type { KeyVault } from "../agent/key-vault";
@@ -22,6 +22,8 @@ import { ProjectView } from "./ProjectView";
 import { ProposalPage } from "./ProposalPage";
 import { ProposalsView } from "./ProposalsView";
 import { createSession } from "./runtime";
+import { codeZip } from "../export/code-zip";
+import { VariantsView, type ApplyPick } from "./VariantsView";
 
 /** How long typing pauses before a new revision is checked and rendered. */
 const EDIT_DEBOUNCE_MS = 300;
@@ -84,7 +86,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   const current = records.find((record) => record.id === currentId) ?? records[0];
   const [settings, setSettings] = useState<AgentSettings>(() => loadSettings());
   const settingsRef = useRef(settings);
-  const [center, setCenter] = useState<"canvas" | "project" | "proposals">("canvas");
+  const [center, setCenter] = useState<"canvas" | "project" | "proposals" | "variants">("canvas");
   /** The proposal whose review page is open in the Proposals view, or null for the list. */
   const [reviewing, setReviewing] = useState<string | null>(null);
   /** Text put into the chat's message box for the person to edit and send; the nonce makes the same text land twice. */
@@ -139,6 +141,19 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     [store],
   );
 
+  const recordOf = useCallback(() => recordsRef.current.find((record) => record.id === currentId) ?? recordsRef.current[0], [currentId]);
+  /** Changes the open prototype's variants and picks, and saves the record at once. */
+  const updateVariants = useCallback(
+    (change: (state: VariantState) => VariantState, prototype?: Prototype) => {
+      const record = recordOf();
+      if (!record) return;
+      const next: PrototypeRecord = { ...record, ...(prototype ? { prototype } : {}), variants: change(record.variants ?? NO_VARIANTS) };
+      setRecords((items) => items.map((item) => (item.id === record.id ? next : item)));
+      void store.putPrototype(next);
+    },
+    [recordOf, setRecords, store],
+  );
+
   // The agent's view of the app, for the prototype open now: its changes are revisions at once, and its checks wait for every frame.
   const host = useMemo((): AgentHost => {
     const prototypeOf = () => recordsRef.current.find((record) => record.id === currentId)?.prototype ?? recordsRef.current[0]?.prototype;
@@ -168,8 +183,11 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
           signal,
         ),
       now: () => new Date().toISOString(),
+      variants: () => recordOf()?.variants ?? NO_VARIANTS,
+      // Only the list of variants: the picks are kept as they are, and the prototype is not touched.
+      saveVariants: (next: readonly Variant[]) => updateVariants((state) => ({ ...state, variants: next })),
     };
-  }, [currentId, session, setRecords, saveConfig, checked]);
+  }, [currentId, session, setRecords, saveConfig, checked, recordOf, updateVariants]);
 
   // A spec prototype's patch_spec draws its draft on the canvas while it streams, in place; the board then returns to the prototype as it is.
   const [previewing, setPreviewing] = useState(false);
@@ -259,6 +277,37 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     const text = `The check "${finding.rule}" says: ${finding.message}${place}\n\nIf the prototype needs this, draft a proposal that adds it to the inventory, with a rule that governs it and examples that pass and fail. If it does not, change the prototype to use what the inventory has.`;
     setPrefill((previous) => ({ text, nonce: (previous?.nonce ?? 0) + 1 }));
   }, []);
+  /** The person's pick: the recombined page as a new revision, recorded with where each slot came from. Nothing but this view's Apply calls it. */
+  const applyPick = useCallback(
+    (pick: ApplyPick) => {
+      const at = new Date().toISOString();
+      const record: PickRecord = { at, page: pick.page, slots: pick.slots, notes: pick.notes, before: pick.before, after: pick.after };
+      setSelected(null);
+      updateVariants((state) => ({ ...state, picks: [...state.picks, record] }), pick.prototype);
+      session.update(checked(configRef.current), pick.prototype);
+      const from = Object.entries(pick.slots).map(([slot, source]) => `${slot} from ${variantLabel(source)}`).join(", ");
+      void controller.note(`The person applied a pick to page "${pick.page}": ${from}. The page's file is that combination now; read it again before you change it.`);
+      setNotice({ tone: "success", title: "Pick applied", lines: [`Page ${pick.page}: ${from}. It is a new revision; Undo is under Picks applied.`] });
+    },
+    [updateVariants, session, checked, controller],
+  );
+  const undoPick = useCallback(
+    (index: number) => {
+      const record = recordOf();
+      const pick = record?.variants?.picks[index];
+      const page = record?.prototype.pages.find((item) => item.id === pick?.page);
+      if (!record || !pick || !page) return;
+      const restored: Prototype = { ...record.prototype, files: { ...record.prototype.files, [page.component.file]: pick.before } };
+      setSelected(null);
+      updateVariants((state) => ({ ...state, picks: state.picks.map((item, at) => (at === index ? { ...item, undone: true } : item)) }), restored);
+      session.update(checked(configRef.current), restored);
+      void controller.note(`The person undid their pick on page "${pick.page}": the page is back to what it was before it.`);
+    },
+    [recordOf, updateVariants, session, checked, controller],
+  );
+  const dismissVariant = useCallback((id: string) => updateVariants((state) => ({ ...state, variants: state.variants.filter((variant) => variant.id !== id) })), [updateVariants]);
+  const prefillChat = useCallback((text: string) => setPrefill((previous) => ({ text, nonce: (previous?.nonce ?? 0) + 1 })), []);
+
   const proposable = useCallback(
     (finding: Finding) => {
       const rule = configRef.current.rules.find((item) => item.id === finding.rule);
@@ -292,6 +341,24 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+
+  /** Code export: the open prototype as a runnable React project, zipped in the browser. */
+  const downloadCode = () => {
+    if (!current) return;
+    const zipped = codeZip({ config: configRef.current, prototype: current.prototype, name: current.name, at: new Date().toISOString(), report: state.measured ? state.report : null });
+    if (!zipped.ok) {
+      setNotice({ tone: "critical", title: "The code was not exported", lines: [zipped.error] });
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([zipped.value.bytes as Uint8Array<ArrayBuffer>], { type: "application/zip" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = zipped.value.fileName;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    if (zipped.value.notes.length > 0) setNotice({ tone: "info", title: `Exported ${zipped.value.fileName}, with notes`, lines: zipped.value.notes });
+  };
+  const variantCount = current?.variants?.variants.length ?? 0;
 
   const fileInput = useRef<HTMLInputElement>(null);
   const upload = async (file: File) => {
@@ -351,12 +418,20 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
           value={center}
           onValueChange={(value) => {
             if (value === "proposals" && center === "proposals") setReviewing(null);
-            setCenter(value === "project" ? "project" : value === "proposals" ? "proposals" : "canvas");
+            setCenter(value === "project" ? "project" : value === "proposals" ? "proposals" : value === "variants" ? "variants" : "canvas");
           }}
           className="app-center-tabs"
         >
           <Tabs.List aria-label="Main view">
             <Tabs.Tab value="canvas">Canvas</Tabs.Tab>
+            <Tabs.Tab value="variants">
+              Variants
+              {variantCount > 0 && (
+                <Badge.Root tone="info" className="app-tab-count" data-testid="variant-count" aria-label={`${variantCount} variants`}>
+                  {variantCount}
+                </Badge.Root>
+              )}
+            </Tabs.Tab>
             <Tabs.Tab value="project">Project</Tabs.Tab>
             <Tabs.Tab value="proposals" onClick={() => center === "proposals" && setReviewing(null)}>
               Proposals
@@ -372,6 +447,9 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
           <NewPrototype config={config} onCreate={createPrototype} />
           <Button.Root variant="ghost" onClick={download}>
             Export
+          </Button.Root>
+          <Button.Root variant="ghost" onClick={downloadCode} data-testid="export-code">
+            Export code
           </Button.Root>
           <Button.Root variant="ghost" onClick={() => fileInput.current?.click()}>
             Import
@@ -418,8 +496,8 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
       )}
 
       <div className="app-body">
-        <ChatPanel controller={controller} vault={vault} settings={settings} onSettings={changeSettings} onOpenProposal={openProposal} prefill={prefill} />
-        <main className="app-main" aria-label={center === "canvas" ? "Canvas" : center === "project" ? "Project" : "Proposals"}>
+        <ChatPanel controller={controller} vault={vault} settings={settings} onSettings={changeSettings} onOpenProposal={openProposal} onOpenVariants={() => setCenter("variants")} prefill={prefill} />
+        <main className="app-main" aria-label={center === "canvas" ? "Canvas" : center === "project" ? "Project" : center === "variants" ? "Variants" : "Proposals"}>
           {/* The board stays laid out under the project view, so frames keep their viewport and keep measuring. */}
           <div className="app-main-pane" data-inactive={center === "canvas" ? undefined : ""} aria-hidden={center === "canvas" ? undefined : true}>
             {previewing && (
@@ -430,6 +508,11 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
             )}
             <Board session={session} state={state} selected={selected} />
           </div>
+          {center === "variants" && (
+            <div className="app-main-pane app-main-scroll" data-testid="variants-pane">
+              <VariantsView key={current?.id ?? ""} config={checked(config)} record={current} agent={agent} onApply={applyPick} onUndo={undoPick} onDismiss={dismissVariant} onSend={(message) => void controller.send(message)} onPrefill={prefillChat} />
+            </div>
+          )}
           {center === "project" && (
             <div className="app-main-pane app-main-scroll">
               <ProjectView config={config} onOpenProposal={openProposal} prototype={current} />
