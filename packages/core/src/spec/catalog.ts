@@ -54,10 +54,11 @@ function roleWords(part: string, config: ProjectConfig): { roles: RoleName[]; wo
     if (!mapping.components.includes(part)) continue;
     roles.push(role);
     const name = role.replace(/-/g, " ");
-    if (!mapping.prop) words.push(`It is a ${name}.`);
+    const article = /^[aeiou]/.test(name) ? "an" : "a";
+    if (!mapping.prop) words.push(`It is ${article} ${name}.`);
     else {
       const values = mapping.prop.values.map((value) => JSON.stringify(value)).join(" or ");
-      words.push(`With ${mapping.prop.name} ${values}${mapping.prop.whenMissing ? ` (or no ${mapping.prop.name})` : ""}, it is a ${name}.`);
+      words.push(`With ${mapping.prop.name} ${values}${mapping.prop.whenMissing ? ` (or no ${mapping.prop.name})` : ""}, it is ${article} ${name}.`);
     }
   }
   return { roles, words };

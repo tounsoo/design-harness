@@ -264,8 +264,8 @@ export class AgentController {
         let message: BetaMessage;
         try {
           // A spec prototype's agent writes specs, with the catalog's instructions; a TSX prototype's writes code.
-        const mode: AgentMode = this.options.host.prototype().format === "spec" ? { kind: "spec", catalogPrompt: await specCatalogPrompt(this.options.host.config()) } : { kind: "tsx" };
-        const stream = client.stream(requestBody(settings, this.history.messages, mode), { signal: abort.signal });
+          const mode: AgentMode = this.options.host.prototype().format === "spec" ? { kind: "spec", catalogPrompt: specCatalogPrompt(this.options.host.config()) } : { kind: "tsx" };
+          const stream = client.stream(requestBody(settings, this.history.messages, mode), { signal: abort.signal });
           for await (const event of stream) this.onEvent(id, event, blocks);
           message = await stream.finalMessage();
           parseFailures = 0;
