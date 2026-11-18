@@ -61,6 +61,14 @@ async function report(page) {
 
 const failing = (value) => value.rules.filter((rule) => rule.status === "fail").map((rule) => rule.rule);
 
+/** Opens the Checks tab and its details, where every rule in force is listed with its findings. */
+async function showAllRules(page) {
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  const details = page.getByTestId("checks-details");
+  await details.waitFor({ state: "attached" });
+  if (!(await details.evaluate((element) => element.open))) await details.locator("summary").first().click();
+}
+
 async function showCode(page, file) {
   await page.getByRole("tab", { name: "Code" }).click();
   await page.locator("#code-file select, select#code-file, .code-file select").first().selectOption(file);
@@ -136,7 +144,7 @@ test("a second primary action brings core's finding, and selecting it marks the 
   assert.ok(failing(value).includes("one-primary-per-page"), `one-primary-per-page fails: ${failing(value)}`);
   const finding = value.findings.find((item) => item.rule === "one-primary-per-page");
   assert.match(finding.message, /^Page "booking" has 2 primary actions, more than 1/);
-  await page.getByRole("tab", { name: /Checks/ }).click();
+  await showAllRules(page);
   const button = page.locator('.rule[data-rule="one-primary-per-page"] .finding').first();
   assert.equal((await button.locator(".finding-message").textContent()).trim(), finding.message, "the panel shows core's message word for word");
   await button.click();
@@ -158,7 +166,7 @@ test("an undersized control brings the rendered target-size finding, highlighted
   assert.ok(finding, "target-size flags lantern-open at desktop");
   assert.match(finding.message, /^At 1280 by 900: button "A" is \d+×\d+ CSS px, under 24, and fails the spacing exception\.$/);
   assert.equal(typeof finding.element, "number");
-  await page.getByRole("tab", { name: /Checks/ }).click();
+  await showAllRules(page);
   await page.locator('.rule[data-rule="target-size"] .finding').filter({ hasText: finding.message }).filter({ hasText: "scenario lantern-open" }).filter({ hasText: "view desktop" }).click();
   const frame = page.frameLocator('iframe[title="lantern-open at desktop"]');
   await frame.locator("[data-design-harness-overlay]").waitFor({ state: "attached" });
@@ -304,13 +312,13 @@ test("the board opens a frame at full size and the project view reads the config
     const { page, context } = await openApp(browser, base, { colorScheme });
     await measured(page, 1);
     if (colorScheme === "dark") await shot(page, "board-dark");
-    await page.getByRole("button", { name: "Open lantern-open at desktop full size" }).click();
+    await page.getByRole("button", { name: "Open Lantern open — desktop at full size" }).click();
     const viewport = await page.locator('.frame-card[data-frame-key="lantern-open@desktop"] .frame-viewport').boundingBox();
     assert.equal(Math.round(viewport.width), 1280);
     await shot(page, `full-size-${colorScheme}`);
     await page.getByRole("button", { name: "Back to board" }).click();
     await page.getByRole("tab", { name: "Project" }).click();
-    await page.getByRole("heading", { name: "Component library" }).waitFor();
+    await page.getByRole("heading", { name: "What a prototype can use" }).waitFor();
     for (const text of ["@tounsoo/todae 0.11.3", "primary-action", "Room details", "TARGET_MIN_PX", "Rules in force (32)", "No proposals yet"]) {
       assert.ok((await page.locator(".project").textContent()).includes(text), `the project view shows ${text}`);
     }
@@ -319,7 +327,7 @@ test("the board opens a frame at full size and the project view reads the config
       await page.getByRole("tab", { name: "Canvas" }).click();
       await editFile(page, "pages/booking.tsx", UNDERSIZED);
       await measured(page, 2);
-      await page.getByRole("tab", { name: /Checks/ }).click();
+      await showAllRules(page);
       await page.locator('.rule[data-rule="target-size"] .finding').filter({ hasText: "view desktop" }).filter({ hasText: "scenario lantern-open" }).first().click();
       await shot(page, "failing-rendered-dark");
     }
@@ -431,7 +439,8 @@ test("the agent edits a file through the API, and the frames and checks follow",
   await measured(page, 2);
   assert.equal((await report(page)).status, "pass");
   const reply = page.locator(".chat-reply").last();
-  assert.equal(await reply.locator('.chat-tool[data-tool="edit_file"] .chat-tool-title').textContent(), "Edited pages/rooms.tsx");
+  assert.equal(await reply.locator('.chat-tool[data-tool="edit_file"] .chat-tool-title').textContent(), "Changed the rooms page", "the tool call reads as a plain summary");
+  assert.equal(await reply.locator('.chat-tool[data-tool="edit_file"] .chat-tool-name').textContent(), "Edited pages/rooms.tsx", "its exact title is in its details");
   assert.match(await reply.locator(".chat-checks").textContent(), /Checks pass, revision 2/);
   assert.match(await reply.getByTestId("turn-usage").textContent(), /in · 480 out · about \$/);
   const [first] = api.requests;
@@ -503,7 +512,7 @@ test("a drafted proposal is saved as open, with core's adoption dry run", async 
   await ask(page, "Show a toast when the room is booked");
   assert.equal(await turnEnded(page), "done");
   const card = page.locator('.chat-proposal[data-proposal="booking-toast"]');
-  assert.match(await card.textContent(), /Proposal drafted: A toast that confirms a booking \(booking-toast\), open/);
+  assert.match(await card.textContent(), /^Proposal draftedA toast that confirms a booking/);
   assert.match(await card.textContent(), /Core's adoption dry run passes/);
   await page.getByRole("tab", { name: "Project" }).click();
   await page.getByText("Proposals (1)").waitFor();
@@ -741,7 +750,7 @@ async function draftByAgent(page, api, input, { key = true } = {}) {
 }
 
 async function openReview(page, id) {
-  await page.locator(`.chat-proposal[data-proposal="${id}"]`).last().getByRole("button", { name: `Review ${id}` }).click();
+  await page.locator(`.chat-proposal[data-proposal="${id}"]`).last().getByRole("button", { name: "Review the proposal" }).click();
   await page.locator(`.review[data-proposal="${id}"]`).waitFor();
 }
 
@@ -828,7 +837,7 @@ test("approve then adopt: the new rule is in the checks panel, and flags a proto
   await shot(page, "review-adopted-light");
 
   // The board re-checks the open prototype with the new rule in force.
-  await page.getByRole("tab", { name: /Checks/ }).click();
+  await showAllRules(page);
   await page.waitForSelector('.checks[data-measured] .rule[data-rule="one-toast-per-page"][data-status="pass"]', { timeout: 60000, state: "attached" });
   const revision = Number(await page.locator(".checks").getAttribute("data-revision"));
   await editFile(page, "pages/booking.tsx", TOAST_PAGE(2));
@@ -920,7 +929,7 @@ test("send back reaches the agent, which revises the proposal, and the history s
   assert.match(await page.locator('.chat [data-turn]').nth(2).textContent(), /^I sent proposal "booking-toast"/);
   assert.equal(await turnEnded(page), "done");
   assert.equal(api.left(), 0);
-  assert.match(await page.locator(".chat-reply").last().locator('.chat-proposal[data-action="revised"]').textContent(), /Proposal revised: A toast that confirms a booking, or says it failed \(booking-toast\), open/);
+  assert.match(await page.locator(".chat-reply").last().locator('.chat-proposal[data-action="revised"]').textContent(), /^Proposal revisedA toast that confirms a booking, or says it failed/);
   await page.waitForFunction(() => document.querySelector(".review h1")?.textContent?.includes("or says it failed"));
   assert.equal(await reviewStatus(page), "open");
   assert.match(await page.getByTestId("proposal-states").textContent(), /failed.*the booking failed/);
@@ -1012,7 +1021,7 @@ test("a proposal that adds a rendered rule adopts on measured snapshots, and giv
   ]);
   await page.getByTestId("regression").evaluate((element) => element.scrollIntoView({ block: "start" }));
   await shot(page, "regression-light");
-  await page.getByRole("button", { name: "Review harbor-first-view" }).click();
+  await page.locator('.chat-proposal[data-proposal="harbor-first-view"]').last().getByRole("button", { name: "Review the proposal" }).click();
   await page.locator('.review[data-proposal="harbor-first-view"]').waitFor();
   assert.deepEqual(await verdicts(), adopted, "the review page gives the same verdicts after a reload");
   assert.equal((await report(page)).rules.find((rule) => rule.rule === "harbor-in-first-view")?.status, "pass", "the rule is in force on the open prototype");
@@ -1059,7 +1068,7 @@ test("a finding outside the inventories offers to ask the agent, with a message 
   api.script([]);
   await editFile(page, "pages/rooms.tsx", (text) => text.replace('import { Text } from "@tounsoo/todae";', 'import { Text, Toast } from "@tounsoo/todae";').replace('<Text.Root as="p">Pick a free room to book or hold.</Text.Root>', '<Text.Root as="p">Pick a free room to book or hold.</Text.Root>\n        <Toast.Root>Harbor is free</Toast.Root>'));
   await measured(page, 2);
-  await page.getByRole("tab", { name: /Checks/ }).click();
+  await showAllRules(page);
   const rule = page.locator('.rule[data-rule="components-from-inventory"]');
   await rule.waitFor();
   assert.equal(await rule.getByRole("button", { name: "Ask the agent to propose this" }).count(), 0, "not offered without a key");
@@ -1171,7 +1180,7 @@ test("a violation injected into a spec is flagged: its JSON line marked, a rende
   assert.ok(failing(value).includes("one-primary-per-page"), `one-primary-per-page fails: ${failing(value)}`);
   const finding = value.findings.find((item) => item.rule === "one-primary-per-page");
   assert.match(finding.message, /^Page "booking" has 2 primary actions, more than 1: Button.Root "Hold room" at pages\/booking.json:22:5, Button.Root "Book room" at pages\/booking.json:23:5\.$/);
-  await page.getByRole("tab", { name: /Checks/ }).click();
+  await showAllRules(page);
   await page.locator('.rule[data-rule="one-primary-per-page"] .finding').first().click();
   await page.waitForSelector('[data-testid="code-line"]');
   assert.equal(await page.locator('[data-testid="code-line"]').textContent(), `line ${finding.line}, column ${finding.column}`);
@@ -1186,7 +1195,7 @@ test("a violation injected into a spec is flagged: its JSON line marked, a rende
   assert.deepEqual(failing(value), ["heading-structure"]);
   const heading = value.findings.find((item) => item.rule === "heading-structure" && item.scenario === "lantern-open" && item.view === "desktop");
   assert.ok(heading && typeof heading.element === "number", "heading-structure flags lantern-open at desktop, at an element");
-  await page.getByRole("tab", { name: /Checks/ }).click();
+  await showAllRules(page);
   await page.locator('.rule[data-rule="heading-structure"] .finding').filter({ hasText: "scenario lantern-open" }).filter({ hasText: "view desktop" }).first().click();
   const frame = page.frameLocator('iframe[title="lantern-open at desktop"]');
   await frame.locator("[data-design-harness-overlay]").waitFor({ state: "attached" });
@@ -1290,7 +1299,8 @@ test("the agent writes specs: the catalog's prompt, a patch the catalog refuses,
   assert.equal(api.left(), 0);
   await page.getByTestId("spec-preview").waitFor({ state: "detached", timeout: 10000 });
   const reply = page.locator(".chat-reply").last();
-  assert.deepEqual(await reply.locator(".chat-tool .chat-tool-title").allTextContents(), ["patch_spec: pages/rooms.json refused", "Patched pages/rooms.json"]);
+  assert.deepEqual(await reply.locator(".chat-tool .chat-tool-name").allTextContents(), ["patch_spec: pages/rooms.json refused", "Patched pages/rooms.json"]);
+  assert.deepEqual(await reply.locator(".chat-tool .chat-tool-title").allTextContents(), ["Could not change the rooms page", "Changed the rooms page"]);
   const last = await page.locator(".checks").getAttribute("data-revision");
   // The streamed drafts were drawn in place in the frames, not as revisions: the patch that applied is the only new one.
   assert.equal(last, "3");
@@ -1347,7 +1357,7 @@ test("a spec Toast proposal adopted when its examples behave: Toast joins the ca
   assert.equal(await turnEnded(page), "done");
 
   // A fresh spec with two toasts: the catalog takes Toast.Root now, and the adopted rule flags it alone.
-  await page.getByRole("tab", { name: /Checks/ }).click();
+  await showAllRules(page);
   await page.waitForSelector('.checks[data-measured] .rule[data-rule="one-toast-per-page"][data-status="pass"]', { timeout: 60000, state: "attached" });
   const revision = Number(await page.locator(".checks").getAttribute("data-revision"));
   await editFile(page, "pages/booking.json", SPEC_TOASTS(2));
@@ -1384,7 +1394,7 @@ test("a violation inside a layout instance is flagged and highlighted: the layou
   const inside = value.findings.find((item) => item.rule === "primary-outside-disclosure");
   assert.deepEqual([inside.file, inside.line, inside.via], ["layouts/room-details.json", 11, [{ layout: "room-details", file: "pages/booking.json", line: 21, column: 5 }]]);
   assert.match(inside.message, /at layouts\/room-details\.json:11:5 \(in layout "room-details" used at pages\/booking\.json:21:5\)/);
-  await page.getByRole("tab", { name: /Checks/ }).click();
+  await showAllRules(page);
   const row = page.locator('.rule[data-rule="primary-outside-disclosure"] .finding').first();
   assert.match(await row.locator(".finding-place").textContent(), /layouts\/room-details\.json:11:5 · in room-details used at pages\/booking\.json:21/);
   await row.click();
@@ -1405,7 +1415,7 @@ test("a violation inside a layout instance is flagged and highlighted: the layou
   await measured(page, 5);
   value = await report(page);
   assert.deepEqual(failing(value), ["heading-structure"]);
-  await page.getByRole("tab", { name: /Checks/ }).click();
+  await showAllRules(page);
   await page.locator('.rule[data-rule="heading-structure"] .finding').filter({ hasText: "scenario rooms-list" }).filter({ hasText: "view desktop" }).first().click();
   const frame = page.frameLocator('iframe[title="rooms-list at desktop"]');
   await frame.locator("[data-design-harness-overlay]").waitFor({ state: "attached" });
@@ -1445,7 +1455,7 @@ test("a scripted agent lists the layouts, draws an instance of one, and changes 
   assert.equal(await turnEnded(page), "done");
   assert.equal(api.left(), 0);
   const reply = page.locator(".chat-reply").last();
-  assert.deepEqual(await reply.locator(".chat-tool .chat-tool-title").allTextContents(), ["Listed 3 layouts", "Drew room-cards in pages/rooms.json", "Changed more's parameters in pages/rooms.json"]);
+  assert.deepEqual(await reply.locator(".chat-tool .chat-tool-name").allTextContents(), ["Listed 3 layouts", "Drew room-cards in pages/rooms.json", "Changed more's parameters in pages/rooms.json"]);
   const last = Number(await page.locator(".checks").getAttribute("data-revision"));
   await measured(page, last);
   assert.equal((await report(page)).status, "pass");
@@ -1477,7 +1487,7 @@ test("a new prototype is a spec by default, and its agent writes specs", async (
   await page.getByRole("button", { name: "New prototype" }).click();
   const dialog = page.getByRole("dialog", { name: "New prototype" });
   await dialog.waitFor();
-  assert.equal(await dialog.getByRole("radio", { name: /json-render spec \(default\)/ }).isChecked(), true);
+  assert.equal(await dialog.getByRole("radio", { name: /^Spec, recommended/ }).isChecked(), true);
   assert.equal(await dialog.getByRole("radio", { name: /TSX/ }).isChecked(), false);
   // The dialog fades in; the picture waits for it.
   if (shots) await page.waitForTimeout(400);
@@ -1486,7 +1496,7 @@ test("a new prototype is a spec by default, and its agent writes specs", async (
   await dialog.getByRole("button", { name: "Create" }).click();
   await dialog.waitFor({ state: "hidden" });
   assert.equal(await page.getByRole("combobox", { name: "Prototype" }).inputValue(), "checkout");
-  assert.equal((await page.getByTestId("prototype-format").textContent()).trim(), "json-render spec");
+  assert.equal((await page.getByTestId("prototype-format").textContent()).trim(), "Spec");
   api.script([
     (body) => {
       assert.match(body.system[0].text, /written as json-render specs/);
@@ -1503,7 +1513,7 @@ test("a new prototype is a spec by default, and its agent writes specs", async (
   await page.reload();
   await measured(page, 1);
   await page.getByRole("combobox", { name: "Prototype" }).selectOption("checkout");
-  assert.equal((await page.getByTestId("prototype-format").textContent()).trim(), "json-render spec");
+  assert.equal((await page.getByTestId("prototype-format").textContent()).trim(), "Spec");
 });
 
 test("an existing TSX prototype still works: it passes, and its agent writes code", async ({ browser, base, api }) => {
@@ -1561,6 +1571,157 @@ test("a stored project without a library description gets the bundled one on loa
   await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
   await measured(page, 2);
   assert.equal((await report(page)).status, "pass", "the spec prototype is checked with the description the app added");
+});
+
+// ---- the workspace's layout: canvas only, panels, the checks in plain words ----
+
+/** Whether the element a locator finds is focused. */
+async function focused(locator) {
+  return locator.evaluate((element) => element === element.ownerDocument.activeElement);
+}
+
+test("canvas only hides the header and both panels, and its button, shortcut and Escape bring them back with focus kept", async ({ browser, base }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  const toggle = page.getByRole("button", { name: /^Canvas only/ });
+  assert.equal(await toggle.getAttribute("aria-keyshortcuts"), "Control+. Meta+.");
+  const before = await page.locator(".board-area").evaluate((element) => element.clientWidth);
+
+  await toggle.click();
+  await page.locator(".shell[data-canvas-only]").waitFor();
+  for (const hidden of [page.locator(".shell-header"), page.getByRole("complementary", { name: "Agent chat" }), page.getByRole("complementary", { name: "Checks and code" })]) assert.equal(await hidden.isVisible(), false, "the header and both panels step aside");
+  const exit = page.getByRole("button", { name: "Show panels" });
+  assert.ok(await focused(exit), "focus moves to the way back");
+  assert.equal(await exit.getAttribute("aria-keyshortcuts"), "Escape");
+  const bar = page.getByRole("toolbar", { name: "Canvas" });
+  assert.match(await bar.textContent(), /^Booking.*Fit \(\d+%\).*Follows the rules.*Show panels/);
+  assert.equal(await page.getByRole("combobox", { name: "Zoom" }).isVisible(), true, "zoom stays");
+  const wider = await page.locator(".board-area").evaluate((element) => element.clientWidth);
+  assert.ok(wider > before + 400, `the canvas takes the room: ${before} to ${wider}`);
+  assert.deepEqual(await page.locator(".frame-card").evaluateAll((cards) => cards.map((card) => card.dataset.state)), Array(8).fill("measured"), "the frames stay rendered");
+  await shot(page, "canvas-only-light");
+
+  await page.keyboard.press("Escape");
+  await page.locator(".shell:not([data-canvas-only])").waitFor();
+  assert.equal(await page.locator(".shell-header").isVisible(), true);
+  assert.ok(await focused(toggle), "focus goes back to the toggle");
+  assert.equal(await toggle.getAttribute("aria-pressed"), "false");
+
+  await page.keyboard.press("Control+.");
+  await page.locator(".shell[data-canvas-only]").waitFor();
+  assert.ok(await focused(exit));
+  await page.keyboard.press("Control+.");
+  await page.locator(".shell:not([data-canvas-only])").waitFor();
+  await page.keyboard.press("Control+.");
+  await exit.click();
+  await page.locator(".shell:not([data-canvas-only])").waitFor();
+  assert.ok(await focused(toggle));
+  assert.deepEqual(errors, []);
+});
+
+test("the chat and the checks panels collapse and come back, and keep their state and width across a reload", async ({ browser, base }) => {
+  const { page } = await openApp(browser, base);
+  await measured(page, 1);
+  const chat = page.getByRole("complementary", { name: "Agent chat" });
+  const side = page.getByRole("complementary", { name: "Checks and code" });
+  const chatToggle = page.getByRole("button", { name: /^Chat \(/ });
+  const sideToggle = page.getByRole("button", { name: /^Checks and code \(/ });
+  assert.deepEqual([await chatToggle.getAttribute("aria-expanded"), await sideToggle.getAttribute("aria-expanded")], ["true", "true"]);
+  assert.equal(await sideToggle.getAttribute("aria-keyshortcuts"), "Control+Alt+B Meta+Alt+B");
+
+  await sideToggle.click();
+  await side.waitFor({ state: "hidden" });
+  assert.equal(await sideToggle.getAttribute("aria-expanded"), "false");
+  await shot(page, "side-collapsed-light");
+  await page.keyboard.press("Control+B");
+  await chat.waitFor({ state: "hidden" });
+  assert.equal(await chatToggle.getAttribute("aria-expanded"), "false");
+  const stored = JSON.parse(await page.evaluate(() => localStorage.getItem("design-harness.panels")));
+  assert.deepEqual([stored.chat.open, stored.side.open], [false, false]);
+
+  await page.reload();
+  await measured(page, 1);
+  assert.equal(await chat.isVisible(), false, "the chat stays closed after a reload");
+  assert.equal(await side.isVisible(), false, "the checks stay closed after a reload");
+  assert.equal(await (await page.getByTestId("report-status")).textContent(), "pass", "a closed panel still holds core's report");
+
+  await page.keyboard.press("Control+Alt+B");
+  await side.waitFor();
+  await chatToggle.click();
+  await chat.waitFor();
+  // The handle resizes with the keys: each arrow moves it 16px.
+  const handle = page.getByRole("separator", { name: "Resize the chat" });
+  const width = Number(await handle.getAttribute("aria-valuenow"));
+  await handle.focus();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  assert.equal(Number(await handle.getAttribute("aria-valuenow")), width + 32);
+  await page.getByRole("button", { name: "Hide checks and code" }).click();
+  await side.waitFor({ state: "hidden" });
+  await page.reload();
+  await measured(page, 1);
+  assert.equal(Number(await page.getByRole("separator", { name: "Resize the chat" }).getAttribute("aria-valuenow")), width + 32, "the chat keeps its width");
+  assert.equal(await chat.isVisible(), true);
+  assert.equal(await side.isVisible(), false);
+  await page.getByRole("button", { name: "Hide the chat" }).click();
+  await chat.waitFor({ state: "hidden" });
+
+  // Storage that throws leaves the panels working for the visit.
+  const blocked = await openApp(browser, base);
+  await blocked.page.addInitScript(() => Object.defineProperty(window, "localStorage", { get() { throw new Error("blocked"); } }));
+  await blocked.page.reload();
+  await measured(blocked.page, 1);
+  await blocked.page.getByRole("button", { name: /^Checks and code \(/ }).click();
+  await blocked.page.getByRole("complementary", { name: "Checks and code" }).waitFor({ state: "hidden" });
+  assert.deepEqual(blocked.errors, []);
+});
+
+test("the checks lead with plain words: a summary, each thing to fix with core's message beside it, Show me, and the detail one step away", async ({ browser, base }) => {
+  const { page } = await openApp(browser, base);
+  await measured(page, 1);
+  assert.equal(await page.getByTestId("checks-headline").textContent(), "Everything follows the project's rules");
+  assert.equal(await page.locator(".fix").count(), 0);
+  assert.equal(await page.getByTestId("checks-details").evaluate((element) => element.open), false, "the rule list sits behind Details");
+
+  const edited = await editFile(page, "pages/booking.tsx", (text) => UNDERSIZED(SECOND_PRIMARY(text)));
+  await measured(page, 2);
+  const value = await report(page);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  assert.equal(await page.getByTestId("checks-headline").textContent(), `${failing(value).length} things to fix`);
+  assert.deepEqual(await page.locator(".fix").evaluateAll((items) => items.map((item) => item.dataset.rule)), failing(value), "one thing to fix per failing rule, in core's order");
+
+  const primary = page.locator('.fix[data-rule="one-primary-per-page"]');
+  const finding = value.findings.find((item) => item.rule === "one-primary-per-page");
+  assert.equal(await primary.getByTestId("fix-lead").textContent(), "A page holds at most one primary action.", "the rule's plain words lead");
+  assert.equal(await primary.getByTestId("fix-message").textContent(), finding.message, "core's message stays beside them, word for word");
+  const details = primary.locator(".fix-details");
+  assert.equal(await details.evaluate((element) => element.open), false);
+  assert.match(await details.textContent(), /Ruleone-primary-per-page \(count\)/, "the rule's id and type are in its details");
+  await primary.getByRole("button", { name: "Show me" }).click();
+  await page.waitForSelector('[data-testid="code-line"]');
+  assert.equal(await page.locator('[data-testid="code-line"]').textContent(), `line ${finding.line}, column ${finding.column}`);
+  assert.equal((await page.locator('.code-field [data-kind="finding"]').textContent()) ?? "", edited.split("\n")[finding.line - 1], "Show me marks the line");
+
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  const target = page.locator('.fix[data-rule="target-size"]');
+  assert.equal(await target.getByTestId("fix-lead").textContent(), "Every control meets 24 px or the WCAG 2.5.8 spacing exception.", "a cap reads as its value");
+  await target.getByRole("button", { name: "Show Lantern open — desktop" }).click();
+  const frame = page.frameLocator('iframe[title="lantern-open at desktop"]');
+  await frame.locator("[data-design-harness-overlay]").waitFor({ state: "attached" });
+  assert.equal(await page.locator('.frame-card[data-frame-key="lantern-open@desktop"]').getAttribute("data-selected"), "");
+  const shown = value.findings.find((item) => item.rule === "target-size" && item.scenario === "lantern-open" && item.view === "desktop");
+  assert.equal(await target.getByTestId("fix-message").textContent(), shown.message, "the message is the one of the place shown");
+  assert.equal(await target.getByRole("button", { name: "Show me" }).getAttribute("aria-pressed"), "true");
+  await shot(page, "checks-plain-light");
+
+  await primary.getByRole("button", { name: "Ask the agent to fix" }).click();
+  const box = page.getByRole("textbox", { name: "Message the agent" });
+  assert.match(await box.inputValue(), /^Please fix this so the prototype follows the project's rules\.\n\nThe check "one-primary-per-page" says: Page "booking" has 2 primary actions/);
+  assert.ok(await focused(page.getByLabel("Your Anthropic API key")), "without a key, the key comes first");
+
+  await showAllRules(page);
+  assert.equal(await page.getByTestId("report-status").textContent(), "fail");
+  assert.equal(await page.locator('.rule[data-rule="one-primary-per-page"] .finding .finding-message').first().textContent(), finding.message);
 });
 
 // ---- runner ----------------------------------------------------------------

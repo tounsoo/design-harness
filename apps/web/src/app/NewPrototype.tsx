@@ -1,4 +1,5 @@
 import { Button, Dialog, Field, Label, RadioGroup, Stack, Text } from "@tounsoo/todae";
+import { Plus } from "lucide-react";
 import { useState } from "react";
 import { specCatalog, type ProjectConfig } from "@design-harness/core";
 import { defaultFormat, type PrototypeFormat } from "./new-prototype";
@@ -24,6 +25,9 @@ export function NewPrototype({ config, onCreate }: { readonly config: ProjectCon
   return (
     <>
       <Button.Root variant="ghost" onClick={() => setOpen(true)}>
+        <Button.Icon>
+          <Plus />
+        </Button.Icon>
         New prototype
       </Button.Root>
       <Dialog.Root open={open} onOpenChange={(next) => setOpen(next)} aria-label="New prototype" className="new-prototype">
@@ -39,7 +43,7 @@ export function NewPrototype({ config, onCreate }: { readonly config: ProjectCon
             }}
           >
             <Stack.Root gap="normal">
-              <Dialog.Description>An empty prototype in {config.name}, for the agent or the code view to build.</Dialog.Description>
+              <Dialog.Description>Start an empty prototype in {config.name}. Then describe it to the agent, and it builds it on the canvas.</Dialog.Description>
               <Stack.Root gap="condensed">
                 <Label.Root htmlFor="new-prototype-name">Name</Label.Root>
                 <Field.Root id="new-prototype-name">
@@ -48,13 +52,13 @@ export function NewPrototype({ config, onCreate }: { readonly config: ProjectCon
               </Stack.Root>
               <Stack.Root gap="condensed">
                 <Text.Root as="span" weight="medium" id="new-prototype-format">
-                  Format
+                  How it is written
                 </Text.Root>
                 <RadioGroup.Root aria-labelledby="new-prototype-format" value={format} onValueChange={(value) => setFormat(value === "tsx" ? "tsx" : "spec")}>
                   <RadioGroup.Item value="spec" disabled={!specs}>
-                    json-render spec (default): pages and layouts as data, checked against the catalog before they apply
+                    Spec, recommended: pages as data the agent changes safely, checked before each change applies
                   </RadioGroup.Item>
-                  <RadioGroup.Item value="tsx">TSX: pages and layouts as React code</RadioGroup.Item>
+                  <RadioGroup.Item value="tsx">TSX: pages as React code, for when you want to edit code by hand</RadioGroup.Item>
                 </RadioGroup.Root>
                 {!specs && (
                   <Text.Root as="p" tone="muted">

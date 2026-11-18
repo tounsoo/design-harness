@@ -1,4 +1,3 @@
-import "@tounsoo/todae/todae.css";
 import "./app/app.css";
 import { DensityProvider, ThemeProvider } from "@tounsoo/todae";
 import { createRoot } from "react-dom/client";

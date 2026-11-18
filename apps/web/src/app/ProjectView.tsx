@@ -1,63 +1,49 @@
 import { Badge, Button, Code, DataList, Disclosure, Stack, Table, Text } from "@tounsoo/todae";
 import { useState } from "react";
-import { ROLE_NAMES, rerunExamples, type ExampleRun, type ProjectConfig, type Proposal, type RoleMapping } from "@design-harness/core";
+import { ROLE_NAMES, describeRule, rerunExamples, type ExampleRun, type ProjectConfig, type Proposal, type RoleMapping } from "@design-harness/core";
 import { formatTime } from "../review/timeline";
 import type { PrototypeRecord } from "../store/project-file";
 import { LayoutsView } from "./LayoutsView";
 
-/** The project, read-only: library and roles, inventories, the open spec prototype's layouts, rule inputs, views, rules, proposals, and their examples re-run on demand. */
+/**
+ * The project, read-only, for a designer first: what a prototype here can
+ * use, the open spec prototype's layouts drawn before their data, the rules
+ * in plain words, and the tasks and limits they read. The library's role
+ * mapping, the views and the raw rules sit one step away under their
+ * details. Every adopted proposal's examples re-run on demand.
+ */
 export function ProjectView({ config, onOpenProposal, prototype }: { readonly config: ProjectConfig; readonly onOpenProposal: (id: string) => void; readonly prototype?: PrototypeRecord | undefined }) {
   const { library, inventories, inputs } = config;
+  const open = config.proposals.filter((proposal) => proposal.status === "open").length;
   return (
     <Stack.Root gap="spacious" className="project">
-      <Stack.Root gap="condensed">
+      <div className="project-intro">
+        <Text.Root as="span" variant="label">
+          Project
+        </Text.Root>
         <Text.Root as="h1">{config.name}</Text.Root>
         <Text.Root as="p" tone="muted">
-          Project <Code.Root>{config.id}</Code.Root>, config schema {config.schemaVersion}. Read-only in this version: proposals change the project.
+          The parts and rules every prototype in {config.name} follows. It changes only through proposals you approve.
         </Text.Root>
-      </Stack.Root>
+      </div>
 
-      <section aria-labelledby="project-library">
-        <Text.Root as="h2" id="project-library">
-          Component library
-        </Text.Root>
-        <DataList.Root orientation="horizontal" className="project-facts">
-          <Fact term="Package" value={`${library.package} ${library.version}`} />
-          <Fact term="React" value={library.react} />
-          <Fact term="Stylesheets" value={(library.stylesheets ?? []).join(", ") || "none"} />
-          <Fact term="Scheme attribute" value={library.schemeAttribute ?? "none (color-scheme only)"} />
-        </DataList.Root>
-        <Table.Root className="project-table">
-          <Table.Head>
-            <Table.Row>
-              <Table.HeaderCell>Role</Table.HeaderCell>
-              <Table.HeaderCell>Parts</Table.HeaderCell>
-              <Table.HeaderCell>Prop</Table.HeaderCell>
-            </Table.Row>
-          </Table.Head>
-          <Table.Body>
-            {ROLE_NAMES.map((role) => (
-              <Table.Row key={role}>
-                <Table.Cell>
-                  <Code.Root>{role}</Code.Root>
-                </Table.Cell>
-                <Table.Cell>{library.roles[role].components.join(", ")}</Table.Cell>
-                <Table.Cell>{propText(library.roles[role])}</Table.Cell>
-              </Table.Row>
-            ))}
-          </Table.Body>
-        </Table.Root>
-      </section>
+      <ul className="project-summary" aria-label="At a glance">
+        <Stat value={inventories.components.length} label="components to build with" />
+        <Stat value={inventories.layouts.length} label="layouts" />
+        <Stat value={config.rules.length} label="rules checked on every change" />
+        <Stat value={open} label={open === 1 ? "proposal waiting for you" : "proposals waiting for you"} />
+      </ul>
+
+      {prototype?.prototype.format === "spec" && <LayoutsView config={config} record={prototype} />}
 
       <section aria-labelledby="project-inventories">
-        <Text.Root as="h2" id="project-inventories">
-          Inventories
-        </Text.Root>
+        <SectionHead id="project-inventories" title="What a prototype can use" text="A prototype draws only these. Anything else is a proposal: the agent drafts one when the work needs it." />
         <DataList.Root orientation="horizontal" className="project-facts">
-          <Fact term="Components" value={inventories.components.join(", ")} />
-          <Fact term="Layouts" value={inventories.layouts.join(", ") || "none"} />
-          <Fact term="Flow states" value={inventories.flowStates.join(", ") || "none"} />
+          <Chips term="Components" items={inventories.components} />
+          <Chips term="Layouts" items={inventories.layouts} />
+          <Chips term="Flow states" items={inventories.flowStates} />
         </DataList.Root>
+        <Text.Root as="h3">Page types</Text.Root>
         <Table.Root className="project-table">
           <Table.Head>
             <Table.Row>
@@ -84,17 +70,32 @@ export function ProjectView({ config, onOpenProposal, prototype }: { readonly co
         </Table.Root>
       </section>
 
-      {prototype?.prototype.format === "spec" && <LayoutsView config={config} record={prototype} />}
+      <section aria-labelledby="project-rules">
+        <SectionHead id="project-rules" title={`Rules in force (${config.rules.length})`} text="Each rule is checked on every change, by code, the same way every time. Open one for its id, type and data." />
+        <ul className="project-rules">
+          {config.rules.map((rule) => (
+            <li key={rule.id}>
+              <Disclosure.Root>
+                <Disclosure.Summary>{rule.description ?? describeRule(rule, config)}</Disclosure.Summary>
+                <Stack.Root gap="condensed" className="project-rule-detail">
+                  <Text.Root as="p" tone="muted">
+                    <Code.Root>{rule.id}</Code.Root> {rule.type}
+                  </Text.Root>
+                  <pre className="project-json">{JSON.stringify(rule, null, 2)}</pre>
+                </Stack.Root>
+              </Disclosure.Root>
+            </li>
+          ))}
+        </ul>
+      </section>
 
       <section aria-labelledby="project-inputs">
-        <Text.Root as="h2" id="project-inputs">
-          Rule inputs
-        </Text.Root>
+        <SectionHead id="project-inputs" title="Tasks and limits" text="What the rules read: the tasks people do and how many steps each may take, which action matters most, and the project's caps." />
         <Table.Root className="project-table">
           <Table.Head>
             <Table.Row>
               <Table.HeaderCell>Task</Table.HeaderCell>
-              <Table.HeaderCell>Success state</Table.HeaderCell>
+              <Table.HeaderCell>Done when</Table.HeaderCell>
               <Table.HeaderCell>Max steps</Table.HeaderCell>
             </Table.Row>
           </Table.Head>
@@ -102,8 +103,7 @@ export function ProjectView({ config, onOpenProposal, prototype }: { readonly co
             {inputs.tasks.map((task) => (
               <Table.Row key={task.id}>
                 <Table.Cell>
-                  <Code.Root>{task.id}</Code.Root>
-                  {task.description ? ` ${task.description}` : ""}
+                  {task.description ?? task.id} <Code.Root>{task.id}</Code.Root>
                 </Table.Cell>
                 <Table.Cell>{task.successState}</Table.Cell>
                 <Table.Cell>{task.maxSteps}</Table.Cell>
@@ -122,40 +122,8 @@ export function ProjectView({ config, onOpenProposal, prototype }: { readonly co
         </DataList.Root>
       </section>
 
-      <section aria-labelledby="project-views">
-        <Text.Root as="h2" id="project-views">
-          Views
-        </Text.Root>
-        <DataList.Root orientation="horizontal" className="project-facts">
-          {config.views.map((view) => (
-            <Fact key={view.name} term={view.name} value={`${view.width} by ${view.height}, ${view.scheme}`} />
-          ))}
-        </DataList.Root>
-      </section>
-
-      <section aria-labelledby="project-rules">
-        <Text.Root as="h2" id="project-rules">
-          Rules in force ({config.rules.length})
-        </Text.Root>
-        <ul className="project-rules">
-          {config.rules.map((rule) => (
-            <li key={rule.id}>
-              <Disclosure.Root>
-                <Disclosure.Summary>
-                  <Code.Root>{rule.id}</Code.Root> <Text.Root as="span" tone="muted">{rule.type}</Text.Root>
-                </Disclosure.Summary>
-                {rule.description && <Text.Root as="p">{rule.description}</Text.Root>}
-                <pre className="project-json">{JSON.stringify(rule, null, 2)}</pre>
-              </Disclosure.Root>
-            </li>
-          ))}
-        </ul>
-      </section>
-
       <section aria-labelledby="project-proposals">
-        <Text.Root as="h2" id="project-proposals">
-          Proposals ({config.proposals.length})
-        </Text.Root>
+        <SectionHead id="project-proposals" title={`Proposals (${config.proposals.length})`} text="Changes the agent asked for. Open the Proposals tab to review them." />
         {config.proposals.length === 0 ? (
           <Text.Root as="p" tone="muted">
             No proposals yet. A proposal carries an inventory change, the rule that governs it, and examples that must pass and fail; it is adopted only when its rules prove themselves on its examples.
@@ -170,7 +138,102 @@ export function ProjectView({ config, onOpenProposal, prototype }: { readonly co
       </section>
 
       <Regression config={config} onOpenProposal={onOpenProposal} />
+
+      <Disclosure.Root className="project-technical">
+        <Disclosure.Summary>Technical details: the library, its roles and the views</Disclosure.Summary>
+        <Stack.Root gap="spacious" className="project-technical-body">
+          <Text.Root as="p" tone="muted">
+            Project <Code.Root>{config.id}</Code.Root>, config schema {config.schemaVersion}.
+          </Text.Root>
+          <section aria-labelledby="project-library">
+            <Text.Root as="h2" id="project-library">
+              Component library
+            </Text.Root>
+            <DataList.Root orientation="horizontal" className="project-facts">
+              <Fact term="Package" value={`${library.package} ${library.version}`} />
+              <Fact term="React" value={library.react} />
+              <Fact term="Stylesheets" value={(library.stylesheets ?? []).join(", ") || "none"} />
+              <Fact term="Scheme attribute" value={library.schemeAttribute ?? "none (color-scheme only)"} />
+            </DataList.Root>
+            <Table.Root className="project-table">
+              <Table.Head>
+                <Table.Row>
+                  <Table.HeaderCell>Role</Table.HeaderCell>
+                  <Table.HeaderCell>Parts</Table.HeaderCell>
+                  <Table.HeaderCell>Prop</Table.HeaderCell>
+                </Table.Row>
+              </Table.Head>
+              <Table.Body>
+                {ROLE_NAMES.map((role) => (
+                  <Table.Row key={role}>
+                    <Table.Cell>
+                      <Code.Root>{role}</Code.Root>
+                    </Table.Cell>
+                    <Table.Cell>{library.roles[role].components.join(", ")}</Table.Cell>
+                    <Table.Cell>{propText(library.roles[role])}</Table.Cell>
+                  </Table.Row>
+                ))}
+              </Table.Body>
+            </Table.Root>
+          </section>
+          <section aria-labelledby="project-views">
+            <Text.Root as="h2" id="project-views">
+              Views
+            </Text.Root>
+            <DataList.Root orientation="horizontal" className="project-facts">
+              {config.views.map((view) => (
+                <Fact key={view.name} term={view.name} value={`${view.width} by ${view.height}, ${view.scheme}`} />
+              ))}
+            </DataList.Root>
+          </section>
+        </Stack.Root>
+      </Disclosure.Root>
     </Stack.Root>
+  );
+}
+
+function SectionHead({ id, title, text }: { readonly id: string; readonly title: string; readonly text: string }) {
+  return (
+    <div className="section-head">
+      <Text.Root as="h2" id={id}>
+        {title}
+      </Text.Root>
+      <Text.Root as="p" tone="muted">
+        {text}
+      </Text.Root>
+    </div>
+  );
+}
+
+function Stat({ value, label }: { readonly value: number; readonly label: string }) {
+  return (
+    <li className="project-stat">
+      <span className="project-stat-value">{value}</span>
+      <Text.Root as="span" tone="muted">
+        {label}
+      </Text.Root>
+    </li>
+  );
+}
+
+function Chips({ term, items }: { readonly term: string; readonly items: readonly string[] }) {
+  return (
+    <DataList.Item>
+      <DataList.Term>{term}</DataList.Term>
+      <DataList.Details>
+        {items.length === 0 ? (
+          "none"
+        ) : (
+          <Stack.Root as="ul" direction="row" gap="condensed" wrap className="project-chips">
+            {items.map((item) => (
+              <li key={item}>
+                <Badge.Root tone="neutral">{item}</Badge.Root>
+              </li>
+            ))}
+          </Stack.Root>
+        )}
+      </DataList.Details>
+    </DataList.Item>
   );
 }
 

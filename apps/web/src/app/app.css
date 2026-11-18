@@ -1,160 +1,275 @@
 /*
- * The app's own layout. Components are Todae's; this sheet only places
- * them, with Todae's tokens, plus the few parts Todae has no component for:
- * the board of scaled frames, the selectable finding rows and the code view's
- * monospace face.
+ * The app's stylesheet. Todae's CSS and the design-harness token layer
+ * (tokens/resolver.json, built into ../theme/todae-theme.css) load first,
+ * then everything here sits in the `app` layer after them. Components are
+ * Todae's, and their looks come from tokens; this sheet only lays them out,
+ * with Todae's --todae-* variables and the harness's own --todae-harness-*
+ * tokens, never raw values. Where Todae has no part, the few rules for it
+ * say so (the board of scaled frames, the finding rows, the canvas-only bar).
  */
-html, body, #root, .app-theme, .app-density { height: 100%; margin: 0; }
-html, body { overflow: hidden; }
-/* The theme's own element carries the page colours, so plain elements follow its scheme, not the root's light default. */
-body, .app-theme { background: var(--todae-color-bg-canvas); color: var(--todae-color-fg-default); font-family: var(--todae-font-family-sans); }
-.pre { white-space: pre-wrap; overflow-wrap: anywhere; }
-.app-center { height: 100%; padding: var(--todae-space-6); }
+@layer reset, todae, app;
+@import "@tounsoo/todae/todae.css";
+@import "../theme/todae-theme.css";
 
-.app { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.app-header { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--todae-space-4); padding: var(--todae-space-2) var(--todae-space-4); border-block-end: 1px solid var(--todae-color-border-subtle); background: var(--todae-color-bg-surface); }
-.app-header-end { justify-self: end; }
-.app-notices { display: grid; gap: var(--todae-space-2); padding: var(--todae-space-2) var(--todae-space-4); }
-.app-body { flex: 1; display: grid; grid-template-columns: minmax(300px, 360px) minmax(0, 1fr) minmax(340px, 28%); min-height: 0; }
-.app-main { position: relative; min-width: 0; min-height: 0; background: var(--todae-color-bg-subtle); }
-.app-main-pane { position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0; }
-/* Kept laid out, not display: none, so its frames keep their viewports while the project view is on top. */
-.app-main-pane[data-inactive] { visibility: hidden; pointer-events: none; }
-.app-main-scroll { overflow: auto; padding: var(--todae-space-6); background: var(--todae-color-bg-canvas); }
-.app-side { display: flex; flex-direction: column; min-height: 0; border-inline-start: 1px solid var(--todae-color-border-subtle); background: var(--todae-color-bg-surface); }
-.app-side-tabs { display: flex; flex-direction: column; min-height: 0; flex: 1; }
-.app-side-tabs [role="tablist"] { padding-inline: var(--todae-space-3); }
-.app-side-panel { flex: 1; min-height: 0; overflow: auto; padding: var(--todae-space-3); }
-.app-side-panel[hidden] { display: none; }
+@layer app {
+  html, body, #root, .app-theme, .app-density { height: 100%; margin: 0; }
+  html, body { overflow: hidden; }
+  /* The theme's own element carries the page colours, so plain elements follow its scheme, not the root's light default. */
+  body, .app-theme { background: var(--todae-color-bg-canvas); color: var(--todae-color-fg-default); font-family: var(--todae-text-font-family); font-size: var(--todae-text-font-size); }
+  .pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .app-center { height: 100%; padding: var(--todae-space-6); }
 
-/* The agent chat: Todae's Conversation, Message, Disclosure, CodeBlock and Alert parts. This sheet places them, and adds what Todae has no part for: a bordered row for a tool call, a check or thinking, and a wrapping, height-capped code block. */
-.chat { display: flex; flex-direction: column; gap: var(--todae-space-2); padding: var(--todae-space-3); border-inline-end: 1px solid var(--todae-color-border-subtle); background: var(--todae-color-bg-surface); min-height: 0; min-width: 0; }
-.chat-title { font-size: var(--todae-text-h5-font-size, 1rem); margin: 0; }
-.chat-busy { margin-inline-start: auto; }
-.chat-small { font-size: 0.8125rem; margin: 0; }
-.chat-key, .chat-settings { padding: var(--todae-space-2); border: 1px solid var(--todae-color-border-subtle); border-radius: var(--todae-radius-md); background: var(--todae-color-bg-canvas); }
-.chat-settings-body { padding-block-start: var(--todae-space-2); }
-.chat-setting { flex: 1; min-width: 0; }
-.chat-conversation { flex: 1; min-height: 0; display: grid; }
-.chat-viewport { min-height: 0; }
-.chat-hint { margin: var(--todae-space-2) 0; font-size: 0.875rem; }
-.chat-items { display: grid; gap: var(--todae-space-2); min-width: 0; }
-.chat-text { margin: 0; }
-.chat-tool, .chat-checks, .chat-thinking { border: 1px solid var(--todae-color-border-subtle); border-radius: var(--todae-radius-sm); padding: 2px var(--todae-space-2); background: var(--todae-color-bg-canvas); min-width: 0; font-size: 0.8125rem; }
-.chat-tool-head { display: inline-flex; align-items: center; gap: var(--todae-space-2); min-width: 0; }
-.chat-tool-title { overflow-wrap: anywhere; }
-/* Todae's CodeBlock scrolls sideways; in a narrow chat a tool's JSON wraps instead, and a long result scrolls in a capped box. */
-.chat-pre { margin-block: var(--todae-space-1); max-height: 16rem; overflow: auto; font-size: 0.75rem; white-space: pre-wrap; overflow-wrap: anywhere; }
-.chat-actions { flex-wrap: wrap; align-items: center; gap: var(--todae-space-2); }
-.chat-composer { display: grid; gap: var(--todae-space-2); }
+  /* ---- The shell: Todae's app-shell recipe, a header over nested Splitters (chat | canvas | checks and code). ---- */
+  .shell { display: flex; flex-direction: column; block-size: 100dvh; min-height: 0; }
+  .shell-header { padding: var(--todae-space-2) var(--todae-space-3); border-block-end: var(--todae-border-width) solid var(--todae-color-border-subtle); background: var(--todae-harness-panel-bg); min-width: 0; }
+  .shell-title { min-width: 0; flex: 0 1 auto; }
+  .shell-mark { display: inline-grid; place-items: center; inline-size: var(--todae-space-7); block-size: var(--todae-space-7); border-radius: var(--todae-radius-md); background: var(--todae-color-accent-default); color: var(--todae-color-on-accent); flex: none; }
+  .shell-mark svg, .chat-empty-icon svg, .checks-summary-icon svg, .chat-step-icon svg, .side-ok svg, .side-code-icon svg { inline-size: 1em; block-size: 1em; }
+  .shell-mark svg { inline-size: var(--todae-space-4); block-size: var(--todae-space-4); }
+  .shell-project { white-space: nowrap; }
+  .shell-slash { color: var(--todae-color-fg-placeholder); }
+  .shell-prototype { min-inline-size: 10rem; }
+  .shell-views { margin-inline: auto; }
+  .shell-views [role="tablist"] { border-block-end: 0; }
+  .shell-tab-count, .side-count { margin-inline-start: var(--todae-space-1); }
+  .shell-actions { flex: none; }
+  .shell-body { flex: 1; min-height: 0; background: var(--todae-harness-panel-bg); }
+  .shell-inner { block-size: 100%; min-height: 0; }
+  .shell-panel { min-height: 0; overflow: hidden; }
+  .app-notices { display: grid; gap: var(--todae-space-2); padding: var(--todae-space-2) var(--todae-space-4); background: var(--todae-harness-panel-bg); border-block-end: var(--todae-border-width) solid var(--todae-color-border-subtle); }
+  .shell[data-canvas-only] .shell-header, .shell[data-canvas-only] .app-notices { display: none; }
 
-.board { display: flex; flex-direction: column; min-height: 0; height: 100%; }
-.board-toolbar { padding: var(--todae-space-2) var(--todae-space-4); border-block-end: 1px solid var(--todae-color-border-subtle); background: var(--todae-color-bg-surface); }
-.board-zoom { min-inline-size: 8rem; }
-.board-area { position: relative; flex: 1; min-height: 0; overflow: auto; padding: var(--todae-space-4) var(--todae-space-6) var(--todae-space-8); }
-.board-error { color: var(--todae-color-status-critical-fg); }
-.board-row { margin-block-end: var(--todae-space-6); }
-.board-row-head { display: flex; align-items: baseline; gap: var(--todae-space-3); margin-block-end: var(--todae-space-2); }
-.board-row-title { font-size: var(--todae-text-h5-font-size, 1rem); margin: 0; }
-.board-frames { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--todae-space-6); }
-.board[data-focused] .board-row:not(:has(.frame-card[data-focused])) { position: absolute; visibility: hidden; pointer-events: none; inset-inline-start: 0; inset-block-start: 0; }
-.board[data-focused] .board-row-head { display: none; }
+  /* A panel's head: its title or tabs, and a close button at the end. */
+  .panel-head { display: flex; align-items: center; gap: var(--todae-space-2); min-block-size: var(--todae-harness-panel-header-height); padding-inline: var(--todae-harness-panel-padding) var(--todae-space-2); border-block-end: var(--todae-border-width) solid var(--todae-color-border-subtle); box-sizing: border-box; }
+  .panel-title { margin: 0; --todae-text-h2-font-size: var(--todae-font-size-2); }
+  .panel-close { margin-inline-start: auto; }
 
-.frame-card { margin: 0; display: flex; flex-direction: column; gap: var(--todae-space-1); min-width: 0; }
-.frame-card[data-hidden] { position: absolute; visibility: hidden; pointer-events: none; inset-inline-start: 0; inset-block-start: 0; }
-.frame-head { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--todae-space-2); row-gap: 0; min-height: 2rem; font-size: 0.8125rem; }
-.frame-status { margin-inline-start: auto; }
-.frame-size { font-variant-numeric: tabular-nums; }
-.frame-viewport { position: relative; overflow: hidden; border-radius: var(--todae-radius-md); box-shadow: 0 0 0 1px var(--todae-color-border-default); }
-.frame-card[data-selected] .frame-viewport { box-shadow: 0 0 0 2px var(--todae-color-status-critical-border), 0 0 0 4px var(--todae-color-status-critical-bg); }
-.frame-iframe { display: block; border: 0; transform-origin: 0 0; background: transparent; }
-.frame-failure { position: absolute; inset: 0; padding: var(--todae-space-3); overflow: auto; background: var(--todae-color-status-critical-bg); color: var(--todae-color-status-critical-fg); }
-.frame-failure p { margin: 0 0 var(--todae-space-2); font-size: 0.8125rem; }
+  .app-main { position: relative; block-size: 100%; min-width: 0; min-height: 0; outline: none; }
+  .app-main-pane { position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0; }
+  /* Kept laid out, not display: none, so its frames keep their viewports while the project view is on top. */
+  .app-main-pane[data-inactive] { visibility: hidden; pointer-events: none; }
+  .app-main-scroll { overflow: auto; padding: var(--todae-space-8) var(--todae-space-8) var(--todae-space-12); background: var(--todae-color-bg-canvas); }
+  .app-preview { margin: var(--todae-space-3) var(--todae-space-6) 0; }
 
-.checks { display: grid; gap: var(--todae-space-3); }
-.checks-summary { display: grid; gap: var(--todae-space-1); }
-.checks-revision { margin: 0; font-size: 0.8125rem; }
-.checks-rules, .findings, .project-rules { list-style: none; margin: 0; padding: 0; }
-.checks-rules { display: grid; gap: 2px; }
-.rule { border-block-end: 1px solid var(--todae-color-border-subtle); padding-block: var(--todae-space-1); }
-.rule-plain { padding-inline-start: var(--todae-space-1); }
-.rule-id { font-family: var(--todae-font-family-mono); font-size: 0.8125rem; }
-.rule-description, .rule-note { margin: var(--todae-space-1) 0 0; font-size: 0.8125rem; }
-.findings { display: grid; gap: var(--todae-space-1); margin-block: var(--todae-space-2); }
-.finding { display: grid; gap: 2px; width: 100%; min-height: 24px; text-align: start; padding: var(--todae-space-2); border: 1px solid var(--todae-color-border-subtle); border-radius: var(--todae-radius-sm); background: var(--todae-color-bg-canvas); color: inherit; font: inherit; font-size: 0.8125rem; cursor: pointer; }
-.finding:hover:not(:disabled) { background: var(--todae-color-bg-highlight); }
-.finding:focus-visible { outline: var(--todae-focus-ring-width, 2px) solid var(--todae-focus-ring); outline-offset: 1px; }
-.finding:disabled { cursor: default; }
-.finding[aria-pressed="true"] { border-color: var(--todae-color-status-critical-border); background: var(--todae-color-status-critical-bg); }
-.finding[data-kind="unverifiable"] { border-inline-start: 3px solid var(--todae-color-status-warning-border); }
-.finding[data-kind="violation"] { border-inline-start: 3px solid var(--todae-color-status-critical-border); }
-.finding-message { overflow-wrap: anywhere; }
-.finding-place { color: var(--todae-color-fg-muted); font-family: var(--todae-font-family-mono); font-size: 0.75rem; overflow-wrap: anywhere; }
+  /* ---- The right panel: checks first, code one tab away. ---- */
+  .app-side { display: flex; flex-direction: column; block-size: 100%; min-height: 0; background: var(--todae-harness-panel-bg); }
+  .app-side-tabs { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+  .side-head [role="tablist"] { border-block-end: 0; align-self: stretch; }
+  .side-ok { display: inline-flex; margin-inline-start: var(--todae-space-1); color: var(--todae-color-status-success-fg); vertical-align: -0.125em; }
+  .side-code-icon { display: inline-flex; margin-inline-end: var(--todae-space-1); vertical-align: -0.125em; }
+  .app-side-panel { flex: 1; min-height: 0; overflow: auto; padding: var(--todae-harness-panel-padding); }
+  .app-side-panel[hidden] { display: none; }
 
-.code { min-height: 100%; }
-.code-file { flex: 1; }
-.code-field { flex: 1; }
-.code-text, .code-field textarea { font-family: var(--todae-font-family-mono); font-size: 0.8125rem; line-height: 1.5; tab-size: 2; white-space: pre; min-height: 60vh; }
-.code-field [data-kind="finding"] { background: var(--todae-color-status-critical-bg); box-shadow: 0 0 0 1px var(--todae-color-status-critical-border); }
+  /* ---- The board: artboards on a calm, dotted canvas. ---- */
+  .board { position: relative; display: flex; flex-direction: column; min-height: 0; height: 100%; background-color: var(--todae-harness-canvas-bg); background-image: radial-gradient(var(--todae-harness-canvas-dot) var(--todae-border-width), transparent var(--todae-border-width)); background-size: var(--todae-harness-canvas-dot-gap) var(--todae-harness-canvas-dot-gap); }
+  .board-toolbar { display: flex; align-items: center; gap: var(--todae-space-3); padding: var(--todae-space-2) var(--todae-space-4); }
+  .board-summary { font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  .board-zoom { margin-inline-start: auto; }
+  .board-zoom-field { min-inline-size: 7.5rem; }
+  .board-focus-label { font-weight: var(--todae-font-weight-medium); }
+  /* Canvas only: the toolbar floats over the board as one bar. */
+  .board[data-floating] .board-toolbar { position: absolute; z-index: 3; inset-block-start: var(--todae-space-4); inset-inline-start: 50%; translate: -50% 0; gap: var(--todae-space-3); padding: var(--todae-space-1) var(--todae-space-1) var(--todae-space-1) var(--todae-space-4); border: var(--todae-border-width) solid var(--todae-color-border-subtle); border-radius: var(--todae-harness-floating-radius); background: var(--todae-harness-floating-bg); box-shadow: var(--todae-harness-shadow-floating); white-space: nowrap; max-inline-size: calc(100% - var(--todae-space-8)); }
+  .board[data-floating] .board-zoom { margin-inline-start: 0; }
+  .board[data-floating] .board-area { padding-block-start: calc(var(--todae-harness-canvas-padding) + var(--todae-space-12)); }
+  .board-toolbar-start, .board-toolbar-end { display: flex; align-items: center; gap: var(--todae-space-3); }
+  .floating-name { max-inline-size: 16rem; overflow: hidden; text-overflow: ellipsis; }
+  .floating-status { display: inline-flex; align-items: center; gap: var(--todae-space-2); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); color: var(--todae-color-fg-muted); }
+  .floating-dot { inline-size: var(--todae-space-2); block-size: var(--todae-space-2); border-radius: var(--todae-radius-full); background: var(--todae-color-fg-placeholder); }
+  .floating-status[data-tone="success"] .floating-dot { background: var(--todae-color-status-success-fg); }
+  .floating-status[data-tone="critical"] .floating-dot { background: var(--todae-color-status-critical-fg); }
+  .floating-status[data-tone="warning"] .floating-dot { background: var(--todae-color-status-warning-fg); }
 
-.project { max-width: 64rem; }
-.project section { display: grid; gap: var(--todae-space-3); }
-.project-facts { margin: 0; }
-.project-json { font-family: var(--todae-font-family-mono); font-size: 0.75rem; background: var(--todae-color-bg-subtle); padding: var(--todae-space-2); border-radius: var(--todae-radius-sm); overflow: auto; }
-.project-rules { display: grid; gap: var(--todae-space-1); }
-.checks-failing { margin: 0; font-size: 0.8125rem; font-family: var(--todae-font-family-mono); overflow-wrap: anywhere; }
+  .board-area { position: relative; flex: 1; min-height: 0; overflow: auto; padding: var(--todae-space-2) var(--todae-harness-canvas-padding) var(--todae-space-12); }
+  .board-error { color: var(--todae-color-status-critical-fg); }
+  .board-row { margin-block-end: var(--todae-harness-canvas-row-gap); }
+  .board-row-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--todae-space-1) var(--todae-space-3); margin-block-end: var(--todae-space-3); }
+  .board-row-title { margin: 0; --todae-text-h2-font-size: var(--todae-font-size-3); }
+  .board-frames { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--todae-harness-canvas-frame-gap); }
+  .board[data-focused] .board-row:not(:has(.frame-card[data-focused])) { position: absolute; visibility: hidden; pointer-events: none; inset-inline-start: 0; inset-block-start: 0; }
+  .board[data-focused] .board-row-head { display: none; }
 
-/*
- * Proposals and a proposal's review page: Todae's Card, Table, Badge, Steps,
- * Disclosure, Alert, Field and ToggleGroup parts. This sheet places them,
- * and adds what Todae has no part for: two columns of example cards that
- * hold scaled frames, a before-and-after list of badges, a sticky action
- * bar, and a read-only code excerpt sized to its lines.
- */
-.app-tab-count { margin-inline-start: var(--todae-space-1); }
-.proposals, .review { max-width: 96rem; }
-.proposals-title { padding-inline: 0; text-align: start; font-weight: 600; }
-.proposals-table td { vertical-align: top; }
-.review-title { margin: 0; }
-.review-back { padding-inline: 0; }
-.review-small { font-size: 0.8125rem; margin: 0; }
-.review-section { display: grid; gap: var(--todae-space-3); scroll-margin-top: 10rem; }
-.example, .review-refusal { scroll-margin-top: 10rem; }
-.review-section h2, .review-section h3 { margin: 0; }
-.review-actions { position: sticky; top: calc(-1 * var(--todae-space-6)); z-index: 2; box-shadow: 0 1px 0 var(--todae-color-border-subtle); }
-.review-verdict[data-tone="success"] { color: var(--todae-color-status-success-fg); }
-.review-verdict[data-tone="warning"] { color: var(--todae-color-status-warning-fg); }
-.review-verdict[data-tone="critical"] { color: var(--todae-color-status-critical-fg); }
-.review-note { max-width: 40rem; }
-.review-rules, .review-impact, .diff-list { list-style: none; margin: 0; padding: 0; }
-.review-rules, .review-impact { display: grid; gap: var(--todae-space-3); }
-.rule-words { display: grid; gap: var(--todae-space-1); margin-block-start: var(--todae-space-1); }
-.rule-words-text, .rule-words-note { margin: 0; }
-.diff { display: grid; gap: var(--todae-space-4); }
-.diff-section { display: grid; gap: var(--todae-space-2); }
-.diff-sides { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--todae-space-4); }
-.diff-list { display: flex; flex-wrap: wrap; gap: var(--todae-space-1); margin-block-start: var(--todae-space-1); }
-.review-pickers { row-gap: var(--todae-space-2); }
-.review-picker { min-inline-size: 12rem; }
-.review-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--todae-space-4); align-items: start; }
-@media (max-width: 1100px) { .review-columns, .diff-sides { grid-template-columns: minmax(0, 1fr); } }
-.review-column { display: grid; gap: var(--todae-space-3); min-width: 0; }
-.example { position: relative; min-width: 0; }
-.example[data-verdict="bad"] { box-shadow: 0 0 0 2px var(--todae-color-status-critical-border); }
-.example-head { display: grid; gap: var(--todae-space-1); }
-.example-name { margin: 0; font-size: var(--todae-text-h5-font-size, 1rem); font-family: var(--todae-font-family-mono); }
-.example-frames { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--todae-space-4); min-width: 0; overflow: hidden; }
-.example-frames .frame-card { min-width: 0; }
-.impact-frames { position: relative; height: 0; overflow: hidden; }
-.example-detail { overflow-wrap: anywhere; }
-.example-code textarea, .example-code .code-text { min-height: 0; }
-.history-entry { gap: 2px; }
-.history-note { margin: 0; }
-.history-previous { margin-block-start: var(--todae-space-1); }
-.finding-ask { margin-block-start: 2px; font-size: 0.8125rem; }
+  /* An artboard: a quiet label over a raised frame. */
+  .frame-card { margin: 0; display: flex; flex-direction: column; gap: var(--todae-harness-artboard-label-gap); min-width: 0; }
+  .frame-card[data-hidden] { position: absolute; visibility: hidden; pointer-events: none; inset-inline-start: 0; inset-block-start: 0; }
+  .frame-head { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--todae-space-2); row-gap: 0; min-block-size: var(--todae-space-8); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  .frame-view { color: var(--todae-color-fg-default); }
+  .frame-size { font-variant-numeric: tabular-nums; }
+  .frame-status { display: inline-flex; align-items: center; gap: var(--todae-space-1); }
+  .frame-open { margin-inline-start: auto; }
+  @media (hover: hover) {
+    /* The open button shows on the artboard a pointer is over, or one that holds focus. */
+    .frame-card:not(:hover, :focus-within) .frame-open { opacity: 0; }
+  }
+  .frame-viewport { position: relative; overflow: hidden; border-radius: var(--todae-harness-artboard-radius); box-shadow: 0 0 0 var(--todae-border-width) var(--todae-color-border-subtle), var(--todae-harness-shadow-raised); }
+  .frame-card[data-selected] .frame-viewport { box-shadow: 0 0 0 var(--todae-focus-ring-width) var(--todae-harness-artboard-selected), var(--todae-harness-shadow-raised); }
+  .frame-iframe { display: block; border: 0; transform-origin: 0 0; background: transparent; }
+  .frame-failure { position: absolute; inset: 0; padding: var(--todae-space-3); overflow: auto; background: var(--todae-color-status-critical-bg); color: var(--todae-color-status-critical-fg); }
+  .frame-failure p { margin: 0 0 var(--todae-space-2); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
 
-/* The Project view's layouts: parameters, then a preview frame under them. */
-.layout-card-body { display: grid; gap: var(--todae-space-3); }
-.layout-card-preview { display: grid; gap: var(--todae-space-1); justify-items: start; max-width: 100%; overflow-x: auto; }
-/* Where a finding inside a layout instance is: the layout's element and each use, as buttons above the code. */
-.code-places { padding: var(--todae-space-1) 0; }
+  /* ---- Checks: a summary, the things to fix, and every rule under Details. ---- */
+  .checks { display: grid; gap: var(--todae-space-4); }
+  .checks-waiting { color: var(--todae-color-fg-muted); }
+  .checks-summary { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--todae-space-3); align-items: start; padding: var(--todae-space-4); border-radius: var(--todae-radius-lg); background: var(--todae-color-bg-subtle); }
+  .checks-summary[data-tone="success"] { background: var(--todae-color-status-success-bg); }
+  .checks-summary[data-tone="critical"] { background: var(--todae-color-status-critical-bg); }
+  .checks-summary[data-tone="warning"] { background: var(--todae-color-status-warning-bg); }
+  .checks-summary-icon { display: inline-grid; place-items: center; font-size: var(--todae-font-size-4); line-height: 1; padding-block-start: 0.1em; color: var(--todae-color-fg-muted); }
+  .checks-summary[data-tone="success"] .checks-summary-icon { color: var(--todae-color-status-success-fg); }
+  .checks-summary[data-tone="critical"] .checks-summary-icon { color: var(--todae-color-status-critical-fg); }
+  .checks-summary[data-tone="warning"] .checks-summary-icon { color: var(--todae-color-status-warning-fg); }
+  .checks-summary-text { display: grid; gap: var(--todae-space-1); }
+  .checks-headline { margin: 0; --todae-text-h2-font-size: var(--todae-font-size-3); }
+  .checks-progress { margin: 0; font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  .fixes { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--todae-space-3); }
+  .fix[data-kind="violation"] .fix-card { border-inline-start: var(--todae-harness-edge-status) solid var(--todae-color-status-critical-border); }
+  .fix[data-kind="unverifiable"] .fix-card { border-inline-start: var(--todae-harness-edge-status) solid var(--todae-color-status-warning-border); }
+  .fix-lead { margin: 0; --todae-text-h3-font-size: var(--todae-font-size-2); }
+  /* Core's message, word for word, beside the plain lead. */
+  .fix-message { margin: 0; padding-inline-start: var(--todae-space-3); border-inline-start: var(--todae-harness-edge-quote) solid var(--todae-color-border-subtle); color: var(--todae-color-fg-muted); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); overflow-wrap: anywhere; }
+  .fix-where { margin: 0; font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  .fix-places { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--todae-space-1); }
+  .fix-place-row { display: grid; grid-template-columns: minmax(6rem, auto) minmax(0, 1fr); align-items: center; gap: var(--todae-space-2); }
+  .fix-place-group { font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  .fix-actions { align-items: center; }
+  .fix-details { font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  .fix-facts { margin-block: var(--todae-space-2); }
+  .checks-details { border-block-start: var(--todae-border-width) solid var(--todae-color-border-subtle); padding-block-start: var(--todae-space-3); }
+  .checks-details-body { padding-block-start: var(--todae-space-3); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  .checks-rules, .findings, .project-rules { list-style: none; margin: 0; padding: 0; }
+  .checks-rules { display: grid; gap: calc(var(--todae-space-1) / 2); }
+  .rule { border-block-end: var(--todae-border-width) solid var(--todae-color-border-subtle); padding-block: var(--todae-space-1); }
+  .rule-plain { padding-inline-start: var(--todae-space-1); }
+  .rule-id { font-family: var(--todae-font-family-mono); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  .rule-description, .rule-note { margin: var(--todae-space-1) 0 0; font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  .findings { display: grid; gap: var(--todae-space-1); margin-block: var(--todae-space-2); }
+  /* A finding as a row that points at it: Todae has no selectable list row with two lines, so this is plain CSS on its tokens. */
+  .finding { display: grid; gap: calc(var(--todae-space-1) / 2); width: 100%; min-height: var(--todae-space-6); text-align: start; padding: var(--todae-space-2); border: var(--todae-border-width) solid var(--todae-color-border-subtle); border-radius: var(--todae-radius-md); background: var(--todae-color-bg-surface); color: inherit; font: inherit; font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); cursor: pointer; }
+  .finding:hover:not(:disabled) { background: var(--todae-color-bg-highlight); }
+  .finding:focus-visible { outline: var(--todae-focus-ring-width) solid var(--todae-focus-ring); outline-offset: var(--todae-focus-ring-offset); }
+  .finding:disabled { cursor: default; }
+  .finding[aria-pressed="true"] { border-color: var(--todae-color-status-critical-border); background: var(--todae-color-status-critical-bg); }
+  .finding[data-kind="unverifiable"] { border-inline-start: var(--todae-harness-edge-status) solid var(--todae-color-status-warning-border); }
+  .finding[data-kind="violation"] { border-inline-start: var(--todae-harness-edge-status) solid var(--todae-color-status-critical-border); }
+  .finding-message { overflow-wrap: anywhere; }
+  .finding-place { color: var(--todae-color-fg-muted); font-family: var(--todae-font-family-mono); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); overflow-wrap: anywhere; }
+  .finding-ask { margin-block-start: calc(var(--todae-space-1) / 2); }
+
+  /* Text.Root reads --todae-text-font-size, so a small container sets it for the text inside. */
+  /* ---- Code: a plain editor, one tab behind the checks. ---- */
+  .code { min-height: 100%; }
+  .code-file { flex: 1; }
+  .code-field { flex: 1; }
+  .code-text, .code-field textarea { font-family: var(--todae-font-family-mono); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); line-height: var(--todae-font-leading-default); tab-size: 2; white-space: pre; min-height: 60vh; }
+  .code-field [data-kind="finding"] { background: var(--todae-color-status-critical-bg); box-shadow: 0 0 0 var(--todae-border-width) var(--todae-color-status-critical-border); }
+  /* Where a finding inside a layout instance is: the layout's element and each use, as buttons above the code. */
+  .code-places { padding: var(--todae-space-1) 0; }
+
+  /* ---- Chat: Todae's Conversation and Message, with the tool-call, reasoning and suggestions recipes. ---- */
+  .chat { display: flex; flex-direction: column; block-size: 100%; background: var(--todae-harness-panel-bg); min-height: 0; min-width: 0; }
+  .chat-busy { margin-inline-start: var(--todae-space-1); }
+  .chat-small { font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); margin: 0; }
+  .chat-settings { padding: var(--todae-space-2) var(--todae-harness-panel-padding); border-block-end: var(--todae-border-width) solid var(--todae-color-border-subtle); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  .chat-settings-body { padding-block: var(--todae-space-2); }
+  .chat-setting { flex: 1; min-width: 0; }
+  .chat-problem { margin: var(--todae-space-2) var(--todae-harness-panel-padding) 0; }
+  .chat-conversation { flex: 1; min-height: 0; display: grid; }
+  .chat-viewport { min-height: 0; }
+  .chat-content { padding: var(--todae-harness-panel-padding); }
+  .chat-empty, .chat-key { display: grid; gap: var(--todae-space-3); justify-items: start; padding-block: var(--todae-space-6); }
+  .chat-key { padding: var(--todae-space-5); border: var(--todae-border-width) solid var(--todae-color-border-subtle); border-radius: var(--todae-radius-lg); background: var(--todae-color-bg-canvas); }
+  .chat-empty-icon { display: inline-grid; place-items: center; inline-size: var(--todae-space-9); block-size: var(--todae-space-9); border-radius: var(--todae-radius-full); background: var(--todae-color-bg-subtle); color: var(--todae-color-fg-default); font-size: var(--todae-font-size-4); }
+  .chat-empty-title { margin: 0; --todae-text-h3-font-size: var(--todae-font-size-3); }
+  .chat-hint { margin: 0; }
+  .chat-suggestions { list-style: none; margin: 0; padding: 0; justify-items: start; }
+  .chat-key-privacy { font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  .chat-text { margin: 0; }
+  .chat-thinking-now { color: var(--todae-color-fg-muted); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  /* A step: one quiet line, its icon and plain summary, that opens to the tool's data. */
+  .chat-step { font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); color: var(--todae-color-fg-muted); min-width: 0; }
+  .chat-step-head { display: inline-flex; align-items: center; gap: var(--todae-space-2); min-width: 0; }
+  .chat-step-icon { display: inline-grid; place-items: center; inline-size: var(--todae-space-5); block-size: var(--todae-space-5); border-radius: var(--todae-radius-full); background: var(--todae-color-bg-subtle); color: var(--todae-color-fg-muted); flex: none; }
+  .chat-step-icon[data-status="done"] { color: var(--todae-color-status-success-fg); background: var(--todae-color-status-success-bg); }
+  .chat-step-icon[data-status="fixing"] { color: var(--todae-color-status-critical-fg); background: var(--todae-color-status-critical-bg); }
+  .chat-step-icon[data-status="problem"] { color: var(--todae-color-status-warning-fg); background: var(--todae-color-status-warning-bg); }
+  .chat-tool-title { overflow-wrap: anywhere; color: var(--todae-color-fg-default); }
+  .chat-step-body { padding: var(--todae-space-2) 0 var(--todae-space-2) var(--todae-space-7); display: grid; gap: var(--todae-space-2); }
+  /* Todae's CodeBlock scrolls sideways; in a narrow chat a tool's JSON wraps instead, and a long result scrolls in a capped box. */
+  .chat-pre { margin-block: var(--todae-space-1); max-height: 16rem; overflow: auto; font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .chat-proposal { padding: var(--todae-space-3) var(--todae-space-4); border: var(--todae-border-width) solid var(--todae-color-border-subtle); border-inline-start: var(--todae-harness-edge-status) solid var(--todae-color-status-info-border); border-radius: var(--todae-radius-lg); background: var(--todae-color-bg-canvas); }
+  .chat-proposal[data-tone="warning"] { border-inline-start-color: var(--todae-color-status-warning-border); }
+  .chat-proposal-title { margin: 0; }
+  .chat-actions { flex-wrap: wrap; align-items: center; gap: var(--todae-space-2); }
+  .chat-turn-details { font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); color: var(--todae-color-fg-muted); }
+  .chat-thinking { margin-block-start: var(--todae-space-2); }
+  .chat-notice { padding-inline-start: var(--todae-space-7); }
+  .chat-composer { padding: var(--todae-space-3) var(--todae-harness-panel-padding) var(--todae-harness-panel-padding); }
+  .chat-composer-row { align-items: center; justify-content: space-between; }
+  .chat-composer-hint { font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+
+  /* ---- Project ---- */
+  .project, .proposals, .review { max-width: 64rem; margin-inline: auto; }
+  .review { max-width: 96rem; }
+  .project section { display: grid; gap: var(--todae-space-3); }
+  .project-intro { display: grid; gap: var(--todae-space-2); }
+  .project-facts { margin: 0; }
+  .project-json { font-family: var(--todae-font-family-mono); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); background: var(--todae-color-bg-subtle); padding: var(--todae-space-2); border-radius: var(--todae-radius-md); overflow: auto; }
+  .project-rules { display: grid; gap: var(--todae-space-1); }
+  .project-summary { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--todae-space-3); }
+  .project-stat { display: grid; gap: var(--todae-space-1); padding: var(--todae-space-4); border: var(--todae-border-width) solid var(--todae-color-border-subtle); border-radius: var(--todae-radius-lg); background: var(--todae-color-bg-surface); }
+  .project-stat-value { font-size: var(--todae-font-size-5); font-weight: var(--todae-font-weight-bold); line-height: var(--todae-font-leading-tight); }
+  .project-chips { list-style: none; margin: 0; padding: 0; }
+  .section-head { display: grid; gap: var(--todae-space-1); }
+  .section-head h2 { margin: 0; }
+  .section-head p { margin: 0; }
+
+  /*
+   * Proposals and a proposal's review page: Todae's Card, Table, Badge, Steps,
+   * Disclosure, Alert, Field and ToggleGroup parts. This sheet places them,
+   * and adds what Todae has no part for: two columns of example cards that
+   * hold scaled frames, a before-and-after list of badges, a sticky action
+   * bar, and a read-only code excerpt sized to its lines.
+   */
+  .proposals-title { padding-inline: 0; text-align: start; font-weight: var(--todae-font-weight-bold); }
+  .proposals-table td { vertical-align: top; }
+  .proposals-id { font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); color: var(--todae-color-fg-muted); }
+  .review-title { margin: 0; }
+  .review-back { padding-inline: 0; }
+  .review-small { font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); margin: 0; }
+  .review-section { display: grid; gap: var(--todae-space-3); scroll-margin-top: 10rem; }
+  .example, .review-refusal { scroll-margin-top: 10rem; }
+  .review-section h2, .review-section h3 { margin: 0; }
+  .review-actions { position: sticky; top: calc(-1 * var(--todae-space-8)); z-index: 2; }
+  .review-verdict[data-tone="success"] { color: var(--todae-color-status-success-fg); }
+  .review-verdict[data-tone="warning"] { color: var(--todae-color-status-warning-fg); }
+  .review-verdict[data-tone="critical"] { color: var(--todae-color-status-critical-fg); }
+  .review-note { max-width: 40rem; }
+  .review-rules, .review-impact, .diff-list { list-style: none; margin: 0; padding: 0; }
+  .review-rules, .review-impact { display: grid; gap: var(--todae-space-3); }
+  .rule-words { display: grid; gap: var(--todae-space-1); margin-block-start: var(--todae-space-1); }
+  .rule-words-text, .rule-words-note { margin: 0; }
+  .diff { display: grid; gap: var(--todae-space-4); }
+  .diff-section { display: grid; gap: var(--todae-space-2); }
+  .diff-sides { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--todae-space-4); }
+  .diff-list { display: flex; flex-wrap: wrap; gap: var(--todae-space-1); margin-block-start: var(--todae-space-1); }
+  .review-pickers { row-gap: var(--todae-space-2); }
+  .review-picker { min-inline-size: 12rem; }
+  .review-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--todae-space-4); align-items: start; }
+  @media (max-width: 1100px) { .review-columns, .diff-sides { grid-template-columns: minmax(0, 1fr); } }
+  .review-column { display: grid; gap: var(--todae-space-3); min-width: 0; }
+  .example { position: relative; min-width: 0; }
+  .example[data-verdict="bad"] { box-shadow: 0 0 0 var(--todae-focus-ring-width) var(--todae-color-status-critical-border); }
+  .example-head { display: grid; gap: var(--todae-space-1); }
+  .example-name { margin: 0; --todae-text-h3-font-size: var(--todae-font-size-2); font-family: var(--todae-font-family-mono); }
+  .example-frames { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--todae-space-4); min-width: 0; overflow: hidden; padding: var(--todae-space-3); border-radius: var(--todae-radius-md); background-color: var(--todae-harness-canvas-bg); }
+  .example-frames .frame-card { min-width: 0; }
+  .impact-frames { position: relative; height: 0; overflow: hidden; }
+  .example-detail { overflow-wrap: anywhere; }
+  .example-code textarea, .example-code .code-text { min-height: 0; }
+  .history-entry { gap: calc(var(--todae-space-1) / 2); }
+  .history-note { margin: 0; }
+  .history-previous { margin-block-start: var(--todae-space-1); }
+
+  /* The Project view's layouts: parameters, then a preview frame under them. */
+  .layout-card-body { display: grid; gap: var(--todae-space-3); }
+  .layout-card-preview { display: grid; gap: var(--todae-space-1); justify-items: start; max-width: 100%; overflow-x: auto; padding: var(--todae-space-3); border-radius: var(--todae-radius-md); background-color: var(--todae-harness-canvas-bg); }
+}
