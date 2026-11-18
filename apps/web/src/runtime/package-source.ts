@@ -37,9 +37,25 @@ const REACT_MODULES: readonly (readonly [string, string])[] = [
   ["react-dom/client", "react-dom"],
 ];
 
-/** Resolves every package module and stylesheet a project's frames import. Rejects with a message that names what is missing. */
-export async function resolvePackages(library: ComponentLibrary, source: PackageSource): Promise<RuntimePackages> {
-  const requests: [string, PackageRequest][] = [...REACT_MODULES.map(([specifier, name]): [string, PackageRequest] => [specifier, { package: name, version: library.react }]), [library.package, { package: library.package, version: library.version }]];
+/**
+ * The json-render renderer a spec prototype's frames draw with, at the exact
+ * version the app is built and tested with: the app pins it, not the
+ * project, since it is the harness's renderer rather than the project's
+ * library.
+ */
+export const JSON_RENDER: PackageRequest = { package: "@json-render/react", version: "0.23.1" };
+
+/**
+ * Resolves every package module and stylesheet a project's frames import:
+ * React, React DOM and the library, and for a spec prototype json-render's
+ * renderer. Rejects with a message that names what is missing.
+ */
+export async function resolvePackages(library: ComponentLibrary, source: PackageSource, options: { readonly spec?: boolean } = {}): Promise<RuntimePackages> {
+  const requests: [string, PackageRequest][] = [
+    ...REACT_MODULES.map(([specifier, name]): [string, PackageRequest] => [specifier, { package: name, version: library.react }]),
+    [library.package, { package: library.package, version: library.version }],
+    ...(options.spec ? [[JSON_RENDER.package, JSON_RENDER] as [string, PackageRequest]] : []),
+  ];
   const resolved = await Promise.all(requests.map(async ([specifier, request]) => [specifier, await source.module(specifier, request)] as const));
   const styles = await Promise.all((library.stylesheets ?? []).map((path) => source.stylesheet(path, { package: library.package, version: library.version })));
   return { modules: Object.fromEntries(resolved), styles };

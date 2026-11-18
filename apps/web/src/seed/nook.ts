@@ -3,24 +3,33 @@ import { nook } from "../../../../packages/core/examples/nook/project";
 
 /**
  * The project the app opens with when it has none: core's worked example,
- * Nook on Todae, and its legal booking prototype, read from the files core's
- * own tests read, so the seed and the regression fixtures cannot drift apart.
+ * Nook on Todae, with its legal booking prototype twice: in TSX, and as
+ * json-render specs. Both are read from the files core's own tests read, so
+ * the seed and the regression fixtures cannot drift apart.
  */
 const ROOT = "../../../../packages/core/examples/nook/prototypes/legal/booking/";
 const raw = import.meta.glob("../../../../packages/core/examples/nook/prototypes/legal/booking/**/*", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
+const SPEC_ROOT = "../../../../packages/core/examples/nook/prototypes/spec/legal/booking/";
+const specRaw = import.meta.glob("../../../../packages/core/examples/nook/prototypes/spec/legal/booking/**/*", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 
 export const SEED_PROTOTYPE_ID = "booking";
+export const SEED_SPEC_PROTOTYPE_ID = "booking-spec";
 
-export function seedProject(): { readonly config: ProjectConfig; readonly prototype: Prototype } {
+function prototypeFrom(root: string, texts: Record<string, string>): Prototype {
   const files: Record<string, string> = {};
   let manifest: unknown = null;
-  for (const [path, text] of Object.entries(raw)) {
-    const relative = path.slice(ROOT.length);
+  for (const [path, text] of Object.entries(texts)) {
+    const relative = path.slice(root.length);
     if (relative === "manifest.json") manifest = JSON.parse(text);
     else files[relative] = text;
   }
-  const config = parseProjectConfig(JSON.parse(JSON.stringify(nook)));
   const prototype = parsePrototype({ ...(manifest as object), files });
-  if (!config.ok || !prototype.ok) throw new Error("the Nook seed does not validate");
-  return { config: config.value, prototype: prototype.value };
+  if (!prototype.ok) throw new Error("the Nook seed does not validate");
+  return prototype.value;
+}
+
+export function seedProject(): { readonly config: ProjectConfig; readonly prototype: Prototype; readonly spec: Prototype } {
+  const config = parseProjectConfig(JSON.parse(JSON.stringify(nook)));
+  if (!config.ok) throw new Error("the Nook seed does not validate");
+  return { config: config.value, prototype: prototypeFrom(ROOT, raw), spec: prototypeFrom(SPEC_ROOT, specRaw) };
 }

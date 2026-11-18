@@ -58,3 +58,15 @@ describe("the esm.sh package source", () => {
     expect(source.origins).toEqual(["https://esm.sh"]);
   });
 });
+
+describe("the json-render renderer spec frames load", () => {
+  it("is the exact version the app pins and installs", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { JSON_RENDER } = await import("./package-source");
+    const app = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "package.json"), "utf8")) as { dependencies: Record<string, string> };
+    const installed = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "..", "..", "node_modules", "@json-render", "react", "package.json"), "utf8")) as { version: string };
+    expect(app.dependencies["@json-render/react"]).toBe(JSON_RENDER.version);
+    expect(installed.version).toBe(JSON_RENDER.version);
+  });
+});

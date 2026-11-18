@@ -24,6 +24,15 @@ describe("the frame's reader of its parent's messages", () => {
     expect(readParentMessage({ protocol: PROTOCOL, type: "highlight", channel, generation: 3, element: null }, channel)).not.toBeNull();
   });
 
+  it("accepts a spec page, whose spec and parts are data, and drops one of the wrong shape", () => {
+    const spec = { library: "@tounsoo/todae", spec: { root: "page", elements: { page: { type: "Page", props: {}, children: [] } }, state: {} }, parts: { Page: { kind: "page", content: "none", props: [], binds: {}, events: [] } } };
+    expect(readParentMessage({ ...request, page: { spec } }, channel)).not.toBeNull();
+    expect(readParentMessage({ ...request, page: { spec: { ...spec, code: "alert(1)" } } }, channel)).toBeNull();
+    expect(readParentMessage({ ...request, page: { spec, module: "@prototype/pages/home.tsx" } }, channel)).toBeNull();
+    expect(readParentMessage({ ...request, page: { spec: { ...spec, parts: { Page: { kind: "page", content: "html", props: [], binds: {}, events: [] } } } } }, channel)).toBeNull();
+    expect(readParentMessage({ ...request, page: { spec: { ...spec, spec: { ...spec.spec, elements: { page: { props: {} } } } } } }, channel)).toBeNull();
+  });
+
   it("drops another channel, another protocol, an unknown field, a bad shape, and a page that is not one of the modules", () => {
     expect(readParentMessage(request, "c-2")).toBeNull();
     expect(readParentMessage({ ...request, protocol: "other" }, channel)).toBeNull();
