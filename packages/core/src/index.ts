@@ -79,3 +79,8 @@ export { CURRENT, NO_VARIANTS } from "./variants/types";
 export { checkVariant, nextVariantIds, parseVariantState, variantLabel, variantPrototype, withPageSpec } from "./variants/variants";
 export type { Recombination, Rename } from "./variants/recombine";
 export { recombine } from "./variants/recombine";
+
+export type { TsxExport } from "./export/tsx";
+export { specToTsx } from "./export/tsx";
+export type { ProjectExport, ProjectExportInput } from "./export/project";
+export { EXPORT_PROTOTYPE_DIR, EXPORT_TOOLING, exportReactProject } from "./export/project";
