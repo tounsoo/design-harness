@@ -6,7 +6,7 @@ const manifest = {
   packages: {
     react: { version: "19.3.1", modules: { react: "react.js", "react/jsx-runtime": "react-jsx-runtime.js" }, files: {} },
     "react-dom": { version: "19.3.1", modules: { "react-dom": "react-dom.js", "react-dom/client": "react-dom-client.js" }, files: {} },
-    "@tounsoo/todae": { version: "0.10.1", modules: { "@tounsoo/todae": "library.js" }, files: { "dist/todae.css": "todae.css" } },
+    "@tounsoo/todae": { version: "0.11.3", modules: { "@tounsoo/todae": "library.js" }, files: { "dist/todae.css": "todae.css" } },
   },
 };
 
@@ -36,10 +36,10 @@ describe("the local package source", () => {
 
   it("refuses a version it does not have, naming both", async () => {
     const source = localPackageSource("https://app.example/vendor/", fakeFetch().fetchText);
-    await expect(resolvePackages({ ...nook.library, version: "0.11.3" }, source)).rejects.toThrow("the local package source has @tounsoo/todae 0.10.1, but the project asks for 0.11.3");
+    await expect(resolvePackages({ ...nook.library, version: "0.10.1" }, source)).rejects.toThrow("the local package source has @tounsoo/todae 0.11.3, but the project asks for 0.10.1");
     await expect(resolvePackages({ ...nook.library, react: "18.3.1" }, source)).rejects.toThrow("has react 19.3.1, but the project asks for 18.3.1");
     await expect(resolvePackages({ ...nook.library, package: "@acme/ui" }, source)).rejects.toThrow("has no @acme/ui");
-    await expect(source.module("@tounsoo/todae/stack", { package: "@tounsoo/todae", version: "0.10.1" })).rejects.toThrow("serves only @tounsoo/todae of @tounsoo/todae");
+    await expect(source.module("@tounsoo/todae/stack", { package: "@tounsoo/todae", version: "0.11.3" })).rejects.toThrow("serves only @tounsoo/todae of @tounsoo/todae");
   });
 });
 
@@ -52,9 +52,9 @@ describe("the esm.sh package source", () => {
       "react/jsx-runtime": { url: "https://esm.sh/react@19.3.1/jsx-runtime" },
       "react-dom": { url: "https://esm.sh/react-dom@19.3.1?external=react,react-dom" },
       "react-dom/client": { url: "https://esm.sh/react-dom@19.3.1/client?external=react,react-dom" },
-      "@tounsoo/todae": { url: "https://esm.sh/@tounsoo/todae@0.10.1?external=react,react-dom" },
+      "@tounsoo/todae": { url: "https://esm.sh/@tounsoo/todae@0.11.3?external=react,react-dom" },
     });
-    expect(packages.styles).toEqual([{ url: "https://esm.sh/@tounsoo/todae@0.10.1/dist/todae.css" }]);
+    expect(packages.styles).toEqual([{ url: "https://esm.sh/@tounsoo/todae@0.11.3/dist/todae.css" }]);
     expect(source.origins).toEqual(["https://esm.sh"]);
   });
 });

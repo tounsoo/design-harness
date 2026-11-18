@@ -311,7 +311,7 @@ test("the board opens a frame at full size and the project view reads the config
     await page.getByRole("button", { name: "Back to board" }).click();
     await page.getByRole("tab", { name: "Project" }).click();
     await page.getByRole("heading", { name: "Component library" }).waitFor();
-    for (const text of ["@tounsoo/todae 0.10.1", "primary-action", "Room details", "TARGET_MIN_PX", "Rules in force (32)", "No proposals yet"]) {
+    for (const text of ["@tounsoo/todae 0.11.3", "primary-action", "Room details", "TARGET_MIN_PX", "Rules in force (32)", "No proposals yet"]) {
       assert.ok((await page.locator(".project").textContent()).includes(text), `the project view shows ${text}`);
     }
     await shot(page, `project-${colorScheme}`);
@@ -365,8 +365,8 @@ test("frames load React and the library by URL from a CDN-shaped origin", async 
     assert.equal(value.status, "pass", `every rule passes when packages come by URL: ${failing(value)}`);
     assert.ok(cdn.served.includes("/react@19.3.1"));
     assert.ok(cdn.served.includes("/react-dom@19.3.1/client?external=react,react-dom"));
-    assert.ok(cdn.served.includes("/@tounsoo/todae@0.10.1?external=react,react-dom"));
-    assert.ok(cdn.served.includes("/@tounsoo/todae@0.10.1/dist/todae.css"));
+    assert.ok(cdn.served.includes("/@tounsoo/todae@0.11.3?external=react,react-dom"));
+    assert.ok(cdn.served.includes("/@tounsoo/todae@0.11.3/dist/todae.css"));
     assert.deepEqual(errors, []);
   } finally {
     await cdn.close();
@@ -1556,7 +1556,7 @@ test("a stored project without a library description gets the bundled one on loa
   );
   await page.reload();
   await page.getByTestId("notice").waitFor();
-  assert.match(await page.getByTestId("notice").textContent(), /The project was brought up to date.*added the one it ships for @tounsoo\/todae 0\.10\.1 \(198 parts\)/);
+  assert.match(await page.getByTestId("notice").textContent(), /The project was brought up to date.*added the one it ships for @tounsoo\/todae 0\.11\.3 \(198 parts\)/);
   await measured(page, 1);
   await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
   await measured(page, 2);

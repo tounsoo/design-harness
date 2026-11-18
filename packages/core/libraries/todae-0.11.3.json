@@ -1,0 +1,4654 @@
+{
+ "package": "@tounsoo/todae",
+ "version": "0.11.3",
+ "parts": {
+  "Alert.Actions": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Alert.Close": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "tooltip": {
+     "type": "boolean",
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "ghost",
+      "primary",
+      "secondary"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Alert.Description": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Alert.Icon": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Alert.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "tone": {
+     "type": "enum",
+     "values": [
+      "critical",
+      "info",
+      "success",
+      "warning"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Alert.Title": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Attachment.Meta": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Attachment.Name": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Attachment.Preview": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Attachment.Progress": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Attachment.Remove": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "tooltip": {
+     "type": "boolean",
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "ghost",
+      "primary",
+      "secondary"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Attachment.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "status": {
+     "type": "enum",
+     "values": [
+      "error",
+      "ready",
+      "uploading"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Avatar.Fallback": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Avatar.Image": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Avatar.Root": {
+   "props": {
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "label": {
+     "type": "string",
+     "required": false
+    },
+    "tone": {
+     "type": "enum",
+     "values": [
+      "category-1",
+      "category-2",
+      "category-3",
+      "category-4",
+      "category-5",
+      "category-6",
+      "category-7",
+      "category-8",
+      "neutral"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Badge.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "tone": {
+     "type": "enum",
+     "values": [
+      "category-1",
+      "category-2",
+      "category-3",
+      "category-4",
+      "category-5",
+      "category-6",
+      "category-7",
+      "category-8",
+      "critical",
+      "info",
+      "neutral",
+      "success",
+      "warning"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "BottomSheet.Body": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "BottomSheet.Close": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "tooltip": {
+     "type": "boolean",
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "ghost",
+      "primary",
+      "secondary"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "BottomSheet.Description": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "BottomSheet.Footer": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "BottomSheet.Grabber": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "BottomSheet.Header": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "BottomSheet.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "defaultOpen": {
+     "type": "boolean",
+     "required": false
+    },
+    "defaultSnap": {
+     "type": "enum",
+     "values": [
+      "full",
+      "mid"
+     ],
+     "required": false
+    },
+    "dismissOnBackdrop": {
+     "type": "boolean",
+     "required": false
+    },
+    "dismissOnDrag": {
+     "type": "boolean",
+     "required": false
+    },
+    "dismissOnEscape": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "open": {
+     "type": "boolean",
+     "required": false,
+     "bind": "onOpenChange"
+    },
+    "snap": {
+     "type": "enum",
+     "values": [
+      "full",
+      "mid"
+     ],
+     "required": false,
+     "bind": "onSnapChange"
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "BottomSheet.Title": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Breadcrumbs.Item": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "current": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Breadcrumbs.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "separator": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Button.Group": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "aria-labelledby": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Button.Icon": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Button.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "defaultPressed": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "pressed": {
+     "type": "boolean",
+     "required": false,
+     "bind": "onPressedChange"
+    },
+    "tooltip": {
+     "type": "boolean",
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "ghost",
+      "primary",
+      "secondary"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Calendar.Grid": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "none",
+   "events": [
+    "press"
+   ]
+  },
+  "Calendar.Header": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "none",
+   "events": [
+    "press"
+   ]
+  },
+  "Calendar.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "firstDayOfWeek": {
+     "type": "number",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "locale": {
+     "type": "string",
+     "required": false
+    },
+    "mode": {
+     "type": "enum",
+     "values": [
+      "range",
+      "single"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Card.Body": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Card.Footer": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Card.Header": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Card.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Checkbox.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "checked": {
+     "type": "boolean",
+     "required": false,
+     "bind": "onCheckedChange"
+    },
+    "customValidity": {
+     "type": "string",
+     "required": false
+    },
+    "defaultChecked": {
+     "type": "boolean",
+     "required": false
+    },
+    "disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "indeterminate": {
+     "type": "boolean",
+     "required": false
+    },
+    "invalid": {
+     "type": "boolean",
+     "required": false
+    },
+    "name": {
+     "type": "string",
+     "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Chip.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "removeLabel": {
+     "type": "string",
+     "required": false
+    },
+    "tone": {
+     "type": "enum",
+     "values": [
+      "category-1",
+      "category-2",
+      "category-3",
+      "category-4",
+      "category-5",
+      "category-6",
+      "category-7",
+      "category-8",
+      "critical",
+      "info",
+      "neutral",
+      "success",
+      "warning"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "ChipList.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "maxRows": {
+     "type": "number",
+     "required": false
+    }
+   },
+   "content": "none",
+   "events": [
+    "press"
+   ],
+   "needs": [
+    "chips"
+   ]
+  },
+  "Coachmark.Close": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "tooltip": {
+     "type": "boolean",
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "ghost",
+      "primary",
+      "secondary"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Coachmark.Description": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "lines": {
+     "type": "number",
+     "required": false
+    },
+    "tone": {
+     "type": "enum",
+     "values": [
+      "accent",
+      "default",
+      "muted"
+     ],
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "label"
+     ],
+     "required": false
+    },
+    "weight": {
+     "type": "enum",
+     "values": [
+      "bold",
+      "medium",
+      "regular"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Coachmark.Footer": {
+   "props": {
+    "align": {
+     "type": "enum",
+     "values": [
+      "baseline",
+      "center",
+      "end",
+      "start",
+      "stretch"
+     ],
+     "required": false
+    },
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "as": {
+     "type": "enum",
+     "values": [
+      "div",
+      "footer",
+      "header",
+      "nav",
+      "ol",
+      "section",
+      "ul"
+     ],
+     "required": false
+    },
+    "gap": {
+     "type": "enum",
+     "values": [
+      "condensed",
+      "none",
+      "normal",
+      "spacious"
+     ],
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "justify": {
+     "type": "enum",
+     "values": [
+      "between",
+      "center",
+      "end",
+      "start"
+     ],
+     "required": false
+    },
+    "wrap": {
+     "type": "boolean",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Coachmark.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "arrows": {
+     "type": "boolean",
+     "required": false
+    },
+    "defaultOpen": {
+     "type": "boolean",
+     "required": false
+    },
+    "dismissOnBackdrop": {
+     "type": "boolean",
+     "required": false
+    },
+    "dismissOnEscape": {
+     "type": "boolean",
+     "required": false
+    },
+    "open": {
+     "type": "boolean",
+     "required": false,
+     "bind": "onOpenChange"
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ],
+   "needs": [
+    "targetRef"
+   ]
+  },
+  "Coachmark.Title": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "lines": {
+     "type": "number",
+     "required": false
+    },
+    "tone": {
+     "type": "enum",
+     "values": [
+      "accent",
+      "default",
+      "muted"
+     ],
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "label"
+     ],
+     "required": false
+    },
+    "weight": {
+     "type": "enum",
+     "values": [
+      "bold",
+      "medium",
+      "regular"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Code.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "CodeBlock.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "ColorPicker.Area": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "none",
+   "events": [
+    "press"
+   ]
+  },
+  "ColorPicker.Hue": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "ColorPicker.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "defaultValue": {
+     "type": "string",
+     "required": false
+    },
+    "disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": false,
+     "bind": "onValueChange"
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Contents.Item": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Contents.Link": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Contents.List": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Contents.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Conversation.Content": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Conversation.Root": {
+   "props": {
+    "announceMessages": {
+     "type": "boolean",
+     "required": false
+    },
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Conversation.ScrollButton": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "tooltip": {
+     "type": "boolean",
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "ghost",
+      "primary",
+      "secondary"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Conversation.Viewport": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "DataList.Details": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "DataList.Item": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "DataList.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "minItemSize": {
+     "type": "string",
+     "required": false
+    },
+    "orientation": {
+     "type": "enum",
+     "values": [
+      "horizontal",
+      "vertical"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "DataList.Term": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Description.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": true
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Dialog.Body": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Dialog.Close": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "tooltip": {
+     "type": "boolean",
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "ghost",
+      "primary",
+      "secondary"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Dialog.Description": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Dialog.Footer": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Dialog.Header": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Dialog.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "defaultOpen": {
+     "type": "boolean",
+     "required": false
+    },
+    "dismissOnBackdrop": {
+     "type": "boolean",
+     "required": false
+    },
+    "dismissOnEscape": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "open": {
+     "type": "boolean",
+     "required": false,
+     "bind": "onOpenChange"
+    },
+    "role": {
+     "type": "enum",
+     "values": [
+      "alertdialog",
+      "dialog"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Dialog.Title": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Disclosure.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Disclosure.Summary": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Drawer.Body": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Drawer.Close": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "tooltip": {
+     "type": "boolean",
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "ghost",
+      "primary",
+      "secondary"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Drawer.Description": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Drawer.Footer": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Drawer.Header": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Drawer.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "defaultOpen": {
+     "type": "boolean",
+     "required": false
+    },
+    "dismissOnBackdrop": {
+     "type": "boolean",
+     "required": false
+    },
+    "dismissOnEscape": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "open": {
+     "type": "boolean",
+     "required": false,
+     "bind": "onOpenChange"
+    },
+    "side": {
+     "type": "enum",
+     "values": [
+      "end",
+      "start"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Drawer.Title": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Drilldown.Back": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "tooltip": {
+     "type": "boolean",
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "ghost",
+      "primary",
+      "secondary"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Drilldown.Label": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "none",
+   "events": [
+    "press"
+   ]
+  },
+  "Drilldown.Root": {
+   "props": {
+    "escape": {
+     "type": "enum",
+     "values": [
+      "back",
+      "close"
+     ],
+     "required": false
+    }
+   },
+   "content": "children"
+  },
+  "Drilldown.Trigger": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "tooltip": {
+     "type": "boolean",
+     "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": true
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "ghost",
+      "primary",
+      "secondary"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Drilldown.View": {
+   "props": {
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "label": {
+     "type": "string",
+     "required": true
+    },
+    "value": {
+     "type": "string",
+     "required": true
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Drilldown.Viewport": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "EmptyState.Actions": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "EmptyState.Description": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "EmptyState.Icon": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "EmptyState.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "EmptyState.Title": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "as": {
+     "type": "enum",
+     "values": [
+      "h2",
+      "h3",
+      "h4",
+      "h5",
+      "h6",
+      "p"
+     ],
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "ErrorMessage.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "none",
+   "events": [
+    "press"
+   ]
+  },
+  "Field.Affix": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Field.ChipInput": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "chipLayout": {
+     "type": "enum",
+     "values": [
+      "inline",
+      "row"
+     ],
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "inputValue": {
+     "type": "string",
+     "required": true,
+     "bind": "onInputValueChange"
+    },
+    "maxRows": {
+     "type": "number",
+     "required": false
+    },
+    "removeOnBackspace": {
+     "type": "boolean",
+     "required": false
+    },
+    "required": {
+     "type": "boolean",
+     "required": false
+    }
+   },
+   "content": "none",
+   "events": [
+    "press"
+   ],
+   "needs": [
+    "chips",
+    "onChipRemove",
+    "onCommit",
+    "onInputValueChange"
+   ]
+  },
+  "Field.Counter": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "none",
+   "events": [
+    "press"
+   ]
+  },
+  "Field.DateInput": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "locale": {
+     "type": "string",
+     "required": false
+    },
+    "placeholder": {
+     "type": "string",
+     "required": false
+    },
+    "required": {
+     "type": "boolean",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ],
+   "needs": [
+    "value"
+   ]
+  },
+  "Field.DateRangeInput": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "locale": {
+     "type": "string",
+     "required": false
+    },
+    "placeholder": {
+     "type": "string",
+     "required": false
+    },
+    "required": {
+     "type": "boolean",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ],
+   "needs": [
+    "value"
+   ]
+  },
+  "Field.DateTimeInput": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "locale": {
+     "type": "string",
+     "required": false
+    },
+    "placeholder": {
+     "type": "string",
+     "required": false
+    },
+    "required": {
+     "type": "boolean",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ],
+   "needs": [
+    "value"
+   ]
+  },
+  "Field.Decrement": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Field.Group": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Field.Icon": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "interactive": {
+     "type": "boolean",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Field.Increment": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Field.NumberInput": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "largeStep": {
+     "type": "number",
+     "required": false
+    },
+    "locale": {
+     "type": "string",
+     "required": false
+    },
+    "max": {
+     "type": "number",
+     "required": false
+    },
+    "min": {
+     "type": "number",
+     "required": false
+    },
+    "placeholder": {
+     "type": "string",
+     "required": false
+    },
+    "required": {
+     "type": "boolean",
+     "required": false
+    },
+    "step": {
+     "type": "number",
+     "required": false
+    },
+    "value": {
+     "type": "number",
+     "required": true,
+     "bind": "onValueChange"
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Field.OneTimeCode": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "characters": {
+     "type": "enum",
+     "values": [
+      "alphanumeric",
+      "digits"
+     ],
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "length": {
+     "type": "number",
+     "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": true,
+     "bind": "onValueChange"
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Field.Picker": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "closeOnPick": {
+     "type": "boolean",
+     "required": false
+    },
+    "defaultOpen": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "label": {
+     "type": "string",
+     "required": false
+    },
+    "open": {
+     "type": "boolean",
+     "required": false,
+     "bind": "onOpenChange"
+    },
+    "swatch": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "none",
+   "events": [
+    "press"
+   ]
+  },
+  "Field.Root": {
+   "props": {
+    "aria-describedby": {
+     "type": "string",
+     "required": false
+    },
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "aria-labelledby": {
+     "type": "string",
+     "required": false
+    },
+    "customValidity": {
+     "type": "string",
+     "required": false
+    },
+    "disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "invalid": {
+     "type": "boolean",
+     "required": false
+    },
+    "name": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Field.Row": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Field.Select": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": true,
+     "bind": "onValueChange"
+    },
+    "options": {
+     "type": "options",
+     "required": true
+    }
+   },
+   "content": "options",
+   "events": [
+    "press"
+   ]
+  },
+  "Field.TextInput": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "placeholder": {
+     "type": "string",
+     "required": false
+    },
+    "type": {
+     "type": "enum",
+     "values": [
+      "email",
+      "password",
+      "search",
+      "tel",
+      "text",
+      "url"
+     ],
+     "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": true,
+     "bind": "onValueChange"
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Field.Textarea": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "autoGrow": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "maxRows": {
+     "type": "number",
+     "required": false
+    },
+    "placeholder": {
+     "type": "string",
+     "required": false
+    },
+    "rows": {
+     "type": "number",
+     "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": true,
+     "bind": "onValueChange"
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Field.TimeInput": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "locale": {
+     "type": "string",
+     "required": false
+    },
+    "placeholder": {
+     "type": "string",
+     "required": false
+    },
+    "required": {
+     "type": "boolean",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ],
+   "needs": [
+    "value"
+   ]
+  },
+  "Fieldset.Legend": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Fieldset.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "customValidity": {
+     "type": "string",
+     "required": false
+    },
+    "disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "invalid": {
+     "type": "boolean",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Form.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Form.Summary": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "none",
+   "events": [
+    "press"
+   ]
+  },
+  "Grid.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "columns": {
+     "type": "number",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "minItemSize": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Kbd.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Label.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "htmlFor": {
+     "type": "string",
+     "required": true
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Link.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Loader.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "dots",
+      "spinner"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Mention.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": true
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ],
+   "needs": [
+    "source"
+   ]
+  },
+  "Menu.CheckboxItem": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "checked": {
+     "type": "boolean",
+     "required": false,
+     "bind": "onCheckedChange"
+    },
+    "closeOnSelect": {
+     "type": "boolean",
+     "required": false
+    },
+    "defaultChecked": {
+     "type": "boolean",
+     "required": false
+    },
+    "disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "textValue": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Menu.Content": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "aria-labelledby": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Menu.ContextTrigger": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Menu.Group": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "aria-labelledby": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Menu.Item": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "closeOnSelect": {
+     "type": "boolean",
+     "required": false
+    },
+    "disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "textValue": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Menu.RadioGroup": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "aria-labelledby": {
+     "type": "string",
+     "required": false
+    },
+    "defaultValue": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": false,
+     "bind": "onValueChange"
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Menu.RadioItem": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "closeOnSelect": {
+     "type": "boolean",
+     "required": false
+    },
+    "disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "textValue": {
+     "type": "string",
+     "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": true
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Menu.Root": {
+   "props": {
+    "defaultOpen": {
+     "type": "boolean",
+     "required": false
+    },
+    "open": {
+     "type": "boolean",
+     "required": false,
+     "bind": "onOpenChange"
+    }
+   },
+   "content": "children"
+  },
+  "Menu.Separator": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "none",
+   "events": [
+    "press"
+   ]
+  },
+  "Menu.Submenu": {
+   "props": {
+    "defaultOpen": {
+     "type": "boolean",
+     "required": false
+    },
+    "open": {
+     "type": "boolean",
+     "required": false,
+     "bind": "onOpenChange"
+    }
+   },
+   "content": "children"
+  },
+  "Menu.SubmenuContent": {
+   "props": {},
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Menu.SubmenuTrigger": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "textValue": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Menu.Trigger": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "tooltip": {
+     "type": "boolean",
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "ghost",
+      "primary",
+      "secondary"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Message.Actions": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "reveal": {
+     "type": "enum",
+     "values": [
+      "always",
+      "hover"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Message.Avatar": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Message.Content": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Message.Header": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Message.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "from": {
+     "type": "enum",
+     "values": [
+      "assistant",
+      "system",
+      "user"
+     ],
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "streaming": {
+     "type": "boolean",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Message.Time": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "dateStyle": {
+     "type": "enum",
+     "values": [
+      "full",
+      "long",
+      "medium",
+      "short"
+     ],
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "locale": {
+     "type": "string",
+     "required": false
+    },
+    "timeStyle": {
+     "type": "enum",
+     "values": [
+      "full",
+      "long",
+      "medium",
+      "short"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ],
+   "needs": [
+    "value"
+   ]
+  },
+  "Meter.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Nav.Branch": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ],
+   "needs": [
+    "label"
+   ]
+  },
+  "Nav.Group": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Nav.Item": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Nav.Link": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Nav.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "OptionList.Option": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": true
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "OptionList.Root": {
+   "props": {
+    "activeValue": {
+     "type": "string",
+     "required": false,
+     "bind": "onActiveValueChange"
+    },
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "aria-labelledby": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "selectionMode": {
+     "type": "enum",
+     "values": [
+      "multiple",
+      "single"
+     ],
+     "required": false
+    },
+    "tabIndex": {
+     "type": "number",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ],
+   "needs": [
+    "onValueChange",
+    "value"
+   ]
+  },
+  "Pagination.Ellipsis": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Pagination.Item": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Pagination.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Popover.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "aria-labelledby": {
+     "type": "string",
+     "required": false
+    },
+    "arrows": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": true
+    },
+    "open": {
+     "type": "boolean",
+     "required": true
+    },
+    "role": {
+     "type": "enum",
+     "values": [
+      "dialog"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ],
+   "needs": [
+    "onClick",
+    "onPointerDown"
+   ]
+  },
+  "Progress.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Prose.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "RadioGroup.Item": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": true
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "RadioGroup.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "aria-labelledby": {
+     "type": "string",
+     "required": false
+    },
+    "customValidity": {
+     "type": "string",
+     "required": false
+    },
+    "defaultValue": {
+     "type": "string",
+     "required": false
+    },
+    "disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "invalid": {
+     "type": "boolean",
+     "required": false
+    },
+    "name": {
+     "type": "string",
+     "required": false
+    },
+    "orientation": {
+     "type": "enum",
+     "values": [
+      "horizontal",
+      "vertical"
+     ],
+     "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": false,
+     "bind": "onValueChange"
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "ScrollArea.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "arrows": {
+     "type": "boolean",
+     "required": false
+    },
+    "axis": {
+     "type": "enum",
+     "values": [
+      "block",
+      "both",
+      "inline"
+     ],
+     "required": false
+    },
+    "focusable": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Separator.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Skeleton.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Slider.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "aria-valuetext": {
+     "type": "string",
+     "required": false
+    },
+    "disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "endLabel": {
+     "type": "string",
+     "required": false
+    },
+    "form": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "mode": {
+     "type": "enum",
+     "values": [
+      "range",
+      "single"
+     ],
+     "required": false
+    },
+    "startLabel": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "none",
+   "events": [
+    "press"
+   ]
+  },
+  "Splitter.Handle": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "none",
+   "events": [
+    "press"
+   ]
+  },
+  "Splitter.Panel": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Splitter.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "collapsible": {
+     "type": "boolean",
+     "required": false
+    },
+    "defaultValue": {
+     "type": "number",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "max": {
+     "type": "number",
+     "required": false
+    },
+    "min": {
+     "type": "number",
+     "required": false
+    },
+    "orientation": {
+     "type": "enum",
+     "values": [
+      "horizontal",
+      "vertical"
+     ],
+     "required": false
+    },
+    "primary": {
+     "type": "enum",
+     "values": [
+      "end",
+      "start"
+     ],
+     "required": false
+    },
+    "show": {
+     "type": "enum",
+     "values": [
+      "both",
+      "end",
+      "start"
+     ],
+     "required": false
+    },
+    "step": {
+     "type": "number",
+     "required": false
+    },
+    "value": {
+     "type": "number",
+     "required": false,
+     "bind": "onValueChange"
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Stack.Root": {
+   "props": {
+    "align": {
+     "type": "enum",
+     "values": [
+      "baseline",
+      "center",
+      "end",
+      "start",
+      "stretch"
+     ],
+     "required": false
+    },
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "as": {
+     "type": "enum",
+     "values": [
+      "div",
+      "footer",
+      "header",
+      "nav",
+      "ol",
+      "section",
+      "ul"
+     ],
+     "required": false
+    },
+    "direction": {
+     "type": "enum",
+     "values": [
+      "column",
+      "row"
+     ],
+     "required": false
+    },
+    "gap": {
+     "type": "enum",
+     "values": [
+      "condensed",
+      "none",
+      "normal",
+      "spacious"
+     ],
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "justify": {
+     "type": "enum",
+     "values": [
+      "between",
+      "center",
+      "end",
+      "start"
+     ],
+     "required": false
+    },
+    "wrap": {
+     "type": "boolean",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Steps.Item": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "status": {
+     "type": "enum",
+     "values": [
+      "current",
+      "done",
+      "error",
+      "pending"
+     ],
+     "required": false
+    },
+    "statusLabel": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Steps.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "plan",
+      "progress"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Switch.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "checked": {
+     "type": "boolean",
+     "required": false,
+     "bind": "onCheckedChange"
+    },
+    "defaultChecked": {
+     "type": "boolean",
+     "required": false
+    },
+    "disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "invalid": {
+     "type": "boolean",
+     "required": false
+    },
+    "name": {
+     "type": "string",
+     "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Table.Body": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Table.Caption": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Table.Cell": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Table.Foot": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Table.Head": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Table.HeaderCell": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "sort": {
+     "type": "enum",
+     "values": [
+      "ascending",
+      "descending",
+      "none"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Table.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Table.Row": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "selected": {
+     "type": "boolean",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Table.SortButton": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Tabs.List": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "aria-labelledby": {
+     "type": "string",
+     "required": false
+    },
+    "arrows": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Tabs.Panel": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "keepMounted": {
+     "type": "boolean",
+     "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": true
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Tabs.Root": {
+   "props": {
+    "activation": {
+     "type": "enum",
+     "values": [
+      "automatic",
+      "manual"
+     ],
+     "required": false
+    },
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "defaultValue": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "orientation": {
+     "type": "enum",
+     "values": [
+      "horizontal",
+      "vertical"
+     ],
+     "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": false,
+     "bind": "onValueChange"
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Tabs.Tab": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": true
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Text.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "as": {
+     "type": "enum",
+     "values": [
+      "h1",
+      "h2",
+      "h3",
+      "h4",
+      "h5",
+      "h6",
+      "p",
+      "span",
+      "strong"
+     ],
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "lines": {
+     "type": "number",
+     "required": false
+    },
+    "tone": {
+     "type": "enum",
+     "values": [
+      "accent",
+      "default",
+      "muted"
+     ],
+     "required": false
+    },
+    "tooltip": {
+     "type": "boolean",
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "label"
+     ],
+     "required": false
+    },
+    "weight": {
+     "type": "enum",
+     "values": [
+      "bold",
+      "medium",
+      "regular"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Toast.Action": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "tooltip": {
+     "type": "boolean",
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "ghost",
+      "primary",
+      "secondary"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Toast.Close": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "tooltip": {
+     "type": "boolean",
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "ghost",
+      "primary",
+      "secondary"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Toast.Description": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Toast.Icon": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Toast.Region": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "hotkey": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "layout": {
+     "type": "enum",
+     "values": [
+      "list",
+      "stack"
+     ],
+     "required": false
+    },
+    "limit": {
+     "type": "number",
+     "required": false
+    },
+    "placement": {
+     "type": "enum",
+     "values": [
+      "bottom-center",
+      "bottom-end",
+      "bottom-start",
+      "top-center",
+      "top-end",
+      "top-start"
+     ],
+     "required": false
+    }
+   },
+   "content": "none",
+   "events": [
+    "press"
+   ],
+   "needs": [
+    "children",
+    "toaster"
+   ]
+  },
+  "Toast.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "tone": {
+     "type": "enum",
+     "values": [
+      "critical",
+      "info",
+      "success",
+      "warning"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Toast.Title": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "ToggleGroup.Item": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "tooltip": {
+     "type": "boolean",
+     "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": true
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "ghost",
+      "primary",
+      "secondary"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "ToggleGroup.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "orientation": {
+     "type": "enum",
+     "values": [
+      "horizontal",
+      "vertical"
+     ],
+     "required": false
+    },
+    "selectionMode": {
+     "type": "enum",
+     "values": [
+      "multiple",
+      "single"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Toolbar.Group": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Toolbar.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "loop": {
+     "type": "boolean",
+     "required": false
+    },
+    "orientation": {
+     "type": "enum",
+     "values": [
+      "horizontal",
+      "vertical"
+     ],
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Toolbar.Separator": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "none",
+   "events": [
+    "press"
+   ]
+  },
+  "Tooltip.Root": {
+   "props": {
+    "id": {
+     "type": "string",
+     "required": true
+    },
+    "interactive": {
+     "type": "boolean",
+     "required": true
+    },
+    "open": {
+     "type": "boolean",
+     "required": true
+    },
+    "warm": {
+     "type": "boolean",
+     "required": false
+    }
+   },
+   "content": "children"
+  },
+  "Tree.Group": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Tree.Icon": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Tree.Item": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": true
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Tree.Label": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Tree.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "defaultValue": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": false,
+     "bind": "onValueChange"
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "VisuallyHidden.Root": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "focusable": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  }
+ }
+}

@@ -1,5 +1,6 @@
 import type { PartDescription, ProjectConfig } from "@design-harness/core";
-import todae from "../../../../packages/core/libraries/todae-0.10.1.json";
+import todae0101 from "../../../../packages/core/libraries/todae-0.10.1.json";
+import todae0113 from "../../../../packages/core/libraries/todae-0.11.3.json";
 
 /**
  * Stored projects from before spec prototypes have no `library.parts`, the
@@ -12,10 +13,14 @@ import todae from "../../../../packages/core/libraries/todae-0.10.1.json";
 
 type Parts = Readonly<Record<string, PartDescription>>;
 
-/** The library descriptions this app ships, by `package@version`: written by core's describe-library script. */
-export const BUNDLED_PARTS: Readonly<Record<string, Parts>> = {
-  [`${todae.package}@${todae.version}`]: todae.parts as Parts,
-};
+/**
+ * The library descriptions this app ships, by `package@version`: written by
+ * core's describe-library script. A project gets the one for exactly its
+ * library's version, so a project stored on an older Todae keeps checking.
+ */
+export const BUNDLED_PARTS: Readonly<Record<string, Parts>> = Object.fromEntries(
+  [todae0101, todae0113].map((description) => [`${description.package}@${description.version}`, description.parts as Parts]),
+);
 
 /** Something the app changed or found about stored data on load, said once. */
 export type LoadNote = { readonly tone: "info" | "warning"; readonly title: string; readonly text: string };

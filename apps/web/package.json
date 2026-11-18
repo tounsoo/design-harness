@@ -18,7 +18,7 @@
     "@design-harness/core": "0.0.0",
     "@json-render/core": "0.23.1",
     "@json-render/react": "0.23.1",
-    "@tounsoo/todae": "0.10.1",
+    "@tounsoo/todae": "0.11.3",
     "dom-accessibility-api": "0.7.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
