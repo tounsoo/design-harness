@@ -10,3 +10,22 @@ Two things hold everywhere:
 - **A proposal becomes a check.** A proposal carries the inventory change, the rule that governs it as data, and examples that must pass and fail. It is adopted only when the rule passes and fails its own examples, and from then on the rule runs on every prototype in the project.
 
 The ideas come from [agent-design-loop](https://github.com/tounsoo/agent-design-loop).
+
+## What is here
+
+- [`packages/core`](packages/core/README.md): the checking engine. Project config and prototype as validated JSON, a page-model extractor, a rule engine of pure, deterministic checks, and the proposal lifecycle.
+- [`apps/web`](apps/web/README.md): the browser app. A seeded project (Nook, on [Todae](https://github.com/tounsoo/todae)), its prototype rendered as a board of sandboxed frames, one per scenario and view, and core's report beside it, with each finding pointed at in its frame or its file. A plain code view stands in for the agent, which comes next; the chat panel is reserved for it.
+
+## Run it
+
+Node 22.
+
+```sh
+npm ci
+npm run dev     # the app on Vite's dev server
+npm run check   # typecheck, lint and unit tests: the one gate
+npm run e2e     # build the app and run the end-to-end tests in Chromium
+```
+
+Everything runs in the browser: `npm run build` is a static site, and projects stay in the browser's IndexedDB, with export to and import from one JSON file.
+

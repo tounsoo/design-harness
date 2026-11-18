@@ -1,0 +1,29 @@
+{
+  "name": "@design-harness/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The design-harness web app: a project's prototype rendered as a board of sandboxed frames, with core's checks beside it. Fully client-side.",
+  "type": "module",
+  "scripts": {
+    "vendor": "node scripts/build-vendor.mjs",
+    "dev": "npm run vendor && vite",
+    "build": "npm run vendor && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "e2e": "npm run build && node e2e/run.mjs"
+  },
+  "dependencies": {
+    "@babel/parser": "^7.29.0",
+    "@design-harness/core": "0.0.0",
+    "@tounsoo/todae": "0.10.1",
+    "dom-accessibility-api": "0.7.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "sucrase": "3.35.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "fake-indexeddb": "6.2.8"
+  }
+}

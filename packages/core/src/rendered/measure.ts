@@ -12,23 +12,26 @@ export const AA_LARGE = 3;
 
 export type Heading = { readonly text: string; readonly level: number; readonly shown: boolean };
 
+/** One outline problem, with the index of the heading it is about, when it is about one. */
+export type HeadingProblem = { readonly message: string; readonly index?: number };
+
 /** The page's heading outline problems: one visible h1 first, no second h1, no level skipped going down. */
-export function headingProblems(headings: readonly Heading[]): string[] {
+export function headingProblems(headings: readonly Heading[]): HeadingProblem[] {
   const titleIndex = headings.findIndex((heading) => heading.level === 1 && heading.shown);
   const title = headings[titleIndex];
-  if (!title) return ["The page has no visible title: it needs one h1, and the other headings sit under it."];
-  const problems: string[] = [];
+  if (!title) return [{ message: "The page has no visible title: it needs one h1, and the other headings sit under it." }];
+  const problems: HeadingProblem[] = [];
   let previous = title;
   headings.forEach((heading, index) => {
     if (index === titleIndex) return;
     const name = `h${heading.level} "${heading.text}"`;
     if (heading.level === 1) {
-      problems.push(`${name} is a second h1. A page has one h1, its title "${title.text}".`);
+      problems.push({ message: `${name} is a second h1. A page has one h1, its title "${title.text}".`, index });
     } else if (index < titleIndex) {
-      problems.push(`${name} comes before the title "${title.text}". The title is the page's first heading.`);
+      problems.push({ message: `${name} comes before the title "${title.text}". The title is the page's first heading.`, index });
       return;
     } else if (heading.level > previous.level + 1) {
-      problems.push(`${name} skips a level: it follows h${previous.level} "${previous.text}", so it is h${Math.min(previous.level + 1, 6)} or a level above.`);
+      problems.push({ message: `${name} skips a level: it follows h${previous.level} "${previous.text}", so it is h${Math.min(previous.level + 1, 6)} or a level above.`, index });
     }
     previous = heading;
   });

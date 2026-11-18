@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { HEADER, flat, homeTree, named, prototype } from "../../test/helpers";
+import { BUILT_IN_RULES } from "../builtins";
+import { HEADER, check, flat, homeTree, messages, named, prototype } from "../../test/helpers";
 import { extractPrototype } from "./index";
 
 const page = (body: string, extra = "") => ({ "pages/home.tsx": `${HEADER}${extra}\nexport function Home() {\n  return (\n    <>\n${body}\n    </>\n  );\n}\n` });
@@ -214,3 +215,38 @@ export const Home = () => { import("./lazy"); require("left-pad"); return null; 
     ]);
   });
 });
+
+describe("a page that reads its scenario", () => {
+  // The page kit renders each manifest page as <Page scenario="..." state="..." />.
+  const statePage = (body: string) => ({
+    "pages/home.tsx": `import { Slot, type PageProps } from "@design-harness/page";\nimport { Button, Text } from "@tounsoo/todae";\nexport function Home({ scenario, state }: PageProps) {\n  return (\n    <>\n${body}\n    </>\n  );\n}\n`,
+  });
+
+  it("keeps what each state shows, marked conditional, since the extractor reads code, not one scenario", () => {
+    const tree = homeTree(statePage(`      <Slot name="facts">{state === "booked" && <Text.Root as="p">Booked</Text.Root>}<Text.Root as="p">{scenario}</Text.Root></Slot>`));
+    const texts = named(tree, "Text.Root").map((node) => [node.text, node.conditional, node.textDynamic]);
+    expect(texts).toEqual([
+      ["Booked", true, false],
+      ["", false, true],
+    ]);
+  });
+
+  it("counts a primary action shown in only one state against the page, as every other condition is", () => {
+    const report = check(BUILT_IN_RULES.filter((rule) => rule.id === "one-primary-per-page"), statePage(`      <Slot name="action">{state === "held" ? <Button.Root>Book room</Button.Root> : <Button.Root>Hold room</Button.Root>}</Slot>`));
+    expect(messages(report)).toEqual([expect.stringMatching(/^violation: Page "home" has 2 primary actions, more than 1/)]);
+  });
+
+  it("cannot tell a role picked by state, so the rule says so instead of passing", () => {
+    const report = check(BUILT_IN_RULES.filter((rule) => rule.id === "one-primary-per-page"), statePage(`      <Slot name="action"><Button.Root variant={state === "held" ? "primary" : "secondary"}>Book room</Button.Root><Button.Root>Hold room</Button.Root></Slot>`));
+    expect(report.rules.find((rule) => rule.rule === "one-primary-per-page")?.status).toBe("fail");
+    expect(messages(report).join("\n")).toContain("unverifiable");
+  });
+
+  it("imports the PageProps type from the page kit without breaking the imports rule", () => {
+    const report = check(BUILT_IN_RULES.filter((rule) => rule.id === "imports-from-library"), {
+      "pages/home.tsx": `import { Slot, PageProps } from "@design-harness/page";\nimport { Text } from "@tounsoo/todae";\nexport function Home(props: PageProps) { return <Slot name="title"><Text.Root as="h1">{props.state}</Text.Root></Slot>; }`,
+    });
+    expect(messages(report)).toEqual([]);
+  });
+});
+

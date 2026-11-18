@@ -23,7 +23,7 @@ The worked example is [`examples/nook/`](examples/nook/): Nook, a room booking a
 
 | Field | What it holds |
 | --- | --- |
-| `library` | The npm `package` and `version`, and `roles`: which parts and prop values are the `action`, `primary-action`, `secondary-action`, `disclosure`, `disclosure-summary` and `question`. Rules select by role, so they hold for any library. |
+| `library` | The npm `package` and its exact `version`, the exact `react` version it renders with, optional `stylesheets` (paths inside the package, such as `dist/todae.css`) and `schemeAttribute` (the root attribute that switches it to a view's colour scheme, such as Todae's `data-appearance`), and `roles`: which parts and prop values are the `action`, `primary-action`, `secondary-action`, `disclosure`, `disclosure-summary` and `question`. Rules select by role, so they hold for any library. Versions are exact, never ranges, so a prototype renders with the same code on every load. |
 | `inventories` | `components` (the library's top-level exports a prototype may render), `layouts` (ids), `pageTypes` (each with `kind` `action`, `collection` or `content`, its `slots`, its `chrome` slots, and for `action` its `primarySlot`), `flowStates`. |
 | `inputs` | `tasks` (success state, max steps), `ranking` (rank 1 is the primary action), `disclosedSections`, and `caps`: named numbers rules read, each with the direction that is `stricter`. |
 | `views` | The viewports rendered snapshots are expected at. |
@@ -42,21 +42,24 @@ Todae's roles, from the example:
 
 `Prototype` ([`src/prototype/types.ts`](src/prototype/types.ts)) is `files` (path to TSX text), `pages` (id, page type, and the component: a file and an export name), `layouts` (id and component), `scenarios` (id, flow state, page), and `flow` (`states`, and per task a `start` and its `transitions`). The flow is data, so the step budget is a graph search rather than a run of reducer code.
 
-A page fills its page type's slots with `Slot` from the page kit, `@design-harness/page`:
+A page fills its page type's slots with `Slot` from the page kit, `@design-harness/page`. When a page is rendered for a scenario, it receives that scenario as props, `PageProps`: `scenario` (its id) and `state` (its flow state). That is the whole contract between a scenario and a page:
 
 ```tsx
-import { Slot } from "@design-harness/page";
+import { Slot, type PageProps } from "@design-harness/page";
 import { Button, Text } from "@tounsoo/todae";
 
-export function BookingPage() {
+export function BookingPage({ state }: PageProps) {
   return (
     <>
       <Slot name="title"><Text.Root as="h1">Lantern</Text.Root></Slot>
+      <Slot name="facts">{state === "booked" && <Text.Root as="p">Booked until 3 pm</Text.Root>}</Slot>
       <Slot name="action"><Button.Root variant="primary">Book room</Button.Root></Slot>
     </>
   );
 }
 ```
+
+The extractor reads code, not one scenario: a page's props are unknown to it, so what a page shows in any state is in its model, marked conditional, and every rule counts it. A primary action shown only when `state === "held"` still counts toward the page's one primary action, and a prop whose value depends on the state (`variant={state === "held" ? "primary" : "secondary"}`) makes the rule report that it cannot tell. The imports rule allows `Slot` and the `PageProps` type from the page kit.
 
 ## The page model
 
@@ -102,7 +105,7 @@ A rule is data with a stable `id`, a `type` from a fixed set, and an optional `d
 | `flow` (named built-in): `state-coverage`, `step-budget` | `{ "type": "flow", "id": "step-budget", "check": "step-budget" }` |
 | `rendered` (named built-ins over snapshots): `target-size`, `headings`, `contrast`, `accessible-names`, `first-view`, `no-sideways-scroll` | `{ "type": "rendered", "id": "target-size", "check": "target-size", "minPx": { "cap": "TARGET_MIN_PX" } }` |
 
-`step-budget` measures every route from a task's start to its success state that never returns to a state it passed, and fails the longest one over the task's max steps, not only the shortest. Rendered rules read `RenderedSnapshot`s ([`src/rendered/types.ts`](src/rendered/types.ts)): per scenario and view, the elements with role, accessible name, rect, heading level and painted colours. Without snapshots they report `not-run` and the report is `incomplete`; with them, a scenario and view with no snapshot is unverifiable.
+`step-budget` measures every route from a task's start to its success state that never returns to a state it passed, and fails the longest one over the task's max steps, not only the shortest. Rendered rules read `RenderedSnapshot`s ([`src/rendered/types.ts`](src/rendered/types.ts)): per scenario and view, the page's content width and the width it lays out in (`viewportWidth`, less a vertical scrollbar drawn beside the page), and the elements with role, accessible name, rect, heading level, whether a control is turned off (`disabled`, which WCAG 1.4.3 exempts from contrast), and painted colours (with `overImage` when an image or gradient lies under the text, which makes contrast unverifiable rather than passed). The web app produces them from the live page in each frame. Without snapshots they report `not-run` and the report is `incomplete`; with them, a scenario and view with no snapshot is unverifiable. A rendered finding about one element carries `element`, its index in that snapshot's `elements`, so the app can point at it on the page.
 
 ### Built-in rules
 
@@ -125,7 +128,7 @@ A rule is data with a stable `id`, a `type` from a fixed set, and an optional `d
 
 ## The report
 
-`CheckReport` ([`src/engine/report.ts`](src/engine/report.ts)) is `{ status, rules, findings }`. Each `RuleReport` is `{ rule, type, status, description?, note?, findings }` with status `pass`, `fail` or `not-run`. A `Finding` is `{ rule, kind, message, file?, line?, column?, page?, scenario?, state?, view? }`; the field names follow agent-design-loop's `Finding`. Rules are ordered with `extract` first and then by id, and findings by rule, file, line, column, page, scenario, view, kind and message, using code-unit order, never the runtime's locale.
+`CheckReport` ([`src/engine/report.ts`](src/engine/report.ts)) is `{ status, rules, findings }`. Each `RuleReport` is `{ rule, type, status, description?, note?, findings }` with status `pass`, `fail` or `not-run`. A `Finding` is `{ rule, kind, message, file?, line?, column?, page?, scenario?, state?, view?, element? }`; the field names follow agent-design-loop's `Finding`. Rules are ordered with `extract` first and then by id, and findings by rule, file, line, column, page, scenario, view, kind and message, using code-unit order, never the runtime's locale.
 
 ## Proposals
 
@@ -142,9 +145,10 @@ No step is skipped, and `adopted` and `declined` are final. Every function takes
 
 - there is at least one passing and one failing example, and every rule the proposal adds is named by a failing example;
 - every passing example passes every rule of the new config, and runs every new rule;
-- every failing example fails its named rule, with its message, and no other rule.
+- every failing example fails its named rule, with its message, and no other rule;
+- every example of an earlier adopted proposal still behaves as it did: its passing examples pass every rule, and its failing examples are still flagged by their rule. The one exception is a failing example whose rule this proposal removes: the example has nothing left to prove, so it is retired, not broken.
 
-A refusal names the example and what happened instead, such as `failing example "only-one" is not flagged as it must be: "one-toast-per-page" passed it`. On success it returns the new config with the proposal adopted, a deterministic `classification` (`adds`, `tightens`, or `loosens-or-removes`, with each change's reason), the caller's `existing` prototypes that newly fail, and any earlier adopted examples the change breaks. `rerunExamples(config)` re-runs every adopted proposal's examples against the config as it is now.
+A refusal names the example and what happened instead, such as `failing example "only-one" is not flagged as it must be: "one-toast-per-page" passed it`, or, for an earlier proposal's example, `adopting "no-toasts" breaks passing example "one-toast" of adopted proposal "toast": ...` with `proposal` and `example` set on the refusal. Replacing a rule with another of the same id is not a removal: the earlier examples are held to the new rule. On success it returns the new config with the proposal adopted, a deterministic `classification` (`adds`, `tightens`, or `loosens-or-removes`, with each change's reason), the caller's `existing` prototypes that newly fail, and the earlier examples it retires. `rerunExamples(config)` re-runs every adopted proposal's examples against the config as it is now, and marks a failing example `retiredBy` the adopted proposal that removed its rule.
 
 ## Size
 

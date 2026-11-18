@@ -26,6 +26,9 @@ export const nook: ProjectConfig = {
   library: {
     package: "@tounsoo/todae",
     version: "0.10.1",
+    react: "19.3.1",
+    stylesheets: ["dist/todae.css"],
+    schemeAttribute: "data-appearance",
     roles: {
       action: { components: ["Button.Root"] },
       "primary-action": { components: ["Button.Root"], prop: { name: "variant", values: ["primary"], whenMissing: true } },

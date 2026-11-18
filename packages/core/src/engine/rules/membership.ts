@@ -95,7 +95,8 @@ function imports(rule: MembershipRule, ctx: CheckContext): Finding[] {
     if (specifier === library || specifier.startsWith(`${library}/`) || REACT.has(specifier)) continue;
     if (specifier === PAGE_KIT) {
       for (const name of load.names) {
-        if (name !== "Slot" && name !== "*") findings.push({ ...base, kind: "violation", message: `${at} imports ${name} from ${PAGE_KIT}, which exports only Slot.` });
+        // PageProps is the type of a page's props, the scenario contract; a type import compiles away.
+        if (name !== "Slot" && name !== "PageProps" && name !== "*") findings.push({ ...base, kind: "violation", message: `${at} imports ${name} from ${PAGE_KIT}, which exports only Slot and the PageProps type.` });
       }
       continue;
     }

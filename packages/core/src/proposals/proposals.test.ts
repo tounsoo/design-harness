@@ -111,7 +111,7 @@ describe("a proposal that adds a component with a governing rule", () => {
       ],
     });
     expect(adoption.newlyFailing.map((item) => [item.name, item.rules])).toEqual([["toast-heavy", ["one-toast-per-page"]]]);
-    expect(adoption.brokenExamples).toEqual([]);
+    expect(adoption.retiredExamples).toEqual([]);
     const proposal = adoption.config.proposals.find((item) => item.id === "toast");
     expect(proposal?.status).toBe("adopted");
     expect(proposal?.history.map((entry) => [entry.status, entry.at, entry.by])).toEqual([
@@ -136,7 +136,7 @@ describe("a proposal that adds a component with a governing rule", () => {
     ]);
   });
 
-  it("keeps its examples as regression tests: removing its rule later breaks its failing example", () => {
+  it("keeps its examples as regression tests: removing its rule later retires its failing example", () => {
     const adopted = ok(adopt(approved(nook, draft("toast")), "toast", { at: "t1" })).config;
     const removal: ProposalDraft = {
       ...draft("drop-toast-cap"),
@@ -147,7 +147,41 @@ describe("a proposal that adds a component with a governing rule", () => {
     };
     const adoption = ok(adopt(approved(adopted, removal), "drop-toast-cap", { at: "t2" }));
     expect(adoption.classification.class).toBe("loosens-or-removes");
-    expect(adoption.brokenExamples).toEqual([{ proposal: "toast", example: "two-toasts", expect: "fail", ok: false, detail: 'rule "one-toast-per-page" is not in force' }]);
+    const retired = { proposal: "toast", example: "two-toasts", expect: "fail", ok: true, detail: 'retired: proposal "drop-toast-cap" removed rule "one-toast-per-page", which it proves', retiredBy: "drop-toast-cap" };
+    expect(adoption.retiredExamples).toEqual([retired]);
+    expect(rerunExamples(adoption.config).filter((run) => run.proposal === "toast")).toEqual([{ proposal: "toast", example: "one-toast", expect: "pass", ok: true, detail: "passes every rule" }, retired]);
+  });
+
+  it("is refused when it makes an earlier adopted proposal's passing example fail", () => {
+    const adopted = ok(adopt(approved(nook, draft("toast")), "toast", { at: "t1" })).config;
+    const noToasts: ProposalDraft = {
+      ...draft("no-toasts"),
+      title: "No toasts at all",
+      inventory: [],
+      rules: { add: [{ ...toastRule, id: "no-toasts", max: 0, description: "A page shows no toast." }], remove: [] },
+      examples: { pass: [{ name: "plain", prototype: legal }], fail: [{ name: "one-toast-fails", prototype: oneToast, flaggedBy: { rule: "no-toasts" } }] },
+    };
+    const refused = refusal(adopt(approved(adopted, noToasts), "no-toasts", { at: "t2" }));
+    expect(refused).toMatchObject({ code: "breaks-adopted-example", proposal: "toast", example: "one-toast" });
+    expect(refused.message).toMatch(/^adopting "no-toasts" breaks passing example "one-toast" of adopted proposal "toast": fails no-toasts: Page "booking" has 1 Toast.Root, more than 0/);
+  });
+
+  it("is refused when an earlier failing example stops failing while its rule stays in force, even under a replaced rule of the same id", () => {
+    const adopted = ok(adopt(approved(nook, draft("toast")), "toast", { at: "t1" })).config;
+    const threeToasts = withFacts(`<Toast.Root>One</Toast.Root><Toast.Root>Two</Toast.Root><Toast.Root>Three</Toast.Root>`);
+    const twoAllowed: ProposalDraft = {
+      ...draft("two-toasts-ok"),
+      title: "Allow two toasts",
+      inventory: [],
+      rules: { add: [{ ...toastRule, max: 2 }], remove: ["one-toast-per-page"] },
+      examples: { pass: [{ name: "two-pass", prototype: twoToasts }], fail: [{ name: "three-fail", prototype: threeToasts, flaggedBy: { rule: "one-toast-per-page" } }] },
+    };
+    expect(refusal(adopt(approved(adopted, twoAllowed), "two-toasts-ok", { at: "t2" }))).toMatchObject({
+      code: "breaks-adopted-example",
+      proposal: "toast",
+      example: "two-toasts",
+      message: 'adopting "two-toasts-ok" breaks failing example "two-toasts" of adopted proposal "toast": "one-toast-per-page" passed it',
+    });
   });
 });
 

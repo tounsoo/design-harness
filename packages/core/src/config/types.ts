@@ -15,7 +15,18 @@ export type RoleMapping = {
 export type ComponentLibrary = {
   /** The npm package prototypes import components from, such as `@tounsoo/todae`. */
   readonly package: string;
+  /** The package's exact version, so a prototype renders the same on every load. */
   readonly version: string;
+  /** The exact version of React (and React DOM) the library renders with. */
+  readonly react: string;
+  /** Stylesheets the library's parts need, as paths inside the package, such as `dist/todae.css`. */
+  readonly stylesheets?: readonly string[];
+  /**
+   * The attribute on the root element that switches the library to a view's
+   * colour scheme, set to `light` or `dark`, such as Todae's `data-appearance`.
+   * Without it, a view's scheme is applied only as the CSS `color-scheme`.
+   */
+  readonly schemeAttribute?: string;
   readonly roles: Readonly<Record<RoleName, RoleMapping>>;
 };
 

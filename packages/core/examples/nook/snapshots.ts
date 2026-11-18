@@ -2,8 +2,9 @@ import type { Rect, RenderedElement, RenderedSnapshot, Rgba } from "../../src/re
 
 /**
  * Hand-written snapshots of the legal Nook prototype, one per scenario and
- * view, as a renderer would report them. Producing them from a live page is a
- * later milestone; these stand in for it so the rendered rules can be tested.
+ * view, as a renderer would report them, so the rendered rules can be tested
+ * without a browser. The web app's end-to-end tests render the same
+ * prototype for real and check that it passes too.
  */
 
 const INK: Rgba = [24, 24, 27, 1];
