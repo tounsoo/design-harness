@@ -61,6 +61,12 @@ export function BookingPage({ state }: PageProps) {
 
 The extractor reads code, not one scenario: a page's props are unknown to it, so what a page shows in any state is in its model, marked conditional, and every rule counts it. A primary action shown only when `state === "held"` still counts toward the page's one primary action, and a prop whose value depends on the state (`variant={state === "held" ? "primary" : "secondary"}`) makes the rule report that it cannot tell. The imports rule allows `Slot` and the `PageProps` type from the page kit.
 
+### Spec prototypes
+
+A prototype with `"format": "spec"` is written as [json-render](https://github.com/vercel-labs/json-render) specs instead of TSX: the same manifest, and each page and layout a JSON file holding a flat spec (`root`, `elements` of `{ type, props, children }`, and on a page `state`). A page's root is a `Page` whose `slots` are its page type's; a body slot holds `{ "type": "Layout", "props": { "id": "room-details" } }`. A page reads its scenario at `/scenario/state` and `/scenario/id`.
+
+`specCatalog(config)` ([`src/spec/catalog.ts`](src/spec/catalog.ts)) is the catalog a spec is written from: the parts of the inventoried components, described in `library.parts` (generated from the library's declarations by [`scripts/describe-library.mjs`](scripts/describe-library.mjs); Todae's is [`libraries/todae-0.10.1.json`](libraries/todae-0.10.1.json)), plus `Page` and `Layout`. Core reads each file with its own JSON parser, which keeps every key's position, validates every element against the catalog ([`src/spec/read.ts`](src/spec/read.ts)), and builds the same page model the extractor builds ([`src/spec/model.ts`](src/spec/model.ts)), so every rule runs unchanged; what the catalog refuses is the `extract` rule's finding and does not render. `resolvePageSpec` gives a frame one page as one spec. Core has no json-render dependency. The legal Nook prototype as specs, and its illegal and refused cases, are under [`examples/nook/prototypes/spec/`](examples/nook/prototypes/spec/). [docs/trials/json-render.md](../../docs/trials/json-render.md) is the trial that built it and what it found.
+
 ## The page model
 
 `extractPrototype` parses the files with [`@babel/parser`](https://babeljs.io/docs/babel-parser) and builds, for each manifest page, the tree of elements it renders. Local components are expanded in place, across files, so a rule counts what the page renders, not what one file holds. It resolves:

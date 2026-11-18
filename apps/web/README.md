@@ -50,6 +50,10 @@ Nothing in the app decides pass or fail. It renders frames, collects what they p
 | `e2e/fake-anthropic.mjs` | The fake Anthropic API the agent's unit and end-to-end tests run against |
 | `test/agent-host.ts` | An agent host over plain values, for the tool and loop tests |
 
+## Spec prototypes
+
+The seed holds Nook's booking prototype twice: in TSX, and as json-render specs ("Booking (spec)", marked in the header). A spec prototype's frames load React, the library, the page kit, `@json-render/react` (0.23.1, pinned in `JSON_RENDER`) and the spec renderer (`src/frame/spec.tsx`), and get each page as data from core's `resolvePageSpec`; no prototype code exists to load. The spec renderer builds a json-render registry over the library that gives each part only the props core's catalog lists. Its agent writes specs: a spec system prompt and json-render's `catalog.prompt()` for core's catalog, and `write_spec` and `patch_spec`, which core checks against the catalog before they apply; while a `patch_spec` streams, the canvas shows the draft. [docs/trials/json-render.md](../../docs/trials/json-render.md) has the details, sizes and gaps.
+
 ## Isolation
 
 Prototype code will be written by an agent while the user's API key lives in the app's origin, so it never runs in that origin.
