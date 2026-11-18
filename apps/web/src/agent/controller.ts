@@ -4,7 +4,9 @@ import type { CheckStatus, Prototype } from "@design-harness/core";
 import { describeError, isAbort, redact } from "./errors";
 import { History, toolCalls } from "./history";
 import { NO_USAGE, addUsage, requestCost, type AgentSettings, type Usage } from "./models";
-import { createClient, requestBody, type MessagesApi } from "./request";
+import { createClient, requestBody, type AgentMode, type MessagesApi } from "./request";
+import { specCatalogPrompt } from "./spec-prompt";
+import type { SpecStreamPreview } from "./spec-stream";
 import { checksTitle, describeMeasured, runTool, type AgentHost, type ToolOutcome } from "./tools";
 
 /**
@@ -68,6 +70,8 @@ export type AgentOptions = {
   readonly client?: (key: string) => MessagesApi;
   readonly maxRounds?: number;
   readonly newId?: () => string;
+  /** Follows a spec prototype's patch_spec input as it streams, to draw the draft on the canvas. */
+  readonly preview?: SpecStreamPreview;
 };
 
 /** Tool rounds per message from the person, after which the agent stops and says so. */
@@ -259,7 +263,9 @@ export class AgentController {
         const blocks = new Map<number, number>();
         let message: BetaMessage;
         try {
-          const stream = client.stream(requestBody(settings, this.history.messages), { signal: abort.signal });
+          // A spec prototype's agent writes specs, with the catalog's instructions; a TSX prototype's writes code.
+        const mode: AgentMode = this.options.host.prototype().format === "spec" ? { kind: "spec", catalogPrompt: await specCatalogPrompt(this.options.host.config()) } : { kind: "tsx" };
+        const stream = client.stream(requestBody(settings, this.history.messages, mode), { signal: abort.signal });
           for await (const event of stream) this.onEvent(id, event, blocks);
           message = await stream.finalMessage();
           parseFailures = 0;
@@ -301,6 +307,8 @@ export class AgentController {
         }
 
         await this.runTools(id, calls, abort.signal);
+        // The draft a streamed patch drew gives way to the prototype as the call left it.
+        this.options.preview?.finish();
         await this.save();
         if (abort.signal.aborted) return this.end(id, { status: "stopped" });
         if (!this.nextRound(id, maxRounds)) return;
@@ -308,6 +316,7 @@ export class AgentController {
     } catch (error) {
       this.end(id, { status: "error", ...describeError(error, key) });
     } finally {
+      this.options.preview?.finish();
       if (this.abort === abort) this.abort = null;
       this.set({ running: false });
       await this.save();
@@ -333,7 +342,10 @@ export class AgentController {
       const block = event.content_block;
       if (block.type === "text") blocks.set(event.index, this.addItem(id, { kind: "text", text: block.text }));
       else if (block.type === "thinking") blocks.set(event.index, this.addItem(id, { kind: "thinking", text: block.thinking }));
-      else if (block.type === "tool_use") blocks.set(event.index, this.addItem(id, { kind: "tool", id: block.id, name: block.name, status: "streaming", title: `Calling ${block.name}`, input: "" }));
+      else if (block.type === "tool_use") {
+        this.options.preview?.start(block.name);
+        blocks.set(event.index, this.addItem(id, { kind: "tool", id: block.id, name: block.name, status: "streaming", title: `Calling ${block.name}`, input: "" }));
+      }
       else if (block.type === "fallback") this.addItem(id, { kind: "notice", text: `${block.from.model} declined this request; ${block.to.model} continued it.` });
       return;
     }
@@ -344,7 +356,10 @@ export class AgentController {
     const delta = event.delta;
     if (delta.type === "text_delta" && item.kind === "text") this.setItem(id, index, { ...item, text: item.text + delta.text });
     else if (delta.type === "thinking_delta" && item.kind === "thinking") this.setItem(id, index, { ...item, text: item.text + delta.thinking });
-    else if (delta.type === "input_json_delta" && item.kind === "tool") this.setItem(id, index, { ...item, input: item.input + delta.partial_json });
+    else if (delta.type === "input_json_delta" && item.kind === "tool") {
+      this.options.preview?.delta(delta.partial_json);
+      this.setItem(id, index, { ...item, input: item.input + delta.partial_json });
+    }
   }
 
   private toolIndex(id: string, callId: string): number {

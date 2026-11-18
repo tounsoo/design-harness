@@ -1,7 +1,8 @@
 import type { BetaTool } from "@anthropic-ai/sdk/resources/beta/messages/messages";
-import { ROLE_NAMES, dryRunAdoption, formatIssues, parsePrototype, propose, revise, type CheckReport, type FailingExample, type PassingExample, type ProjectConfig, type Proposal, type Prototype, type ProposalDraft } from "@design-harness/core";
+import { ROLE_NAMES, dryRunAdoption, formatIssues, parsePrototype, propose, revise, type CheckReport, type JsonValue, type FailingExample, type PassingExample, type ProjectConfig, type Proposal, type Prototype, type ProposalDraft } from "@design-harness/core";
 import type { CompileProblem } from "../runtime/transform";
 import { validateInput, type JsonSchema } from "./schema";
+import { SPEC_TOOL_DESCRIPTIONS, SPEC_TOOL_SCHEMAS, patchSpec, writeSpec } from "./spec-tools";
 
 /**
  * The agent's tools. They run in the app, against the app's state: the
@@ -157,6 +158,29 @@ const TOOLS: readonly Tool[] = [
 /** The tool definitions sent with every request, in a fixed order so the cached prefix never changes. */
 export const TOOL_DEFINITIONS: readonly BetaTool[] = TOOLS.map((item) => item.definition);
 
+const shared = (name: string): Tool => TOOLS.find((item) => item.definition.name === name) as Tool;
+
+/**
+ * A spec prototype's tools: the same reading, manifest, checks and proposal
+ * tools, and, in place of the file tools, write_spec and patch_spec, which
+ * edit a spec as data and are checked against the catalog before they apply.
+ */
+const SPEC_TOOLS: readonly Tool[] = [
+  shared("read_project"),
+  shared("list_files"),
+  shared("read_file"),
+  tool("write_spec", SPEC_TOOL_DESCRIPTIONS.write_spec, SPEC_TOOL_SCHEMAS.write_spec),
+  tool("patch_spec", SPEC_TOOL_DESCRIPTIONS.patch_spec, SPEC_TOOL_SCHEMAS.patch_spec),
+  tool("delete_file", "Delete a spec file from the prototype. The change is a new revision at once.", { type: "object", properties: { path: SPEC_TOOL_SCHEMAS.patch_spec.properties.path }, required: ["path"], additionalProperties: false }),
+  shared("set_manifest"),
+  shared("run_checks"),
+  shared("draft_proposal"),
+  shared("revise_proposal"),
+];
+
+/** The spec mode's tool definitions, in a fixed order. */
+export const SPEC_TOOL_DEFINITIONS: readonly BetaTool[] = SPEC_TOOLS.map((item) => item.definition);
+
 export type ToolCall = { readonly id: string; readonly name: string; readonly input: unknown };
 
 /** What one tool call did: the text the agent reads, and what the chat shows. */
@@ -186,8 +210,9 @@ const refused = (title: string, content: string): ToolOutcome => ({ content, isE
 
 /** Validates a call's input against its tool's schema, then runs it. */
 export async function runTool(call: ToolCall, host: AgentHost, signal: AbortSignal): Promise<ToolOutcome> {
-  const found = TOOLS.find((item) => item.definition.name === call.name);
-  if (!found) return refused(`Unknown tool ${call.name}`, `There is no tool "${call.name}". The tools are ${TOOL_DEFINITIONS.map((item) => item.name).join(", ")}.`);
+  const tools = host.prototype().format === "spec" ? SPEC_TOOLS : TOOLS;
+  const found = tools.find((item) => item.definition.name === call.name);
+  if (!found) return refused(`Unknown tool ${call.name}`, `There is no tool "${call.name}" for this prototype. The tools are ${tools.map((item) => item.definition.name).join(", ")}.`);
   const issues = validateInput(found.schema, call.input);
   if (issues.length > 0) {
     return refused(`${call.name}: input refused`, `The input does not fit ${call.name}'s schema, so nothing ran:\n${issues.slice(0, 20).join("\n")}\nThe input as received: ${JSON.stringify({ INVALID_INPUT: JSON.stringify(call.input) }).slice(0, 2000)}`);
@@ -206,6 +231,10 @@ export async function runTool(call: ToolCall, host: AgentHost, signal: AbortSign
       return editFile(host, String(input.path), String(input.old_text), String(input.new_text));
     case "delete_file":
       return deleteFile(host, String(input.path));
+    case "write_spec":
+      return writeSpec(host, String(input.path), input.spec as JsonValue);
+    case "patch_spec":
+      return patchSpec(host, String(input.path), String(input.patches));
     case "set_manifest":
       return setManifest(host, input);
     case "run_checks": {
@@ -232,7 +261,7 @@ function projectText(config: ProjectConfig): string {
     {
       project: { id: config.id, name: config.name },
       library: { package: library.package, version: library.version, react: library.react, roles: Object.fromEntries(ROLE_NAMES.map((role) => [role, library.roles[role]])) },
-      pageKit: 'Pages import { Slot, type PageProps } from "@design-harness/page", fill their page type\'s slots with <Slot name="...">, and receive { scenario, state } as props.',
+      pageKit: 'TSX pages import { Slot, type PageProps } from "@design-harness/page", fill their page type\'s slots with <Slot name="...">, and receive { scenario, state } as props. A spec page is a json-render spec whose root is a Page with the slots; it reads the scenario at /scenario.',
       inventories,
       inputs,
       views,

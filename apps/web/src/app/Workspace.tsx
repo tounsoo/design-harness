@@ -2,6 +2,7 @@ import { Alert, Badge, Button, Field, Stack, Tabs, Text } from "@tounsoo/todae";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { Finding, ProjectConfig, Prototype } from "@design-harness/core";
 import { AgentController, type ChatRecord, type ChatStore } from "../agent/controller";
+import { SpecStreamPreview } from "../agent/spec-stream";
 import type { KeyVault } from "../agent/key-vault";
 import { waitForMeasured } from "../agent/measure";
 import type { AgentSettings } from "../agent/models";
@@ -157,9 +158,24 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     };
   }, [currentId, session, setRecords, saveConfig, checked]);
 
+  // A spec prototype's patch_spec draws its draft on the canvas while it streams; the board then returns to the prototype as it is.
+  const [previewing, setPreviewing] = useState(false);
+  const preview = useMemo(
+    () =>
+      new SpecStreamPreview(
+        (draft) => {
+          const real = host.prototype();
+          setPreviewing(draft !== null);
+          if (draft) session.update(checked(configRef.current), draft);
+          else if (session.current()?.prototype !== real) session.update(checked(configRef.current), real);
+        },
+        () => host.prototype(),
+      ),
+    [host, session, checked],
+  );
   const controller = useMemo(
-    () => new AgentController({ host, store: chatStore(store, initialConfig.id, currentId), key: () => vault.get(), settings: () => settingsRef.current }),
-    [host, store, vault, initialConfig.id, currentId],
+    () => new AgentController({ host, store: chatStore(store, initialConfig.id, currentId), key: () => vault.get(), settings: () => settingsRef.current, preview }),
+    [host, store, vault, initialConfig.id, currentId, preview],
   );
   useEffect(() => {
     void controller.load();
@@ -294,6 +310,11 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
           <Badge.Root tone="neutral">
             {config.library.package} {config.library.version}
           </Badge.Root>
+          {current?.prototype.format === "spec" && (
+            <Badge.Root tone="info" data-testid="prototype-format">
+              json-render spec
+            </Badge.Root>
+          )}
         </Stack.Root>
         <Tabs.Root
           value={center}
@@ -369,6 +390,12 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
         <main className="app-main" aria-label={center === "canvas" ? "Canvas" : center === "project" ? "Project" : "Proposals"}>
           {/* The board stays laid out under the project view, so frames keep their viewport and keep measuring. */}
           <div className="app-main-pane" data-inactive={center === "canvas" ? undefined : ""} aria-hidden={center === "canvas" ? undefined : true}>
+            {previewing && (
+              <Alert.Root tone="info" className="app-preview" data-testid="spec-preview">
+                <Alert.Title>Drawing the agent&apos;s patch as it streams</Alert.Title>
+                <Alert.Description>A draft from json-render&apos;s stream compiler, not saved. The checks judge the patch once it arrives whole.</Alert.Description>
+              </Alert.Root>
+            )}
             <Board session={session} state={state} selected={selected} />
           </div>
           {center === "project" && (
