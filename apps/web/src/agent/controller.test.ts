@@ -210,6 +210,13 @@ describe("an agent turn", () => {
     expect(lastText(fake.requests.at(-1)?.body as Body)).toMatch(/^The person undid your changes from their message "Make Hold room primary"/);
   });
 
+  it("tells the agent of a pick the person applied, in the next message, before the person's text", async () => {
+    const { controller, fake } = setup([done("Noted.")]);
+    await controller.note('The person applied a pick to page "booking": body from Variant A.');
+    await controller.send("What changed?");
+    expect(lastText(fake.requests.at(-1)?.body as Body)).toMatch(/^The person applied a pick to page "booking": body from Variant A\.[\s\S]*What changed\?$/);
+  });
+
   it("answers tool calls a closed page left unanswered when it opens the chat again, and waits for the chat before sending", async () => {
     const history = [
       { role: "user", content: [{ type: "text", text: "Read it" }] },

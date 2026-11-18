@@ -247,6 +247,50 @@ Measured examples: a rendered rule needs snapshots, so a proposal that adds one 
 
 A refusal names the example and what happened instead, such as `failing example "only-one" is not flagged as it must be: "one-toast-per-page" passed it`, or, for an earlier proposal's example, `adopting "no-toasts" breaks passing example "one-toast" of adopted proposal "toast": ...` with `proposal` and `example` set on the refusal. Replacing a rule with another of the same id is not a removal: the earlier examples are held to the new rule. On success it returns the new config with the proposal adopted, a deterministic `classification` (`adds`, `tightens`, or `loosens-or-removes`, with each change's reason), the caller's `existing` prototypes that newly fail, and the earlier examples it retires. `dryRunAdoption(config, id, stamp, existing?)` tells what adopting an open or approved proposal would do without changing anything: it approves the proposal on a copy and runs `adopt`, so its result, refusal reasons included, is `adopt`'s. The web app runs it when the agent drafts a proposal and hands the refusal back to the agent. `rerunExamples(config)` re-runs every adopted proposal's examples against the config as it is now, and marks a failing example `retiredBy` the adopted proposal that removed its rule.
 
+## Variants and picks
+
+A variant ([`src/variants/`](src/variants/)) is another whole page for a spec prototype's page, kept beside the prototype and apart from its files, so it changes nothing until the person picks: `{ id, page, note, spec, like? }`, where `id` is a short letter ("b", shown as "Variant B"), `note` one line on what is different, `spec` the page's whole spec file, and `like` the variant it was asked to resemble. `VariantState` holds a prototype's variants and the picks applied from them; `parseVariantState` validates a stored one (strict objects, unique ids).
+
+- `checkVariant(prototype, config, page, spec)` says whether a spec can be a variant of a page: the prototype is a spec prototype, the page is in its manifest, and the spec, put in the page's place, brings no issue of its own against the catalog and the layouts' parameters (`specIssues`; an issue the prototype already had is not the variant's). It returns the spec as core formats it, or every problem in core's words. A variant that reads but breaks a rule is a variant: `checkPrototype` on `variantPrototype(prototype, variant)` shows it failing.
+- `recombine(prototype, config, page, sources, picks)` builds one page from several, slot by slot: `sources` names whole page specs (`current` and the variants' ids), and `picks` names, for every slot of the page's type, the source it comes from. Each slot takes the elements its source lists there and everything under them. What the sources share is kept apart the way layout instances are, by naming the source: an element key two sources bring is `<key>-<source>` in each, a literal element id (`id`, `htmlFor` and the ARIA id references) two sources use is `<id>-<source>` in each, so a label still names its field, and a top-level state key the sources give different values is `<key>-<source>` in each source that reads it, every `$state`, `$bindState`, `statePath` and `${/path}` following. When every slot comes from one source the result is that source whole. The result is the same text whatever order the sources, the picks or the keys inside each file come in, and it is a prototype like any other, checked by `checkPrototype`.
+
+An example, from [`test/variants.test.ts`](test/variants.test.ts) on the Nook booking page:
+
+```text
+sources  current: the page as it is
+         b: asks "For how long?", and its title has id "heading"
+         c: the room is Harbor, its facts have id "heading", and its Book room button is keyed "question"
+picks    title b, facts c, body b, alternate current, action c
+
+body     ["question-b", "details"]   B's question instance; C also brings a "question"
+action   ["question-c"]
+ids      heading-b on the title, heading-c on the facts
+state    room-b (Lantern) and room-c (Harbor); C's facts read ${/room-c/seats}
+```
+
+A pick is the person's alone: core has no function that applies one, and a pick is recorded (`PickRecord`: the time, the page, which source supplied each slot, each variant's note, and the page's file before and after) by the app that applied it, so it can be undone.
+
+## Code export
+
+`specToTsx(prototype, config)` ([`src/export/tsx.ts`](src/export/tsx.ts)) writes a spec prototype as the TSX a person would write, one file per page and per layout at the spec file's path with `.tsx`, and the same manifest. It writes what core read of the specs, so an element the catalog refused is not in it:
+
+| Spec | TSX |
+| --- | --- |
+| a page's `state` | a module constant for what nothing changes, `useState` for what a bound prop or an action writes |
+| `/scenario/state`, `/scenario/id` | the page's `state` and `scenario` props (`PageProps`) |
+| a layout and its parameters | a component whose props are its parameters: a binding is a value and an `on<Name>Change` callback, a slot is a `ReactNode`, a default is a destructuring default; what a layout reads of its page's state is a prop too |
+| `visible` | `cond && <El />` |
+| `$cond` | `cond ? a : b` |
+| `repeat` | `list.map((item) => <El key={item.key} />)` |
+| `$template` | text and expressions, `{room.seats} seats, {room.floor}` |
+| `$scopedId` | `useId()`, with the item's key inside a keyed repeat |
+| setState, pushState, removeState | the state's setter in an `onClick` |
+| an element nothing lists | kept as JSX nothing renders, so the export checks as the spec does |
+
+`exportReactProject({ config, prototype, name, at, checks? })` ([`src/export/project.ts`](src/export/project.ts)) puts it in a runnable Vite project: the prototype under `src/prototype/` with its `manifest.json`, `src/page-kit.tsx` (`Slot`, `PageProps` and the page shell, which `vite.config.ts` and `tsconfig.json` alias as `@design-harness/page`), `src/scenarios.ts`, `src/main.tsx` (the entry, with a scenario switcher and `?scenario=<id>`), `index.html`, `tsconfig.json`, a `package.json` pinning the config's exact library and React versions and `EXPORT_TOOLING` (Vite, TypeScript and React's types at the versions this repository builds with), and a README saying where it came from. A TSX prototype goes in with its files as they are. Pages and layouts import only the library, React and the page kit.
+
+The export is checkable: [`test/export-equivalence.test.ts`](test/export-equivalence.test.ts) reads it back as a TSX prototype with the same manifest and compares core's reports. Every rule's id and status, and its findings' kinds and count, match the spec's, for the legal Nook spec, every illegal spec fixture, and a page with actions, conditions, templates and repeats. Messages are not compared: they name the file and line, which are JSON in the spec and TSX in the export. It cannot hold for the `extract` rule where the catalog refused part of a spec (`param-missing`, `param-wrong-type`, `instance-of-unknown-layout` and the refused fixtures): what was refused is left out of the export, so the TSX has nothing to refuse; every other rule still agrees there. Rendered rules are compared without snapshots (both `not-run`); the web app's end-to-end test builds the exported Nook project with Vite and renders it in Chromium.
+
 ## Size
 
-`npm run bundle:core` bundles the library for the browser platform, which refuses Node built-ins, and prints its size. At this commit it is about 471 KiB minified and 129 KiB gzipped, of which `@babel/parser` is about 310 KiB minified; the proposal review milestone added 9 KiB minified and 2.5 KiB gzipped (rule words, revisions, measured examples), the json-render trial 27.5 KiB and 9.3 KiB (the spec format), and layouts with parameters 20.7 KiB and 6.0 KiB (parameters, expansion, the layout summary and preview). The parser is the one runtime dependency: it parses TSX with positions in the browser, synchronously, with no WebAssembly to load.
+`npm run bundle:core` bundles the library for the browser platform, which refuses Node built-ins, and prints its size. At this commit it is about 514 KiB minified and 144 KiB gzipped, of which `@babel/parser` is about 310 KiB minified; the proposal review milestone added 9 KiB minified and 2.5 KiB gzipped (rule words, revisions, measured examples), the json-render trial 27.5 KiB and 9.3 KiB (the spec format), layouts with parameters 20.7 KiB and 6.0 KiB (parameters, expansion, the layout summary and preview), and variants with code export 43.1 KiB and 14.9 KiB (variant checks, recombination, the TSX writer and the project around it). The parser is the one runtime dependency: it parses TSX with positions in the browser, synchronously, with no WebAssembly to load.

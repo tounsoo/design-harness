@@ -1,4 +1,4 @@
-import { checkPrototype, type ProjectConfig, type Prototype } from "@design-harness/core";
+import { NO_VARIANTS, checkPrototype, type ProjectConfig, type Prototype, type Variant, type VariantState } from "@design-harness/core";
 import { nook } from "../../../packages/core/examples/nook/project";
 import type { AgentHost } from "../src/agent/tools";
 import { seedLegal } from "./nook";
@@ -8,8 +8,10 @@ import { seedLegal } from "./nook";
  * and "measured" checks the source with core, without frames (so rendered
  * rules report not-run).
  */
-export function fakeHost(initial: Prototype = seedLegal(), config: ProjectConfig = nook) {
+export function fakeHost(initial: Prototype = seedLegal(), config: ProjectConfig = nook, startVariants: VariantState = NO_VARIANTS) {
   let prototype = initial;
+  let variants = startVariants;
+  const savedVariants: (readonly Variant[])[] = [];
   let current = config;
   let revision = 1;
   const applied: Prototype[] = [];
@@ -34,6 +36,11 @@ export function fakeHost(initial: Prototype = seedLegal(), config: ProjectConfig
       return { revision, report: checkPrototype({ config: current, prototype }), frames: [] };
     },
     now: () => "2026-11-17T12:00:00.000Z",
+    variants: () => variants,
+    saveVariants(next) {
+      variants = { ...variants, variants: next };
+      savedVariants.push(next);
+    },
   };
-  return { host, applied, saved, measuredCalls: () => measuredCalls, prototype: () => prototype, config: () => current };
+  return { host, applied, saved, savedVariants, measuredCalls: () => measuredCalls, prototype: () => prototype, config: () => current, variants: () => variants };
 }

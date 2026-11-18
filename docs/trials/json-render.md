@@ -144,7 +144,7 @@ Why json-render is not in core: its browser bundle is 464 kB minified, 454 kB of
 
 ## What code export would mean
 
-json-render ships `@json-render/codegen` (tree traversal and prop serialisation, not a full exporter; read, not used). A Nook spec maps onto TSX mechanically: Page to a component with `Slot`s, Layout to a layout component, a part to its JSX, `visible` to `&&`, `repeat` to `.map`, `$template` to a template literal, page state to a data module. Export from spec to TSX is therefore straightforward and lossless for what a spec can say (inferred; not built). The reverse, TSX to spec, is not possible in general, which is the migration cost below.
+json-render ships `@json-render/codegen` (tree traversal and prop serialisation, not a full exporter; read, not used). A Nook spec maps onto TSX mechanically: Page to a component with `Slot`s, Layout to a layout component, a part to its JSX, `visible` to `&&`, `repeat` to `.map`, `$template` to a template literal, page state to a data module. Export from spec to TSX is therefore straightforward and lossless for what a spec can say (inferred; not built). Built since, without `@json-render/codegen`: core's `specToTsx` and `exportReactProject` write it, and a test reads the TSX back and gets the spec's report (packages/core/README.md, Code export). The reverse, TSX to spec, is not possible in general, which is the migration cost below.
 
 ## Migration cost
 
