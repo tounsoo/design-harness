@@ -12,13 +12,13 @@ Node 22. `npm ci` from the root installs every workspace (`packages/*`, `apps/*`
 npm run check
 ```
 
-It runs `typecheck` (each workspace's `tsc`: the library against the ES2022 lib only, its tests with Node types; the app against the DOM, its tests with Node types too), `lint` (ESLint) and `test` (Vitest, core's tests and the app's unit tests). CI runs `npm ci && npm run check` on every pull request and every push to `main`. `npm run bundle:core` bundles the core library for the browser and prints its size.
+It runs `typecheck` (each workspace's `tsc`: the library against the ES2022 lib only, its tests with Node types; the app against the DOM, its tests with Node types too), `lint` (ESLint) and `test` (Vitest, core's tests and the app's unit tests). CI runs `npm ci && npm run check` as its `check` job, and the end-to-end tests below as its `e2e` job, on every pull request and every push to `main`. `npm run bundle:core` bundles the core library for the browser and prints its size.
 
 ```sh
 npm run e2e
 ```
 
-builds the app and runs `apps/web/e2e/run.mjs` in Chromium: every frame renders, the legal prototype passes every rule, an edit's finding is pointed at in its file or frame, the same prototype gives the same report on reload, export and import round-trip, packages load by URL from a CDN-shaped origin, a frame cannot reach the app, and the agent's whole loop runs against a fake Anthropic API at api.anthropic.com's address (edits, failing checks fed back, proposals, stop, errors, refusals, undo, and the key's absence from frames, exports and storage). It uses the `playwright` package and Chromium the environment provides (on `NODE_PATH`), so it is not in CI: a CI job would need Playwright added as a dev dependency and its Chromium installed. Run it before pushing a change to `apps/web` or to what core says about rendered pages.
+builds the app and runs `apps/web/e2e/run.mjs` in Chromium: every frame renders, the legal prototype passes every rule, an edit's finding is pointed at in its file or frame, the same prototype gives the same report on reload, export and import round-trip, packages load by URL from a CDN-shaped origin, a frame cannot reach the app, and the agent's whole loop runs against a fake Anthropic API at api.anthropic.com's address (edits, failing checks fed back, proposals, stop, errors, refusals, undo, and the key's absence from frames, exports and storage). It uses `playwright`, pinned as a root dev dependency, with the Chromium at `/opt/pw-browsers/chromium` when that exists and Playwright's own Chromium otherwise. CI's `e2e` job installs that Chromium with `npx playwright install --with-deps chromium`. Run it before pushing a change to `apps/web` or to what core says about rendered pages.
 
 ## The two rules not to break
 
