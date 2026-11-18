@@ -95,18 +95,36 @@ A page draws an instance with the parameters as the `Layout` element's other pro
 
 | Type | A page gives | The layout reads it as |
 | --- | --- | --- |
-| `text`, `number`, `boolean`, `enum` (`values`) | a literal of the type, or an expression that reads the page (`$state`, `$item`, `$index`, `$template` for text, `$cond`) | a prop's value; the prop's schema must take the type (an enum's values must be the prop's) |
+| `text`, `number`, `boolean`, `enum` (`values`) | a literal of the type, or an expression that reads the page (`$state`, `$item`, `$index`, `$template` for text, `$cond`) | a prop's value; the prop's schema must take the type (an enum's values must be the prop's). In a condition (`visible`, or a `$cond`'s): a `boolean` alone, or any of the four compared with `eq` or `neq` to a value it can hold, `gt`, `gte`, `lt` and `lte` for a `number`. In a `$template` as `${$param:name}`: `text`, `number` or `enum` |
 | `list` (`of`: `text`, `number`, `boolean`, `option`, or `{ "record": { field: type } }`) | a literal list, `$state` or `$item` | `"repeat": { "param": name, "key"?: field }`, or a prop such as `options` |
 | `binding` | `{ "$bindState": "/path" }` | a bindable prop: each instance writes its own path |
 | `slot` | element keys in the instance's `slots` | `{ "$param": name }` among an element's `children`, placed once |
 
 A parameter is required unless it has a `default` or `"required": false`; `description` and `example` are for people and the agent. Inside another layout, an instance may pass on its own parameters with `$param` where the types fit.
 
+A condition and a template read parameters too. Nook's `room-cards` shows each card's seats only when the page asks for them, and puts its button's verb before the room's name:
+
+```json
+"params": {
+  "detail": { "type": "enum", "values": ["seats", "none"], "default": "seats" },
+  "verb": { "type": "text", "default": "Open" }
+},
+"elements": {
+  "seats": { "type": "Text.Root", "props": { "as": "p", "text": { "$template": "${seats} seats" } }, "visible": { "$param": "detail", "eq": "seats" }, "children": [] },
+  "open": { "type": "Button.Root", "props": { "variant": "secondary", "text": { "$template": "${$param:verb} ${name}" } }, "children": [] }
+}
+```
+
+`{ "$param": name }` is a condition's source or the value it compares with; `${$param:name}` is a template's reference, beside `${/path}` for state and `${field}` for the repeat item.
+
 [`src/spec/params.ts`](src/spec/params.ts) reads the declarations and checks each value an instance gives, and [`src/spec/read.ts`](src/spec/read.ts) checks every use of a parameter against the prop it feeds: a wrong type, a missing required parameter, a parameter the layout lacks, a slot placed twice or nowhere, and an instance of a layout the manifest lacks are each an `extract` finding where they are written. [`src/spec/expand.ts`](src/spec/expand.ts) then expands every instance, deterministically and before anything else reads a page, so the page model and the frame's spec are the same expanded tree and neither sees a parameter:
 
 - an instance's elements are keyed `<instance>/<key>`, with nested instances joined by `/`, so two instances never collide; a key in a file holds no `/`;
 - `{ "$scopedId": "field" }` is `<instance>/field`, an element id unique per instance, and per item, through the repeat's key, inside one keyed repeat (anywhere else it is an `extract` finding, since the id would repeat);
 - a literal list given for a repeat is kept in the page's state at `/params/<instance>/<param>`, where json-render's repeat reads it (`params` is reserved in a page's state, as `scenario` is);
+- a condition that reads a parameter becomes json-render's own: the value given stands in as its source or operand (`{ "$param": "detail", "eq": "seats" }` given `{ "$state": "/card-detail" }` is `{ "$state": "/card-detail", "eq": "seats" }`), a literal compared with state turns the comparison round so state is the source, and a condition of literals alone is worked out: true drops it, and false leaves the element out of the page model (and hides it in the frame), as `"visible": false` does. A `$cond` whose condition is worked out is the value it picks;
+- `${$param:name}` in a template becomes what was given: a literal's text, `${/path}` for `$state`, `${field}` for `$item`, a page's own `$template` spliced in, and for a `$cond` a `$cond` of two templates, one per value;
+- a value json-render has no way to read there, such as `$index` or `{ "$item": "" }` in a template or a `$template` in a condition, is an `extract` finding at the layout's element, with `via`: the element stays in the page model, shown, so no rule passes on it unseen;
 - a value from outside a layout that reads a repeat item, used inside a repeat of the layout, is an `extract` finding: it would read the layout's item;
 - a layout that draws itself is drawn once, as an unresolved element, and the rules that depend on it say they cannot tell.
 
