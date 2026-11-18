@@ -5,14 +5,16 @@
       "of": { "record": { "id": "text", "name": "text", "seats": "number" } },
       "description": "The rooms, one card each, each card opening its room.",
       "example": [{ "id": "lantern", "name": "Lantern", "seats": 6 }, { "id": "harbor", "name": "Harbor", "seats": 10 }]
-    }
+    },
+    "detail": { "type": "enum", "values": ["seats", "none"], "default": "seats", "description": "What each card shows under the room's name: its seats, or nothing more." },
+    "verb": { "type": "text", "default": "Open", "description": "The verb on each card's button, before the room's name.", "example": "Open" }
   },
   "root": "list",
   "elements": {
     "list": { "type": "Stack.Root", "props": { "gap": "normal" }, "repeat": { "param": "rooms", "key": "id" }, "children": ["card"] },
     "card": { "type": "Card.Root", "props": {}, "children": ["name", "seats", "open"] },
     "name": { "type": "Text.Root", "props": { "as": "h2", "text": { "$item": "name" } }, "children": [] },
-    "seats": { "type": "Text.Root", "props": { "as": "p", "text": { "$template": "${seats} seats" } }, "children": [] },
-    "open": { "type": "Button.Root", "props": { "variant": "secondary", "text": { "$template": "Open ${name}" } }, "children": [] }
+    "seats": { "type": "Text.Root", "props": { "as": "p", "text": { "$template": "${seats} seats" } }, "visible": { "$param": "detail", "eq": "seats" }, "children": [] },
+    "open": { "type": "Button.Root", "props": { "variant": "secondary", "text": { "$template": "${$param:verb} ${name}" } }, "children": [] }
   }
 }

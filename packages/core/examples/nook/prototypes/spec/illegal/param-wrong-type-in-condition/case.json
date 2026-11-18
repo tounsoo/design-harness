@@ -1,0 +1,9 @@
+{
+  "what": "The room cards show the seats only while their verb parameter holds, testing text alone as if it were a boolean",
+  "expect": [
+    {
+      "rule": "extract",
+      "message": "layouts/room-cards.json: element \"seats\" has a condition that tests parameter \"verb\" alone, but it is text; a condition with no operator tests a boolean, so compare it with \"eq\" or \"neq\"."
+    }
+  ]
+}
