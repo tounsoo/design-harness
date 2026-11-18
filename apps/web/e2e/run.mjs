@@ -1264,8 +1264,11 @@ test("the agent writes specs: the catalog's prompt, a patch the catalog refuses,
     (body) => {
       assert.match(body.system[0].text, /^You build and change a UI prototype in design-harness/);
       assert.match(body.system[0].text, /json-render specs/);
-      assert.match(body.system[1].text, /AVAILABLE COMPONENTS \(\d+\):/, "the catalog's prompt is the second system block");
-      assert.match(body.system[1].text, /- Button\.Root: \{ aria-label\?: string, .*variant\?: "ghost" \| "primary" \| "secondary" \}/);
+      assert.match(body.system[1].text, /^THE SPEC FORMAT\n/, "the catalog's instructions are the second system block");
+      assert.match(body.system[1].text, /\nCOMPONENTS \(\d+\)\n/);
+      assert.match(body.system[1].text, /- Button\.Root \{ aria-label\?: string, .*variant\?: "ghost" \| "primary" \| "secondary" \} children; on: press\./);
+      assert.ok(body.system[1].text.length < 10000, `the catalog's instructions are ${body.system[1].text.length} characters, not json-render's 25,576`);
+      assert.ok(body.tools.some((tool) => tool.name === "list_layouts") && body.tools.some((tool) => tool.name === "insert_layout"));
       assert.doesNotMatch(body.system[1].text, /Toast\.Root/, "Toast is not in the catalog yet");
       assert.ok(body.tools.some((tool) => tool.name === "patch_spec") && !body.tools.some((tool) => tool.name === "write_file"));
       return toolReply("badge", "patch_spec", { path: "pages/rooms.json", patches: '{"op":"add","path":"/elements/page/slots/intro/-","value":"free"}\n{"op":"add","path":"/elements/free","value":{"type":"Badge.Root","props":{"text":"Free"},"children":[]}}' }, "Adding a Free badge.");
@@ -1289,6 +1292,8 @@ test("the agent writes specs: the catalog's prompt, a patch the catalog refuses,
   const reply = page.locator(".chat-reply").last();
   assert.deepEqual(await reply.locator(".chat-tool .chat-tool-title").allTextContents(), ["patch_spec: pages/rooms.json refused", "Patched pages/rooms.json"]);
   const last = await page.locator(".checks").getAttribute("data-revision");
+  // The streamed drafts were drawn in place in the frames, not as revisions: the patch that applied is the only new one.
+  assert.equal(last, "3");
   await measured(page, Number(last));
   assert.equal((await page.frameLocator('iframe[title="rooms-list at desktop"]').locator("h1").textContent()).trim(), "Spaces");
   assert.equal((await report(page)).status, "pass");
@@ -1333,8 +1338,8 @@ test("a spec Toast proposal adopted when its examples behave: Toast joins the ca
   // The catalog is generated from the inventory, so the agent's next prompt lists Toast's parts.
   api.script([
     (body) => {
-      assert.match(body.system[1].text, /- Toast\.Root: \{ aria-label\?: string, id\?: string, text\?: string, tone\?: "critical" \| "info" \| "success" \| "warning" \}/);
-      assert.doesNotMatch(body.system[1].text, /- Toast\.Region:/, "a part a spec cannot render stays out");
+      assert.match(body.system[1].text, /- Toast\.Root \{ aria-label\?: string, id\?: string, text\?: string, tone\?: "critical" \| "info" \| "success" \| "warning" \}/);
+      assert.doesNotMatch(body.system[1].text, /- Toast\.Region /, "a part a spec cannot render stays out");
       return textReply("Toast is in the catalog now.");
     },
   ]);
@@ -1350,6 +1355,212 @@ test("a spec Toast proposal adopted when its examples behave: Toast joins the ca
   const value = await report(page);
   assert.deepEqual(failing(value), ["one-toast-per-page"]);
   assert.match(value.findings[0].message, /^Page "booking" has 2 Toast.Root, more than 1: Toast.Root "Booked" at pages\/booking.json:\d+:5/);
+});
+
+// ---- layouts with parameters, the default format, migration ----------------
+
+test("the Nook spec draws each layout instance with its own parameters, and passes every rule, the rendered ones included", async ({ browser, base }) => {
+  const { page, errors } = await openSpec(browser, base);
+  const value = await report(page);
+  assert.equal(value.status, "pass", JSON.stringify(value.findings, null, 1));
+  assert.equal(value.rules.length, 33);
+  assert.ok(value.rules.every((rule) => rule.status === "pass"), "every rule runs and passes, the six rendered ones included");
+  const open = page.frameLocator('iframe[title="lantern-open at desktop"]');
+  // The question's id is scoped to its instance, and its label names it, so a screen reader hears the label.
+  assert.equal(await open.locator("label").getAttribute("for"), "question/field");
+  assert.equal(await open.getByRole("combobox", { name: "How long?" }).count(), 1);
+  assert.equal((await open.locator("summary").textContent())?.trim(), "Room details", "the summary is the parameter's default");
+  assert.deepEqual(await page.frameLocator('iframe[title="rooms-list at phone"]').getByRole("button").allTextContents(), ["Open Lantern", "Open Harbor"], "the room cards repeat over the list the page gives them");
+  assert.deepEqual(errors, []);
+});
+
+test("a violation inside a layout instance is flagged and highlighted: the layout's element, the page's use, and the frame", async ({ browser, base }) => {
+  const { page } = await openSpec(browser, base);
+  // A primary action inside the room details layout: it breaks two rules, and each finding names both places.
+  await editFile(page, "layouts/room-details.json", (text) => text.replace('"children": ["summary", "items"]', '"children": ["summary", "items", "go"]').replace('    "item":', '    "go": { "type": "Button.Root", "props": { "text": "Book room" }, "children": [] },\n    "item":'));
+  await measured(page, 3);
+  let value = await report(page);
+  assert.deepEqual(failing(value), ["one-primary-per-page", "primary-outside-disclosure"]);
+  const inside = value.findings.find((item) => item.rule === "primary-outside-disclosure");
+  assert.deepEqual([inside.file, inside.line, inside.via], ["layouts/room-details.json", 11, [{ layout: "room-details", file: "pages/booking.json", line: 21, column: 5 }]]);
+  assert.match(inside.message, /at layouts\/room-details\.json:11:5 \(in layout "room-details" used at pages\/booking\.json:21:5\)/);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  const row = page.locator('.rule[data-rule="primary-outside-disclosure"] .finding').first();
+  assert.match(await row.locator(".finding-place").textContent(), /layouts\/room-details\.json:11:5 · in room-details used at pages\/booking\.json:21/);
+  await row.click();
+  await page.getByTestId("instance-places").waitFor();
+  assert.equal(await page.locator('[data-testid="code-line"]').textContent(), "line 11, column 5");
+  assert.match((await page.locator('.code-field [data-kind="finding"]').textContent()) ?? "", /"go": \{"type":"Button\.Root"|"go": \{ "type": "Button\.Root"/);
+  await shot(page, "layout-finding-source-light");
+  await page.getByTestId("instance-places").getByRole("button", { name: /Use of layout room-details: pages\/booking\.json:21/ }).click();
+  assert.equal(await page.locator('.code-file select, #code-file select').first().inputValue(), "pages/booking.json");
+  assert.match((await page.locator('.code-field [data-kind="finding"]').textContent()) ?? "", /"details": \{ "type": "Layout", "props": \{ "id": "room-details"/, "the page's use is the marked line");
+  await shot(page, "layout-finding-use-light");
+
+  // Back to legal, then a rendered violation inside the room cards layout: its heading skips a level, and is outlined in its frame.
+  await editFile(page, "layouts/room-details.json", (text) => text.replace(', "go"]', "]").replace(/ {4}"go": .*\n/, ""));
+  await measured(page, 4);
+  assert.equal((await report(page)).status, "pass");
+  await editFile(page, "layouts/room-cards.json", (text) => text.replace('"as": "h2"', '"as": "h3"'));
+  await measured(page, 5);
+  value = await report(page);
+  assert.deepEqual(failing(value), ["heading-structure"]);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  await page.locator('.rule[data-rule="heading-structure"] .finding').filter({ hasText: "scenario rooms-list" }).filter({ hasText: "view desktop" }).first().click();
+  const frame = page.frameLocator('iframe[title="rooms-list at desktop"]');
+  await frame.locator("[data-design-harness-overlay]").waitFor({ state: "attached" });
+  const overlay = await frame.locator("[data-design-harness-overlay]").boundingBox();
+  const target = await frame.locator("h3").first().boundingBox();
+  assert.ok(overlay && target && overlay.x <= target.x && overlay.y <= target.y && overlay.x + overlay.width >= target.x + target.width, "the outline is drawn around the card's heading");
+  await shot(page, "layout-finding-rendered-light");
+});
+
+test("a scripted agent lists the layouts, draws an instance of one, and changes its parameters", async ({ browser, base, api }) => {
+  const { page } = await openSpec(browser, base);
+  api.script([
+    (body) => {
+      assert.ok(["list_layouts", "insert_layout", "set_layout_params"].every((name) => body.tools.some((tool) => tool.name === name)));
+      assert.match(body.system[1].text, /\nLAYOUTS\n/);
+      return toolReply("list", "list_layouts", {}, "Reading the layouts.");
+    },
+    (body) => {
+      const listed = JSON.parse(lastMessage(body));
+      assert.deepEqual(listed.map((layout) => layout.id), ["room-cards", "room-details", "select-question"]);
+      assert.equal(listed[0].params.rooms.is, 'a list of records of { "id": text, "name": text, "seats": number }');
+      return toolReply("insert", "insert_layout", { path: "pages/rooms.json", into: { element: "page", slot: "body" }, key: "more", layout: "room-cards", params: { rooms: [{ id: "willow", name: "Willow", seats: 4 }] } }, "Drawing a second set of cards.");
+    },
+    (body) => {
+      assert.match(lastMessage(body), /Drew an instance of layout "room-cards" as element "more" in pages\/rooms\.json\./);
+      assert.match(lastMessage(body), /with every frame measured: pass\./);
+      return toolReply("params", "set_layout_params", { path: "pages/rooms.json", key: "more", set: { rooms: [{ id: "willow", name: "Willow", seats: 4 }, { id: "birch", name: "Birch", seats: 8 }] } }, "Adding Birch.");
+    },
+    (body) => {
+      assert.match(lastMessage(body), /Instance "more" in pages\/rooms\.json: set rooms\./);
+      assert.match(lastMessage(body), /with every frame measured: pass\./);
+      return textReply("The rooms page now shows Willow and Birch in a second set of cards; every rule passes.");
+    },
+  ]);
+  await enterKey(page);
+  await ask(page, "Show Willow and Birch too, in cards of their own");
+  assert.equal(await turnEnded(page), "done");
+  assert.equal(api.left(), 0);
+  const reply = page.locator(".chat-reply").last();
+  assert.deepEqual(await reply.locator(".chat-tool .chat-tool-title").allTextContents(), ["Listed 3 layouts", "Drew room-cards in pages/rooms.json", "Changed more's parameters in pages/rooms.json"]);
+  const last = Number(await page.locator(".checks").getAttribute("data-revision"));
+  await measured(page, last);
+  assert.equal((await report(page)).status, "pass");
+  assert.deepEqual(await page.frameLocator('iframe[title="rooms-list at desktop"]').getByRole("button").allTextContents(), ["Open Lantern", "Open Harbor", "Open Willow", "Open Birch"]);
+  await shot(page, "layout-agent-light");
+});
+
+test("the Project view lists the spec prototype's layouts with their parameters and a rendered preview", async ({ browser, base }) => {
+  const { page } = await openSpec(browser, base);
+  await page.getByRole("tab", { name: "Project" }).click();
+  const section = page.getByTestId("project-layouts");
+  await section.waitFor();
+  assert.deepEqual(await section.locator(".layout-card").evaluateAll((cards) => cards.map((card) => card.getAttribute("data-layout"))), ["room-cards", "room-details", "select-question"]);
+  const question = section.locator('.layout-card[data-layout="select-question"]');
+  assert.deepEqual(await question.locator("tr[data-param]").evaluateAll((rows) => rows.map((row) => row.getAttribute("data-param"))), ["answer", "choices", "hint", "label"]);
+  assert.match(await question.locator('tr[data-param="label"]').textContent(), /text.*yes.*e\.g\. "How long\?"/);
+  assert.match(await question.textContent(), /Drawn at pages\/booking\.json:20\./);
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="layout-preview"] .frame-card')].length === 3 && [...document.querySelectorAll('[data-testid="layout-preview"] .frame-card')].every((card) => card.getAttribute("data-state") === "measured"), null, { timeout: 60000 });
+  const preview = page.frameLocator('iframe[title="select-question preview: layout-preview at desktop"]');
+  assert.equal(await preview.getByRole("combobox", { name: "How long?" }).count(), 1, "the preview draws the layout with its example values");
+  assert.deepEqual(await page.frameLocator('iframe[title="room-cards preview: layout-preview at desktop"]').getByRole("button").allTextContents(), ["Open Lantern", "Open Harbor"]);
+  await question.scrollIntoViewIfNeeded();
+  await shot(page, "project-layouts-light");
+});
+
+test("a new prototype is a spec by default, and its agent writes specs", async ({ browser, base, api }) => {
+  const { page } = await openApp(browser, base);
+  await measured(page, 1);
+  await page.getByRole("button", { name: "New prototype" }).click();
+  const dialog = page.getByRole("dialog", { name: "New prototype" });
+  await dialog.waitFor();
+  assert.equal(await dialog.getByRole("radio", { name: /json-render spec \(default\)/ }).isChecked(), true);
+  assert.equal(await dialog.getByRole("radio", { name: /TSX/ }).isChecked(), false);
+  // The dialog fades in; the picture waits for it.
+  if (shots) await page.waitForTimeout(400);
+  await shot(page, "new-prototype-light");
+  await dialog.getByLabel("Name").fill("Checkout");
+  await dialog.getByRole("button", { name: "Create" }).click();
+  await dialog.waitFor({ state: "hidden" });
+  assert.equal(await page.getByRole("combobox", { name: "Prototype" }).inputValue(), "checkout");
+  assert.equal((await page.getByTestId("prototype-format").textContent()).trim(), "json-render spec");
+  api.script([
+    (body) => {
+      assert.match(body.system[0].text, /written as json-render specs/);
+      assert.match(body.system[1].text, /^THE SPEC FORMAT/);
+      const names = body.tools.map((tool) => tool.name);
+      assert.ok(names.includes("write_spec") && names.includes("insert_layout") && !names.includes("write_file"), names.join(", "));
+      return textReply("This prototype is empty; tell me what to build.");
+    },
+  ]);
+  await enterKey(page);
+  await ask(page, "What is here?");
+  assert.equal(await turnEnded(page), "done");
+  // It is stored like any prototype: after a reload it is still there, still a spec.
+  await page.reload();
+  await measured(page, 1);
+  await page.getByRole("combobox", { name: "Prototype" }).selectOption("checkout");
+  assert.equal((await page.getByTestId("prototype-format").textContent()).trim(), "json-render spec");
+});
+
+test("an existing TSX prototype still works: it passes, and its agent writes code", async ({ browser, base, api }) => {
+  const { page } = await openApp(browser, base);
+  await measured(page, 1);
+  assert.equal(await page.getByRole("combobox", { name: "Prototype" }).inputValue(), "booking");
+  assert.equal((await page.getByTestId("prototype-format").textContent()).trim(), "TSX");
+  assert.equal((await report(page)).status, "pass");
+  api.script([
+    (body) => {
+      assert.equal(body.system.length, 1, "a TSX prototype's agent has one system block");
+      assert.match(body.system[0].text, /The prototype is React in TSX/);
+      const names = body.tools.map((tool) => tool.name);
+      assert.ok(names.includes("write_file") && !names.includes("patch_spec") && !names.includes("insert_layout"), names.join(", "));
+      return toolReply("rename", "edit_file", { path: "pages/rooms.tsx", old_text: '<Text.Root as="h1">Rooms</Text.Root>', new_text: '<Text.Root as="h1">Spaces</Text.Root>' }, "Renaming.");
+    },
+    (body) => {
+      assert.match(lastMessage(body), /Checks for revision 2, with every frame measured: pass\./);
+      return textReply("Done.");
+    },
+  ]);
+  await enterKey(page);
+  await ask(page, "Call the rooms page Spaces");
+  assert.equal(await turnEnded(page), "done");
+  assert.equal((await page.frameLocator('iframe[title="rooms-list at desktop"]').locator("h1").textContent()).trim(), "Spaces");
+});
+
+test("a stored project without a library description gets the bundled one on load, and says so", async ({ browser, base }) => {
+  const { page } = await openApp(browser, base);
+  await measured(page, 1);
+  // Make the stored project one from before spec prototypes: its config without library.parts.
+  await page.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const open = indexedDB.open("design-harness");
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const tx = open.result.transaction("projects", "readwrite");
+          const store = tx.objectStore("projects");
+          const get = store.get("nook");
+          get.onsuccess = () => {
+            const row = get.result;
+            delete row.config.library.parts;
+            store.put(row);
+          };
+          tx.oncomplete = () => resolve(undefined);
+          tx.onerror = () => reject(tx.error);
+        };
+      }),
+  );
+  await page.reload();
+  await page.getByTestId("notice").waitFor();
+  assert.match(await page.getByTestId("notice").textContent(), /The project was brought up to date.*added the one it ships for @tounsoo\/todae 0\.10\.1 \(198 parts\)/);
+  await measured(page, 1);
+  await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
+  await measured(page, 2);
+  assert.equal((await report(page)).status, "pass", "the spec prototype is checked with the description the app added");
 });
 
 // ---- runner ----------------------------------------------------------------

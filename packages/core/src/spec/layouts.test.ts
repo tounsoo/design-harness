@@ -6,7 +6,7 @@ import { checkPrototype } from "../engine/check";
 import type { ElementNode } from "../extract/model";
 import type { Prototype } from "../prototype/types";
 import { expandPage } from "./expand";
-import { specLayouts } from "./layouts";
+import { layoutPreview, specLayouts } from "./layouts";
 import { specModel } from "./model";
 import { readSpecs } from "./read";
 import { resolvePageSpec } from "./resolve";
@@ -258,5 +258,23 @@ describe("the layouts of a prototype", () => {
     const read = readSpecs(legal, nook);
     const expanded = expandPage({ id: "booking", pageType: "booking", component: { file: "pages/booking.json", export: "default" } }, read, legal);
     expect([...(expanded.page?.elements.keys() ?? [])].filter((key) => key.startsWith("details/"))).toEqual(["details/details", "details/summary", "details/items", "details/item"]);
+  });
+});
+
+describe("a layout's preview", () => {
+  it("draws the layout alone in a page's body with its examples, and passes the checks that do not need a page", () => {
+    const preview = layoutPreview(legal, nook, "select-question");
+    expect(preview?.missing).toEqual([]);
+    const spec = resolvePageSpec(preview?.prototype as Prototype, nook, { id: "layout-preview", state: "rooms", page: "layout-preview" });
+    expect(spec?.elements.page?.slots?.body).toEqual(["layout/question"]);
+    expect(spec?.elements["layout/label"]?.props).toEqual({ htmlFor: "layout/field", text: "How long?" });
+    expect(spec?.elements["layout/select"]?.props).toEqual({ options: [{ value: "30", label: "30 minutes" }, { value: "60", label: "1 hour" }], value: { $bindState: "/preview/answer" } });
+    expect(specModel(preview?.prototype as Prototype, nook).problems).toEqual([]);
+    expect(layoutPreview(legal, nook, "nowhere")).toBeNull();
+  });
+
+  it("says which required parameters it draws without", () => {
+    const bare = { ...legal, files: { ...legal.files, "layouts/select-question.json": (legal.files["layouts/select-question.json"] as string).replace(', "example": "How long?"', "") } };
+    expect(layoutPreview(bare, nook, "select-question")?.missing).toEqual(["label"]);
   });
 });

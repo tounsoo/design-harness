@@ -179,6 +179,8 @@ function same(a: Finding, b: Finding | null): boolean {
 export function placeOf(finding: Finding): string {
   const parts: string[] = [finding.kind];
   if (finding.file !== undefined) parts.push(`${finding.file}${finding.line !== undefined ? `:${finding.line}${finding.column !== undefined ? `:${finding.column}` : ""}` : ""}`);
+  // Inside a spec layout instance: where the layout is used, nearest first.
+  for (const use of finding.via ?? []) parts.push(use.slot !== undefined ? `in slot ${use.slot} of ${use.layout} at ${use.file}:${use.line}` : `in ${use.layout} used at ${use.file}:${use.line}`);
   if (finding.page !== undefined) parts.push(`page ${finding.page}`);
   if (finding.scenario !== undefined) parts.push(`scenario ${finding.scenario}`);
   if (finding.state !== undefined) parts.push(`state ${finding.state}`);

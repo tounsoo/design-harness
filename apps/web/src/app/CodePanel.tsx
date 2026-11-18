@@ -1,4 +1,4 @@
-import { Alert, Field, Label, Stack, Text } from "@tounsoo/todae";
+import { Alert, Button, Field, Label, Stack, Text } from "@tounsoo/todae";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatIssues, parsePrototype, type Prototype } from "@design-harness/core";
 import type { CompileProblem } from "../runtime/transform";
@@ -23,6 +23,34 @@ export function lineRange(text: string, line: number): { start: number; end: num
   }
   const end = text.indexOf("\n", start);
   return { start, end: end === -1 ? text.length : end };
+}
+
+/**
+ * For a finding inside a spec layout instance, the places it is about: where
+ * it is written, and each layout use that draws it, nearest first. Each opens
+ * its file at its line, and the target keeps them all, so a person can go
+ * from the layout's element to the page's use and back.
+ */
+function InstancePlaces({ target, onTarget }: { readonly target: CodeTarget; readonly onTarget: (target: CodeTarget) => void }) {
+  const instance = target.instance;
+  if (!instance) return null;
+  const places = [
+    { ...instance.at, label: instance.via[0]?.slot !== undefined ? "Written on the page" : "In the layout" },
+    ...instance.via.map((use) => ({ file: use.file, line: use.line, column: use.column, label: use.slot !== undefined ? `Slot "${use.slot}" of layout ${use.layout}` : `Use of layout ${use.layout}` })),
+  ];
+  return (
+    <Stack.Root direction="row" align="center" gap="condensed" wrap className="code-places" data-testid="instance-places" aria-label="Where this finding is">
+      {places.map((place) => {
+        const current = place.file === target.file && place.line === target.line;
+        return (
+          <Button.Root key={`${place.file}:${place.line}:${place.label}`} variant={current ? "secondary" : "ghost"} aria-pressed={current} onClick={() => onTarget({ file: place.file, line: place.line, column: place.column, instance })} data-place={`${place.file}:${place.line}`}>
+            {/* One string: the button wraps each text child in a span of its own, which would split its name. */}
+            {`${place.label}: ${place.file}:${place.line}`}
+          </Button.Root>
+        );
+      })}
+    </Stack.Root>
+  );
 }
 
 /**
@@ -111,6 +139,7 @@ export function CodePanel({
           </Text.Root>
         )}
       </Stack.Root>
+      {target.instance && <InstancePlaces target={target} onTarget={onTarget} />}
       {isManifest && manifestIssues && (
         <Alert.Root tone="warning">
           <Alert.Title>The manifest is not applied</Alert.Title>

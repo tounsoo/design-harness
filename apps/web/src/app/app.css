@@ -152,3 +152,9 @@ body, .app-theme { background: var(--todae-color-bg-canvas); color: var(--todae-
 .history-note { margin: 0; }
 .history-previous { margin-block-start: var(--todae-space-1); }
 .finding-ask { margin-block-start: 2px; font-size: 0.8125rem; }
+
+/* The Project view's layouts: parameters, then a preview frame under them. */
+.layout-card-body { display: grid; gap: var(--todae-space-3); }
+.layout-card-preview { display: grid; gap: var(--todae-space-1); justify-items: start; max-width: 100%; overflow-x: auto; }
+/* Where a finding inside a layout instance is: the layout's element and each use, as buttons above the code. */
+.code-places { padding: var(--todae-space-1) 0; }

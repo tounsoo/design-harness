@@ -81,11 +81,14 @@ export function specLayouts(prototype: Prototype, config: ProjectConfig): Layout
 /** Where a layout's preview page is written, beside the prototype's own files. */
 export const PREVIEW_FILE = "preview/layout.json";
 export const PREVIEW_PAGE = "layout-preview";
+/** Where a preview's bindings write, in the preview page's state. */
+const PREVIEW_STATE = "preview";
 
 /**
  * A one-page prototype that draws layout `id` alone, in the body of the
  * first page type that has a body slot, with each parameter's example (or
- * default) as its value. A binding writes to `/preview/<name>`; a slot stays
+ * default) as its value. A binding writes to `/preview/<name>`, which starts
+ * empty; a slot stays
  * empty; the page's state is the state of the first page that uses the
  * layout, since a layout may read it. `missing` names each required
  * parameter with no example or default, which the preview leaves out.
@@ -99,11 +102,15 @@ export function layoutPreview(prototype: Prototype, config: ProjectConfig, id: s
   const read = readSpecs(prototype, config);
   const params = read.layouts.get(id) ?? {};
   const props: Record<string, JsonValue> = { [LAYOUT_ID_PROP]: id };
+  const bound: Record<string, JsonValue> = {};
   const missing: string[] = [];
   for (const name of Object.keys(params).sort(compare)) {
     const param = params[name] as LayoutParam;
     if (param.type === "slot") continue;
-    if (param.type === "binding") props[name] = { $bindState: `/preview/${name}` };
+    if (param.type === "binding") {
+      props[name] = { $bindState: `/${PREVIEW_STATE}/${name}` };
+      bound[name] = "";
+    }
     else if (param.example !== undefined) props[name] = param.example;
     else if (!("default" in param && param.default !== undefined) && param.required) missing.push(name);
   }
@@ -114,13 +121,14 @@ export function layoutPreview(prototype: Prototype, config: ProjectConfig, id: s
       page: { type: PAGE_TYPE, props: {}, slots: { [body]: ["layout"] }, children: [] },
       layout: { type: LAYOUT_TYPE, props, children: [] },
     },
-    state: user?.state ?? {},
+    state: { ...(user?.state ?? {}), ...(Object.keys(bound).length > 0 ? { [PREVIEW_STATE]: bound } : {}) },
   };
   const state = prototype.flow.states[0] ?? config.inventories.flowStates[0] ?? "preview";
   return {
     prototype: {
       format: "spec",
-      files: { ...prototype.files, [PREVIEW_FILE]: `${JSON.stringify(spec, null, 2)}\n` },
+      // The layouts' files and the preview page only: the prototype's pages are not drawn here.
+      files: { ...Object.fromEntries(prototype.layouts.flatMap((entry) => (prototype.files[entry.component.file] === undefined ? [] : [[entry.component.file, prototype.files[entry.component.file] as string]]))), [PREVIEW_FILE]: `${JSON.stringify(spec, null, 2)}\n` },
       pages: [{ id: PREVIEW_PAGE, pageType: pageType.id, component: { file: PREVIEW_FILE, export: "default" } }],
       layouts: prototype.layouts,
       scenarios: [{ id: PREVIEW_PAGE, state, page: PREVIEW_PAGE }],
