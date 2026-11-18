@@ -1,0 +1,9 @@
+{
+  "what": "Hold room bound to an action of the app's own, which would run code",
+  "expect": [
+    {
+      "rule": "extract",
+      "message": "binds press to the action \"track\""
+    }
+  ]
+}

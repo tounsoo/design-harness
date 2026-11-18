@@ -2,6 +2,7 @@ import { OVERLAY_ATTRIBUTE, collectSnapshot } from "./collect";
 import { installDeterminism } from "./determinism";
 import { PROTOCOL, clip, readParentMessage, type FrameMessage, type FrameStage, type RenderRequest } from "../runtime/protocol";
 import type { PageProps } from "./kit";
+import type { specPage } from "./spec";
 
 /**
  * The frame's boot script: a classic script inlined in every frame's
@@ -15,9 +16,12 @@ import type { PageProps } from "./kit";
 
 type Kit = {
   mount: (container: HTMLElement, Page: unknown, props: PageProps, type: RenderRequest["pageType"], onLateError: (error: Error) => void) => Promise<void>;
+  Slot: Parameters<typeof specPage>[1];
 };
 
 const PAGE_KIT = "@design-harness/page";
+/** The spec renderer: json-render's Renderer with a registry built from the library. Only a spec page imports it. */
+const SPEC_RENDERER = "@design-harness/spec";
 // Real time for the boot script's own waiting, taken before the page's clock is fixed.
 const now = performance.now.bind(performance);
 installDeterminism(globalThis);
@@ -116,9 +120,16 @@ async function render(request: RenderRequest): Promise<void> {
     await addStyles(request);
     addImportMap(request);
     kit = (await import(/* @vite-ignore */ PAGE_KIT)) as Kit;
-    const module = (await import(/* @vite-ignore */ request.page.module)) as Record<string, unknown>;
-    Page = module[request.page.export];
-    if (typeof Page !== "function") throw new Error(`${request.page.module.replace(/^@prototype\//, "")} has no function export "${request.page.export}"`);
+    if ("spec" in request.page) {
+      // A spec page: the library and the spec renderer, and the spec as data. No prototype module exists to load.
+      const payload = request.page.spec;
+      const [renderer, library] = await Promise.all([import(/* @vite-ignore */ SPEC_RENDERER) as Promise<{ specPage: typeof specPage }>, import(/* @vite-ignore */ payload.library) as Promise<Record<string, unknown>>]);
+      Page = renderer.specPage(library, kit.Slot, payload, request.pageType.slots);
+    } else {
+      const module = (await import(/* @vite-ignore */ request.page.module)) as Record<string, unknown>;
+      Page = module[request.page.export];
+      if (typeof Page !== "function") throw new Error(`${request.page.module.replace(/^@prototype\//, "")} has no function export "${request.page.export}"`);
+    }
   } catch (error) {
     fail("load", error);
     return;

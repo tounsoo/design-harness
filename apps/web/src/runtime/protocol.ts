@@ -1,4 +1,4 @@
-import { parseSnapshots, type PageType, type RenderedSnapshot, type View } from "@design-harness/core";
+import { parseSnapshots, type FlatSpec, type PageType, type RenderedSnapshot, type View } from "@design-harness/core";
 
 /**
  * The messages between the app and a frame. A frame is a sandboxed iframe
@@ -17,6 +17,23 @@ export type StyleSource = { readonly url: string } | { readonly css: string };
 
 export type ScenarioRef = { readonly id: string; readonly state: string; readonly page: string };
 
+/** How the frame's registry draws one catalog entry: which props it passes, which it binds to state, and what it takes as content. */
+export type SpecPart = {
+  readonly kind: "part" | "page";
+  readonly content: "children" | "options" | "none";
+  /** The props passed to the library's part, as the catalog lists them (not `text` or `options`, which become content). */
+  readonly props: readonly string[];
+  /** Bindable prop → the part's callback that reports a new value. */
+  readonly binds: Readonly<Record<string, string>>;
+  readonly events: readonly string[];
+};
+
+/** A spec prototype's page for one scenario, as data: the library to draw it with, core's resolved spec, and the catalog's parts. */
+export type SpecPayload = { readonly library: string; readonly spec: FlatSpec; readonly parts: Readonly<Record<string, SpecPart>> };
+
+/** What a frame renders: a module's export (a TSX prototype's page), or a spec (a spec prototype's page, no prototype code). */
+export type PageRef = { readonly module: string; readonly export: string } | { readonly spec: SpecPayload };
+
 /** App → frame: render one page for one scenario at one view, then measure it. */
 export type RenderRequest = {
   readonly protocol: typeof PROTOCOL;
@@ -26,8 +43,8 @@ export type RenderRequest = {
   /** Every module the page can import, by bare specifier: React, the library, the page kit and the prototype's files. */
   readonly modules: Readonly<Record<string, ModuleSource>>;
   readonly styles: readonly StyleSource[];
-  /** The page component: a module specifier from `modules` and an export name. */
-  readonly page: { readonly module: string; readonly export: string };
+  /** The page component: a module specifier from `modules` and an export name; or a spec, drawn by the spec renderer in `modules`. */
+  readonly page: PageRef;
   readonly scenario: ScenarioRef;
   readonly pageType: PageType;
   readonly view: View;
@@ -95,6 +112,25 @@ function isView(value: unknown): value is View {
   return isString(value.name) && size(value.width) && size(value.height) && (value.scheme === "light" || value.scheme === "dark");
 }
 
+function isSpecPart(value: unknown): value is SpecPart {
+  if (!isObject(value) || !hasOnly(value, ["kind", "content", "props", "binds", "events"])) return false;
+  const { kind, content, props, binds, events } = value;
+  return (kind === "part" || kind === "page") && (content === "children" || content === "options" || content === "none") && isStringList(props) && isObject(binds) && Object.values(binds).every(isString) && isStringList(events);
+}
+
+/** A spec payload's shape: the spec's elements are checked by core before they are sent, and drawn only through the registry. */
+function isSpecPayload(value: unknown): value is SpecPayload {
+  if (!isObject(value) || !hasOnly(value, ["library", "spec", "parts"]) || !isString(value.library) || !isObject(value.parts) || !Object.values(value.parts).every(isSpecPart)) return false;
+  const spec = value.spec;
+  return isObject(spec) && hasOnly(spec, ["root", "elements", "state"]) && isString(spec.root) && isObject(spec.elements) && Object.values(spec.elements).every((element) => isObject(element) && isString(element.type)) && isObject(spec.state);
+}
+
+function isPageRef(value: unknown, modules: Json): value is PageRef {
+  if (!isObject(value)) return false;
+  if ("spec" in value) return hasOnly(value, ["spec"]) && isSpecPayload(value.spec);
+  return hasOnly(value, ["module", "export"]) && isString(value.module) && isString(value.export) && value.module in modules;
+}
+
 function isScenario(value: unknown): value is ScenarioRef {
   return isObject(value) && hasOnly(value, ["id", "state", "page"]) && isString(value.id) && isString(value.state) && isString(value.page);
 }
@@ -112,7 +148,7 @@ export function readParentMessage(data: unknown, channel: string): ParentMessage
   const { modules, styles, page, settleMs } = data;
   if (!isObject(modules) || !Object.values(modules).every(isModuleSource)) return null;
   if (!Array.isArray(styles) || !styles.every(isStyleSource)) return null;
-  if (!isObject(page) || !hasOnly(page, ["module", "export"]) || !isString(page.module) || !isString(page.export) || !(page.module in modules)) return null;
+  if (!isPageRef(page, modules)) return null;
   if (!isScenario(data.scenario) || !isPageType(data.pageType) || !isView(data.view)) return null;
   if (typeof settleMs !== "number" || !Number.isFinite(settleMs) || settleMs < 0 || settleMs > 60000) return null;
   return data as RenderRequest;

@@ -1,0 +1,29 @@
+{
+  "what": "The rooms page is a \"gallery\" page, a page type the inventory does not list",
+  "expect": [
+    {
+      "rule": "page-types-from-inventory",
+      "message": "Page \"rooms\" is a \"gallery\" page, which is not an inventoried page type"
+    }
+  ],
+  "manifest": {
+    "pages": [
+      {
+        "id": "booking",
+        "pageType": "booking",
+        "component": {
+          "file": "pages/booking.json",
+          "export": "default"
+        }
+      },
+      {
+        "id": "rooms",
+        "pageType": "gallery",
+        "component": {
+          "file": "pages/rooms.json",
+          "export": "default"
+        }
+      }
+    ]
+  }
+}

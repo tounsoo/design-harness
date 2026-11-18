@@ -5,6 +5,8 @@ declare module "virtual:frame-runtime" {
   export const boot: string;
   /** The page kit, `@design-harness/page`, as one ES module. */
   export const kit: string;
+  /** The spec renderer, `@design-harness/spec`, as one ES module. */
+  export const spec: string;
 }
 
 interface ImportMetaEnv {

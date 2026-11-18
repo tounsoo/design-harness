@@ -1,0 +1,9 @@
+{
+  "what": "A second Book room in the question layout, primary by Todae's default variant",
+  "expect": [
+    {
+      "rule": "one-primary-per-page",
+      "message": "Page \"booking\" has 2 primary actions, more than 1: Button.Root \"Book room\" at layouts/select-question.json"
+    }
+  ]
+}

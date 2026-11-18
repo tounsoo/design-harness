@@ -1,7 +1,7 @@
 import { Alert, Loader, Stack, Text } from "@tounsoo/todae";
 import { useEffect, useState } from "react";
 import type { ProjectConfig } from "@design-harness/core";
-import { SEED_PROTOTYPE_ID, seedProject } from "../seed/nook";
+import { SEED_PROTOTYPE_ID, SEED_SPEC_PROTOTYPE_ID, seedProject } from "../seed/nook";
 import { KeyVault } from "../agent/key-vault";
 import { Store } from "../store/db";
 import type { Imported, PrototypeRecord } from "../store/project-file";
@@ -16,7 +16,10 @@ async function load(): Promise<Loaded> {
   let projects = await store.projects();
   if (projects.items.length === 0) {
     const seed = seedProject();
-    await store.replaceProject(seed.config, [{ projectId: seed.config.id, id: SEED_PROTOTYPE_ID, name: "Booking", prototype: seed.prototype }]);
+    await store.replaceProject(seed.config, [
+      { projectId: seed.config.id, id: SEED_PROTOTYPE_ID, name: "Booking", prototype: seed.prototype },
+      { projectId: seed.config.id, id: SEED_SPEC_PROTOTYPE_ID, name: "Booking (spec)", prototype: seed.spec },
+    ]);
     projects = await store.projects();
   }
   const config = projects.items[0];

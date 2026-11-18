@@ -1,0 +1,9 @@
+{
+  "root": "question",
+  "elements": {
+    "question": { "type": "Stack.Root", "props": { "gap": "condensed" }, "children": ["label", "field"] },
+    "label": { "type": "Label.Root", "props": { "htmlFor": "duration", "text": "How long?" }, "children": [] },
+    "field": { "type": "Field.Root", "props": { "id": "duration" }, "children": ["select"] },
+    "select": { "type": "Field.Select", "props": { "value": { "$bindState": "/duration" }, "options": { "$state": "/durations" } }, "children": [] }
+  }
+}

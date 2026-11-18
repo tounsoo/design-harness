@@ -1,0 +1,9 @@
+{
+  "what": "A style prop on the room cards' stack: no part takes one",
+  "expect": [
+    {
+      "rule": "extract",
+      "message": "element \"list\" sets \"style\", which a Stack.Root does not take"
+    }
+  ]
+}

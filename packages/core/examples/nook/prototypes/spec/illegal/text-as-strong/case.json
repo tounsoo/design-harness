@@ -1,0 +1,9 @@
+{
+  "what": "Text.Root as a strong element: Todae's types allow it, so the catalog does, and the Todae-only rule refuses it",
+  "expect": [
+    {
+      "rule": "text-as-heading-or-paragraph",
+      "message": "sets as to \"strong\"; it must be one of"
+    }
+  ]
+}

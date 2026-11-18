@@ -24,7 +24,13 @@ export type TaskFlow = { readonly task: string; readonly start: string; readonly
 export type Flow = { readonly states: readonly string[]; readonly tasks: readonly TaskFlow[] };
 
 export type Prototype = {
-  /** Path → TSX source. Paths are relative to the prototype root, with forward slashes and no leading `./`. */
+  /**
+   * `tsx` (the default when absent): each page is a component in a TSX file.
+   * `spec`: each page and layout is a json-render spec in a JSON file, and
+   * no prototype code runs (packages/core/src/spec/).
+   */
+  readonly format?: "tsx" | "spec";
+  /** Path → source: TSX for a `tsx` prototype, a JSON spec for a `spec` one. Paths are relative to the prototype root, with forward slashes and no leading `./`. */
   readonly files: Readonly<Record<string, string>>;
   readonly pages: readonly PageEntry[];
   readonly layouts: readonly LayoutEntry[];

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { RenderedSnapshot } from "@design-harness/core";
 import { nook } from "../../../../packages/core/examples/nook/project";
 import { legalSnapshots } from "../../../../packages/core/examples/nook/snapshots";
-import { seedLegal } from "../../test/nook";
+import { seedLegal, seedSpec } from "../../test/nook";
 import type { PackageSource } from "./package-source";
 import { PROTOCOL, type RenderRequest } from "./protocol";
 import { Session, frameKey } from "./session";
@@ -153,5 +153,31 @@ describe("a session", () => {
     expect(session.getState().frameStates[key]).toEqual({ state: "waiting" });
     send(key, { type: "ready" });
     expect(frames.get(key)?.window.postMessage).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("a session of a spec prototype", () => {
+  it("compiles nothing, sends each frame its page's spec for its scenario, and imports json-render and the spec renderer, never prototype code", async () => {
+    let next = 0;
+    const win = { addEventListener: () => undefined, removeEventListener: () => undefined } as unknown as Window;
+    const asked: string[] = [];
+    const source: PackageSource = { name: "fake", origins: [], module: (specifier) => (asked.push(specifier), Promise.resolve({ code: `/* ${specifier} */` })), stylesheet: () => Promise.resolve({ css: "" }) };
+    const session = new Session({ source, kit: "/* kit */", spec: "/* spec renderer */", boot: "/* boot */", parentOrigin: "https://app.example", window: win, channel: () => `ch-${(next += 1)}`, timeoutMs: 1000 });
+    session.update(nook, seedSpec());
+    expect(session.getState().compileProblems).toEqual([]);
+    const held = session.getState().frames.find((frame) => frame.key === frameKey("lantern-held", "phone"));
+    expect(held?.page && "spec" in held.page ? held.page.spec.spec.state.scenario : null).toEqual({ id: "lantern-held", state: "held" });
+    expect(held?.page && "spec" in held.page ? held.page.spec.library : null).toBe("@tounsoo/todae");
+    expect(held?.page && "spec" in held.page ? Object.keys(held.page.spec.parts) : []).toContain("Button.Root");
+    await flush();
+    expect(asked).toContain("@json-render/react");
+    const doc = session.documentFor(frameKey("lantern-held", "phone"));
+    const contentWindow = { postMessage: vi.fn() };
+    session.attach(frameKey("lantern-held", "phone"), { contentWindow } as unknown as HTMLIFrameElement, doc?.generation ?? 0, doc?.channel ?? "");
+    (session as unknown as { onMessage: (event: MessageEvent) => void }).onMessage({ data: { protocol: PROTOCOL, type: "ready", channel: doc?.channel }, source: contentWindow } as unknown as MessageEvent);
+    const request = contentWindow.postMessage.mock.calls[0]?.[0] as RenderRequest;
+    expect(Object.keys(request.modules).sort()).toEqual(["@design-harness/page", "@design-harness/spec", "@json-render/react", "@tounsoo/todae", "react", "react-dom", "react-dom/client", "react/jsx-runtime"]);
+    expect(request.modules["@design-harness/spec"]).toEqual({ code: "/* spec renderer */" });
+    session.dispose();
   });
 });

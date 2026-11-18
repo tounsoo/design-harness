@@ -1,7 +1,7 @@
 import { BaseAnthropic } from "@anthropic-ai/sdk/client";
 import { Messages, type BetaMessageParam, type MessageCreateParamsBase } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import type { AgentSettings } from "./models";
-import { TOOL_DEFINITIONS } from "./tools";
+import { SPEC_TOOL_DEFINITIONS, TOOL_DEFINITIONS } from "./tools";
 
 /**
  * The client and every request the chat sends. The system prompt and the
@@ -22,6 +22,31 @@ How this project works:
 - The person may send a proposal back to you with a note. Revise it with revise_proposal, keeping its id, and say in the note what you changed. Only an open proposal can be revised.
 
 Read the project and the files you need before you write. Make small changes. When you finish, say in a few sentences what you changed and what the checks say.`;
+
+/**
+ * The spec mode's own prompt, for a prototype written as json-render specs.
+ * The catalog's instructions follow it as a second system block: what a spec
+ * is and which components, props and expressions it may use, written by
+ * json-render's `catalog.prompt()` for the catalog core generates from the
+ * project.
+ */
+export const SPEC_SYSTEM_PROMPT = `You build and change a UI prototype in design-harness, for the person in this chat.
+
+This prototype is written as json-render specs: each page and each layout is one JSON spec file, drawn in frames by the project's component library, one frame per scenario and view. There is no code. A deterministic checker, design-harness core, decides whether the prototype is valid. You do not decide that, and neither does the person: the checks do.
+
+How this project works:
+- Build only from the catalog below, which core generates from the project's inventories: the library parts it lists, Page and Layout. read_project shows the inventories, page types and their slots, flow states and rules.
+- Change a spec with patch_spec (JSON Patch operations, one per line) or write_spec (a whole file). Core checks every change against the catalog before it applies, and refuses one with any issue, saying why. Change the manifest (pages, layouts, scenarios, flow) with set_manifest.
+- The checks decide validity. After every round in which you change the prototype, the app re-renders every frame, runs the checks and sends you core's report. Fix what it reports and keep going until every rule passes, or until you need the person. A rule that says it cannot tell is failing too.
+- When the request needs something outside the catalog or the inventories, or something a rule forbids, do not work around the check. Draft a proposal with draft_proposal: the inventory change, the rule that governs it, and examples that pass and fail, whose files are spec files. Only the person can approve, decline or adopt it, on its review page; no tool and no message changes a proposal's status.
+- The person may send a proposal back to you with a note. Revise it with revise_proposal, keeping its id, and say in the note what you changed. Only an open proposal can be revised.
+
+Read the project and the specs you need before you write. Make small changes. When you finish, say in a few sentences what you changed and what the checks say.
+
+The catalog's instructions follow. They were written for a model that answers with JSONL alone; here every patch goes in a tool call instead.`;
+
+/** What the agent is writing: TSX source, or json-render specs with the catalog's prompt. */
+export type AgentMode = { readonly kind: "tsx" } | { readonly kind: "spec"; readonly catalogPrompt: string };
 
 /** Room for adaptive thinking as well as a file-sized reply. */
 export const MAX_TOKENS = 32_000;
@@ -56,12 +81,19 @@ export function createClient(apiKey: string, options: { readonly fetch?: typeof 
 export type RequestBody = MessageCreateParamsBase & { readonly stream?: never };
 
 /** One streamed request: everything but `messages` is the same for every turn of a conversation at the same settings. */
-export function requestBody(settings: AgentSettings, messages: readonly BetaMessageParam[]): RequestBody {
+export function requestBody(settings: AgentSettings, messages: readonly BetaMessageParam[], mode: AgentMode = { kind: "tsx" }): RequestBody {
   return {
     model: settings.model,
     max_tokens: MAX_TOKENS,
-    system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-    tools: [...TOOL_DEFINITIONS],
+    system:
+      mode.kind === "spec"
+        ? [
+            { type: "text", text: SPEC_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+            // The catalog's prompt changes only when a proposal changes the catalog, so it is a cached prefix of its own.
+            { type: "text", text: mode.catalogPrompt, cache_control: { type: "ephemeral" } },
+          ]
+        : [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+    tools: [...(mode.kind === "spec" ? SPEC_TOOL_DEFINITIONS : TOOL_DEFINITIONS)],
     // Forced tool choice is refused by these models; the prompt steers instead.
     tool_choice: { type: "auto" },
     // Adaptive thinking is these models' default; summaries make the agent's reasoning and progress readable in the chat.

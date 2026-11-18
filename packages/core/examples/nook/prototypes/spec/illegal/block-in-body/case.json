@@ -1,0 +1,9 @@
+{
+  "what": "A line of text straight in the booking body, not in a layout",
+  "expect": [
+    {
+      "rule": "body-from-layouts",
+      "message": "holds Text.Root \"Free until 3 pm\" at pages/booking.json"
+    }
+  ]
+}

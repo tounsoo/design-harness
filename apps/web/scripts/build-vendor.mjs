@@ -32,6 +32,8 @@ const MODULES = [
   { specifier: "react-dom", file: "react-dom.js", external: ["react"] },
   { specifier: "react-dom/client", file: "react-dom-client.js", external: ["react", "react-dom"] },
   { specifier: LIBRARY, file: "library.js", external: ["react", "react/jsx-runtime", "react-dom"] },
+  // A spec prototype's frames draw specs with json-render's React renderer, which bundles its core and zod.
+  { specifier: "@json-render/react", file: "json-render-react.js", external: ["react", "react/jsx-runtime", "react-dom"] },
 ];
 
 function packageOf(specifier) {
@@ -60,8 +62,11 @@ function cjsEntry(specifier) {
   return `import mod from ${JSON.stringify(specifier)};\nexport default mod;\nexport const { ${names.join(", ")} } = mod;\n`;
 }
 
+/** CommonJS unless the package says it is a module, by its type or by an `import` condition in its exports (json-render ships both). */
 function isCommonJs(specifier) {
-  return packageJson(packageOf(specifier)).json.type !== "module";
+  const json = packageJson(packageOf(specifier)).json;
+  const root = typeof json.exports === "object" && json.exports !== null ? (json.exports["."] ?? json.exports) : null;
+  return json.type !== "module" && !(typeof root === "object" && root !== null && "import" in root);
 }
 
 /**

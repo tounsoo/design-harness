@@ -1,7 +1,8 @@
 import { checkPrototype, type CheckReport, type PageType, type ProjectConfig, type Prototype, type RenderedSnapshot, type Scenario, type View } from "@design-harness/core";
 import { frameDocument } from "./frame-document";
 import { resolvePackages, type PackageSource, type RuntimePackages } from "./package-source";
-import { PROTOCOL, readFrameMessage, type FrameMessage, type FrameStage, type ModuleSource, type RenderRequest } from "./protocol";
+import { PROTOCOL, readFrameMessage, type FrameMessage, type FrameStage, type ModuleSource, type PageRef, type RenderRequest } from "./protocol";
+import { SPEC_RENDERER, specParts, specPayload } from "./spec-payload";
 import { compilePrototype, moduleSpecifier, type CompileProblem } from "./transform";
 
 /**
@@ -29,7 +30,8 @@ export type FrameSpec = {
   /** Why the frame cannot render, before it tries: its page or page type is missing. */
   readonly blocked?: string;
   readonly pageType?: PageType;
-  readonly page?: { readonly module: string; readonly export: string };
+  /** A TSX page's module and export, or a spec page's resolved spec for this frame's scenario. */
+  readonly page?: PageRef;
 };
 
 export type FrameState =
@@ -53,6 +55,8 @@ export type SessionOptions = {
   readonly source: PackageSource;
   /** The page kit module's code. */
   readonly kit: string;
+  /** The spec renderer module's code, which a spec prototype's frames import. */
+  readonly spec?: string;
   /** The frame boot script's code. */
   readonly boot: string;
   readonly parentOrigin: string;
@@ -114,18 +118,20 @@ export class Session {
     this.config = config;
     this.prototype = prototype;
     const revision = this.state.revision + 1;
-    const compiled = compilePrototype(prototype.files);
-    this.modules = Object.fromEntries(Object.entries(compiled.modules).map(([specifier, code]) => [specifier, { code }]));
+    const spec = prototype.format === "spec";
+    // A spec prototype has no code to compile: its frames load the spec renderer and get each page's spec as data.
+    const compiled = spec ? { modules: {}, problems: [] } : compilePrototype(prototype.files);
+    this.modules = spec ? { [SPEC_RENDERER]: { code: this.options.spec ?? "throw new Error('this app has no spec renderer');" } } : Object.fromEntries(Object.entries(compiled.modules).map(([specifier, code]) => [specifier, { code }]));
     const frames = frameSpecs(config, prototype);
     const frameStates: Record<FrameKey, FrameState> = {};
     for (const frame of frames) frameStates[frame.key] = frame.blocked ? { state: "failed", stage: "setup", message: frame.blocked } : { state: "waiting" };
     for (const attached of this.attached.values()) clearTimeout(attached.timer);
     this.set({ revision, frames, frameStates, compileProblems: compiled.problems, report: checkPrototype({ config, prototype }), measured: false });
 
-    const libraryKey = JSON.stringify([config.library.package, config.library.version, config.library.react, config.library.stylesheets ?? []]);
+    const libraryKey = JSON.stringify([config.library.package, config.library.version, config.library.react, config.library.stylesheets ?? [], spec]);
     if (this.packages?.key !== libraryKey) {
       this.resolved = null;
-      const value = resolvePackages(config.library, this.options.source);
+      const value = resolvePackages(config.library, this.options.source, { spec });
       this.packages = { key: libraryKey, value };
       this.set({ packages: { state: "loading" } });
       value.then(
@@ -273,23 +279,28 @@ export class Session {
 /** One frame per scenario and view, in the prototype's scenario order and the config's view order. */
 export function frameSpecs(config: ProjectConfig, prototype: Prototype): FrameSpec[] {
   const pageTypes = new Map(config.inventories.pageTypes.map((type) => [type.id, type]));
+  const parts = prototype.format === "spec" ? specParts(config) : {};
   return prototype.scenarios.flatMap((scenario) => {
     const page = prototype.pages.find((item) => item.id === scenario.page);
     const pageType = page ? pageTypes.get(page.pageType) : undefined;
+    const payload = page && prototype.format === "spec" ? specPayload(config, prototype, scenario, parts) : null;
+    const ref: PageRef | undefined = !page ? undefined : prototype.format === "spec" ? (payload ? { spec: payload } : undefined) : { module: moduleSpecifier(page.component.file), export: page.component.export };
     const blocked = !page
       ? `Scenario "${scenario.id}" names page "${scenario.page}", which is not in the prototype's manifest.`
       : !pageType
         ? `Page "${page.id}" is a "${page.pageType}" page, which is not a page type in the project's inventory, so the shell has no slots to lay out.`
         : prototype.files[page.component.file] === undefined
           ? `Page "${page.id}" names ${page.component.file}, which is not a file in the prototype.`
-          : undefined;
+          : !ref
+            ? `Page "${page.id}"'s spec, ${page.component.file}, could not be read; the checks say why.`
+            : undefined;
     return config.views.map((view): FrameSpec => ({
       key: frameKey(scenario.id, view.name),
       scenario,
       view,
       ...(blocked ? { blocked } : {}),
       ...(pageType ? { pageType } : {}),
-      ...(page ? { page: { module: moduleSpecifier(page.component.file), export: page.component.export } } : {}),
+      ...(ref ? { page: ref } : {}),
     }));
   });
 }

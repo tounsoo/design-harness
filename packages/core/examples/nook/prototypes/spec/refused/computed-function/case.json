@@ -1,0 +1,9 @@
+{
+  "what": "Text computed by a registered function, which would be code",
+  "expect": [
+    {
+      "rule": "extract",
+      "message": "sets text with $computed, which calls a function"
+    }
+  ]
+}

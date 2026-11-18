@@ -1,4 +1,4 @@
-import { boot, kit } from "virtual:frame-runtime";
+import { boot, kit, spec } from "virtual:frame-runtime";
 import { Session } from "../runtime/session";
 import { esmShPackageSource, localPackageSource, type PackageSource } from "../runtime/package-source";
 
@@ -19,5 +19,5 @@ export function packageSource(): PackageSource {
 }
 
 export function createSession(): Session {
-  return new Session({ source: packageSource(), kit, boot, parentOrigin: window.location.origin, window });
+  return new Session({ source: packageSource(), kit, spec, boot, parentOrigin: window.location.origin, window });
 }

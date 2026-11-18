@@ -3,7 +3,7 @@
  * pure function of plain JSON, with no clock, randomness, network or file
  * system, so it runs unchanged in a browser and in Node.
  */
-export type { Cap, ComponentLibrary, Inventories, PageType, ProjectConfig, RankedAction, RoleMapping, RuleInputs, Task, View } from "./config/types";
+export type { Cap, ComponentLibrary, Inventories, PageType, PartDescription, ProjectConfig, PropSchema, RankedAction, RoleMapping, RuleInputs, Task, View } from "./config/types";
 export { CONFIG_SCHEMA_VERSION } from "./config/types";
 export type { ComponentRef, Flow, LayoutEntry, PageEntry, Prototype, Scenario, TaskFlow, Transition } from "./prototype/types";
 export type { Rect, RenderedElement, RenderedSnapshot, Rgba, TextPaint } from "./rendered/types";
@@ -55,3 +55,14 @@ export { classifyProposal } from "./proposals/classify";
 export { applyProposal } from "./proposals/apply";
 export type { Adoption, ExampleResult, ExampleRun, ExistingPrototype, NewlyFailing, ProposalDraft, Refusal, RefusalCode, Stamp } from "./proposals/lifecycle";
 export { adopt, approve, contentOf, decline, dryRunAdoption, newlyFailingOf, propose, rerunExamples, revise, sendBack, tryExamples, withExampleSnapshots } from "./proposals/lifecycle";
+
+export type { CatalogComponent, SpecCatalog } from "./spec/catalog";
+export { LAYOUT_TYPE, PAGE_TYPE, SCENARIO_STATE, SPEC_ACTIONS, TEXT_PROP, specCatalog } from "./spec/catalog";
+export type { JsonValue, ParsedJson, Position } from "./spec/json";
+export { parseJson } from "./spec/json";
+export type { SpecIssue } from "./spec/read";
+export { readSpecs } from "./spec/read";
+export { specIssues, specModel } from "./spec/model";
+export type { FlatSpec } from "./spec/resolve";
+export { resolvePageSpec } from "./spec/resolve";
+

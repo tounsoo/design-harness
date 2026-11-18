@@ -1,0 +1,37 @@
+{
+  "root": "page",
+  "elements": {
+    "page": {"type": "Page", "props": {}, "children": [], "slots": {"title": ["name"], "facts": ["seats", "booked-note", "held-note"], "body": ["question", "details"], "alternate": ["hold"], "action": ["book"]}},
+    "name": {"type": "Text.Root", "props": {"as": "strong", "text": {"$state": "/room/name"}}, "children": []},
+    "seats": {"type": "Text.Root", "props": {"as": "p", "text": {"$template": "${/room/seats} seats, ${/room/floor}"}}, "children": []},
+    "booked-note": {"type": "Text.Root", "props": {"as": "p", "text": "Booked until 3 pm"}, "visible": {"$state": "/scenario/state", "eq": "booked"}, "children": []},
+    "held-note": {"type": "Text.Root", "props": {"as": "p", "text": "Held for 10 minutes"}, "visible": {"$state": "/scenario/state", "eq": "held"}, "children": []},
+    "question": {"type": "Layout", "props": {"id": "select-question"}, "children": []},
+    "details": {"type": "Layout", "props": {"id": "room-details"}, "children": []},
+    "hold": {"type": "Button.Root", "props": {"variant": "secondary", "text": "Hold room"}, "children": []},
+    "book": {"type": "Button.Root", "props": {"variant": "primary", "text": "Book room"}, "children": []}
+  },
+  "state": {
+    "room": {
+      "id": "lantern",
+      "name": "Lantern",
+      "seats": 6,
+      "floor": "Second floor",
+      "details": [
+        "Screen",
+        "Whiteboard"
+      ]
+    },
+    "durations": [
+      {
+        "value": "30",
+        "label": "30 minutes"
+      },
+      {
+        "value": "60",
+        "label": "1 hour"
+      }
+    ],
+    "duration": "30"
+  }
+}

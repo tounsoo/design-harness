@@ -1,0 +1,9 @@
+{
+  "what": "A spec file that is not JSON",
+  "expect": [
+    {
+      "rule": "extract",
+      "message": "pages/notes.json does not parse as JSON"
+    }
+  ]
+}

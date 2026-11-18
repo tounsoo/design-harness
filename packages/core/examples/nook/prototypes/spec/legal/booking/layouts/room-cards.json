@@ -1,0 +1,10 @@
+{
+  "root": "list",
+  "elements": {
+    "list": { "type": "Stack.Root", "props": { "gap": "normal" }, "repeat": { "statePath": "/rooms", "key": "id" }, "children": ["card"] },
+    "card": { "type": "Card.Root", "props": {}, "children": ["name", "seats", "open"] },
+    "name": { "type": "Text.Root", "props": { "as": "h2", "text": { "$item": "name" } }, "children": [] },
+    "seats": { "type": "Text.Root", "props": { "as": "p", "text": { "$template": "${seats} seats" } }, "children": [] },
+    "open": { "type": "Button.Root", "props": { "variant": "secondary", "text": { "$template": "Open ${name}" } }, "children": [] }
+  }
+}

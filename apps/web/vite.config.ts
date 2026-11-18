@@ -10,8 +10,9 @@ const source = (path: string) => fileURLToPath(new URL(path, import.meta.url));
  * Builds the code that runs inside a frame, which Vite cannot serve as a
  * module there (a frame has an opaque origin and loads nothing from the
  * app): the boot script as one classic IIFE, inlined into each frame's
- * document, and the page kit as one ES module whose React imports the
- * frame's import map resolves. `virtual:frame-runtime` exports both as text.
+ * document, the page kit as one ES module whose React imports the frame's
+ * import map resolves, and the spec renderer, which a spec prototype's
+ * frames import. `virtual:frame-runtime` exports the three as text.
  */
 function frameRuntime(): Plugin {
   const bundle = async (entry: string, format: "iife" | "esm", external: string[]) => {
@@ -40,9 +41,14 @@ function frameRuntime(): Plugin {
     },
     async load(id) {
       if (id !== RESOLVED) return null;
-      const [boot, kit] = await Promise.all([bundle("./src/frame/boot.ts", "iife", []), bundle("./src/frame/kit.tsx", "esm", ["react", "react/jsx-runtime", "react-dom", "react-dom/client"])]);
-      for (const input of [...boot.inputs, ...kit.inputs]) if (!input.includes("node_modules")) this.addWatchFile(source(`./${input}`));
-      return `export const boot = ${JSON.stringify(boot.code)};\nexport const kit = ${JSON.stringify(kit.code)};\n`;
+      const [boot, kit, spec] = await Promise.all([
+        bundle("./src/frame/boot.ts", "iife", []),
+        bundle("./src/frame/kit.tsx", "esm", ["react", "react/jsx-runtime", "react-dom", "react-dom/client"]),
+        // The spec renderer: a registry over the library, and json-render's Renderer, which the import map supplies.
+        bundle("./src/frame/spec.tsx", "esm", ["react", "react/jsx-runtime", "react-dom", "@json-render/react"]),
+      ]);
+      for (const input of [...boot.inputs, ...kit.inputs, ...spec.inputs]) if (!input.includes("node_modules")) this.addWatchFile(source(`./${input}`));
+      return `export const boot = ${JSON.stringify(boot.code)};\nexport const kit = ${JSON.stringify(kit.code)};\nexport const spec = ${JSON.stringify(spec.code)};\n`;
     },
   };
 }

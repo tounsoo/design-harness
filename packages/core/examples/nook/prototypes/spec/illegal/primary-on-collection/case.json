@@ -1,0 +1,9 @@
+{
+  "what": "A primary Book room on the rooms collection",
+  "expect": [
+    {
+      "rule": "no-primary-on-collection-or-content",
+      "message": "Page \"rooms\" has 1 primary action, more than 0"
+    }
+  ]
+}

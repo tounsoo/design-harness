@@ -204,7 +204,7 @@ test("export then import round-trips the project", async ({ browser, base }) => 
   const exported = JSON.parse(readFileSync(path, "utf8"));
   assert.equal(exported.format, "design-harness/project");
   assert.equal(exported.project.id, "nook");
-  assert.deepEqual(exported.prototypes.map((item) => item.id), ["booking"]);
+  assert.deepEqual(exported.prototypes.map((item) => [item.id, item.prototype.format ?? "tsx"]), [["booking", "tsx"], ["booking-spec", "spec"]]);
 
   await editFile(page, "pages/rooms.tsx", (text) => text.replace('<Text.Root as="h1">Rooms</Text.Root>', '<Text.Root as="h1">Spaces</Text.Root>'));
   await measured(page, 2);
@@ -952,11 +952,14 @@ test("the impact list names a prototype that would newly fail, and opens it on t
   const impact = page.getByTestId("review-impact");
   await impact.locator('[data-prototype="booking"]').waitFor({ timeout: 60000 });
   assert.match(await impact.locator('[data-prototype="booking"]').textContent(), /Booking.*would newly fail no-secondary-on-booking.*Page "booking" has 1 secondary action, more than 0: Button.Root "Hold room"/);
-  assert.match(await page.getByTestId("review-verdict").textContent(), /1 prototype would newly fail/);
+  // The spec prototype is measured in frames of its own, and the same rule flags its Hold room.
+  await impact.locator('[data-prototype="booking-spec"]').waitFor({ timeout: 60000 });
+  assert.match(await impact.locator('[data-prototype="booking-spec"]').textContent(), /Booking \(spec\).*would newly fail no-secondary-on-booking.*Page "booking" has 1 secondary action, more than 0: Button.Root "Hold room" at pages\/booking.json/);
+  assert.match(await page.getByTestId("review-verdict").textContent(), /2 prototypes would newly fail/);
   await page.locator("#review-impact").evaluate((element) => element.scrollIntoView({ block: "start" }));
   await page.waitForTimeout(300);
   await shot(page, "review-impact-light");
-  await impact.getByRole("button", { name: "Open on the board" }).click();
+  await impact.locator('[data-prototype="booking"]').getByRole("button", { name: "Open on the board" }).click();
   await page.locator('main[aria-label="Canvas"]').waitFor();
   assert.equal(await page.locator(".app-main-pane").first().getAttribute("data-inactive"), null, "the board is in front");
 });
@@ -1117,6 +1120,236 @@ test("screenshots of the review page in dark", async ({ browser, base, api }) =>
   await impact.page.getByTestId("review-impact").scrollIntoViewIfNeeded();
   await shot(impact.page, "review-impact-dark");
   await impact.context.close();
+});
+
+// ---- spec prototypes -------------------------------------------------------
+
+/** Opens the app on the seeded spec prototype, Booking (spec), and waits for its frames to be measured. */
+async function openSpec(browser, base, options = {}) {
+  const opened = await openApp(browser, base, options);
+  await measured(opened.page, 1);
+  await opened.page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
+  await measured(opened.page, 2);
+  return opened;
+}
+
+test("the spec prototype renders every frame from data, and passes every rule", async ({ browser, base }) => {
+  const { page, errors, logs } = await openSpec(browser, base);
+  const cards = await page.locator(".frame-card").evaluateAll((elements) => elements.map((element) => [element.dataset.frameKey, element.dataset.state]));
+  assert.deepEqual(cards, SCENARIOS.flatMap((scenario) => VIEWS.map((view) => [`${scenario}@${view}`, "measured"])));
+  for (const scenario of SCENARIOS) {
+    const frame = page.frameLocator(`iframe[title="${scenario} at desktop"]`);
+    assert.equal((await frame.locator("h1").textContent())?.trim(), scenario === "rooms-list" ? "Rooms" : "Lantern");
+  }
+  const booked = page.frameLocator('iframe[title="lantern-booked at phone"]');
+  assert.equal(await booked.locator("text=Booked until 3 pm").count(), 1, "the scenario's flow state reaches the spec's visible condition");
+  assert.equal(await booked.locator("text=Held for 10 minutes").count(), 0);
+  const rooms = page.frameLocator('iframe[title="rooms-list at desktop"]');
+  assert.deepEqual(await rooms.getByRole("button").allTextContents(), ["Open Lantern", "Open Harbor"], "the repeat draws one card per room in state");
+  const value = await report(page);
+  assert.equal(value.status, "pass", JSON.stringify(value.findings, null, 1));
+  assert.deepEqual(value.findings, []);
+  assert.equal(value.rules.length, 33);
+  await shot(page, "spec-board-light");
+  assert.deepEqual(errors, []);
+  assert.deepEqual(logs.filter((line) => /json-render|No renderer|Missing element/.test(line)), []);
+});
+
+test("a spec frame loads the library, React, json-render and the spec renderer, and no prototype code", async ({ browser, base }) => {
+  const { page } = await openSpec(browser, base);
+  for (const scenario of SCENARIOS) {
+    const imports = await page.frameLocator(`iframe[title="${scenario} at desktop"]`).locator('script[type="importmap"]').evaluate((element) => Object.keys(JSON.parse(element.textContent ?? "{}").imports).sort());
+    assert.deepEqual(imports, ["@design-harness/page", "@design-harness/spec", "@json-render/react", "@tounsoo/todae", "react", "react-dom", "react-dom/client", "react/jsx-runtime"]);
+  }
+});
+
+test("a violation injected into a spec is flagged: its JSON line marked, a rendered one outlined in its frame", async ({ browser, base }) => {
+  const { page } = await openSpec(browser, base);
+  const edited = await editFile(page, "pages/booking.json", (text) => text.replace('"variant": "secondary", "text": "Hold room"', '"variant": "primary", "text": "Hold room"'));
+  await measured(page, 3);
+  let value = await report(page);
+  assert.ok(failing(value).includes("one-primary-per-page"), `one-primary-per-page fails: ${failing(value)}`);
+  const finding = value.findings.find((item) => item.rule === "one-primary-per-page");
+  assert.match(finding.message, /^Page "booking" has 2 primary actions, more than 1: Button.Root "Hold room" at pages\/booking.json:22:5, Button.Root "Book room" at pages\/booking.json:23:5\.$/);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  await page.locator('.rule[data-rule="one-primary-per-page"] .finding').first().click();
+  await page.waitForSelector('[data-testid="code-line"]');
+  assert.equal(await page.locator('[data-testid="code-line"]').textContent(), `line ${finding.line}, column ${finding.column}`);
+  const marked = (await page.locator('.code-field [data-kind="finding"]').textContent()) ?? "";
+  assert.equal(marked, edited.split("\n")[finding.line - 1], "the marked line is the element's line in the spec");
+  assert.match(marked, /"(hold|book)": \{ "type": "Button.Root"/);
+  await shot(page, "spec-failing-source-light");
+
+  await editFile(page, "pages/booking.json", (text) => text.replace('"variant": "primary", "text": "Hold room"', '"variant": "secondary", "text": "Hold room"').replace('"as": "p", "text": { "$template"', '"as": "h3", "text": { "$template"'));
+  await measured(page, 4);
+  value = await report(page);
+  assert.deepEqual(failing(value), ["heading-structure"]);
+  const heading = value.findings.find((item) => item.rule === "heading-structure" && item.scenario === "lantern-open" && item.view === "desktop");
+  assert.ok(heading && typeof heading.element === "number", "heading-structure flags lantern-open at desktop, at an element");
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  await page.locator('.rule[data-rule="heading-structure"] .finding').filter({ hasText: "scenario lantern-open" }).filter({ hasText: "view desktop" }).first().click();
+  const frame = page.frameLocator('iframe[title="lantern-open at desktop"]');
+  await frame.locator("[data-design-harness-overlay]").waitFor({ state: "attached" });
+  const overlay = await frame.locator("[data-design-harness-overlay]").boundingBox();
+  const target = await frame.locator("h3", { hasText: "6 seats, Second floor" }).boundingBox();
+  assert.ok(overlay && target && overlay.x <= target.x && overlay.y <= target.y && overlay.x + overlay.width >= target.x + target.width, "the outline is drawn around the heading");
+  await shot(page, "spec-failing-rendered-light");
+});
+
+test("what the catalog refuses is reported by extract and never reaches the frame", async ({ browser, base }) => {
+  const { page } = await openSpec(browser, base);
+  await editFile(page, "pages/booking.json", (text) =>
+    text
+      .replace('"variant": "primary", "text": "Book room" }', '"variant": "primary", "text": "Book room", "style": { "display": "none" } }')
+      .replace('"alternate": ["hold"]', '"alternate": ["hold", "free"]')
+      .replace('"hold": {', '"free": { "type": "Badge.Root", "props": { "text": "Free" }, "children": [] },\n    "hold": {'),
+  );
+  await measured(page, 3);
+  const value = await report(page);
+  assert.deepEqual(failing(value), ["extract"]);
+  assert.deepEqual(
+    value.findings.map((item) => item.message),
+    [
+      'pages/booking.json: element "free" is a Badge.Root, which is not in the catalog. The catalog has the parts of the inventoried components (Alert, Button, Card, Disclosure, EmptyState, Field, Label, Stack, Text), Page and Layout.',
+      'pages/booking.json: element "book" sets "style", which a Button.Root does not take. It takes "aria-label", "defaultPressed", "id", "pressed", "text", "tooltip", "variant".',
+    ],
+  );
+  const frame = page.frameLocator('iframe[title="lantern-open at desktop"]');
+  assert.equal(await frame.getByRole("button", { name: "Book room" }).isVisible(), true, "the refused style prop never reached the button");
+  assert.equal(await frame.locator("text=Free").count(), 0, "the refused Badge rendered nothing");
+});
+
+test("the same spec prototype gives the same report on reload", async ({ browser, base }) => {
+  const { page, logs } = await openSpec(browser, base);
+  const first = await report(page);
+  await page.reload();
+  await measured(page, 1);
+  await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
+  await measured(page, 2);
+  assert.deepEqual(await report(page), first);
+  // zod, inside json-render, probes for eval to speed itself up; the frame's CSP refuses it and zod falls back. Nothing else is refused.
+  const refused = logs.filter((line) => /Content Security Policy|unsafe-eval|EvalError/.test(line));
+  console.log(`     frame console lines refused by the CSP: ${refused.length}${refused[0] ? ` (first: ${refused[0].slice(0, 160)})` : ""}`);
+});
+
+// ---- the agent and proposals on a spec prototype ---------------------------
+
+const SPEC_LEGAL = join(root, "..", "..", "packages", "core", "examples", "nook", "prototypes", "spec", "legal", "booking");
+const SPEC_BOOKING = readFileSync(join(SPEC_LEGAL, "pages", "booking.json"), "utf8");
+/** The booking spec with `count` toasts in its facts slot. */
+const SPEC_TOASTS = (count) => (text) =>
+  text
+    .replace('"facts": ["seats", "booked-note", "held-note"]', `"facts": ["seats", "booked-note", "held-note"${Array.from({ length: count }, (_, index) => `, "toast-${index + 1}"`).join("")}]`)
+    .replace('    "hold": {', `${Array.from({ length: count }, (_, index) => `    "toast-${index + 1}": { "type": "Toast.Root", "props": { "tone": "success", "text": "Booked" }, "children": [] },\n`).join("")}    "hold": {`);
+
+function specToastDraft({ failing = 2 } = {}) {
+  return {
+    id: "booking-toast",
+    title: "A toast that confirms a booking",
+    reason: "Booking needs a confirmation that does not move the page, and Toast is not in the catalog.",
+    states: [{ state: "booked", note: "the toast says the room is booked" }],
+    inventory: [{ op: "add-component", name: "Toast" }],
+    rules: { add: [TOAST_RULE] },
+    examples: {
+      pass: [{ name: "one-toast", files: { "pages/booking.json": SPEC_TOASTS(1)(SPEC_BOOKING) } }],
+      fail: [failing === 2 ? { name: "two-toasts", files: { "pages/booking.json": SPEC_TOASTS(2)(SPEC_BOOKING) }, flagged_by: { rule: "one-toast-per-page", message: "has 2 Toast.Root" } } : { name: "only-one", files: { "pages/booking.json": SPEC_TOASTS(1)(SPEC_BOOKING) }, flagged_by: { rule: "one-toast-per-page" } }],
+    },
+  };
+}
+
+test("the agent writes specs: the catalog's prompt, a patch the catalog refuses, a patch drawn on the canvas as it streams", async ({ browser, base, api }) => {
+  const { page, logs } = await openSpec(browser, base);
+  const rename = '{"op":"replace","path":"/elements/heading/props/text","value":"Spaces"}\n{"op":"replace","path":"/elements/intro/props/text","value":"Pick a free space to book or hold."}\n';
+  api.script([
+    (body) => {
+      assert.match(body.system[0].text, /^You build and change a UI prototype in design-harness/);
+      assert.match(body.system[0].text, /json-render specs/);
+      assert.match(body.system[1].text, /AVAILABLE COMPONENTS \(\d+\):/, "the catalog's prompt is the second system block");
+      assert.match(body.system[1].text, /- Button\.Root: \{ aria-label\?: string, .*variant\?: "ghost" \| "primary" \| "secondary" \}/);
+      assert.doesNotMatch(body.system[1].text, /Toast\.Root/, "Toast is not in the catalog yet");
+      assert.ok(body.tools.some((tool) => tool.name === "patch_spec") && !body.tools.some((tool) => tool.name === "write_file"));
+      return toolReply("badge", "patch_spec", { path: "pages/rooms.json", patches: '{"op":"add","path":"/elements/page/slots/intro/-","value":"free"}\n{"op":"add","path":"/elements/free","value":{"type":"Badge.Root","props":{"text":"Free"},"children":[]}}' }, "Adding a Free badge.");
+    },
+    (body) => {
+      assert.match(lastMessage(body), /element "free" is a Badge\.Root, which is not in the catalog/, "core's refusal reaches the agent");
+      return { ...toolReply("rename", "patch_spec", { path: "pages/rooms.json", patches: rename }, "Badge is not in the catalog; renaming the page instead."), delayMs: 500 };
+    },
+    (body) => {
+      assert.match(lastMessage(body), /with every frame measured: pass\./);
+      return textReply("The rooms page is now Spaces; every rule passes.");
+    },
+  ]);
+  await enterKey(page);
+  await ask(page, "Call the rooms page Spaces, with a Free badge");
+  await page.getByTestId("spec-preview").waitFor({ timeout: 30000 });
+  await shot(page, "spec-streaming-light");
+  assert.equal(await turnEnded(page), "done");
+  assert.equal(api.left(), 0);
+  await page.getByTestId("spec-preview").waitFor({ state: "detached", timeout: 10000 });
+  const reply = page.locator(".chat-reply").last();
+  assert.deepEqual(await reply.locator(".chat-tool .chat-tool-title").allTextContents(), ["patch_spec: pages/rooms.json refused", "Patched pages/rooms.json"]);
+  const last = await page.locator(".checks").getAttribute("data-revision");
+  await measured(page, Number(last));
+  assert.equal((await page.frameLocator('iframe[title="rooms-list at desktop"]').locator("h1").textContent()).trim(), "Spaces");
+  assert.equal((await report(page)).status, "pass");
+  assert.equal(await page.frameLocator('iframe[title="rooms-list at desktop"]').getByText("Free", { exact: true }).count(), 0, "the refused badge was never applied");
+  assert.ok(logs.every((line) => !line.includes(KEY)), "the key is never logged");
+  await shot(page, "spec-chat-light");
+});
+
+test("a spec Toast proposal: refused while its failing example does not fail", async ({ browser, base, api }) => {
+  const { page } = await openSpec(browser, base);
+  await draftByAgent(page, api, specToastDraft({ failing: 1 }));
+  assert.match(await page.locator('.chat-proposal[data-proposal="booking-toast"]').textContent(), /refuses it: \[failing-example-passes\]/);
+  await openReview(page, "booking-toast");
+  await judged(page);
+  assert.equal(await example(page, "one-toast").getAttribute("data-verdict"), "ok");
+  assert.equal(await example(page, "only-one").getByTestId("example-detail").textContent(), 'failing example "only-one" is not flagged as it must be: "one-toast-per-page" passed it');
+  const toast = example(page, "one-toast").frameLocator('iframe[title*="lantern-open at desktop"]').locator("text=Booked").first();
+  await toast.waitFor({ state: "attached" });
+  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector(".review")?.getAttribute("data-status") === "approved");
+  await page.waitForSelector('[data-testid="review-measuring"][data-measured]');
+  await page.getByRole("button", { name: "Adopt", exact: true }).click();
+  await page.getByTestId("review-refusal").waitFor();
+  assert.equal(await page.getByTestId("review-refusal").getAttribute("data-code"), "failing-example-passes");
+  assert.equal(await reviewStatus(page), "approved", "a refused adoption changes nothing");
+});
+
+test("a spec Toast proposal adopted when its examples behave: Toast joins the catalog, and the rule flags a fresh spec", async ({ browser, base, api }) => {
+  const { page } = await openSpec(browser, base);
+  await draftByAgent(page, api, specToastDraft());
+  await openReview(page, "booking-toast");
+  await judged(page);
+  assert.equal(await example(page, "two-toasts").getAttribute("data-verdict"), "ok");
+  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector(".review")?.getAttribute("data-status") === "approved");
+  await page.waitForSelector('[data-testid="review-measuring"][data-measured]');
+  await page.getByRole("button", { name: "Adopt", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector(".review")?.getAttribute("data-status") === "adopted");
+  assert.match(await page.getByTestId("review-rechecked").textContent(), /Every prototype was re-checked: none newly fails\./);
+  await shot(page, "spec-review-adopted-light");
+
+  // The catalog is generated from the inventory, so the agent's next prompt lists Toast's parts.
+  api.script([
+    (body) => {
+      assert.match(body.system[1].text, /- Toast\.Root: \{ aria-label\?: string, id\?: string, text\?: string, tone\?: "critical" \| "info" \| "success" \| "warning" \}/);
+      assert.doesNotMatch(body.system[1].text, /- Toast\.Region:/, "a part a spec cannot render stays out");
+      return textReply("Toast is in the catalog now.");
+    },
+  ]);
+  await ask(page, "What can you use now?");
+  assert.equal(await turnEnded(page), "done");
+
+  // A fresh spec with two toasts: the catalog takes Toast.Root now, and the adopted rule flags it alone.
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  await page.waitForSelector('.checks[data-measured] .rule[data-rule="one-toast-per-page"][data-status="pass"]', { timeout: 60000, state: "attached" });
+  const revision = Number(await page.locator(".checks").getAttribute("data-revision"));
+  await editFile(page, "pages/booking.json", SPEC_TOASTS(2));
+  await measured(page, revision + 1);
+  const value = await report(page);
+  assert.deepEqual(failing(value), ["one-toast-per-page"]);
+  assert.match(value.findings[0].message, /^Page "booking" has 2 Toast.Root, more than 1: Toast.Root "Booked" at pages\/booking.json:\d+:5/);
 });
 
 // ---- runner ----------------------------------------------------------------
