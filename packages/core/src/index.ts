@@ -72,3 +72,10 @@ export { PARAM_STATE, PARAM_TYPES, describeParam } from "./spec/params";
 export type { LayoutSummary, ParamSummary } from "./spec/layouts";
 export { PREVIEW_FILE, PREVIEW_PAGE, layoutPreview, specLayouts } from "./spec/layouts";
 
+export { formatSpec } from "./spec/format";
+
+export type { PickRecord, Variant, VariantState } from "./variants/types";
+export { CURRENT, NO_VARIANTS } from "./variants/types";
+export { checkVariant, nextVariantIds, parseVariantState, variantLabel, variantPrototype, withPageSpec } from "./variants/variants";
+export type { Recombination, Rename } from "./variants/recombine";
+export { recombine } from "./variants/recombine";
