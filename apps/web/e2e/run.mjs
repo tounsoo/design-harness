@@ -4,30 +4,27 @@
  * Vite's preview server, opens each test in a fresh browser context (so a
  * fresh IndexedDB), and fails on the first broken expectation of each test.
  *
- * Playwright is not a dependency of this repository: the script uses the
- * `playwright` package the environment provides (NODE_PATH), with its own
- * Chromium. Set E2E_SCREENSHOTS to a folder to save screenshots of the app.
+ * Playwright is a pinned dev dependency (the root package.json). Chromium is
+ * the browser Playwright installed (CI runs `npx playwright install
+ * chromium`), except where a Chromium is already installed at
+ * /opt/pw-browsers/chromium, which local runs use as it is. Set
+ * E2E_SCREENSHOTS to a folder to save screenshots of the app.
  */
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { chromium } from "playwright";
 import { preview } from "vite";
 import { errorBody, fakeAnthropic, streamEvents } from "./fake-anthropic.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
-const require = createRequire(import.meta.url);
 
-let chromium;
-try {
-  ({ chromium } = require("playwright"));
-} catch {
-  console.error("e2e: the playwright package is not installed here; it is expected on NODE_PATH, with its Chromium.");
-  process.exit(1);
-}
+/** The Chromium this environment ships, when there is one; otherwise Playwright's own. */
+const PREINSTALLED_CHROMIUM = "/opt/pw-browsers/chromium";
+const executable = existsSync(PREINSTALLED_CHROMIUM) ? { executablePath: PREINSTALLED_CHROMIUM } : {};
 
 const shots = process.env.E2E_SCREENSHOTS;
 if (shots) mkdirSync(shots, { recursive: true });
@@ -696,6 +693,432 @@ test("screenshots of the chat in use, light and dark", async ({ browser, base, a
   }
 });
 
+// ---- proposal review --------------------------------------------------------
+
+const LEGAL = join(root, "..", "..", "packages", "core", "examples", "nook", "prototypes", "legal", "booking");
+const BOOKING = readFileSync(join(LEGAL, "pages", "booking.tsx"), "utf8");
+const ROOMS = readFileSync(join(LEGAL, "pages", "rooms.tsx"), "utf8");
+const TOAST_RULE = { type: "count", id: "one-toast-per-page", scope: "page", select: { component: "Toast.Root" }, max: 1, description: "A page shows at most one toast." };
+
+/** The toast proposal; with `failing` at 1 its failing example has one toast, which the rule passes. */
+function toastDraft({ failing = 2, ...extra } = {}) {
+  return {
+    id: "booking-toast",
+    title: "A toast that confirms a booking",
+    reason: "Booking needs a confirmation that does not move the page, and Toast is not in the inventory.",
+    states: [{ state: "booked", note: "the toast says the room is booked" }],
+    inventory: [{ op: "add-component", name: "Toast" }],
+    rules: { add: [TOAST_RULE] },
+    examples: {
+      pass: [{ name: "one-toast", files: { "pages/booking.tsx": TOAST_PAGE(1)(BOOKING) } }],
+      fail: [failing === 2 ? { name: "two-toasts", files: { "pages/booking.tsx": TOAST_PAGE(2)(BOOKING) }, flagged_by: { rule: "one-toast-per-page", message: "has 2 Toast.Root" } } : { name: "only-one", files: { "pages/booking.tsx": TOAST_PAGE(1)(BOOKING) }, flagged_by: { rule: "one-toast-per-page" } }],
+    },
+    ...extra,
+  };
+}
+
+/** A rendered rule only measured frames can prove: Harbor's open button is in the first view. Its failing example pushes it down with a long intro. */
+const LONG_INTRO = ROOMS.replace(
+  '<Text.Root as="p">Pick a free room to book or hold.</Text.Root>',
+  Array.from({ length: 24 }, (_, index) => `<Text.Root as="p">Note ${index + 1}: every room is cleaned between bookings, and its screen is reset.</Text.Root>`).join("\n        "),
+);
+const HARBOR_DRAFT = {
+  id: "harbor-first-view",
+  title: "Keep Harbor in the first view",
+  reason: "Harbor is the big room; people must see its open button without scrolling.",
+  states: [{ state: "rooms", note: "the list shows both rooms, Harbor's button above the fold" }],
+  rules: { add: [{ type: "rendered", id: "harbor-in-first-view", check: "first-view", action: "Open Harbor" }] },
+  examples: { pass: [{ name: "as-is" }], fail: [{ name: "long-intro", files: { "pages/rooms.tsx": LONG_INTRO }, flagged_by: { rule: "harbor-in-first-view" } }] },
+};
+
+/** Has the agent draft a proposal through the fake API, and waits for the chat's card. */
+async function draftByAgent(page, api, input, { key = true } = {}) {
+  api.script([toolReply("draft", "draft_proposal", input, "This needs a change to the project, so I am drafting a proposal."), textReply(`I drafted ${input.id} for you to review.`)]);
+  if (key) await enterKey(page);
+  await ask(page, "Propose what this needs");
+  assert.equal(await turnEnded(page), "done");
+  await page.locator(`.chat-proposal[data-proposal="${input.id}"]`).last().waitFor();
+}
+
+async function openReview(page, id) {
+  await page.locator(`.chat-proposal[data-proposal="${id}"]`).last().getByRole("button", { name: `Review ${id}` }).click();
+  await page.locator(`.review[data-proposal="${id}"]`).waitFor();
+}
+
+/** Waits until every example has been measured and core has judged it. */
+async function judged(page) {
+  await page.waitForFunction(() => {
+    const cards = [...document.querySelectorAll(".review .example")];
+    return cards.length > 0 && cards.every((card) => card.getAttribute("data-verdict") !== "measuring");
+  }, null, { timeout: 60000 });
+}
+
+const example = (page, name) => page.locator(`.review .example[data-example="${name}"]`);
+const reviewStatus = (page) => page.locator(".review").getAttribute("data-status");
+
+test("a drafted proposal opens to its review page: examples side by side in frames, the failing one outlined", async ({ browser, base, api }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  await draftByAgent(page, api, toastDraft());
+  assert.equal(await page.getByTestId("open-proposals").textContent(), "1", "the open proposal is counted on the Proposals tab");
+  await openReview(page, "booking-toast");
+  assert.equal(await reviewStatus(page), "open");
+  assert.equal((await page.locator(".review h1").textContent()).trim(), "A toast that confirms a booking");
+  assert.match(await page.getByTestId("proposal-reason").textContent(), /Toast is not in the inventory/);
+  assert.match(await page.getByTestId("proposal-states").textContent(), /booked.*the toast says the room is booked/);
+  assert.equal(await page.getByTestId("proposal-class").first().textContent(), "tightens");
+  // The inventory diff, before and after.
+  assert.deepEqual(await page.locator('.diff-section[data-section="components"] [data-change]').evaluateAll((items) => items.map((item) => [item.dataset.change, item.textContent.trim()])), [["added", "+ Toast"]]);
+  // The rule in words from its data, the raw rule one click away.
+  assert.equal(await page.locator('.rule-words[data-rule="one-toast-per-page"] [data-testid="rule-words"]').textContent(), "Each page holds at most 1 Toast.Root.");
+  await page.locator('.rule-words[data-rule="one-toast-per-page"]').getByText("Rule data for").click();
+  assert.deepEqual(JSON.parse(await page.locator('.rule-words[data-rule="one-toast-per-page"] [data-testid="rule-json"]').textContent()), TOAST_RULE);
+
+  await judged(page);
+  const pass = await example(page, "one-toast").boundingBox();
+  const fail = await example(page, "two-toasts").boundingBox();
+  assert.ok(pass.x + pass.width <= fail.x && Math.abs(pass.y - fail.y) < 40, "passing on the left, failing on the right, side by side");
+  assert.equal(await example(page, "one-toast").getAttribute("data-expect"), "pass");
+  assert.equal(await example(page, "one-toast").getByTestId("example-verdict").textContent(), "passes");
+  assert.equal(await example(page, "two-toasts").getByTestId("example-verdict").textContent(), "fails for one-toast-per-page alone");
+  assert.equal(await example(page, "two-toasts").getByTestId("example-detail").textContent(), 'flagged by "one-toast-per-page" and no other rule');
+  // Rendered in frames of their own, at every view, opened on the scenario the rule flags.
+  for (const view of VIEWS) {
+    const frame = page.frameLocator(`iframe[title="two-toasts: lantern-open at ${view}"]`);
+    assert.equal(await frame.locator("text=Booked").count(), 2, `the failing example renders its two toasts at ${view}`);
+    assert.equal(await page.locator(`.example[data-example="two-toasts"] .frame-card[data-frame-key="lantern-open@${view}"]`).getAttribute("data-state"), "measured");
+  }
+  // The flagged line, marked as the code view marks a finding's line.
+  const finding = await example(page, "two-toasts").locator(".finding-message").first().textContent();
+  assert.match(finding, /^Page "booking" has 2 Toast.Root, more than 1: Toast.Root "Booked" at pages\/booking.tsx:\d+:\d+/);
+  const marked = await example(page, "two-toasts").locator('.example-source [data-kind="finding"]').textContent();
+  assert.ok(marked.includes("<Toast.Root>Booked</Toast.Root><Toast.Root>Booked</Toast.Root>"), `the marked line holds both toasts: ${marked}`);
+  assert.match(await page.getByTestId("review-verdict").textContent(), /^Core's adoption dry run: it would be adopted, classified tightens, and no prototype would newly fail\./);
+  await page.locator("#review-examples").evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await page.waitForTimeout(300);
+  await shot(page, "review-examples-light");
+
+  await page.getByRole("button", { name: "← All proposals" }).click();
+  const row = page.locator('.proposals-table tr[data-proposal="booking-toast"]');
+  assert.match(await row.textContent(), /A toast that confirms a booking.*booking-toast.*open.*tightens.*by agent/);
+  await page.getByRole("button", { name: "Adopted (0)" }).click();
+  await page.getByText("No adopted proposals").waitFor();
+  await page.getByRole("button", { name: "Open (1)" }).click();
+  assert.equal(await page.locator(".proposals-table tbody tr").count(), 1);
+  await shot(page, "proposals-list-light");
+  assert.deepEqual(errors, []);
+});
+
+test("approve then adopt: the new rule is in the checks panel, and flags a prototype that breaks it", async ({ browser, base, api }) => {
+  const { page } = await openApp(browser, base);
+  await measured(page, 1);
+  await draftByAgent(page, api, toastDraft());
+  await openReview(page, "booking-toast");
+  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector(".review")?.getAttribute("data-status") === "approved");
+  assert.equal(await page.getByTestId("open-proposals").count(), 0, "an approved proposal is no longer counted as open");
+  await judged(page);
+  await page.waitForSelector('[data-testid="review-measuring"][data-measured]');
+  await page.getByRole("button", { name: "Adopt", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector(".review")?.getAttribute("data-status") === "adopted");
+  assert.match(await page.getByTestId("review-in-force").textContent(), /Adopted by you.*In force now, on every prototype: one-toast-per-page/);
+  assert.match(await page.getByTestId("review-rechecked").textContent(), /Every prototype was re-checked: none newly fails\./);
+  assert.deepEqual(await page.locator('[data-testid="review-history"] [data-kind="status"]').evaluateAll((items) => items.map((item) => item.dataset.entryStatus)), ["open", "approved", "adopted"]);
+  assert.match(await page.getByTestId("review-history").textContent(), /Drafted by agent.*Approved by you.*Adopted by you/);
+  await shot(page, "review-adopted-light");
+
+  // The board re-checks the open prototype with the new rule in force.
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  await page.waitForSelector('.checks[data-measured] .rule[data-rule="one-toast-per-page"][data-status="pass"]', { timeout: 60000, state: "attached" });
+  const revision = Number(await page.locator(".checks").getAttribute("data-revision"));
+  await editFile(page, "pages/booking.tsx", TOAST_PAGE(2));
+  await measured(page, revision + 1);
+  const value = await report(page);
+  assert.deepEqual(failing(value), ["one-toast-per-page"], "Toast is in the inventory now, and two of them break the new rule alone");
+  assert.match(value.findings[0].message, /^Page "booking" has 2 Toast.Root, more than 1/);
+});
+
+test("an adoption whose failing example does not fail is refused, and the page says why", async ({ browser, base, api }) => {
+  const { page } = await openApp(browser, base);
+  await measured(page, 1);
+  await draftByAgent(page, api, toastDraft({ failing: 1 }));
+  assert.match(await page.locator('.chat-proposal[data-proposal="booking-toast"]').textContent(), /refuses it: \[failing-example-passes\]/);
+  await openReview(page, "booking-toast");
+  await judged(page);
+  assert.equal(await example(page, "only-one").getAttribute("data-verdict"), "bad");
+  assert.equal(await example(page, "only-one").getByTestId("example-verdict").textContent(), "does not behave");
+  assert.equal(await example(page, "only-one").getByTestId("example-detail").textContent(), 'failing example "only-one" is not flagged as it must be: "one-toast-per-page" passed it');
+  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector(".review")?.getAttribute("data-status") === "approved");
+  await page.waitForSelector('[data-testid="review-measuring"][data-measured]');
+  await page.getByRole("button", { name: "Adopt", exact: true }).click();
+  const refusal = page.getByTestId("review-refusal");
+  await refusal.waitFor();
+  assert.equal(await refusal.getAttribute("data-code"), "failing-example-passes");
+  assert.equal(await page.getByTestId("review-refusal-message").textContent(), 'failing example "only-one" is not flagged as it must be: "one-toast-per-page" passed it');
+  assert.match(await refusal.textContent(), /Not adopted: core refused it.*Reason.*failing-example-passes.*Example.*Show only-one/);
+  assert.equal(await reviewStatus(page), "approved", "a refused adoption changes nothing");
+  assert.equal((await report(page)).rules.some((rule) => rule.rule === "one-toast-per-page"), false);
+  await page.waitForTimeout(300);
+  await shot(page, "review-refusal-light");
+});
+
+test("decline needs a note, and the history records it", async ({ browser, base, api }) => {
+  const { page } = await openApp(browser, base);
+  await measured(page, 1);
+  await draftByAgent(page, api, toastDraft());
+  await openReview(page, "booking-toast");
+  await page.getByRole("button", { name: "Decline", exact: true }).click();
+  await page.getByRole("button", { name: "Decline proposal" }).click();
+  assert.equal(await page.getByRole("alert").filter({ hasText: "Say why you decline it." }).count(), 1, "an empty note is refused");
+  assert.equal(await reviewStatus(page), "open");
+  await page.getByLabel("Why decline it?").fill("Toasts move focus away from the booking; not this quarter.");
+  await page.getByRole("button", { name: "Decline proposal" }).click();
+  await page.waitForFunction(() => document.querySelector(".review")?.getAttribute("data-status") === "declined");
+  assert.equal(await page.getByRole("button", { name: "Approve", exact: true }).count(), 0, "a declined proposal offers no action");
+  assert.match(await page.getByTestId("review-history").textContent(), /Declined by you.*Toasts move focus away from the booking; not this quarter\./);
+  assert.deepEqual(await page.getByTestId("history-note").allTextContents(), ["Toasts move focus away from the booking; not this quarter."]);
+  await page.reload();
+  await page.getByRole("tab", { name: /Proposals/ }).click();
+  await page.getByRole("button", { name: "Declined (1)" }).click();
+  await page.locator('.proposals-table tr[data-proposal="booking-toast"][data-status="declined"]').waitFor();
+});
+
+test("send back reaches the agent, which revises the proposal, and the history shows both versions", async ({ browser, base, api }) => {
+  const { page } = await openApp(browser, base);
+  await measured(page, 1);
+  await draftByAgent(page, api, toastDraft());
+  await openReview(page, "booking-toast");
+  const note = "Say what the toast says when a booking fails, too.";
+  api.script([
+    (body) => {
+      const text = lastMessage(body);
+      assert.match(text, /^I sent proposal "booking-toast" \(A toast that confirms a booking\) back to you from its review page\. Revise it with revise_proposal/);
+      assert.ok(text.endsWith(note), "the note reaches the agent word for word");
+      return toolReply("revise", "revise_proposal", {
+        id: "booking-toast",
+        note: "Added the failed-booking state and what the toast says in it.",
+        title: "A toast that confirms a booking, or says it failed",
+        states: [
+          { state: "booked", note: "the toast says the room is booked" },
+          { state: "failed", note: "the toast says the booking failed and to try again" },
+        ],
+      });
+    },
+    (body) => {
+      assert.match(lastMessage(body), /^Revised proposal "booking-toast"; it is still open, and its history keeps the version before this one\. Core's adoption dry run passes/);
+      return textReply("I revised booking-toast: it now names the failed state.");
+    },
+  ]);
+  await page.getByRole("button", { name: "Send back to the agent" }).click();
+  await page.getByRole("button", { name: "Send to the agent" }).click();
+  assert.equal(await page.getByRole("alert").filter({ hasText: "Say what the agent should change." }).count(), 1, "an empty note is refused");
+  await page.getByLabel("What should the agent change?").fill(note);
+  await page.getByRole("button", { name: "Send to the agent" }).click();
+  // The note becomes the person's next chat message: a second turn.
+  await page.waitForFunction(() => document.querySelectorAll(".chat-reply").length === 2);
+  assert.match(await page.locator('.chat [data-turn]').nth(2).textContent(), /^I sent proposal "booking-toast"/);
+  assert.equal(await turnEnded(page), "done");
+  assert.equal(api.left(), 0);
+  assert.match(await page.locator(".chat-reply").last().locator('.chat-proposal[data-action="revised"]').textContent(), /Proposal revised: A toast that confirms a booking, or says it failed \(booking-toast\), open/);
+  await page.waitForFunction(() => document.querySelector(".review h1")?.textContent?.includes("or says it failed"));
+  assert.equal(await reviewStatus(page), "open");
+  assert.match(await page.getByTestId("proposal-states").textContent(), /failed.*the booking failed/);
+  const history = page.getByTestId("review-history");
+  assert.deepEqual(await history.locator("[data-kind]").evaluateAll((items) => items.map((item) => item.dataset.kind)), ["status", "sent-back", "revised", "now"]);
+  assert.match(await history.textContent(), new RegExp(`Drafted by agent.*Sent back by you.*${note}.*Revised by agent.*Added the failed-booking state`));
+  await history.getByText("The version before this revision").click();
+  assert.match(await page.getByTestId("history-previous").textContent(), /Title\s*A toast that confirms a booking(?!,)/);
+  assert.match(await history.textContent(), /Now: open, version 2 shown above/);
+  await judged(page);
+  assert.deepEqual(await page.locator(".review .example").evaluateAll((cards) => cards.map((card) => card.dataset.verdict)), ["ok", "ok"], "the revision is measured and judged too");
+  await page.locator("#review-history").evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await shot(page, "review-history-light");
+});
+
+test("the impact list names a prototype that would newly fail, and opens it on the board", async ({ browser, base, api }) => {
+  const { page } = await openApp(browser, base);
+  await measured(page, 1);
+  const noHold = BOOKING.replace(/\s*<Slot name="alternate">[\s\S]*?<\/Slot>/, "");
+  await draftByAgent(page, api, {
+    id: "book-without-hold",
+    title: "Booking offers no second action",
+    reason: "One action per booking page: holding a room confuses people.",
+    rules: { add: [{ type: "count", id: "no-secondary-on-booking", scope: "page", pages: { types: ["booking"] }, select: { role: "secondary-action" }, max: 0 }] },
+    examples: { pass: [{ name: "book-only", files: { "pages/booking.tsx": noHold } }], fail: [{ name: "with-hold", flagged_by: { rule: "no-secondary-on-booking" } }] },
+  });
+  await openReview(page, "book-without-hold");
+  await judged(page);
+  const impact = page.getByTestId("review-impact");
+  await impact.locator('[data-prototype="booking"]').waitFor({ timeout: 60000 });
+  assert.match(await impact.locator('[data-prototype="booking"]').textContent(), /Booking.*would newly fail no-secondary-on-booking.*Page "booking" has 1 secondary action, more than 0: Button.Root "Hold room"/);
+  assert.match(await page.getByTestId("review-verdict").textContent(), /1 prototype would newly fail/);
+  await page.locator("#review-impact").evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await page.waitForTimeout(300);
+  await shot(page, "review-impact-light");
+  await impact.getByRole("button", { name: "Open on the board" }).click();
+  await page.locator('main[aria-label="Canvas"]').waitFor();
+  assert.equal(await page.locator(".app-main-pane").first().getAttribute("data-inactive"), null, "the board is in front");
+});
+
+test("a proposal that adds a rendered rule adopts on measured snapshots, and gives the same result after reload", async ({ browser, base, api }) => {
+  const { page } = await openApp(browser, base);
+  await measured(page, 1);
+  await draftByAgent(page, api, HARBOR_DRAFT);
+  assert.match(await page.locator('.chat-proposal[data-proposal="harbor-first-view"]').textContent(), /need measured snapshots: this dry run has none/);
+  await openReview(page, "harbor-first-view");
+  assert.match(await page.locator('.rule-words[data-rule="harbor-in-first-view"] [data-testid="rule-words"]').textContent(), /^Measured in every scenario at every view: wherever "Open Harbor" is shown, it is inside the first view, without scrolling\.$/);
+  await judged(page);
+  assert.equal(await example(page, "as-is").getByTestId("example-verdict").textContent(), "passes");
+  assert.equal(await example(page, "long-intro").getByTestId("example-verdict").textContent(), "fails for harbor-in-first-view alone");
+  assert.match(await example(page, "long-intro").locator(".finding-message").first().textContent(), /^At \d+ by \d+: "Open Harbor" is at \d+ to \d+ CSS px, below the first view of \d+\.$/);
+  // The frame outlines the button the rendered rule flags, with the board's own highlight.
+  const frame = page.frameLocator('iframe[title="long-intro: rooms-list at phone"]');
+  await frame.locator("[data-design-harness-overlay]").waitFor({ state: "attached" });
+  const overlay = await frame.locator("[data-design-harness-overlay]").boundingBox();
+  const target = await frame.getByRole("button", { name: "Open Harbor" }).boundingBox();
+  assert.ok(overlay && target && overlay.x <= target.x && overlay.x + overlay.width >= target.x + target.width && overlay.y <= target.y, "the outline is around Open Harbor");
+  assert.equal(await page.locator('.example[data-example="long-intro"] .frame-card[data-frame-key="rooms-list@phone"]').getAttribute("data-selected"), "");
+  await page.locator("#review-examples").evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await page.waitForTimeout(300);
+  await shot(page, "review-rendered-light");
+
+  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector(".review")?.getAttribute("data-status") === "approved");
+  await page.waitForSelector('[data-testid="review-measuring"][data-measured]');
+  await page.getByRole("button", { name: "Adopt", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector(".review")?.getAttribute("data-status") === "adopted");
+  const verdicts = async () => page.locator(".review .example").evaluateAll((cards) => cards.map((card) => [card.dataset.example, card.dataset.verdict, card.querySelector('[data-testid="example-detail"]').textContent]));
+  const adopted = await verdicts();
+  assert.deepEqual(adopted, [["as-is", "ok", "passes every rule"], ["long-intro", "ok", 'flagged by "harbor-in-first-view"']]);
+
+  // The snapshots it was adopted on are stored with the proposal.
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export" }).click()]);
+  const stored = JSON.parse(readFileSync(await download.path(), "utf8")).project.proposals.find((item) => item.id === "harbor-first-view");
+  assert.deepEqual([stored.status, stored.examples.pass[0].snapshots.length, stored.examples.fail[0].snapshots.length], ["adopted", 8, 8]);
+
+  await page.reload();
+  await measured(page, 1);
+  await page.getByRole("tab", { name: "Project" }).click();
+  await page.getByRole("button", { name: "Re-run every adopted proposal's examples" }).click();
+  assert.match(await page.getByTestId("regression-summary").textContent(), /^All 2 examples behave/);
+  assert.equal(await page.locator("iframe").count(), 8, "re-running reads the stored snapshots: no example is rendered again");
+  assert.deepEqual(await page.locator('[data-testid="regression"] tbody tr').evaluateAll((rows) => rows.map((row) => [...row.cells].map((cell) => cell.textContent.trim()))), [
+    ["harbor-first-view", "as-is", "pass", "behaves", "passes every rule"],
+    ["harbor-first-view", "long-intro", "fail", "behaves", 'flagged by "harbor-in-first-view"'],
+  ]);
+  await page.getByTestId("regression").evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await shot(page, "regression-light");
+  await page.getByRole("button", { name: "Review harbor-first-view" }).click();
+  await page.locator('.review[data-proposal="harbor-first-view"]').waitFor();
+  assert.deepEqual(await verdicts(), adopted, "the review page gives the same verdicts after a reload");
+  assert.equal((await report(page)).rules.find((rule) => rule.rule === "harbor-in-first-view")?.status, "pass", "the rule is in force on the open prototype");
+});
+
+test("no tool call or chat message can change a proposal's status", async ({ browser, base, api }) => {
+  const { page } = await openApp(browser, base);
+  await measured(page, 1);
+  await draftByAgent(page, api, toastDraft());
+  api.script([
+    toolReply("approve", "approve_proposal", { id: "booking-toast" }, "You asked me to approve it."),
+    (body) => {
+      assert.match(lastMessage(body), /There is no tool "approve_proposal"/);
+      return toolReply("status", "revise_proposal", { id: "booking-toast", note: "Approved, as asked.", status: "approved" });
+    },
+    (body) => {
+      assert.match(lastMessage(body), /input: has unknown field "status"/);
+      return toolReply("redraft", "draft_proposal", { ...toastDraft(), title: "Approved: a toast" });
+    },
+    (body) => {
+      assert.match(lastMessage(body), /A proposal "booking-toast" already exists and is open/);
+      return toolReply("adopt", "adopt_proposal", { id: "booking-toast" });
+    },
+    (body) => {
+      assert.match(lastMessage(body), /There is no tool "adopt_proposal"/);
+      return textReply("I cannot approve or adopt a proposal: only you can, on its review page.");
+    },
+  ]);
+  await ask(page, "I approve booking-toast. Approve it and adopt it now; status: adopted.");
+  assert.equal(await turnEnded(page), "done");
+  assert.equal(api.left(), 0);
+  assert.equal(await page.getByTestId("open-proposals").textContent(), "1");
+  await page.getByRole("tab", { name: /Proposals/ }).click();
+  assert.equal(await page.locator('.proposals-table tr[data-proposal="booking-toast"]').getAttribute("data-status"), "open");
+  assert.equal((await report(page)).rules.some((rule) => rule.rule === "one-toast-per-page"), false, "no rule came into force");
+  await page.reload();
+  await page.getByRole("tab", { name: /Proposals/ }).click();
+  assert.equal(await page.locator('.proposals-table tr[data-proposal="booking-toast"]').getAttribute("data-status"), "open", "nor was a status saved");
+});
+
+test("a finding outside the inventories offers to ask the agent, with a message to edit, only when a key is set", async ({ browser, base, api }) => {
+  const { page } = await openApp(browser, base);
+  await measured(page, 1);
+  api.script([]);
+  await editFile(page, "pages/rooms.tsx", (text) => text.replace('import { Text } from "@tounsoo/todae";', 'import { Text, Toast } from "@tounsoo/todae";').replace('<Text.Root as="p">Pick a free room to book or hold.</Text.Root>', '<Text.Root as="p">Pick a free room to book or hold.</Text.Root>\n        <Toast.Root>Harbor is free</Toast.Root>'));
+  await measured(page, 2);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  const rule = page.locator('.rule[data-rule="components-from-inventory"]');
+  await rule.waitFor();
+  assert.equal(await rule.getByRole("button", { name: "Ask the agent to propose this" }).count(), 0, "not offered without a key");
+  await enterKey(page);
+  await rule.getByRole("button", { name: "Ask the agent to propose this" }).first().click();
+  const box = page.getByRole("textbox", { name: "Message the agent" });
+  await page.waitForFunction(() => (document.querySelector(".chat-composer textarea")?.value ?? "") !== "");
+  const text = await box.inputValue();
+  assert.match(text, /^The check "components-from-inventory" says: .*Toast/);
+  assert.match(text, /draft a proposal that adds it to the inventory/);
+  assert.equal(api.requests.length, 0, "the message waits for the person to send it");
+  await box.fill(`${text}\nKeep it to the rooms page.`);
+  assert.match(await box.inputValue(), /Keep it to the rooms page\.$/, "the person can edit it before sending");
+  await shot(page, "ask-agent-light");
+});
+
+test("screenshots of the review page in dark", async ({ browser, base, api }) => {
+  if (!shots) return;
+  const { page, context } = await openApp(browser, base, { colorScheme: "dark" });
+  await measured(page, 1);
+  await draftByAgent(page, api, toastDraft());
+  await openReview(page, "booking-toast");
+  await judged(page);
+  await page.locator("#review-examples").evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await page.waitForTimeout(300);
+  await shot(page, "review-examples-dark");
+  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await page.waitForSelector('[data-testid="review-measuring"][data-measured]');
+  await page.getByRole("button", { name: "Decline", exact: true }).click();
+  await page.getByRole("button", { name: "Decline proposal" }).click();
+  await page.waitForTimeout(400);
+  await shot(page, "review-decline-dark");
+  await context.close();
+  const dark = await openApp(browser, base, { colorScheme: "dark" });
+  await measured(dark.page, 1);
+  await draftByAgent(dark.page, api, toastDraft({ failing: 1 }));
+  await openReview(dark.page, "booking-toast");
+  await judged(dark.page);
+  await dark.page.getByRole("button", { name: "Approve", exact: true }).click();
+  await dark.page.waitForSelector('[data-testid="review-measuring"][data-measured]');
+  await dark.page.getByRole("button", { name: "Adopt", exact: true }).click();
+  await dark.page.getByTestId("review-refusal").waitFor();
+  await dark.page.waitForTimeout(300);
+  await shot(dark.page, "review-refusal-dark");
+  await dark.context.close();
+  const impact = await openApp(browser, base, { colorScheme: "dark" });
+  await measured(impact.page, 1);
+  await draftByAgent(impact.page, api, {
+    id: "book-without-hold",
+    title: "Booking offers no second action",
+    reason: "One action per booking page.",
+    rules: { add: [{ type: "count", id: "no-secondary-on-booking", scope: "page", pages: { types: ["booking"] }, select: { role: "secondary-action" }, max: 0 }] },
+    examples: { pass: [{ name: "book-only", files: { "pages/booking.tsx": BOOKING.replace(/\s*<Slot name="alternate">[\s\S]*?<\/Slot>/, "") } }], fail: [{ name: "with-hold", flagged_by: { rule: "no-secondary-on-booking" } }] },
+  });
+  await openReview(impact.page, "book-without-hold");
+  await judged(impact.page);
+  await impact.page.getByTestId("review-impact").locator('[data-prototype="booking"]').waitFor({ timeout: 60000 });
+  await impact.page.getByTestId("review-impact").scrollIntoViewIfNeeded();
+  await shot(impact.page, "review-impact-dark");
+  await impact.context.close();
+});
+
 // ---- runner ----------------------------------------------------------------
 
 const server = await preview({ root, configFile: join(root, "vite.config.ts"), logLevel: "silent", preview: { port: 0, host: "127.0.0.1" } });
@@ -704,7 +1127,8 @@ const base = `http://127.0.0.1:${address.port}/`;
 // The fake Anthropic API answers at api.anthropic.com: Chromium resolves that host to it, with no proxy, so the
 // built app talks to the API's real address and no request can reach the real API.
 const api = await fakeAnthropic();
-const browser = await chromium.launch({ args: [`--host-resolver-rules=MAP api.anthropic.com:443 127.0.0.1:${api.port}`, "--no-proxy-server"] });
+const browser = await chromium.launch({ ...executable, args: [`--host-resolver-rules=MAP api.anthropic.com:443 127.0.0.1:${api.port}`, "--no-proxy-server"] });
+console.log(`e2e: Chromium ${browser.version()}${executable.executablePath ? ` from ${executable.executablePath}` : ", installed by Playwright"}`);
 let failed = 0;
 const selected = tests.filter((entry) => only.length === 0 || only.some((word) => entry.name.includes(word)));
 for (const item of selected) {
