@@ -34,3 +34,50 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e
+      # The deploy job ships exactly this build, the one the end-to-end tests just ran against.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist
+          if-no-files-found: error
+          retention-days: 7
+
+  # Vercel never builds: CI builds and tests, then uploads that build as prebuilt output.
+  # Pull requests from this repository get a preview; a push to main deploys production.
+  deploy:
+    needs: [check, e2e]
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: deploy-${{ github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    environment:
+      name: ${{ github.event_name == 'push' && 'production' || 'preview' }}
+      url: ${{ steps.deploy.outputs.url }}
+    env:
+      VERCEL_ORG_ID: team_8iiNJ83cVoixqY1F3xzd566X
+      VERCEL_PROJECT_ID: prj_xAiSr2NDsGWxdy8VzfHCyJQHhIEQ
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: dist
+      - name: Assemble the prebuilt output
+        run: node scripts/vercel-output.mjs dist .vercel/output
+      - name: Deploy to Vercel
+        id: deploy
+        if: env.VERCEL_TOKEN != ''
+        run: |
+          prod=""
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then prod="--prod"; fi
+          url=$(npx --yes vercel@65.11.0 deploy --prebuilt $prod --yes --token "$VERCEL_TOKEN")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Deployed: $url" >> "$GITHUB_STEP_SUMMARY"
+      - name: Say why nothing was deployed
+        if: env.VERCEL_TOKEN == ''
+        run: echo "::warning::The VERCEL_TOKEN secret is not set, so the build was assembled but not deployed."

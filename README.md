@@ -29,3 +29,7 @@ npm run e2e     # build the app and run the end-to-end tests in Chromium (CI run
 
 Everything runs in the browser: `npm run build` is a static site, and projects stay in the browser's IndexedDB, with export to and import from one JSON file.
 
+
+## Deploy
+
+CI builds the app, tests that build end to end, and deploys it to Vercel as prebuilt output: a pull request gets a preview, and a push to `main` deploys production. Vercel never builds. `AGENTS.md` says how.
