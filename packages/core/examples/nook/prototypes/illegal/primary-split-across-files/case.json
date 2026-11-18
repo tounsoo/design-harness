@@ -1,0 +1,1 @@
+{ "what": "A second primary Book room in a component of its own file, re-exported under another name through a barrel, rendered by the question layout", "expect": [{ "rule": "one-primary-per-page", "message": "Button.Root \"Book room\" at layouts/parts/confirm.tsx" }] }

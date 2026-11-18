@@ -1,0 +1,1 @@
+{ "what": "A second primary Book room written as UI.Button.Root through import * as UI", "expect": [{ "rule": "one-primary-per-page", "message": "has 2 primary actions" }] }

@@ -1,0 +1,23 @@
+{ "what": "A \"waitlisted\" flow state the inventory does not list, with its own scenario", "expect": [{ "rule": "flow-states-from-inventory", "message": "Flow state \"waitlisted\" is not an inventoried flow state" }],
+  "manifest": {
+    "scenarios": [
+      { "id": "rooms-list", "state": "rooms", "page": "rooms" },
+      { "id": "lantern-open", "state": "room-open", "page": "booking" },
+      { "id": "lantern-booked", "state": "booked", "page": "booking" },
+      { "id": "lantern-held", "state": "held", "page": "booking" },
+      { "id": "lantern-waitlisted", "state": "waitlisted", "page": "booking" }
+    ],
+    "flow": {
+      "states": ["rooms", "room-open", "booked", "held", "waitlisted"],
+      "tasks": [
+        { "task": "book-room", "start": "rooms", "transitions": [
+          { "from": "rooms", "event": "open-room", "to": "room-open" },
+          { "from": "room-open", "event": "book", "to": "booked" }
+        ] },
+        { "task": "hold-room", "start": "rooms", "transitions": [
+          { "from": "rooms", "event": "open-room", "to": "room-open" },
+          { "from": "room-open", "event": "hold", "to": "held" }
+        ] }
+      ]
+    }
+  } }

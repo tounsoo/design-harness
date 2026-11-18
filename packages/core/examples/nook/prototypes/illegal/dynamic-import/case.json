@@ -1,0 +1,1 @@
+{ "what": "Help loaded with import() when Hold room is pressed", "expect": [{ "rule": "imports-from-library", "message": "loads \"./help\" with import() at runtime" }] }

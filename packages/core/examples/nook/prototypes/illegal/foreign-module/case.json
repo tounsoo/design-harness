@@ -1,0 +1,1 @@
+{ "what": "An analytics package imported for a click handler", "expect": [{ "rule": "imports-from-library", "message": "imports \"analytics\", which is not the project's library (@tounsoo/todae)" }] }

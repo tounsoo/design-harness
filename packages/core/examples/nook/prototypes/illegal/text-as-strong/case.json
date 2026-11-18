@@ -1,0 +1,1 @@
+{ "what": "Text.Root as a strong element", "expect": [{ "rule": "text-as-heading-or-paragraph", "message": "sets as to \"strong\"; it must be one of" }] }
