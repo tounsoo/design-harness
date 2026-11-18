@@ -8,8 +8,10 @@ import type { SpecStreamCompiler } from "@json-render/core";
  * `patches` string inside it is json-render's SpecStream (one JSON Patch per
  * line), so the part that has arrived is fed to json-render's
  * `createSpecStreamCompiler`, seeded with the file as it is, and each time a
- * line completes the draft is shown: a preview revision of the prototype
- * with the draft spec in that file, rendered by the same frames.
+ * line completes the draft is shown: the prototype with the draft spec in
+ * that file, redrawn in place in the frames already on the board (the
+ * session's `redraw`), so each update changes what changed instead of
+ * rendering every frame from blank.
  *
  * A preview is only a picture. It is not saved, not undoable and never what
  * the agent's checks report: when the call runs, patch_spec checks the whole
@@ -59,12 +61,12 @@ export class SpecStreamPreview {
   /**
    * `show` puts a draft on the board, or, with null, the prototype as it is.
    * `prototype` is the prototype the patch applies to. `everyMs` spaces the
-   * preview revisions, since each one renders every frame afresh.
+   * redraws.
    */
   constructor(
     private readonly show: (draft: Prototype | null) => void,
     private readonly prototype: () => Prototype,
-    private readonly everyMs = 250,
+    private readonly everyMs = 120,
   ) {}
 
   /** A tool call started streaming. Only a spec prototype's patch_spec is followed. */

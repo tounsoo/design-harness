@@ -33,6 +33,14 @@ describe("the frame's reader of its parent's messages", () => {
     expect(readParentMessage({ ...request, page: { spec: { ...spec, spec: { ...spec.spec, elements: { page: { props: {} } } } } } }, channel)).toBeNull();
   });
 
+  it("accepts a redraw of a spec in place, and drops one that carries anything but a spec", () => {
+    const spec = { library: "@tounsoo/todae", spec: { root: "page", elements: { page: { type: "Page", props: {}, children: [] } }, state: {} }, parts: { Page: { kind: "page", content: "none", props: [], binds: {}, events: [] } } };
+    expect(readParentMessage({ protocol: PROTOCOL, type: "redraw", channel, generation: 3, spec }, channel)).not.toBeNull();
+    expect(readParentMessage({ protocol: PROTOCOL, type: "redraw", channel, generation: 3, spec, modules: {} }, channel)).toBeNull();
+    expect(readParentMessage({ protocol: PROTOCOL, type: "redraw", channel, generation: 3, spec: { ...spec, code: "x" } }, channel)).toBeNull();
+    expect(readParentMessage({ protocol: PROTOCOL, type: "redraw", channel: "c-2", generation: 3, spec }, channel)).toBeNull();
+  });
+
   it("drops another channel, another protocol, an unknown field, a bad shape, and a page that is not one of the modules", () => {
     expect(readParentMessage(request, "c-2")).toBeNull();
     expect(readParentMessage({ ...request, protocol: "other" }, channel)).toBeNull();

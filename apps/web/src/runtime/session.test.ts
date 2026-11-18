@@ -180,4 +180,30 @@ describe("a session of a spec prototype", () => {
     expect(request.modules["@design-harness/spec"]).toEqual({ code: "/* spec renderer */" });
     session.dispose();
   });
+
+  it("draws a draft in place in frames that have rendered, without a new revision, and puts the revision's spec back", async () => {
+    const { session, frames, mount, send } = harness();
+    const spec = seedSpec();
+    session.update(nook, spec);
+    const draft = { ...spec, files: { ...spec.files, "pages/rooms.json": (spec.files["pages/rooms.json"] ?? "").replace('"text": "Rooms"', '"text": "Spaces"') } };
+    // Before the frames have rendered there is nothing to draw in: the caller starts a revision instead.
+    expect(session.redraw(nook, draft)).toBe(false);
+    mount();
+    await flush();
+    for (const key of frames.keys()) send(key, { type: "ready" });
+    for (const frame of session.getState().frames) send(frame.key, { type: "snapshot", generation: 1, snapshot: snapshotOf(frame.scenario.id, frame.view.name) });
+    const report = session.getState().report;
+    expect(session.redraw(nook, draft)).toBe(true);
+    expect(session.getState().revision).toBe(1);
+    expect(session.getState().report).toBe(report);
+    const rooms = frames.get(frameKey("rooms-list", "desktop"))?.window.postMessage.mock.calls.at(-1)?.[0] as { type: string; generation: number; spec: { spec: { elements: Record<string, { props: { text?: string } }> } } };
+    expect(rooms).toMatchObject({ type: "redraw", generation: 1 });
+    expect(rooms.spec.spec.elements.heading?.props.text).toBe("Spaces");
+    session.restore();
+    const back = frames.get(frameKey("rooms-list", "desktop"))?.window.postMessage.mock.calls.at(-1)?.[0] as typeof rooms;
+    expect(back.spec.spec.elements.heading?.props.text).toBe("Rooms");
+    // A TSX prototype has no in-place redraw.
+    session.update(nook, legal);
+    expect(session.redraw(nook, draft)).toBe(false);
+  });
 });

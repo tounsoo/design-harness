@@ -85,6 +85,8 @@ export class Session {
   private packages: { key: string; value: Promise<RuntimePackages> } | null = null;
   private resolved: RuntimePackages | null = null;
   private readonly channels = new Map<string, FrameKey>();
+  /** A draft was drawn into the current revision's frames by `redraw`. */
+  private redrawn = false;
 
   constructor(private readonly options: SessionOptions) {
     options.window.addEventListener("message", this.onMessage);
@@ -126,6 +128,7 @@ export class Session {
     const frameStates: Record<FrameKey, FrameState> = {};
     for (const frame of frames) frameStates[frame.key] = frame.blocked ? { state: "failed", stage: "setup", message: frame.blocked } : { state: "waiting" };
     for (const attached of this.attached.values()) clearTimeout(attached.timer);
+    this.redrawn = false;
     this.set({ revision, frames, frameStates, compileProblems: compiled.problems, report: checkPrototype({ config, prototype }), measured: false });
 
     const libraryKey = JSON.stringify([config.library.package, config.library.version, config.library.react, config.library.stylesheets ?? [], spec]);
@@ -188,6 +191,42 @@ export class Session {
       if (previous.channel !== channel) this.channels.delete(previous.channel);
     }
     this.attached.set(key, { frame, generation, channel, ready: false });
+  }
+
+  /**
+   * Draws a spec prototype's draft in the frames of the current revision, in
+   * place: each frame that rendered a spec page gets the draft's spec for
+   * its scenario, with no new document and no measurement, so a streaming
+   * patch does not take every frame back to blank. The revision, its report
+   * and its snapshots stay those of the prototype it was made for. Returns
+   * false, drawing nothing, when the current revision is not a spec
+   * prototype whose frames have all rendered: the caller then starts a
+   * revision for the draft instead.
+   */
+  redraw(config: ProjectConfig, draft: Prototype): boolean {
+    if (this.prototype?.format !== "spec" || draft.format !== "spec") return false;
+    const rendered = this.state.frames.filter((frame) => this.state.frameStates[frame.key]?.state === "measured");
+    if (rendered.length === 0 || rendered.length !== this.state.frames.length) return false;
+    const parts = specParts(config);
+    for (const frame of rendered) {
+      const attached = this.attached.get(frame.key);
+      const payload = specPayload(config, draft, frame.scenario, parts);
+      if (!attached || attached.generation !== this.state.revision || !payload) continue;
+      attached.frame.contentWindow?.postMessage({ protocol: PROTOCOL, type: "redraw", channel: attached.channel, generation: attached.generation, spec: payload }, "*");
+    }
+    this.redrawn = true;
+    return true;
+  }
+
+  /** Puts back what the current revision rendered, after `redraw` drew a draft that was not applied. */
+  restore(): void {
+    if (!this.redrawn) return;
+    this.redrawn = false;
+    for (const frame of this.state.frames) {
+      const attached = this.attached.get(frame.key);
+      if (!attached || attached.generation !== this.state.revision || !frame.page || !("spec" in frame.page)) continue;
+      attached.frame.contentWindow?.postMessage({ protocol: PROTOCOL, type: "redraw", channel: attached.channel, generation: attached.generation, spec: frame.page.spec }, "*");
+    }
   }
 
   /** Outlines element `index` of a frame's last snapshot, or clears it with null. */

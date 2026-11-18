@@ -55,7 +55,14 @@ export type RenderRequest = {
 /** App → frame: outline one element of the last snapshot, by its index, or clear the outline. */
 export type HighlightRequest = { readonly protocol: typeof PROTOCOL; readonly type: "highlight"; readonly channel: string; readonly generation: number; readonly element: number | null };
 
-export type ParentMessage = RenderRequest | HighlightRequest;
+/**
+ * App → frame: draw this spec in place of the one the frame rendered, with
+ * no new document and no measurement: a draft shown while the agent's patch
+ * streams. Only a frame that rendered a spec page takes it.
+ */
+export type RedrawRequest = { readonly protocol: typeof PROTOCOL; readonly type: "redraw"; readonly channel: string; readonly generation: number; readonly spec: SpecPayload };
+
+export type ParentMessage = RenderRequest | HighlightRequest | RedrawRequest;
 
 /** Frame → app: the boot script is listening. */
 export type ReadyMessage = { readonly protocol: typeof PROTOCOL; readonly type: "ready"; readonly channel: string };
@@ -143,6 +150,7 @@ export function readParentMessage(data: unknown, channel: string): ParentMessage
     const valid = element === null || (typeof element === "number" && Number.isSafeInteger(element) && element >= 0);
     return valid && hasOnly(data, ["protocol", "type", "channel", "generation", "element"]) ? (data as HighlightRequest) : null;
   }
+  if (data.type === "redraw") return hasOnly(data, ["protocol", "type", "channel", "generation", "spec"]) && isSpecPayload(data.spec) ? (data as RedrawRequest) : null;
   if (data.type !== "render") return null;
   if (!hasOnly(data, ["protocol", "type", "channel", "generation", "modules", "styles", "page", "scenario", "pageType", "view", "settleMs"])) return null;
   const { modules, styles, page, settleMs } = data;
