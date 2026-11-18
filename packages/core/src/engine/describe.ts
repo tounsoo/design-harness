@@ -1,5 +1,5 @@
 import type { RoleName, Selector } from "../rules/types";
-import { textOf, type CheckContext } from "./context";
+import { textOf, type ConfigContext } from "./context";
 
 const ROLE_WORDS: Record<RoleName, [string, string]> = {
   action: ["action", "actions"],
@@ -18,7 +18,7 @@ export function article(phrase: string): string {
 }
 
 /** The noun a selector names, or null when it only qualifies (text, props, placement). */
-function noun(selector: Selector, ctx: CheckContext, options: Options): string | null {
+function noun(selector: Selector, ctx: ConfigContext, options: Options): string | null {
   const plural = options.plural ?? false;
   let out: string | null = selector.role ? ROLE_WORDS[selector.role][plural ? 1 : 0] : null;
   if (selector.component !== undefined) {
@@ -39,7 +39,7 @@ function noun(selector: Selector, ctx: CheckContext, options: Options): string |
 }
 
 /** What a selector requires besides its noun: `reading "Book room"`, `outside every disclosure`. */
-function qualifiers(selector: Selector, ctx: CheckContext, options: Options): string[] {
+function qualifiers(selector: Selector, ctx: ConfigContext, options: Options): string[] {
   const parts: string[] = [];
   if (selector.props) {
     for (const [name, value] of Object.entries(selector.props).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) parts.push(`with ${name}=${JSON.stringify(value)}`);
@@ -59,6 +59,6 @@ function qualifiers(selector: Selector, ctx: CheckContext, options: Options): st
 }
 
 /** A selector in words, for messages: `primary action reading "Book room"`, `<button> or <a>`. */
-export function describe(selector: Selector, ctx: CheckContext, options: Options = {}): string {
+export function describe(selector: Selector, ctx: ConfigContext, options: Options = {}): string {
   return [noun(selector, ctx, options) ?? (options.plural ? "elements" : "element"), ...qualifiers(selector, ctx, options)].join(" ");
 }

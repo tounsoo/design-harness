@@ -14,17 +14,20 @@ export type CheckContext = {
   readonly pageTypes: ReadonlyMap<string, PageType>;
 };
 
-export function bound(value: Bound, ctx: CheckContext): number {
+/** The part of a check's context that only reads the config: enough to describe a rule or a selector in words. */
+export type ConfigContext = Pick<CheckContext, "config">;
+
+export function bound(value: Bound, ctx: ConfigContext): number {
   if (typeof value === "number") return value;
   // Config validation guarantees the cap exists; a missing one checks as 0, the strictest reading.
   return ctx.config.inputs.caps[value.cap]?.value ?? 0;
 }
 
-export function boundLabel(value: Bound, ctx: CheckContext): string {
+export function boundLabel(value: Bound, ctx: ConfigContext): string {
   return typeof value === "number" ? String(value) : `${bound(value, ctx)} (${value.cap})`;
 }
 
-export function textOf(match: TextMatch, ctx: CheckContext, each: string | undefined): string {
+export function textOf(match: TextMatch, ctx: ConfigContext, each: string | undefined): string {
   if (typeof match === "string") return match;
   if ("rank" in match) return ctx.config.inputs.ranking.find((item) => item.rank === match.rank)?.action ?? "";
   return each ?? "";
