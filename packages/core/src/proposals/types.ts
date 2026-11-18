@@ -2,6 +2,7 @@ import type { Cap, PageType, RankedAction, RoleMapping, Task } from "../config/t
 import type { Prototype } from "../prototype/types";
 import type { RenderedSnapshot } from "../rendered/types";
 import type { RoleName, RuleSpec } from "../rules/types";
+import type { Classification } from "./classify";
 
 /** One change to the project's inventories or rule inputs. */
 export type InventoryOp =
@@ -40,15 +41,33 @@ export type StatusChange = { readonly status: ProposalStatus; readonly at: strin
 /** A note on one state the change shows: ordinary states and edge cases (empty, loading, error, long content, permissions, over time). */
 export type StateNote = { readonly state: string; readonly note: string };
 
-export type Proposal = {
-  readonly id: string;
+/** What a proposal says: everything a revision can replace. */
+export type ProposalContent = {
   readonly title: string;
   readonly reason: string;
   readonly states: readonly StateNote[];
-  readonly status: ProposalStatus;
-  /** Every status the proposal has been in, oldest first; the last entry's status is `status`. */
-  readonly history: readonly StatusChange[];
   readonly inventory: readonly InventoryOp[];
   readonly rules: { readonly add: readonly RuleSpec[]; readonly remove: readonly string[] };
   readonly examples: { readonly pass: readonly PassingExample[]; readonly fail: readonly FailingExample[] };
+};
+
+/**
+ * Something that happened to a proposal other than a status change. `revised`:
+ * its content was replaced while it was open, and `previous` is what it said
+ * before. `sent-back`: a reviewer asked for a revision, with a note. Neither
+ * changes the status. `at` and `by` are the caller's.
+ */
+export type ProposalEvent =
+  | { readonly kind: "revised"; readonly at: string; readonly by?: string; readonly note?: string; readonly previous: ProposalContent }
+  | { readonly kind: "sent-back"; readonly at: string; readonly by?: string; readonly note: string };
+
+export type Proposal = ProposalContent & {
+  readonly id: string;
+  readonly status: ProposalStatus;
+  /** Every status the proposal has been in, oldest first; the last entry's status is `status`. */
+  readonly history: readonly StatusChange[];
+  /** Revisions and send-backs, oldest first. Absent on a proposal that has had none. */
+  readonly events?: readonly ProposalEvent[];
+  /** Set by `adopt`: the classification against the config the proposal changed, kept since the config it was judged against is gone once adopted. */
+  readonly classification?: Classification;
 };

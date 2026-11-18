@@ -4,12 +4,13 @@ import { checkPrototype } from "../engine/check";
 import { compareStrings, type CheckReport, type Finding } from "../engine/report";
 import { prototypeIssues } from "../parse";
 import type { Prototype } from "../prototype/types";
+import { snapshotSchema } from "../rendered/schema";
 import type { RenderedSnapshot } from "../rendered/types";
 import { run, type Result } from "../validate";
 import { applyProposal } from "./apply";
 import { classifyProposal, type Classification } from "./classify";
 import { proposalSchema } from "./schema";
-import type { FailingExample, PassingExample, Proposal, ProposalStatus } from "./types";
+import type { FailingExample, PassingExample, Proposal, ProposalContent, ProposalStatus } from "./types";
 
 export type RefusalCode =
   | "invalid-proposal"
@@ -25,7 +26,10 @@ export type RefusalCode =
   | "passing-example-fails"
   | "failing-example-passes"
   | "fails-for-another-reason"
-  | "breaks-adopted-example";
+  | "breaks-adopted-example"
+  | "unchanged"
+  | "missing-note"
+  | "incomplete-measurement";
 
 /**
  * Why a step was refused, precisely enough to fix: which example, and what
@@ -58,20 +62,119 @@ function replace(config: ProjectConfig, proposal: Proposal): ProjectConfig {
   return { ...config, proposals: config.proposals.map((item) => (item.id === proposal.id ? proposal : item)) };
 }
 
-/** Adds a proposal to the config as `open`. Time and who are the caller's. */
-export function propose(config: ProjectConfig, draft: ProposalDraft, stamp: Stamp): Result<ProjectConfig, Refusal> {
-  const proposal: Proposal = { ...draft, status: "open", history: [{ status: "open", ...stamp }] };
+/** A proposal's content: what a revision replaces and keeps as the previous version. */
+export function contentOf(proposal: ProposalContent): ProposalContent {
+  const { title, reason, states, inventory, rules, examples } = proposal;
+  return { title, reason, states, inventory, rules, examples };
+}
+
+/** Validates a whole proposal: its shape, unique example names, and every example a valid prototype. */
+function checkedProposal(proposal: Proposal): Result<Proposal, Refusal> {
   const checked = run(proposalSchema, proposal, "proposal");
   if (!checked.ok) return refuse("invalid-proposal", checked.error.map((issue) => `${issue.path}: ${issue.message}`).join("\n"));
-  if (config.proposals.some((item) => item.id === draft.id)) return refuse("duplicate-id", `a proposal "${draft.id}" already exists`);
-  const names = [...draft.examples.pass, ...draft.examples.fail].map((example) => example.name);
+  const names = [...proposal.examples.pass, ...proposal.examples.fail].map((example) => example.name);
   const repeated = names.find((name, index) => names.indexOf(name) !== index);
   if (repeated !== undefined) return refuse("invalid-proposal", `two examples are named "${repeated}"; each example needs its own name`, { example: repeated });
-  for (const example of [...draft.examples.pass, ...draft.examples.fail]) {
+  for (const example of [...proposal.examples.pass, ...proposal.examples.fail]) {
     const issues = prototypeIssues(example.prototype, `example "${example.name}"`);
     if (issues.length > 0) return refuse("invalid-proposal", issues.map((issue) => `${issue.path}: ${issue.message}`).join("\n"), { example: example.name });
   }
+  return { ok: true, value: checked.value };
+}
+
+/** Adds a proposal to the config as `open`. Time and who are the caller's. */
+export function propose(config: ProjectConfig, draft: ProposalDraft, stamp: Stamp): Result<ProjectConfig, Refusal> {
+  const checked = checkedProposal({ ...draft, status: "open", history: [{ status: "open", ...stamp }] });
+  if (!checked.ok) return checked;
+  if (config.proposals.some((item) => item.id === draft.id)) return refuse("duplicate-id", `a proposal "${draft.id}" already exists`);
   return { ok: true, value: { ...config, proposals: [...config.proposals, checked.value] } };
+}
+
+/**
+ * Replaces an open proposal's content with a new draft of the same id. The
+ * status stays open and the status history is kept; the content it replaces
+ * is kept too, as a `revised` event with the stamp's time, who and note, so
+ * every version stays readable. Only an open proposal can be revised: once
+ * approved, what was approved is what is adopted.
+ */
+export function revise(config: ProjectConfig, id: string, draft: ProposalDraft, stamp: Stamp): Result<ProjectConfig, Refusal> {
+  const proposal = config.proposals.find((item) => item.id === id);
+  if (!proposal) return refuse("not-found", `there is no proposal "${id}"`);
+  if (proposal.status !== "open") return refuse("wrong-status", `proposal "${id}" is ${proposal.status}; only an open proposal can be revised`);
+  if (draft.id !== id) return refuse("invalid-proposal", `the revision names proposal "${draft.id}", not "${id}"; a revision keeps its proposal's id`);
+  const checked = checkedProposal({ ...proposal, ...contentOf(draft), events: [...(proposal.events ?? []), { kind: "revised", ...stamp, previous: contentOf(proposal) }] });
+  if (!checked.ok) return checked;
+  // Both sides as the schema writes them, so key order in the draft cannot make an unchanged revision look new.
+  if (JSON.stringify(contentOf(checked.value)) === JSON.stringify(contentOf(proposal))) return refuse("unchanged", `the revision of "${id}" says exactly what it said before`);
+  return { ok: true, value: replace(config, checked.value) };
+}
+
+/**
+ * Records that a reviewer sent an open proposal back for a revision, with a
+ * note saying what to change. The status does not change; the note is kept
+ * as a `sent-back` event. The note is required: a send-back without one
+ * gives the author nothing to act on.
+ */
+export function sendBack(config: ProjectConfig, id: string, stamp: Stamp): Result<ProjectConfig, Refusal> {
+  const proposal = config.proposals.find((item) => item.id === id);
+  if (!proposal) return refuse("not-found", `there is no proposal "${id}"`);
+  if (proposal.status !== "open") return refuse("wrong-status", `proposal "${id}" is ${proposal.status}; only an open proposal can be sent back for a revision`);
+  const note = stamp.note?.trim() ?? "";
+  if (note === "") return refuse("missing-note", `sending "${id}" back needs a note that says what to change`);
+  const event = { kind: "sent-back" as const, at: stamp.at, ...(stamp.by !== undefined ? { by: stamp.by } : {}), note };
+  return { ok: true, value: replace(config, { ...proposal, events: [...(proposal.events ?? []), event] }) };
+}
+
+/**
+ * Stores measured snapshots with each of an open or approved proposal's
+ * examples, so its rendered rules can run on them and an adopted proposal's
+ * examples re-run later with the measurements it was adopted on. Every
+ * example must be measured, at exactly one snapshot per scenario of the
+ * example and view of the config: a partial measurement is refused, never
+ * stored, so adoption cannot run on one. Snapshots are validated with core's
+ * snapshot schema.
+ */
+export function withExampleSnapshots(config: ProjectConfig, id: string, measured: Readonly<Record<string, readonly RenderedSnapshot[]>>): Result<ProjectConfig, Refusal> {
+  const proposal = config.proposals.find((item) => item.id === id);
+  if (!proposal) return refuse("not-found", `there is no proposal "${id}"`);
+  if (proposal.status !== "open" && proposal.status !== "approved") return refuse("wrong-status", `proposal "${id}" is ${proposal.status}; its examples' measurements can no longer change`);
+  const names = new Set([...proposal.examples.pass, ...proposal.examples.fail].map((example) => example.name));
+  const unknown = Object.keys(measured).filter((name) => !names.has(name)).sort(compareStrings)[0];
+  if (unknown !== undefined) return refuse("incomplete-measurement", `snapshots are given for "${unknown}", which is not an example of "${id}"`, { example: unknown });
+  const measure = <T extends PassingExample>(example: T): Result<T, Refusal> => {
+    const given = measured[example.name];
+    if (given === undefined) return refuse("incomplete-measurement", `example "${example.name}" is not measured`, { example: example.name });
+    const snapshots: RenderedSnapshot[] = [];
+    for (const [index, snapshot] of given.entries()) {
+      const valid = run(snapshotSchema, snapshot, `example "${example.name}" snapshot ${index + 1}`);
+      if (!valid.ok) return refuse("incomplete-measurement", valid.error.map((issue) => `${issue.path}: ${issue.message}`).join("\n"), { example: example.name });
+      snapshots.push(valid.value);
+    }
+    for (const scenario of example.prototype.scenarios) {
+      for (const view of config.views) {
+        const count = snapshots.filter((snapshot) => snapshot.scenario === scenario.id && snapshot.view === view.name).length;
+        if (count !== 1) {
+          return refuse("incomplete-measurement", `example "${example.name}" has ${count === 0 ? "no snapshot" : `${count} snapshots`} of scenario "${scenario.id}" at view "${view.name}"; it needs exactly one`, { example: example.name });
+        }
+      }
+    }
+    const extra = snapshots.find((snapshot) => !example.prototype.scenarios.some((scenario) => scenario.id === snapshot.scenario) || !config.views.some((view) => view.name === snapshot.view));
+    if (extra) return refuse("incomplete-measurement", `example "${example.name}" has a snapshot of scenario "${extra.scenario}" at view "${extra.view}", which it does not render`, { example: example.name });
+    return { ok: true, value: { ...example, snapshots } };
+  };
+  const pass: PassingExample[] = [];
+  for (const example of proposal.examples.pass) {
+    const result = measure(example);
+    if (!result.ok) return result;
+    pass.push(result.value);
+  }
+  const fail: FailingExample[] = [];
+  for (const example of proposal.examples.fail) {
+    const result = measure(example);
+    if (!result.ok) return result;
+    fail.push(result.value);
+  }
+  return { ok: true, value: replace(config, { ...proposal, examples: { pass, fail } }) };
 }
 
 function move(config: ProjectConfig, id: string, to: ProposalStatus, stamp: Stamp): Result<ProjectConfig, Refusal> {
@@ -147,6 +250,90 @@ function flagged(report: CheckReport, example: FailingExample): { ok: true } | {
 }
 
 /**
+ * One example of a proposal judged against the config with the proposal
+ * applied: what `adopt` holds it to, and what happened. `refusal` is the
+ * refusal `adopt` gives for this example when it does not behave, word for
+ * word; `report` is core's whole report on it.
+ */
+export type ExampleResult = {
+  readonly example: string;
+  readonly expect: "pass" | "fail";
+  readonly ok: boolean;
+  readonly detail: string;
+  readonly refusal?: Refusal;
+  readonly report: CheckReport;
+};
+
+/** Every example of a proposal against `candidate` (the config with it applied): passing examples first, then failing, each in the proposal's order. */
+function judgeExamples(candidate: ProjectConfig, proposal: Proposal): ExampleResult[] {
+  const added = new Set(proposal.rules.add.map((rule) => rule.id));
+  const results: ExampleResult[] = [];
+  for (const example of proposal.examples.pass) {
+    const report = checkExample(candidate, example);
+    const base = { example: example.name, expect: "pass" as const, report };
+    const failed = report.rules.filter((rule) => rule.status === "fail");
+    if (failed.length > 0) {
+      const findings = failed.flatMap((rule) => rule.findings);
+      const message = `passing example "${example.name}" fails ${failed.map((rule) => `"${rule.rule}"`).join(", ")}: ${quote(findings)}`;
+      results.push({ ...base, ok: false, detail: message, refusal: { code: "passing-example-fails", message, example: example.name, findings } });
+      continue;
+    }
+    const unrun = report.rules.find((rule) => added.has(rule.rule) && rule.status === "not-run");
+    if (unrun) {
+      const message = `passing example "${example.name}" does not run the new rule "${unrun.rule}": ${unrun.note ?? "no reason given"}`;
+      results.push({ ...base, ok: false, detail: message, refusal: { code: "unproven-rule", message, example: example.name } });
+      continue;
+    }
+    results.push({ ...base, ok: true, detail: added.size > 0 ? "passes every rule in force, the new rules included" : "passes every rule in force" });
+  }
+  for (const example of proposal.examples.fail) {
+    const report = checkExample(candidate, example);
+    const base = { example: example.name, expect: "fail" as const, report };
+    const result = flagged(report, example);
+    if (!result.ok) {
+      const ruleReport = report.rules.find((rule) => rule.rule === example.flaggedBy.rule);
+      const message = `failing example "${example.name}" is not flagged as it must be: ${result.detail}`;
+      results.push({ ...base, ok: false, detail: message, refusal: { code: "failing-example-passes", message, example: example.name, findings: ruleReport?.findings ?? [] } });
+      continue;
+    }
+    const others = report.rules.filter((rule) => rule.status === "fail" && rule.rule !== example.flaggedBy.rule);
+    if (others.length > 0) {
+      const findings = others.flatMap((rule) => rule.findings);
+      const message = `failing example "${example.name}" must fail for "${example.flaggedBy.rule}" alone, but it also fails ${others.map((rule) => `"${rule.rule}"`).join(", ")}: ${quote(findings)}`;
+      results.push({ ...base, ok: false, detail: message, refusal: { code: "fails-for-another-reason", message, example: example.name, findings } });
+      continue;
+    }
+    results.push({ ...base, ok: true, detail: `flagged by "${example.flaggedBy.rule}" and no other rule` });
+  }
+  return results;
+}
+
+/** The config with an open or approved proposal applied and still valid, or why not: the part of `adopt` that comes before its examples. */
+function candidateFor(config: ProjectConfig, proposal: Proposal): Result<ProjectConfig, Refusal> {
+  const applied = applyProposal(config, proposal);
+  if (!applied.ok) return refuse("cannot-apply", `proposal "${proposal.id}" cannot apply: ${applied.error}`);
+  const issues = configReferenceIssues(applied.value);
+  if (issues.length > 0) return refuse("invalid-config", `adopting "${proposal.id}" would leave the config invalid: ${issues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")}`);
+  return applied;
+}
+
+/**
+ * Judges every example of an open or approved proposal on its own, as
+ * `adopt` would, without stopping at the first that does not behave: the
+ * config with the proposal applied, and per example whether it behaves and
+ * core's words for what happened. Examples use the snapshots stored with
+ * them (`withExampleSnapshots`); without them rendered rules do not run.
+ */
+export function tryExamples(config: ProjectConfig, id: string): Result<{ readonly config: ProjectConfig; readonly results: readonly ExampleResult[] }, Refusal> {
+  const proposal = config.proposals.find((item) => item.id === id);
+  if (!proposal) return refuse("not-found", `there is no proposal "${id}"`);
+  if (proposal.status !== "open" && proposal.status !== "approved") return refuse("wrong-status", `proposal "${id}" is ${proposal.status}; only an open or approved proposal's examples are tried this way, and an adopted one's are re-run with rerunExamples`);
+  const candidate = candidateFor(config, proposal);
+  if (!candidate.ok) return candidate;
+  return { ok: true, value: { config: candidate.value, results: judgeExamples(candidate.value, proposal) } };
+}
+
+/**
  * Adopts an approved proposal: applies its changes and puts its rules in
  * force, but only once its examples prove the rules. Every passing example
  * must pass every rule of the new config; every failing example must fail
@@ -154,8 +341,8 @@ function flagged(report: CheckReport, example: FailingExample): { ok: true } | {
  * rule the proposal adds must be named by a failing example, so each is
  * shown to fire. Every example of an earlier adopted proposal must still
  * behave as it did, unless the proposal removes the rule a failing example
- * exists to prove, which retires that example. Pure: time and who are the
- * caller's.
+ * exists to prove, which retires that example. The adopted proposal keeps
+ * its classification. Pure: time and who are the caller's.
  */
 export function adopt(config: ProjectConfig, id: string, stamp: Stamp, existing: readonly ExistingPrototype[] = []): Result<Adoption, Refusal> {
   const proposal = config.proposals.find((item) => item.id === id);
@@ -166,11 +353,9 @@ export function adopt(config: ProjectConfig, id: string, stamp: Stamp, existing:
   if (proposal.inventory.length === 0 && proposal.rules.add.length === 0 && proposal.rules.remove.length === 0) {
     return refuse("changes-nothing", `proposal "${id}" changes no inventory and no rule`);
   }
-  const applied = applyProposal(config, proposal);
-  if (!applied.ok) return refuse("cannot-apply", `proposal "${id}" cannot apply: ${applied.error}`);
+  const applied = candidateFor(config, proposal);
+  if (!applied.ok) return applied;
   const candidate = applied.value;
-  const issues = configReferenceIssues(candidate);
-  if (issues.length > 0) return refuse("invalid-config", `adopting "${id}" would leave the config invalid: ${issues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")}`);
 
   const { pass, fail } = proposal.examples;
   if (pass.length === 0 || fail.length === 0) {
@@ -187,35 +372,11 @@ export function adopt(config: ProjectConfig, id: string, stamp: Stamp, existing:
       return refuse("unproven-rule", `rule "${rule.id}" has no failing example that names it, so nothing shows it fires`);
     }
   }
-  const added = new Set(proposal.rules.add.map((rule) => rule.id));
+  const misbehaving = judgeExamples(candidate, proposal).find((result) => !result.ok);
+  if (misbehaving?.refusal) return { ok: false, error: misbehaving.refusal };
 
-  for (const example of pass) {
-    const report = checkExample(candidate, example);
-    const failed = report.rules.filter((rule) => rule.status === "fail");
-    if (failed.length > 0) {
-      const findings = failed.flatMap((rule) => rule.findings);
-      return refuse("passing-example-fails", `passing example "${example.name}" fails ${failed.map((rule) => `"${rule.rule}"`).join(", ")}: ${quote(findings)}`, { example: example.name, findings });
-    }
-    const unrun = report.rules.find((rule) => added.has(rule.rule) && rule.status === "not-run");
-    if (unrun) {
-      return refuse("unproven-rule", `passing example "${example.name}" does not run the new rule "${unrun.rule}": ${unrun.note ?? "no reason given"}`, { example: example.name });
-    }
-  }
-  for (const example of fail) {
-    const report = checkExample(candidate, example);
-    const result = flagged(report, example);
-    if (!result.ok) {
-      const ruleReport = report.rules.find((rule) => rule.rule === example.flaggedBy.rule);
-      return refuse("failing-example-passes", `failing example "${example.name}" is not flagged as it must be: ${result.detail}`, { example: example.name, findings: ruleReport?.findings ?? [] });
-    }
-    const others = report.rules.filter((rule) => rule.status === "fail" && rule.rule !== example.flaggedBy.rule);
-    if (others.length > 0) {
-      const findings = others.flatMap((rule) => rule.findings);
-      return refuse("fails-for-another-reason", `failing example "${example.name}" must fail for "${example.flaggedBy.rule}" alone, but it also fails ${others.map((rule) => `"${rule.rule}"`).join(", ")}: ${quote(findings)}`, { example: example.name, findings });
-    }
-  }
-
-  const adopted = replace(candidate, stamped(proposal, "adopted", stamp));
+  const classification = classifyProposal(proposal, config);
+  const adopted = replace(candidate, { ...stamped(proposal, "adopted", stamp), classification });
   const earlier = rerunExamples(adopted).filter((item) => item.proposal !== id);
   const broken = earlier.find((item) => !item.ok);
   if (broken) {
@@ -225,19 +386,30 @@ export function adopt(config: ProjectConfig, id: string, stamp: Stamp, existing:
       { proposal: broken.proposal, example: broken.example },
     );
   }
-  const newlyFailing: NewlyFailing[] = [];
+  const newlyFailing = newlyFailingOf(config, adopted, existing);
+  const retiredExamples = earlier.filter((item) => item.retiredBy === id);
+  return { ok: true, value: { config: adopted, classification, newlyFailing, retiredExamples } };
+}
+
+/**
+ * The caller's prototypes that fail a rule under `after` that they did not
+ * fail under `before`, or carry a finding they did not carry, in name order:
+ * what `adopt` reports as newly failing, for any two configs, such as the
+ * config before a proposal and the config with it applied.
+ */
+export function newlyFailingOf(before: ProjectConfig, after: ProjectConfig, existing: readonly ExistingPrototype[]): NewlyFailing[] {
+  const out: NewlyFailing[] = [];
   for (const item of [...existing].sort((a, b) => compareStrings(a.name, b.name))) {
     const snapshots = item.snapshots ? { snapshots: item.snapshots } : {};
-    const before = checkPrototype({ config, prototype: item.prototype, ...snapshots });
-    const after = checkPrototype({ config: adopted, prototype: item.prototype, ...snapshots });
-    const failedBefore = new Set(before.rules.filter((rule) => rule.status === "fail").map((rule) => rule.rule));
-    const known = new Set(before.findings.map((finding) => JSON.stringify(finding)));
-    const rules = after.rules.filter((rule) => rule.status === "fail" && !failedBefore.has(rule.rule)).map((rule) => rule.rule);
-    const findings = after.findings.filter((finding) => !known.has(JSON.stringify(finding)));
-    if (rules.length > 0 || findings.length > 0) newlyFailing.push({ name: item.name, rules, findings });
+    const was = checkPrototype({ config: before, prototype: item.prototype, ...snapshots });
+    const now = checkPrototype({ config: after, prototype: item.prototype, ...snapshots });
+    const failedBefore = new Set(was.rules.filter((rule) => rule.status === "fail").map((rule) => rule.rule));
+    const known = new Set(was.findings.map((finding) => JSON.stringify(finding)));
+    const rules = now.rules.filter((rule) => rule.status === "fail" && !failedBefore.has(rule.rule)).map((rule) => rule.rule);
+    const findings = now.findings.filter((finding) => !known.has(JSON.stringify(finding)));
+    if (rules.length > 0 || findings.length > 0) out.push({ name: item.name, rules, findings });
   }
-  const retiredExamples = earlier.filter((item) => item.retiredBy === id);
-  return { ok: true, value: { config: adopted, classification: classifyProposal(proposal, config), newlyFailing, retiredExamples } };
+  return out;
 }
 
 /**

@@ -31,20 +31,37 @@ export const inventoryOp: Check<InventoryOp> = tagged("op", {
 const example = { name: slug, prototype: prototypeSchema } as const;
 const exampleExtra = { snapshots: arr(snapshotSchema) } as const;
 
-const proposalShape = obj({
-  id: slug,
+const content = {
   title: str(),
   reason: str(),
   states: arr(obj({ state: str(), note: str() })),
-  status: oneOf(PROPOSAL_STATUSES),
-  history: arr(obj({ status: oneOf(PROPOSAL_STATUSES), at: str() }, { by: str(), note: str() }), { min: 1 }),
   inventory: arr(inventoryOp),
   rules: obj({ add: arr(ruleSpec), remove: arr(slug) }),
   examples: obj({
     pass: arr(obj(example, exampleExtra)),
     fail: arr(obj({ ...example, flaggedBy: obj({ rule: slug }, { message: str() }) }, exampleExtra)),
   }),
+} as const;
+
+const changeClass = oneOf(["adds", "tightens", "loosens-or-removes"] as const);
+
+const proposalEvent = tagged("kind", {
+  revised: obj({ kind: oneOf(["revised"] as const), at: str(), previous: obj(content) }, { by: str(), note: str() }),
+  "sent-back": obj({ kind: oneOf(["sent-back"] as const), at: str(), note: str() }, { by: str() }),
 });
+
+const proposalShape = obj(
+  {
+    id: slug,
+    ...content,
+    status: oneOf(PROPOSAL_STATUSES),
+    history: arr(obj({ status: oneOf(PROPOSAL_STATUSES), at: str() }, { by: str(), note: str() }), { min: 1 }),
+  },
+  {
+    events: arr(proposalEvent),
+    classification: obj({ class: changeClass, changes: arr(obj({ change: str(), class: changeClass, reason: str() })) }),
+  },
+);
 
 /** A proposal, and the one rule its shape alone can break: its status is the last one in its history. */
 export const proposalSchema: Check<Proposal> = (value, path, issues) => {

@@ -8,7 +8,9 @@ import type { Prototype } from "../prototype/types";
 import type { RuleSpec } from "../rules/types";
 import type { Result } from "../validate";
 import { classifyProposal } from "./classify";
-import { adopt, approve, decline, dryRunAdoption, propose, rerunExamples, type ProposalDraft, type Refusal } from "./lifecycle";
+import { legalSnapshots } from "../../examples/nook/snapshots";
+import { parseProjectConfig } from "../parse";
+import { adopt, approve, contentOf, decline, dryRunAdoption, propose, rerunExamples, revise, sendBack, tryExamples, withExampleSnapshots, type ProposalDraft, type Refusal } from "./lifecycle";
 
 const legal = loadPrototype(join(EXAMPLES, "legal", "booking"));
 
@@ -240,5 +242,148 @@ describe("classification", () => {
     expect(classify([{ op: "add-disclosed-section", section: "Accessibility" }])).toBe("tightens");
     expect(classify([{ op: "add-layout", id: "side-panel" }, { op: "remove-layout", id: "room-cards" }])).toBe("loosens-or-removes");
     expect(classify([], { add: [], remove: ["no-raw-controls"] })).toBe("loosens-or-removes");
+  });
+});
+
+/** A rendered rule only a measurement can prove: Harbor's open button is in the first view. */
+const harborRule: RuleSpec = { type: "rendered", id: "harbor-in-first-view", check: "first-view", action: "Open Harbor" };
+
+/** The legal snapshots with Harbor's open button pushed below the fold on the phone, as a long intro would. */
+function harborBelowFold() {
+  return legalSnapshots().map((snapshot) =>
+    snapshot.scenario === "rooms-list" && snapshot.view === "phone"
+      ? { ...snapshot, elements: snapshot.elements.map((element) => (element.name === "Open Harbor" ? { ...element, rect: { ...element.rect, y: 1200 } } : element)) }
+      : snapshot,
+  );
+}
+
+function harborDraft(): ProposalDraft {
+  return {
+    ...draft("harbor"),
+    title: "Keep Harbor in the first view",
+    inventory: [],
+    rules: { add: [harborRule], remove: [] },
+    examples: { pass: [{ name: "as-is", prototype: legal }], fail: [{ name: "long-intro", prototype: legal, flaggedBy: { rule: "harbor-in-first-view" } }] },
+  };
+}
+
+describe("a revision", () => {
+  it("replaces an open proposal's content, keeps its status history, and keeps the version it replaced", () => {
+    const opened = ok(propose(nook, draft("toast"), { at: "t0", by: "agent" }));
+    const revised = ok(revise(opened, "toast", { ...draft("toast"), title: "One toast per page" }, { at: "t1", by: "agent", note: "Shorter title." }));
+    const proposal = revised.proposals.find((item) => item.id === "toast");
+    expect(proposal?.title).toBe("One toast per page");
+    expect(proposal?.status).toBe("open");
+    expect(proposal?.history).toEqual([{ status: "open", at: "t0", by: "agent" }]);
+    expect(proposal?.events).toEqual([{ kind: "revised", at: "t1", by: "agent", note: "Shorter title.", previous: contentOf(draft("toast")) }]);
+    const again = ok(revise(revised, "toast", { ...draft("toast"), title: "At most one toast" }, { at: "t2", by: "agent" }));
+    expect(again.proposals[0]?.events?.map((event) => (event.kind === "revised" ? event.previous.title : event.note))).toEqual(["Add a toast for booking confirmations", "One toast per page"]);
+  });
+
+  it("is refused for a proposal that is not open, an id that differs, a draft that changes nothing, and an invalid draft", () => {
+    const opened = ok(propose(nook, draft("toast"), { at: "t0" }));
+    const approvedOne = ok(approve(opened, "toast", { at: "t1" }));
+    expect(refusal(revise(approvedOne, "toast", { ...draft("toast"), title: "x" }, { at: "t2" }))).toMatchObject({ code: "wrong-status", message: 'proposal "toast" is approved; only an open proposal can be revised' });
+    expect(refusal(revise(opened, "toast", draft("other"), { at: "t2" })).code).toBe("invalid-proposal");
+    expect(refusal(revise(opened, "toast", draft("toast"), { at: "t2" }))).toMatchObject({ code: "unchanged" });
+    expect(refusal(revise(opened, "missing", draft("missing"), { at: "t2" })).code).toBe("not-found");
+    const invalid = { ...draft("toast"), examples: { pass: [{ name: "same", prototype: oneToast }], fail: [{ name: "same", prototype: twoToasts, flaggedBy: { rule: "one-toast-per-page" } }] } };
+    expect(refusal(revise(opened, "toast", invalid, { at: "t2" })).message).toContain('two examples are named "same"');
+  });
+});
+
+describe("sending a proposal back", () => {
+  it("records the note as an event and leaves the status as it is", () => {
+    const opened = ok(propose(nook, draft("toast"), { at: "t0", by: "agent" }));
+    const sent = ok(sendBack(opened, "toast", { at: "t1", by: "you", note: "  Name the toast's states.  " }));
+    expect(sent.proposals[0]).toMatchObject({ status: "open", history: [{ status: "open", at: "t0", by: "agent" }], events: [{ kind: "sent-back", at: "t1", by: "you", note: "Name the toast's states." }] });
+  });
+
+  it("needs a note, and an open proposal", () => {
+    const opened = ok(propose(nook, draft("toast"), { at: "t0" }));
+    expect(refusal(sendBack(opened, "toast", { at: "t1", by: "you", note: " " }))).toMatchObject({ code: "missing-note" });
+    expect(refusal(sendBack(opened, "toast", { at: "t1", by: "you" }))).toMatchObject({ code: "missing-note" });
+    expect(refusal(sendBack(ok(decline(opened, "toast", { at: "t1" })), "toast", { at: "t2", note: "x" })).code).toBe("wrong-status");
+  });
+});
+
+describe("trying a proposal's examples one by one", () => {
+  it("judges every example as adopt would, in core's words, without stopping at the first", () => {
+    const config = ok(propose(nook, draft("toast", { pass: [{ name: "two-passing", prototype: twoToasts }], fail: [{ name: "only-one", prototype: oneToast, flaggedBy: { rule: "one-toast-per-page" } }, { name: "two-toasts", prototype: twoToasts, flaggedBy: { rule: "one-toast-per-page" } }] }), { at: "t0" }));
+    const tried = ok(tryExamples(config, "toast"));
+    expect(tried.config.rules.some((rule) => rule.id === "one-toast-per-page")).toBe(true);
+    expect(tried.results.map((result) => [result.example, result.expect, result.ok, result.refusal?.code])).toEqual([
+      ["two-passing", "pass", false, "passing-example-fails"],
+      ["only-one", "fail", false, "failing-example-passes"],
+      ["two-toasts", "fail", true, undefined],
+    ]);
+    expect(tried.results[1]?.detail).toBe('failing example "only-one" is not flagged as it must be: "one-toast-per-page" passed it');
+    expect(tried.results[2]?.detail).toBe('flagged by "one-toast-per-page" and no other rule');
+    // adopt's refusal is the first example that does not behave, word for word.
+    expect(refusal(adopt(ok(approve(config, "toast", { at: "t1" })), "toast", { at: "t2" }))).toEqual(tried.results[0]?.refusal);
+  });
+
+  it("refuses a proposal that is adopted or declined, or cannot apply", () => {
+    const adopted = ok(adopt(approved(nook, draft("toast")), "toast", { at: "t" })).config;
+    expect(refusal(tryExamples(adopted, "toast")).code).toBe("wrong-status");
+    const again = ok(propose(nook, { ...draft("again"), inventory: [{ op: "add-component", name: "Button" }] }, { at: "t" }));
+    expect(refusal(tryExamples(again, "again")).code).toBe("cannot-apply");
+  });
+});
+
+describe("a proposal that adds a rendered rule", () => {
+  it("cannot be adopted on unmeasured examples, and is adopted on measured ones", () => {
+    const config = approved(nook, harborDraft());
+    expect(refusal(adopt(config, "harbor", { at: "t" }))).toMatchObject({ code: "unproven-rule", message: 'passing example "as-is" does not run the new rule "harbor-in-first-view": no rendered snapshots were given' });
+    const measured = ok(withExampleSnapshots(config, "harbor", { "as-is": legalSnapshots(), "long-intro": harborBelowFold() }));
+    const adoption = ok(adopt(measured, "harbor", { at: "t1", by: "you" }));
+    const proposal = adoption.config.proposals.find((item) => item.id === "harbor");
+    expect(proposal?.classification).toEqual(adoption.classification);
+    expect(proposal?.examples.fail[0]?.snapshots).toEqual(harborBelowFold());
+    expect(rerunExamples(adoption.config)).toEqual([
+      { proposal: "harbor", example: "as-is", expect: "pass", ok: true, detail: "passes every rule" },
+      { proposal: "harbor", example: "long-intro", expect: "fail", ok: true, detail: 'flagged by "harbor-in-first-view"' },
+    ]);
+  });
+
+  it("gives the same results from its stored snapshots after a round trip through JSON, as a reload does", () => {
+    const measured = ok(withExampleSnapshots(approved(nook, harborDraft()), "harbor", { "as-is": legalSnapshots(), "long-intro": harborBelowFold() }));
+    const adoption = ok(adopt(measured, "harbor", { at: "t1", by: "you" }, [{ name: "booking", prototype: legal, snapshots: harborBelowFold() }]));
+    const reloaded = JSON.parse(JSON.stringify(adoption.config)) as ProjectConfig;
+    expect(rerunExamples(reloaded)).toEqual(rerunExamples(adoption.config));
+    const stored = JSON.parse(JSON.stringify(measured)) as ProjectConfig;
+    expect(adopt(stored, "harbor", { at: "t1", by: "you" }, [{ name: "booking", prototype: legal, snapshots: harborBelowFold() }])).toEqual({ ok: true, value: adoption });
+    expect(adoption.newlyFailing.map((item) => [item.name, item.rules])).toEqual([["booking", ["harbor-in-first-view"]]]);
+  });
+
+  it("stores only a complete measurement: every example, every scenario at every view, once", () => {
+    const config = approved(nook, harborDraft());
+    expect(refusal(withExampleSnapshots(config, "harbor", { "as-is": legalSnapshots() }))).toMatchObject({ code: "incomplete-measurement", example: "long-intro", message: 'example "long-intro" is not measured' });
+    expect(refusal(withExampleSnapshots(config, "harbor", { "as-is": legalSnapshots().slice(1), "long-intro": harborBelowFold() })).message).toBe('example "as-is" has no snapshot of scenario "rooms-list" at view "desktop"; it needs exactly one');
+    expect(refusal(withExampleSnapshots(config, "harbor", { "as-is": [...legalSnapshots(), ...legalSnapshots().slice(0, 1)], "long-intro": harborBelowFold() })).message).toContain("has 2 snapshots of scenario \"rooms-list\"");
+    expect(refusal(withExampleSnapshots(config, "harbor", { "as-is": legalSnapshots(), "long-intro": harborBelowFold(), other: [] })).message).toBe('snapshots are given for "other", which is not an example of "harbor"');
+    const malformed = legalSnapshots().map((snapshot, index) => (index === 0 ? { ...snapshot, scrollWidth: "wide" } : snapshot)) as unknown as ReturnType<typeof legalSnapshots>;
+    expect(refusal(withExampleSnapshots(config, "harbor", { "as-is": malformed, "long-intro": harborBelowFold() })).message).toContain("scrollWidth");
+    const adopted = ok(adopt(ok(withExampleSnapshots(config, "harbor", { "as-is": legalSnapshots(), "long-intro": harborBelowFold() })), "harbor", { at: "t" })).config;
+    expect(refusal(withExampleSnapshots(adopted, "harbor", { "as-is": legalSnapshots(), "long-intro": legalSnapshots() })).code).toBe("wrong-status");
+  });
+
+  it("is refused when its failing example's measurement does not fail it", () => {
+    const measured = ok(withExampleSnapshots(approved(nook, harborDraft()), "harbor", { "as-is": legalSnapshots(), "long-intro": legalSnapshots() }));
+    expect(refusal(adopt(measured, "harbor", { at: "t" }))).toMatchObject({ code: "failing-example-passes", example: "long-intro", message: 'failing example "long-intro" is not flagged as it must be: "harbor-in-first-view" passed it' });
+  });
+});
+
+describe("a stored proposal", () => {
+  it("parses back with its events and classification, and refuses a malformed event", () => {
+    const opened = ok(propose(nook, draft("toast"), { at: "t0", by: "agent" }));
+    const sent = ok(sendBack(opened, "toast", { at: "t1", by: "you", note: "Tighter." }));
+    const revised = ok(revise(sent, "toast", { ...draft("toast"), title: "Tighter" }, { at: "t2", by: "agent" }));
+    const adopted = ok(adopt(ok(approve(revised, "toast", { at: "t3", by: "you" })), "toast", { at: "t4", by: "you" })).config;
+    const parsed = parseProjectConfig(JSON.parse(JSON.stringify(adopted)));
+    expect(parsed.ok && parsed.value).toEqual(adopted);
+    const broken = { ...adopted, proposals: adopted.proposals.map((proposal) => ({ ...proposal, events: [{ kind: "sent-back", at: "t" }] })) };
+    const refused = parseProjectConfig(JSON.parse(JSON.stringify(broken)));
+    expect(refused.ok).toBe(false);
   });
 });
