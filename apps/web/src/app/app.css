@@ -103,3 +103,51 @@ body, .app-theme { background: var(--todae-color-bg-canvas); color: var(--todae-
 .project-json { font-family: var(--todae-font-family-mono); font-size: 0.75rem; background: var(--todae-color-bg-subtle); padding: var(--todae-space-2); border-radius: var(--todae-radius-sm); overflow: auto; }
 .project-rules { display: grid; gap: var(--todae-space-1); }
 .checks-failing { margin: 0; font-size: 0.8125rem; font-family: var(--todae-font-family-mono); overflow-wrap: anywhere; }
+
+/*
+ * Proposals and a proposal's review page: Todae's Card, Table, Badge, Steps,
+ * Disclosure, Alert, Field and ToggleGroup parts. This sheet places them,
+ * and adds what Todae has no part for: two columns of example cards that
+ * hold scaled frames, a before-and-after list of badges, a sticky action
+ * bar, and a read-only code excerpt sized to its lines.
+ */
+.app-tab-count { margin-inline-start: var(--todae-space-1); }
+.proposals, .review { max-width: 96rem; }
+.proposals-title { padding-inline: 0; text-align: start; font-weight: 600; }
+.proposals-table td { vertical-align: top; }
+.review-title { margin: 0; }
+.review-back { padding-inline: 0; }
+.review-small { font-size: 0.8125rem; margin: 0; }
+.review-section { display: grid; gap: var(--todae-space-3); scroll-margin-top: 10rem; }
+.example, .review-refusal { scroll-margin-top: 10rem; }
+.review-section h2, .review-section h3 { margin: 0; }
+.review-actions { position: sticky; top: calc(-1 * var(--todae-space-6)); z-index: 2; box-shadow: 0 1px 0 var(--todae-color-border-subtle); }
+.review-verdict[data-tone="success"] { color: var(--todae-color-status-success-fg); }
+.review-verdict[data-tone="warning"] { color: var(--todae-color-status-warning-fg); }
+.review-verdict[data-tone="critical"] { color: var(--todae-color-status-critical-fg); }
+.review-note { max-width: 40rem; }
+.review-rules, .review-impact, .diff-list { list-style: none; margin: 0; padding: 0; }
+.review-rules, .review-impact { display: grid; gap: var(--todae-space-3); }
+.rule-words { display: grid; gap: var(--todae-space-1); margin-block-start: var(--todae-space-1); }
+.rule-words-text, .rule-words-note { margin: 0; }
+.diff { display: grid; gap: var(--todae-space-4); }
+.diff-section { display: grid; gap: var(--todae-space-2); }
+.diff-sides { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--todae-space-4); }
+.diff-list { display: flex; flex-wrap: wrap; gap: var(--todae-space-1); margin-block-start: var(--todae-space-1); }
+.review-pickers { row-gap: var(--todae-space-2); }
+.review-picker { min-inline-size: 12rem; }
+.review-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--todae-space-4); align-items: start; }
+@media (max-width: 1100px) { .review-columns, .diff-sides { grid-template-columns: minmax(0, 1fr); } }
+.review-column { display: grid; gap: var(--todae-space-3); min-width: 0; }
+.example { position: relative; min-width: 0; }
+.example[data-verdict="bad"] { box-shadow: 0 0 0 2px var(--todae-color-status-critical-border); }
+.example-head { display: grid; gap: var(--todae-space-1); }
+.example-name { margin: 0; font-size: var(--todae-text-h5-font-size, 1rem); font-family: var(--todae-font-family-mono); }
+.example-frames { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--todae-space-4); min-width: 0; overflow: hidden; }
+.example-frames .frame-card { min-width: 0; }
+.example-detail { overflow-wrap: anywhere; }
+.example-code textarea, .example-code .code-text { min-height: 0; }
+.history-entry { gap: 2px; }
+.history-note { margin: 0; }
+.history-previous { margin-block-start: var(--todae-space-1); }
+.finding-ask { margin-block-start: 2px; font-size: 0.8125rem; }

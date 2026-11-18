@@ -1,5 +1,5 @@
-import { Badge, Disclosure, Stack, Text } from "@tounsoo/todae";
-import type { Finding, RuleReport } from "@design-harness/core";
+import { Badge, Button, Disclosure, Stack, Text } from "@tounsoo/todae";
+import { describeRule, type Finding, type ProjectConfig, type RuleReport } from "@design-harness/core";
 import type { SessionState } from "../runtime/session";
 
 /**
@@ -13,11 +13,20 @@ export function ChecksPanel({
   measuredCount,
   selected,
   onSelect,
+  onAsk,
+  proposable,
+  config,
 }: {
   readonly state: SessionState;
+  /** The project's config, to say a rule without a description in words generated from its data. */
+  readonly config?: ProjectConfig;
   readonly measuredCount: number;
   readonly selected: Finding | null;
   readonly onSelect: (finding: Finding | null) => void;
+  /** Puts a message about the finding into the chat, for the person to edit and send; absent when there is no key. */
+  readonly onAsk?: (finding: Finding) => void;
+  /** Whether a finding is about something outside the inventories, which a proposal could add. */
+  readonly proposable?: (finding: Finding) => boolean;
 }) {
   const report = state.report;
   if (!report) return <Text.Root as="p">Nothing checked yet.</Text.Root>;
@@ -52,7 +61,7 @@ export function ChecksPanel({
       </div>
       <ol className="checks-rules" aria-label="Rules in force">
         {report.rules.map((rule) => (
-          <RuleItem key={rule.rule} rule={rule} selected={selected} onSelect={onSelect} />
+          <RuleItem key={rule.rule} rule={rule} selected={selected} onSelect={onSelect} {...(onAsk && proposable ? { onAsk, proposable } : {})} words={wordsFor(rule, config)} />
         ))}
       </ol>
       <Disclosure.Root className="checks-json">
@@ -76,7 +85,28 @@ function statusTone(status: RuleReport["status"]): "success" | "critical" | "neu
   return status === "pass" ? "success" : status === "fail" ? "critical" : "neutral";
 }
 
-function RuleItem({ rule, selected, onSelect }: { readonly rule: RuleReport; readonly selected: Finding | null; readonly onSelect: (finding: Finding | null) => void }) {
+/** Core's words for a rule that came without a description, such as one an adopted proposal added. */
+function wordsFor(rule: RuleReport, config: ProjectConfig | undefined): string | undefined {
+  if (rule.description || !config) return undefined;
+  const spec = config.rules.find((item) => item.id === rule.rule);
+  return spec ? describeRule(spec, config) : undefined;
+}
+
+function RuleItem({
+  rule,
+  selected,
+  onSelect,
+  onAsk,
+  proposable,
+  words,
+}: {
+  readonly rule: RuleReport;
+  readonly words?: string | undefined;
+  readonly selected: Finding | null;
+  readonly onSelect: (finding: Finding | null) => void;
+  readonly onAsk?: (finding: Finding) => void;
+  readonly proposable?: (finding: Finding) => boolean;
+}) {
   // Every finding of a failing rule says the rule cannot tell: the prototype is not shown to break it, but it cannot pass.
   const cannotTell = rule.status === "fail" && rule.findings.length > 0 && rule.findings.every((finding) => finding.kind === "unverifiable");
   const head = (
@@ -100,16 +130,21 @@ function RuleItem({ rule, selected, onSelect }: { readonly rule: RuleReport; rea
       {rule.findings.length === 0 ? (
         <div className="rule-plain">
           {head}
-          <RuleText rule={rule} />
+          <RuleText rule={rule} words={words} />
         </div>
       ) : (
         <Disclosure.Root open={rule.status === "fail" ? true : undefined} className="rule-disclosure">
           <Disclosure.Summary>{head}</Disclosure.Summary>
-          <RuleText rule={rule} />
+          <RuleText rule={rule} words={words} />
           <ul className="findings" aria-label={`Findings of ${rule.rule}`}>
             {rule.findings.map((finding, index) => (
               <li key={index}>
                 <FindingButton finding={finding} selected={same(finding, selected)} onSelect={onSelect} />
+                {onAsk && proposable?.(finding) && (
+                  <Button.Root type="button" variant="ghost" className="finding-ask" onClick={() => onAsk(finding)}>
+                    Ask the agent to propose this
+                  </Button.Root>
+                )}
               </li>
             ))}
           </ul>
@@ -119,12 +154,13 @@ function RuleItem({ rule, selected, onSelect }: { readonly rule: RuleReport; rea
   );
 }
 
-function RuleText({ rule }: { readonly rule: RuleReport }) {
+function RuleText({ rule, words }: { readonly rule: RuleReport; readonly words?: string | undefined }) {
+  const said = rule.description ?? words;
   return (
     <>
       <Text.Root as="p" tone="muted" className="rule-description">
         {rule.type}
-        {rule.description ? ` · ${rule.description}` : ""}
+        {said ? ` · ${said}` : ""}
       </Text.Root>
       {rule.note && (
         <Text.Root as="p" tone="muted" className="rule-note">
@@ -150,7 +186,8 @@ export function placeOf(finding: Finding): string {
   return parts.join(" · ");
 }
 
-function FindingButton({ finding, selected, onSelect }: { readonly finding: Finding; readonly selected: boolean; readonly onSelect: (finding: Finding | null) => void }) {
+/** A finding as a row that points at it: its message word for word, and where it is. */
+export function FindingButton({ finding, selected, onSelect }: { readonly finding: Finding; readonly selected: boolean; readonly onSelect: (finding: Finding | null) => void }) {
   const locatable = finding.file !== undefined || (finding.scenario !== undefined && finding.view !== undefined);
   return (
     <button

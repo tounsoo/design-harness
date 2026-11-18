@@ -25,7 +25,7 @@ export type TurnItem =
   | { readonly kind: "tool"; readonly id: string; readonly name: string; readonly status: "streaming" | "running" | "done" | "error"; readonly title: string; readonly input: string; readonly result?: string }
   | { readonly kind: "checks"; readonly revision: number; readonly status: CheckStatus; readonly title: string; readonly text: string }
   /** A proposal the agent drafted or revised; `action` is absent on chats saved before revisions existed, which only drafted. */
-  | { readonly kind: "proposal"; readonly id: string; readonly title: string; readonly adoptable: boolean; readonly verdict: string; readonly action?: "drafted" | "revised" }
+  | { readonly kind: "proposal"; readonly id: string; readonly title: string; readonly adoptable: boolean; readonly verdict: string; readonly action?: "drafted" | "revised"; readonly needsMeasurement?: true }
   | { readonly kind: "notice"; readonly text: string };
 
 export type TurnEnd =

@@ -186,3 +186,18 @@ describe("no tool changes a proposal's status", () => {
     expect(TOOL_DEFINITIONS.every((tool) => !JSON.stringify(tool.input_schema).includes('"status"'))).toBe(true);
   });
 });
+
+describe("a drafted proposal with a rendered rule", () => {
+  it("is not judged a fault for want of snapshots: the dry run says the review page measures its examples", async () => {
+    const { host } = fakeHost();
+    const outcome = await runTool(
+      { id: "toolu_harbor", name: "draft_proposal", input: { id: "harbor", title: "Harbor in the first view", reason: "It is the big room.", rules: { add: [{ type: "rendered", id: "harbor-in-first-view", check: "first-view", action: "Open Harbor" }] }, examples: { pass: [{ name: "as-is" }], fail: [{ name: "same", flagged_by: { rule: "harbor-in-first-view" } }] } } },
+      host,
+      new AbortController().signal,
+    );
+    expect(outcome.proposal).toMatchObject({ id: "harbor", adoptable: false, needsMeasurement: true, action: "drafted" });
+    expect(outcome.content).toContain('[unproven-rule] passing example "as-is" does not run the new rule "harbor-in-first-view": no rendered snapshots were given');
+    expect(outcome.content).toContain("The review page measures every example in frames before the user can adopt it.");
+    expect(outcome.content).not.toContain("Fix it with revise_proposal");
+  });
+});

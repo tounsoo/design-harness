@@ -172,7 +172,15 @@ export type ToolOutcome = {
 };
 
 /** What the chat shows for a drafted or revised proposal: a card that links to its review page. */
-export type ProposalCard = { readonly id: string; readonly title: string; readonly adoptable: boolean; readonly verdict: string; readonly action: "drafted" | "revised" };
+export type ProposalCard = {
+  readonly id: string;
+  readonly title: string;
+  readonly adoptable: boolean;
+  readonly verdict: string;
+  readonly action: "drafted" | "revised";
+  /** The dry run could not judge a rendered rule without snapshots; the review page measures the examples. */
+  readonly needsMeasurement?: true;
+};
 
 const refused = (title: string, content: string): ToolOutcome => ({ content, isError: true, changed: false, title });
 
@@ -376,13 +384,17 @@ function draftFrom(input: Record<string, unknown>, current: Prototype, base?: Pr
 }
 
 /** Core's adoption dry run on a saved proposal, as the agent reads it and as the chat's card shows it. */
-function dryRun(host: AgentHost, config: ProjectConfig, id: string, at: string): { adoptable: boolean; verdict: string } {
+function dryRun(host: AgentHost, config: ProjectConfig, id: string, at: string): { adoptable: boolean; needsMeasurement?: true; verdict: string } {
   const proposal = config.proposals.find((item) => item.id === id);
   const rendered = (proposal?.rules.add ?? []).filter((rule) => rule.type === "rendered").map((rule) => `"${rule.id}"`);
   // The dry run here reads source only: frames measure the examples on the proposal's review page, before the user can adopt it.
   const measuring = rendered.length > 0 ? ` It adds rendered ${rendered.length === 1 ? "rule" : "rules"} ${rendered.join(", ")}, which need measured snapshots: this dry run has none, so a rendered rule that did not run is expected here. The review page measures every example in frames before the user can adopt it.` : "";
   const tried = dryRunAdoption(config, id, { at, by: "agent (dry run)" }, [{ name: "the current prototype", prototype: host.prototype() }]);
-  if (!tried.ok) return { adoptable: false, verdict: `Core's adoption dry run refuses it: [${tried.error.code}] ${tried.error.message}.${measuring}` };
+  if (!tried.ok) {
+    // A rendered rule that did not run for want of snapshots is a measurement still to come, not a fault in the draft.
+    const unmeasured = rendered.length > 0 && /no rendered snapshots were given/.test(tried.error.message);
+    return { adoptable: false, ...(unmeasured ? { needsMeasurement: true } : {}), verdict: `Core's adoption dry run refuses it: [${tried.error.code}] ${tried.error.message}.${measuring}` };
+  }
   const { classification, newlyFailing } = tried.value;
   const changes = classification.changes.map((item) => `${item.change}: ${item.class} (${item.reason})`).join("; ");
   const failing = newlyFailing.length === 0 ? "No prototype would newly fail." : `Would newly fail: ${newlyFailing.map((item) => `${item.name} (${item.rules.join(", ") || "new findings"})`).join("; ")}.`;
@@ -406,14 +418,14 @@ async function draftProposal(host: AgentHost, input: Record<string, unknown>): P
   const proposed = propose(config, draft, { at, by: "agent" });
   if (!proposed.ok) return refused(`Proposal ${id} not drafted`, `Core refused the draft, so it was not saved: [${proposed.error.code}] ${proposed.error.message}`);
   await host.saveConfig(proposed.value);
-  const { adoptable, verdict } = dryRun(host, proposed.value, id, at);
-  const next = adoptable ? "" : " Fix it with revise_proposal.";
+  const { adoptable, needsMeasurement, verdict } = dryRun(host, proposed.value, id, at);
+  const next = adoptable || needsMeasurement ? "" : " Fix it with revise_proposal.";
   return {
     content: `Saved proposal "${id}" as open. ${verdict}${next} Only the user can approve or adopt it; until then it stays open and the rules in force are unchanged.`,
     isError: false,
     changed: false,
     title: `Drafted proposal ${id}`,
-    proposal: { id, title: draft.title, adoptable, verdict, action: "drafted" },
+    proposal: { id, title: draft.title, adoptable, verdict, action: "drafted", ...(needsMeasurement ? { needsMeasurement } : {}) },
   };
 }
 
@@ -430,12 +442,12 @@ async function reviseProposal(host: AgentHost, input: Record<string, unknown>): 
     return refused(`Proposal ${id} not revised`, `Core refused the revision, so nothing changed: [${revised.error.code}] ${revised.error.message}.${why}`);
   }
   await host.saveConfig(revised.value);
-  const { adoptable, verdict } = dryRun(host, revised.value, id, at);
+  const { adoptable, needsMeasurement, verdict } = dryRun(host, revised.value, id, at);
   return {
     content: `Revised proposal "${id}"; it is still open, and its history keeps the version before this one. ${verdict} Only the user can approve or adopt it.`,
     isError: false,
     changed: false,
     title: `Revised proposal ${id}`,
-    proposal: { id, title: draft.title, adoptable, verdict, action: "revised" },
+    proposal: { id, title: draft.title, adoptable, verdict, action: "revised", ...(needsMeasurement ? { needsMeasurement } : {}) },
   };
 }
