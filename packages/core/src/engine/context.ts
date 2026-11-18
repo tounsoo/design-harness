@@ -46,12 +46,20 @@ export function pagesFor(filter: PageFilter | undefined, ctx: CheckContext): { p
   return out;
 }
 
+/** `file:line:column`, and for an element a spec layout draws, where the layout is used. */
 export function where(at: SourceLocation): string {
-  return `${at.file}:${at.line}:${at.column}`;
+  return `${at.file}:${at.line}:${at.column}${viaText(at.via)}`;
 }
 
-export function locate(at: SourceLocation): Pick<Finding, "file" | "line" | "column"> {
-  return { file: at.file, line: at.line, column: at.column };
+/** ` (in layout "x" used at pages/p.json:9:5)`, nearest use first; empty without one. */
+export function viaText(via: SourceLocation["via"]): string {
+  if (!via || via.length === 0) return "";
+  const steps = via.map((use) => (use.slot !== undefined ? `in slot "${use.slot}" of layout "${use.layout}" at ${use.file}:${use.line}:${use.column}` : `in layout "${use.layout}" used at ${use.file}:${use.line}:${use.column}`));
+  return ` (${steps.join(", ")})`;
+}
+
+export function locate(at: SourceLocation): Pick<Finding, "file" | "line" | "column" | "via"> {
+  return { file: at.file, line: at.line, column: at.column, ...(at.via && at.via.length > 0 ? { via: at.via } : {}) };
 }
 
 /** How a message names an element: `Button.Root "Book room"`, or `<button>`. */

@@ -5,7 +5,8 @@ import { ROLE_NAMES, type RoleName } from "../rules/types";
  * The catalog a spec prototype is written from, generated from the project
  * config: the parts of every inventoried component that a spec can render,
  * plus two of the harness's own, `Page` (a page spec's root, whose named
- * slots are the page type's) and `Layout` (a registered layout, by id).
+ * slots are the page type's) and `Layout` (an instance of a registered
+ * layout, by id, with that layout's parameters as its other props).
  *
  * It is data, like the config, and the one source for three things: core's
  * validation of a spec, the agent's instructions (the web app turns it into
@@ -53,10 +54,11 @@ function roleWords(part: string, config: ProjectConfig): { roles: RoleName[]; wo
     if (!mapping.components.includes(part)) continue;
     roles.push(role);
     const name = role.replace(/-/g, " ");
-    if (!mapping.prop) words.push(`It is a ${name}.`);
+    const article = /^[aeiou]/.test(name) ? "an" : "a";
+    if (!mapping.prop) words.push(`It is ${article} ${name}.`);
     else {
       const values = mapping.prop.values.map((value) => JSON.stringify(value)).join(" or ");
-      words.push(`With ${mapping.prop.name} ${values}${mapping.prop.whenMissing ? ` (or no ${mapping.prop.name})` : ""}, it is a ${name}.`);
+      words.push(`With ${mapping.prop.name} ${values}${mapping.prop.whenMissing ? ` (or no ${mapping.prop.name})` : ""}, it is ${article} ${name}.`);
     }
   }
   return { roles, words };
@@ -108,7 +110,8 @@ export function specCatalog(config: ProjectConfig): SpecCatalog | null {
   };
   components[LAYOUT_TYPE] = {
     kind: "layout",
-    description: `A registered layout, drawn in place: props.id names one of the prototype's layouts (inventoried: ${config.inventories.layouts.join(", ") || "none"}). It reads the page's state.`,
+    description: `An instance of a registered layout, drawn in place: props.id names one of the prototype's layouts (inventoried: ${config.inventories.layouts.join(", ") || "none"}), its other props are that layout's parameters, and its slots fill the layout's slot parameters.`,
+    // The parameters a Layout takes are its layout's, declared in the layout's file; reading checks them per instance.
     props: { id: { type: "string", required: true } },
     slots: [],
     content: "none",

@@ -303,8 +303,12 @@ describe("a page as the one spec a frame renders", () => {
     const scenario = { id: "lantern-held", state: "held", page: "booking" };
     const spec = resolvePageSpec(legal, nook, scenario);
     expect(spec?.root).toBe("page");
-    expect(spec?.elements.page?.slots?.body).toEqual(["question>question", "details>details"]);
-    expect(spec?.elements["details>items"]).toMatchObject({ type: "Stack.Root", repeat: { statePath: "/room/details" }, children: ["details>item"] });
+    expect(spec?.elements.page?.slots?.body).toEqual(["question/question", "details/details"]);
+    expect(spec?.elements["details/items"]).toMatchObject({ type: "Stack.Root", repeat: { statePath: "/room/details" }, children: ["details/item"] });
+    expect(spec?.elements["details/summary"]?.props).toEqual({ text: "Room details" });
+    expect(spec?.elements["question/field"]?.props).toEqual({ id: "question/field" });
+    expect(spec?.elements["question/label"]?.props).toEqual({ htmlFor: "question/field", text: "How long?" });
+    expect(spec?.elements["question/select"]?.props).toEqual({ options: { $state: "/durations" }, value: { $bindState: "/duration" } });
     expect(Object.values(spec?.elements ?? {}).some((element) => element.type === "Layout")).toBe(false);
     expect(spec?.state.scenario).toEqual({ id: "lantern-held", state: "held" });
     expect(spec?.state.room).toMatchObject({ name: "Lantern" });

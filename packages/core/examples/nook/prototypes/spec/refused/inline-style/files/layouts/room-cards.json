@@ -1,7 +1,10 @@
 {
+  "params": {
+    "rooms": {"type": "list", "of": {"record": {"id": "text", "name": "text", "seats": "number"}}}
+  },
   "root": "list",
   "elements": {
-    "list": {"type": "Stack.Root", "props": {"gap": "normal", "style": {"gap": "40px"}}, "repeat": {"statePath": "/rooms", "key": "id"}, "children": ["card"]},
+    "list": {"type": "Stack.Root", "props": {"gap": "normal", "style": {"gap": "40px"}}, "repeat": {"param": "rooms", "key": "id"}, "children": ["card"]},
     "card": {"type": "Card.Root", "props": {}, "children": ["name", "seats", "open"]},
     "name": {"type": "Text.Root", "props": {"as": "h2", "text": {"$item": "name"}}, "children": []},
     "seats": {"type": "Text.Root", "props": {"as": "p", "text": {"$template": "${seats} seats"}}, "children": []},

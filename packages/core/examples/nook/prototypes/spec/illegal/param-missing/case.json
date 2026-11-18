@@ -1,0 +1,9 @@
+{
+  "what": "The question layout drawn without its label, which it needs",
+  "expect": [
+    {
+      "rule": "extract",
+      "message": "pages/booking.json: element \"question\" has no \"label\", which layout \"select-question\" needs."
+    }
+  ]
+}

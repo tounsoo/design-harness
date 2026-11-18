@@ -1,4 +1,4 @@
-import { createElement, Fragment, type ComponentType, type ReactNode } from "react";
+import { createElement, Fragment, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
 import { JSONUIProvider, Renderer, useBoundProp, type ComponentRegistry, type ComponentRenderProps } from "@json-render/react";
 import type { SpecPart, SpecPayload } from "../runtime/protocol";
 
@@ -62,13 +62,19 @@ function partRenderer(Part: ComponentType<Record<string, unknown>>, part: SpecPa
   return SpecPart;
 }
 
+/** A page drawn from a spec, and how to draw another spec in its place. */
+export type SpecPage = ComponentType & { readonly redraw: (payload: SpecPayload) => void };
+
 /**
  * The page component a frame mounts in the default shell: the spec, drawn by
  * json-render with a registry built from the library. A Page puts its slots
  * in the DOM in the page type's order (`slotOrder`), as a TSX page writes
  * them, so headings and focus follow it; a slot the type lacks goes last.
+ * `redraw` draws another spec of the same catalog in place, as React
+ * updates: elements that stay keep their DOM. A change of the spec's
+ * starting state remounts the state provider, so the draft's state shows.
  */
-export function specPage(library: Readonly<Record<string, unknown>>, Slot: Slot, payload: SpecPayload, slotOrder: readonly string[]): ComponentType {
+export function specPage(library: Readonly<Record<string, unknown>>, Slot: Slot, payload: SpecPayload, slotOrder: readonly string[]): SpecPage {
   const rank = (name: string) => (slotOrder.includes(name) ? slotOrder.indexOf(name) : slotOrder.length);
   const registry: ComponentRegistry = {};
   for (const [type, part] of Object.entries(payload.parts)) {
@@ -82,8 +88,21 @@ export function specPage(library: Readonly<Record<string, unknown>>, Slot: Slot,
     const Part = partOf(library, type);
     if (Part) registry[type] = partRenderer(Part, part);
   }
-  const spec = payload.spec as unknown as Parameters<typeof Renderer>[0]["spec"];
-  return function SpecPage() {
-    return createElement(JSONUIProvider, { registry, initialState: payload.spec.state as Record<string, unknown>, children: createElement(Renderer, { spec, registry }) });
+  let current = payload;
+  const listeners = new Set<() => void>();
+  const subscribe = (listener: () => void) => {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
   };
+  function SpecPage() {
+    const shown = useSyncExternalStore(subscribe, () => current);
+    const spec = shown.spec as unknown as Parameters<typeof Renderer>[0]["spec"];
+    return createElement(JSONUIProvider, { key: JSON.stringify(shown.spec.state), registry, initialState: shown.spec.state as Record<string, unknown>, children: createElement(Renderer, { spec, registry }) });
+  }
+  return Object.assign(SpecPage, {
+    redraw(next: SpecPayload) {
+      current = next;
+      for (const listener of listeners) listener();
+    },
+  });
 }

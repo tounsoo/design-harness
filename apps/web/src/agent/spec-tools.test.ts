@@ -5,9 +5,9 @@ import { scriptedFetch, streamEvents } from "../../e2e/fake-anthropic.mjs";
 import { fakeHost } from "../../test/agent-host";
 import { seedSpec } from "../../test/nook";
 import { AgentController, type Turn } from "./controller";
-import { catalogPrompt, jsonRenderCatalog, SPEC_RULES } from "./json-render-catalog";
 import { DEFAULT_SETTINGS } from "./models";
 import { createClient, SPEC_SYSTEM_PROMPT } from "./request";
+import { catalogInstructions, specCatalogPrompt } from "./spec-prompt";
 import { formatSpec } from "./spec-tools";
 import { runTool, SPEC_TOOL_DEFINITIONS } from "./tools";
 
@@ -15,35 +15,38 @@ const KEY = "sk-ant-test-0123456789abcdefghij";
 const signal = new AbortController().signal;
 const call = (name: string, input: unknown) => ({ id: "toolu_1", name, input });
 
-describe("the catalog's prompt", () => {
+describe("the catalog's instructions", () => {
   const catalog = specCatalog(nook);
   if (!catalog) throw new Error("Nook has a catalog");
+  const prompt = specCatalogPrompt(nook);
 
-  it("is json-render's catalog.prompt() for core's catalog, listing exactly its components with their props", () => {
-    const prompt = catalogPrompt(catalog);
-    expect(prompt).toContain(`AVAILABLE COMPONENTS (${Object.keys(catalog.components).length}):`);
-    expect(prompt).toContain('- Button.Root: { aria-label?: string, defaultPressed?: boolean, id?: string, pressed?: boolean, text?: string, tooltip?: boolean, variant?: "ghost" | "primary" | "secondary" }');
-    expect(prompt).toContain("- Page: {  } - The root of a page spec, and only that.");
+  it("are written here from core's catalog: every part with its props, and only what core accepts", () => {
+    expect(prompt).toBe(catalogInstructions(catalog));
+    const parts = Object.entries(catalog.components).filter(([, component]) => component.kind === "part");
+    expect(prompt).toContain(`COMPONENTS (${parts.length})`);
+    for (const [name] of parts) expect(prompt).toContain(`\n- ${name} {`);
+    expect(prompt).toContain('- Button.Root { aria-label?: string, defaultPressed?: boolean, id?: string, pressed?: boolean (bindable), text?: string, tooltip?: boolean, variant?: "ghost" | "primary" | "secondary" } children; on: press. It is an action. With variant "primary" (or no variant), it is a primary action.');
+    expect(prompt).toContain('- Field.Select { aria-label?: string, options: [{ "value", "label" }], value: string (bindable) }');
     expect(prompt).not.toContain("Badge.Root");
-    for (const rule of SPEC_RULES) expect(prompt).toContain(rule);
-    // What json-render's default prompt also teaches, which core refuses here; the custom rules say so.
-    expect(prompt).toContain("STATE WATCHERS");
-    expect(prompt).toContain("validateForm");
-    expect(catalogPrompt(catalog)).toBe(prompt);
+    // Layouts with parameters, which json-render's prompt could not teach.
+    expect(prompt).toContain('"params": { "label": { "type": "text"');
+    expect(prompt).toContain('{ "$scopedId": "field" }');
+    expect(prompt).toContain('{ "op": "add-layout", "id": "<id>" }');
+    // What json-render's prompt taught that core refuses is named only as refused.
+    expect(prompt).toContain("Never write $computed, $bindItem, watch, validateForm, another action, style or className");
+    expect(prompt).not.toMatch(/STATE WATCHERS|JSONL|realistic sample data/);
   });
 
-  it("makes a json-render catalog whose own validate checks the type but not the props", () => {
-    const made = jsonRenderCatalog(catalog);
-    expect(made.componentNames).toEqual(Object.keys(catalog.components));
-    expect(made.validate({ root: "a", elements: { a: { type: "Badge.Root", props: {}, children: [] } } }).success).toBe(false);
-    // With more than one component json-render validates props as a record of unknowns: core is the judge.
-    expect(made.validate({ root: "a", elements: { a: { type: "Button.Root", props: { variant: "danger", style: { color: "red" } }, children: [] } } }).success).toBe(true);
+  it("are shorter than json-render's 25,576 characters for Nook, and the same bytes every time", () => {
+    expect(prompt.length).toBeLessThan(10_000);
+    expect(SPEC_SYSTEM_PROMPT.length + prompt.length).toBeLessThan(13_000);
+    expect(specCatalogPrompt(nook)).toBe(prompt);
   });
 });
 
 describe("the spec tools", () => {
   it("are the spec mode's tools, with write_spec and patch_spec in place of the file tools", () => {
-    expect(SPEC_TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual(["read_project", "list_files", "read_file", "write_spec", "patch_spec", "delete_file", "set_manifest", "run_checks", "draft_proposal", "revise_proposal"]);
+    expect(SPEC_TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual(["read_project", "list_files", "read_file", "list_layouts", "write_spec", "patch_spec", "insert_layout", "set_layout_params", "delete_file", "set_manifest", "run_checks", "draft_proposal", "revise_proposal"]);
   });
 
   it("patch_spec applies JSON Patch lines through json-render, checks the result against the catalog, and makes a revision", async () => {
@@ -96,6 +99,79 @@ describe("the spec tools", () => {
   });
 });
 
+describe("the layout tools", () => {
+  it("list_layouts lists each layout with its parameters and where it is drawn", async () => {
+    const parts = fakeHost(seedSpec());
+    const outcome = await runTool(call("list_layouts", {}), parts.host, signal);
+    expect(outcome.title).toBe("Listed 3 layouts");
+    const listed = JSON.parse(outcome.content) as { id: string; params: Record<string, { type: string; is: string; required: boolean }>; drawnAt: string[] }[];
+    expect(listed.map((layout) => layout.id)).toEqual(["room-cards", "room-details", "select-question"]);
+    const question = listed.find((layout) => layout.id === "select-question");
+    expect(question?.params.label).toMatchObject({ type: "text", is: "text", required: true, example: "How long?" });
+    expect(question?.params.hint).toMatchObject({ type: "slot", required: false });
+    expect(question?.drawnAt).toEqual(['pages/booking.json:20 (element "question")']);
+  });
+
+  it("insert_layout draws a second instance with its own parameters, which core checks first", async () => {
+    const parts = fakeHost(seedSpec());
+    const outcome = await runTool(call("insert_layout", { path: "pages/booking.json", into: { element: "page", slot: "body", index: 1 }, key: "start", layout: "select-question", params: { label: "Starting when?", choices: [{ value: "now", label: "Now" }], answer: { $bindState: "/start" } } }), parts.host, signal);
+    expect(outcome).toMatchObject({ isError: false, changed: true, title: "Drew select-question in pages/booking.json" });
+    const spec = JSON.parse(parts.prototype().files["pages/booking.json"] ?? "") as { elements: Record<string, { slots?: Record<string, string[]>; props?: unknown }> };
+    expect(spec.elements.page?.slots?.body).toEqual(["question", "start", "details"]);
+    // Two questions now: the checks say so, and nothing collides.
+    const report = checkPrototype({ config: nook, prototype: parts.prototype() });
+    expect(report.rules.filter((rule) => rule.status === "fail").map((rule) => rule.rule)).toEqual(["visible-questions"]);
+    const wrong = await runTool(call("insert_layout", { path: "pages/booking.json", into: { element: "page", slot: "body" }, key: "bad", layout: "select-question", params: { label: 30 } }), parts.host, signal);
+    expect(wrong.isError).toBe(true);
+    expect(wrong.content).toContain('element "bad" gives "label" 30; "label" is text.');
+    expect(wrong.content).toContain('element "bad" has no "answer", which layout "select-question" needs.');
+    expect(parts.applied).toHaveLength(1);
+  });
+
+  it("set_layout_params changes an instance's parameters and slots, and refuses what the layout does not take", async () => {
+    const parts = fakeHost(seedSpec());
+    const outcome = await runTool(call("set_layout_params", { path: "pages/booking.json", key: "question", set: { label: "For how long?" } }), parts.host, signal);
+    expect(outcome).toMatchObject({ isError: false, changed: true, content: expect.stringContaining('Instance "question" in pages/booking.json: set label.') });
+    expect(parts.prototype().files["pages/booking.json"]).toContain('"label":"For how long?"');
+    const refusedValue = await runTool(call("set_layout_params", { path: "pages/booking.json", key: "question", set: { colour: "red" } }), parts.host, signal);
+    expect(refusedValue.content).toContain('element "question" sets "colour", which layout "select-question" does not take. It takes "answer", "choices", "label".');
+    const notInstance = await runTool(call("set_layout_params", { path: "pages/booking.json", key: "book", set: { label: "x" } }), parts.host, signal);
+    expect(notInstance.content).toBe('pages/booking.json has no Layout element "book"; it is a Button.Root.');
+    const required = await runTool(call("set_layout_params", { path: "pages/booking.json", key: "question", remove: ["label"] }), parts.host, signal);
+    expect(required.content).toContain('has no "label", which layout "select-question" needs.');
+    expect(parts.applied).toHaveLength(1);
+  });
+
+  it("a new layout is drafted as a proposal with its spec and examples, and core's dry run judges it", async () => {
+    const parts = fakeHost(seedSpec());
+    const note = { params: { text: { type: "text", example: "Quiet room" } }, root: "note", elements: { note: { type: "Text.Root", props: { as: "p", text: { $param: "text" } }, children: [] } } };
+    const base = seedSpec();
+    const booking = base.files["pages/booking.json"] ?? "";
+    const withNotes = (count: number) =>
+      booking
+        .replace('"body": ["question", "details"]', `"body": ["question", "details"${Array.from({ length: count }, (_, index) => `, "note-${index}"`).join("")}]`)
+        .replace('    "hold":', `${Array.from({ length: count }, (_, index) => `    "note-${index}": { "type": "Layout", "props": { "id": "room-note", "text": "Note ${index}" }, "children": [] },\n`).join("")}    "hold":`);
+    const manifest = { pages: base.pages, layouts: [...base.layouts, { id: "room-note", component: { file: "layouts/room-note.json", export: "default" } }], scenarios: base.scenarios, flow: base.flow };
+    const outcome = await runTool(
+      call("draft_proposal", {
+        id: "room-note",
+        title: "A note about a room",
+        reason: "The booking page needs one line about the room that is not a detail.",
+        inventory: [{ op: "add-layout", id: "room-note" }],
+        rules: { add: [{ type: "count", id: "one-room-note-per-page", scope: "page", select: { layout: "room-note" }, max: 1 }] },
+        examples: {
+          pass: [{ name: "one-note", files: { "layouts/room-note.json": formatSpec(note), "pages/booking.json": withNotes(1) }, manifest }],
+          fail: [{ name: "two-notes", files: { "layouts/room-note.json": formatSpec(note), "pages/booking.json": withNotes(2) }, manifest, flagged_by: { rule: "one-room-note-per-page" } }],
+        },
+      }),
+      parts.host,
+      signal,
+    );
+    expect(outcome.proposal).toMatchObject({ id: "room-note", adoptable: true, action: "drafted" });
+    expect(outcome.content).toContain("Core's adoption dry run passes");
+  });
+});
+
 describe("a spec prototype's agent turn, against the fake API", () => {
   it("asks with the spec prompt, the catalog's prompt and the spec tools, and its patch reaches the checks", async () => {
     const parts = fakeHost(seedSpec());
@@ -115,7 +191,7 @@ describe("a spec prototype's agent turn, against the fake API", () => {
     expect(turn.end).toEqual({ status: "done" });
     const [first] = fake.requests;
     const system = first?.body.system as { text: string; cache_control?: unknown }[];
-    expect(system.map((block) => block.text.slice(0, 40))).toEqual([SPEC_SYSTEM_PROMPT.slice(0, 40), catalogPrompt(specCatalog(nook) as NonNullable<ReturnType<typeof specCatalog>>).slice(0, 40)]);
+    expect(system.map((block) => block.text.slice(0, 40))).toEqual([SPEC_SYSTEM_PROMPT.slice(0, 40), specCatalogPrompt(nook).slice(0, 40)]);
     expect(system.every((block) => block.cache_control !== undefined)).toBe(true);
     expect((first?.body.tools as { name: string }[]).map((tool) => tool.name)).toContain("patch_spec");
     expect((first?.body.tools as { name: string }[]).map((tool) => tool.name)).not.toContain("write_file");

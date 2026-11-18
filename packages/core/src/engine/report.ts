@@ -1,3 +1,4 @@
+import type { LayoutUse } from "../extract/model";
 import type { RuleType } from "../rules/types";
 
 /**
@@ -21,6 +22,13 @@ export type Finding = {
   readonly view?: string;
   /** On a rendered finding about one element: its index in the snapshot's `elements`, so the element can be pointed at on the page. */
   readonly element?: number;
+  /**
+   * On a finding about an element a spec layout draws: where the layout is
+   * used, nearest first (`LayoutUse`). `file`, `line` and `column` are the
+   * layout's own element; `via` is the page's use of it, or, for an element
+   * a page passed into a layout's slot, where the layout places it.
+   */
+  readonly via?: readonly LayoutUse[];
 };
 
 /** `not-run`: the rule needs input the check was not given, such as rendered snapshots. */
@@ -65,6 +73,7 @@ function compareFindings(a: Finding, b: Finding): number {
     compareStrings(a.scenario ?? "", b.scenario ?? "") ||
     compareStrings(a.view ?? "", b.view ?? "") ||
     (a.element ?? -1) - (b.element ?? -1) ||
+    compareStrings(JSON.stringify(a.via ?? []), JSON.stringify(b.via ?? [])) ||
     compareStrings(a.kind, b.kind) ||
     compareStrings(a.message, b.message)
   );
@@ -75,7 +84,7 @@ export function sortFindings(findings: readonly Finding[]): Finding[] {
   const seen = new Set<string>();
   const out: Finding[] = [];
   for (const finding of [...findings].sort(compareFindings)) {
-    const key = JSON.stringify([finding.rule, finding.kind, finding.message, finding.file, finding.line, finding.column, finding.page, finding.scenario, finding.view, finding.element]);
+    const key = JSON.stringify([finding.rule, finding.kind, finding.message, finding.file, finding.line, finding.column, finding.page, finding.scenario, finding.view, finding.element, finding.via ?? []]);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(finding);

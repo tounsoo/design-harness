@@ -4,11 +4,12 @@ import type { ProjectConfig } from "@design-harness/core";
 import { SEED_PROTOTYPE_ID, SEED_SPEC_PROTOTYPE_ID, seedProject } from "../seed/nook";
 import { KeyVault } from "../agent/key-vault";
 import { Store } from "../store/db";
+import { withLibraryParts, type LoadNote } from "../store/migrate";
 import type { Imported, PrototypeRecord } from "../store/project-file";
 import { Workspace } from "./Workspace";
 
 /** `opened` counts imports, so an imported project opens in a fresh workspace even when its id is the same. */
-type Loaded = { readonly store: Store; readonly vault: KeyVault; readonly config: ProjectConfig; readonly prototypes: readonly PrototypeRecord[]; readonly problems: readonly string[]; readonly opened: number };
+type Loaded = { readonly store: Store; readonly vault: KeyVault; readonly config: ProjectConfig; readonly prototypes: readonly PrototypeRecord[]; readonly problems: readonly string[]; readonly notes: readonly LoadNote[]; readonly opened: number };
 
 /** Opens the browser's store, seeding it with the Nook example on first run, and shows the first project. */
 async function load(): Promise<Loaded> {
@@ -22,10 +23,18 @@ async function load(): Promise<Loaded> {
     ]);
     projects = await store.projects();
   }
-  const config = projects.items[0];
-  if (!config) throw new Error(`No stored project validates.\n${projects.problems.join("\n")}`);
+  const stored = projects.items[0];
+  if (!stored) throw new Error(`No stored project validates.\n${projects.problems.join("\n")}`);
+  // A project stored before spec prototypes gets its library's part description, when the app ships one.
+  const migration = withLibraryParts(stored);
+  const notes: LoadNote[] = [];
+  if (migration.kind === "added-parts") {
+    await store.putProject(migration.config);
+    notes.push({ tone: "info", title: "The project was brought up to date", text: migration.note });
+  } else if (migration.kind === "no-parts") notes.push({ tone: "warning", title: "Spec prototypes cannot be checked in this project", text: migration.note });
+  const config = migration.config;
   const prototypes = await store.prototypes(config.id);
-  return { store, vault, config, prototypes: prototypes.items, problems: [...projects.problems, ...prototypes.problems], opened: 0 };
+  return { store, vault, config, prototypes: prototypes.items, problems: [...projects.problems, ...prototypes.problems], notes, opened: 0 };
 }
 
 export function App() {
@@ -62,7 +71,7 @@ export function App() {
   const onImported = async (imported: Imported) => {
     await loaded.store.replaceProject(imported.config, imported.prototypes);
     const prototypes = await loaded.store.prototypes(imported.config.id);
-    setState({ loaded: { ...loaded, config: imported.config, prototypes: prototypes.items, problems: prototypes.problems, opened: loaded.opened + 1 } });
+    setState({ loaded: { ...loaded, config: imported.config, prototypes: prototypes.items, problems: prototypes.problems, notes: [], opened: loaded.opened + 1 } });
   };
-  return <Workspace key={loaded.opened} store={loaded.store} vault={loaded.vault} config={loaded.config} prototypes={loaded.prototypes} problems={loaded.problems} onImported={onImported} />;
+  return <Workspace key={loaded.opened} store={loaded.store} vault={loaded.vault} config={loaded.config} prototypes={loaded.prototypes} problems={loaded.problems} notes={loaded.notes} onImported={onImported} />;
 }

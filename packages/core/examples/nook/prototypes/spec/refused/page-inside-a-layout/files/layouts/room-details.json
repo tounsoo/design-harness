@@ -1,9 +1,13 @@
 {
+  "params": {
+    "items": {"type": "list", "of": "text", "example": ["Screen", "Whiteboard"]},
+    "summary": {"type": "text", "default": "Room details"}
+  },
   "root": "details",
   "elements": {
     "details": {"type": "Disclosure.Root", "props": {}, "children": ["summary", "items", "rooms-page"]},
-    "summary": {"type": "Disclosure.Summary", "props": {"text": "Room details"}, "children": []},
-    "items": {"type": "Stack.Root", "props": {"gap": "condensed"}, "repeat": {"statePath": "/room/details"}, "children": ["item"]},
+    "summary": {"type": "Disclosure.Summary", "props": {"text": {"$param": "summary"}}, "children": []},
+    "items": {"type": "Stack.Root", "props": {"gap": "condensed"}, "repeat": {"param": "items"}, "children": ["item"]},
     "item": {"type": "Text.Root", "props": {"as": "p", "text": {"$item": ""}}, "children": []},
     "rooms-page": {"type": "Page", "props": {}, "children": []}
   }

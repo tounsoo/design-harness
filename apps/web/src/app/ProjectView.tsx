@@ -2,9 +2,11 @@ import { Badge, Button, Code, DataList, Disclosure, Stack, Table, Text } from "@
 import { useState } from "react";
 import { ROLE_NAMES, rerunExamples, type ExampleRun, type ProjectConfig, type Proposal, type RoleMapping } from "@design-harness/core";
 import { formatTime } from "../review/timeline";
+import type { PrototypeRecord } from "../store/project-file";
+import { LayoutsView } from "./LayoutsView";
 
-/** The project, read-only: library and roles, inventories, rule inputs, views, rules, proposals, and their examples re-run on demand. */
-export function ProjectView({ config, onOpenProposal }: { readonly config: ProjectConfig; readonly onOpenProposal: (id: string) => void }) {
+/** The project, read-only: library and roles, inventories, the open spec prototype's layouts, rule inputs, views, rules, proposals, and their examples re-run on demand. */
+export function ProjectView({ config, onOpenProposal, prototype }: { readonly config: ProjectConfig; readonly onOpenProposal: (id: string) => void; readonly prototype?: PrototypeRecord | undefined }) {
   const { library, inventories, inputs } = config;
   return (
     <Stack.Root gap="spacious" className="project">
@@ -81,6 +83,8 @@ export function ProjectView({ config, onOpenProposal }: { readonly config: Proje
           </Table.Body>
         </Table.Root>
       </section>
+
+      {prototype?.prototype.format === "spec" && <LayoutsView config={config} record={prototype} />}
 
       <section aria-labelledby="project-inputs">
         <Text.Root as="h2" id="project-inputs">

@@ -1,6 +1,6 @@
 import { Alert, Badge, Button, Field, Stack, Tabs, Text } from "@tounsoo/todae";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { Finding, ProjectConfig, Prototype } from "@design-harness/core";
+import type { Finding, LayoutUse, ProjectConfig, Prototype } from "@design-harness/core";
 import { AgentController, type ChatRecord, type ChatStore } from "../agent/controller";
 import { SpecStreamPreview } from "../agent/spec-stream";
 import type { KeyVault } from "../agent/key-vault";
@@ -10,11 +10,14 @@ import { loadSettings, saveSettings } from "../agent/settings";
 import type { AgentHost } from "../agent/tools";
 import { frameKey } from "../runtime/session";
 import type { Store } from "../store/db";
+import type { LoadNote } from "../store/migrate";
 import { exportFileName, exportProject, importProject, type Imported, type PrototypeRecord } from "../store/project-file";
 import { Board } from "./Board";
 import { ChatPanel } from "./ChatPanel";
 import { ChecksPanel } from "./ChecksPanel";
 import { CodePanel, MANIFEST_FILE } from "./CodePanel";
+import { NewPrototype } from "./NewPrototype";
+import { blankPrototype, prototypeId, type PrototypeFormat } from "./new-prototype";
 import { ProjectView } from "./ProjectView";
 import { ProposalPage } from "./ProposalPage";
 import { ProposalsView } from "./ProposalsView";
@@ -29,11 +32,18 @@ type Props = {
   readonly config: ProjectConfig;
   readonly prototypes: readonly PrototypeRecord[];
   readonly problems: readonly string[];
+  /** What the app changed or found about stored data on load. */
+  readonly notes?: readonly LoadNote[];
   readonly onImported: (imported: Imported) => Promise<void>;
 };
 
-/** Where the code view points: a file, and a line in it when a finding named one. */
-export type CodeTarget = { readonly file: string; readonly line?: number; readonly column?: number };
+/**
+ * Where the code view points: a file, and a line in it when a finding named
+ * one. `instance` is set for a finding inside a spec layout instance: where
+ * the finding is and the layout uses that draw it, so the code view can show
+ * the layout's element and the page's use of it, one after the other.
+ */
+export type CodeTarget = { readonly file: string; readonly line?: number; readonly column?: number; readonly instance?: { readonly at: { readonly file: string; readonly line: number; readonly column: number }; readonly via: readonly LayoutUse[] } };
 
 /** A prototype's chat, kept in the project store beside it. */
 function chatStore(store: Store, projectId: string, prototypeId: string): ChatStore {
@@ -44,7 +54,7 @@ function chatStore(store: Store, projectId: string, prototypeId: string): ChatSt
   };
 }
 
-export function Workspace({ store, vault, config: initialConfig, prototypes: initial, problems, onImported }: Props) {
+export function Workspace({ store, vault, config: initialConfig, prototypes: initial, problems, notes: loadNotes = [], onImported }: Props) {
   const session = useMemo(() => createSession(), []);
   useEffect(() => () => session.dispose(), [session]);
   const state = useSyncExternalStore(session.subscribe, session.getState);
@@ -82,7 +92,10 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   const [side, setSide] = useState<"checks" | "code">("checks");
   const [selected, setSelected] = useState<Finding | null>(null);
   const [code, setCode] = useState<CodeTarget>({ file: firstFile(current?.prototype) });
-  const [notice, setNotice] = useState<{ tone: "success" | "critical"; title: string; lines: readonly string[] } | null>(null);
+  const [notice, setNotice] = useState<{ tone: "success" | "critical" | "info" | "warning"; title: string; lines: readonly string[] } | null>(() => {
+    const [first] = loadNotes;
+    return first ? { tone: first.tone, title: first.title, lines: [first.text] } : null;
+  });
 
   // A new revision for each settled edit; the first one at once. The agent's changes start theirs at once, so they are skipped here.
   const prototype = current?.prototype;
@@ -158,7 +171,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     };
   }, [currentId, session, setRecords, saveConfig, checked]);
 
-  // A spec prototype's patch_spec draws its draft on the canvas while it streams; the board then returns to the prototype as it is.
+  // A spec prototype's patch_spec draws its draft on the canvas while it streams, in place; the board then returns to the prototype as it is.
   const [previewing, setPreviewing] = useState(false);
   const preview = useMemo(
     () =>
@@ -166,8 +179,11 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
         (draft) => {
           const real = host.prototype();
           setPreviewing(draft !== null);
-          if (draft) session.update(checked(configRef.current), draft);
-          else if (session.current()?.prototype !== real) session.update(checked(configRef.current), real);
+          // A draft is drawn in place in frames that have rendered; only before they have does it take a revision of its own.
+          if (draft) {
+            if (!session.redraw(checked(configRef.current), draft)) session.update(checked(configRef.current), draft);
+          } else if (session.current()?.prototype !== real) session.update(checked(configRef.current), real);
+          else session.restore();
         },
         () => host.prototype(),
       ),
@@ -212,7 +228,8 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
         document.querySelector(`[data-frame-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
       }
       if (finding.file !== undefined) {
-        setCode({ file: finding.file, ...(finding.line !== undefined ? { line: finding.line } : {}), ...(finding.column !== undefined ? { column: finding.column } : {}) });
+        const instance = finding.via && finding.via.length > 0 && finding.line !== undefined ? { instance: { at: { file: finding.file, line: finding.line, column: finding.column ?? 1 }, via: finding.via } } : {};
+        setCode({ file: finding.file, ...(finding.line !== undefined ? { line: finding.line } : {}), ...(finding.column !== undefined ? { column: finding.column } : {}), ...instance });
         if (finding.scenario === undefined) setSide("code");
       }
     },
@@ -248,6 +265,20 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
       return rule?.type === "membership" && rule.of !== "imports";
     },
     [],
+  );
+
+  /** A new, empty prototype in the format the person chose (spec by default), saved and opened on the board. */
+  const createPrototype = useCallback(
+    (name: string, format: PrototypeFormat) => {
+      const record: PrototypeRecord = { projectId: initialConfig.id, id: prototypeId(name, recordsRef.current.map((item) => item.id)), name, prototype: blankPrototype(format) };
+      setRecords((items) => [...items, record]);
+      void store.putPrototype(record);
+      setSelected(null);
+      setCurrentId(record.id);
+      setCode({ file: MANIFEST_FILE });
+      setCenter("canvas");
+    },
+    [initialConfig.id, setRecords, store],
   );
 
   const openCount = config.proposals.filter((proposal) => proposal.status === "open").length;
@@ -310,9 +341,9 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
           <Badge.Root tone="neutral">
             {config.library.package} {config.library.version}
           </Badge.Root>
-          {current?.prototype.format === "spec" && (
-            <Badge.Root tone="info" data-testid="prototype-format">
-              json-render spec
+          {current && (
+            <Badge.Root tone={current.prototype.format === "spec" ? "info" : "neutral"} data-testid="prototype-format">
+              {current.prototype.format === "spec" ? "json-render spec" : "TSX"}
             </Badge.Root>
           )}
         </Stack.Root>
@@ -338,6 +369,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
           </Tabs.List>
         </Tabs.Root>
         <Stack.Root direction="row" align="center" gap="condensed" className="app-header-end">
+          <NewPrototype config={config} onCreate={createPrototype} />
           <Button.Root variant="ghost" onClick={download}>
             Export
           </Button.Root>
@@ -372,7 +404,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
             </Alert.Root>
           )}
           {notice && (
-            <Alert.Root tone={notice.tone}>
+            <Alert.Root tone={notice.tone} data-testid="notice">
               <Alert.Title>{notice.title}</Alert.Title>
               <Alert.Description>
                 <Text.Root as="p" className="pre">
@@ -400,7 +432,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
           </div>
           {center === "project" && (
             <div className="app-main-pane app-main-scroll">
-              <ProjectView config={config} onOpenProposal={openProposal} />
+              <ProjectView config={config} onOpenProposal={openProposal} prototype={current} />
             </div>
           )}
           {center === "proposals" && (

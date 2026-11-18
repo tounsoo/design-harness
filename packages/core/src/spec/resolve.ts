@@ -1,8 +1,9 @@
 import type { ProjectConfig } from "../config/types";
 import type { Prototype, Scenario } from "../prototype/types";
-import { LAYOUT_TYPE, SCENARIO_STATE } from "./catalog";
+import { SCENARIO_STATE } from "./catalog";
+import { expandPage, type ExpandedPage } from "./expand";
 import type { JsonValue } from "./json";
-import { readSpecs, type SpecDoc } from "./read";
+import { readSpecs } from "./read";
 
 /** A json-render spec as a renderer draws it: flat elements by key, from `root`, with the state it starts in. */
 export type FlatSpec = {
@@ -12,41 +13,25 @@ export type FlatSpec = {
 };
 
 /**
- * One page of a spec prototype as one json-render spec, for one scenario:
- * each Layout drawn in place (its elements copied in under keys of their
- * own, so a layout drawn twice is two copies), only the elements that passed
- * validation, and the page's state with `scenario` set to `{ id, state }`.
- * This is exactly what core checked, and all a frame needs: data, no code.
- * Null when the page's spec could not be read.
+ * An expanded page as one json-render spec: each layout instance replaced by
+ * the layout's root, expanded with its parameters (an instance's `visible`
+ * joins its root's), and only the elements that passed validation. Null when
+ * nothing renders.
  */
-export function resolvePageSpec(prototype: Prototype, config: ProjectConfig, scenario: Scenario): FlatSpec | null {
-  const page = prototype.pages.find((item) => item.id === scenario.page);
-  if (!page) return null;
-  const { docs } = readSpecs(prototype, config);
-  const doc = docs.get(page.component.file);
-  if (!doc || !doc.elements.has(doc.root)) return null;
+export function flatSpecOf(page: ExpandedPage, state: { readonly [key: string]: JsonValue }): FlatSpec | null {
   const elements: Record<string, FlatSpec["elements"][string]> = {};
-  const layoutDoc = (id: string): SpecDoc | undefined => {
-    const entry = prototype.layouts.find((layout) => layout.id === id);
-    return entry ? docs.get(entry.component.file) : undefined;
-  };
-
-  /** Copies `key` of `from` in under `prefix`, and returns the key it now has, or null when it renders nothing. */
-  const copy = (from: SpecDoc, key: string, prefix: string, drawing: readonly string[], visible: JsonValue | undefined): string | null => {
-    const element = from.elements.get(key);
+  const draw = (key: string, visible: JsonValue | undefined): string | null => {
+    const element = page.elements.get(key);
     if (!element) return null;
     const both = (own: JsonValue | undefined): JsonValue | undefined => (visible === undefined ? own : own === undefined ? visible : [visible, own]);
-    if (element.type === LAYOUT_TYPE) {
-      const id = typeof element.props.id === "string" ? element.props.id : "";
-      const layout = layoutDoc(id);
-      if (!layout || drawing.includes(id)) return null;
-      return copy(layout, layout.root, `${prefix}${key}>`, [...drawing, id], both(element.visible));
+    if (element.layout !== undefined) {
+      const [root] = element.children;
+      return root === undefined ? null : draw(root, both(element.visible));
     }
-    const list = (keys: readonly string[]) => keys.map((child) => copy(from, child, prefix, drawing, undefined)).filter((child): child is string => child !== null);
+    const list = (keys: readonly string[]) => keys.map((child) => draw(child, undefined)).filter((child): child is string => child !== null);
     const own = both(element.visible);
     const slots = element.slots ? Object.fromEntries(Object.entries(element.slots).map(([slot, keys]) => [slot, list(keys)])) : undefined;
-    const out = `${prefix}${key}`;
-    elements[out] = {
+    elements[key] = {
       type: element.type,
       props: element.props,
       children: list(element.children),
@@ -55,9 +40,25 @@ export function resolvePageSpec(prototype: Prototype, config: ProjectConfig, sce
       ...(element.repeat ? { repeat: element.repeat as unknown as JsonValue } : {}),
       ...(element.on ? { on: element.on as unknown as JsonValue } : {}),
     };
-    return out;
+    return key;
   };
-  const root = copy(doc, doc.root, "", [], undefined);
-  if (root === null) return null;
-  return { root, elements, state: { ...(doc.state ?? {}), [SCENARIO_STATE]: { id: scenario.id, state: scenario.state } } };
+  const root = draw(page.root, undefined);
+  return root === null ? null : { root, elements, state };
+}
+
+/**
+ * One page of a spec prototype as one json-render spec, for one scenario:
+ * every layout instance expanded in place (each under keys of its own, so a
+ * layout drawn twice is two copies), only the elements that passed
+ * validation, and the page's state with `scenario` set to `{ id, state }`.
+ * This is exactly what core checked, and all a frame needs: data, no code,
+ * and no parameter left to resolve. Null when the page's spec could not be
+ * read.
+ */
+export function resolvePageSpec(prototype: Prototype, config: ProjectConfig, scenario: Scenario): FlatSpec | null {
+  const page = prototype.pages.find((item) => item.id === scenario.page);
+  if (!page) return null;
+  const { page: expanded } = expandPage(page, readSpecs(prototype, config), prototype);
+  if (!expanded) return null;
+  return flatSpecOf(expanded, { ...expanded.state, [SCENARIO_STATE]: { id: scenario.id, state: scenario.state } });
 }

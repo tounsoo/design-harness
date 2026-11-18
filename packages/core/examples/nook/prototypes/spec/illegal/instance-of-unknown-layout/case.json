@@ -1,0 +1,9 @@
+{
+  "what": "A third layout instance in the booking body, of a room-photos layout the manifest does not register",
+  "expect": [
+    {
+      "rule": "extract",
+      "message": "pages/booking.json: element \"photos\" draws layout \"room-photos\", which is not a layout of the manifest (\"room-cards\", \"room-details\", \"select-question\")."
+    }
+  ]
+}

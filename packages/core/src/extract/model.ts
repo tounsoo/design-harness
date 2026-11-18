@@ -1,7 +1,21 @@
 import type { Literal } from "../rules/types";
 
-/** Where something is in the prototype's source. Line and column count from 1. */
-export type SourceLocation = { readonly file: string; readonly line: number; readonly column: number };
+/**
+ * One step between an element of a spec layout and the page that draws it,
+ * nearest first. Without `slot`: the element is in layout `layout`, whose
+ * instance is at `file:line:column` (on a page, or in another layout). With
+ * `slot`: the element was passed into slot `slot` of layout `layout`, and the
+ * layout places it at `file:line:column`, the layout's own element.
+ */
+export type LayoutUse = { readonly layout: string; readonly file: string; readonly line: number; readonly column: number; readonly slot?: string };
+
+/**
+ * Where something is in the prototype's source. Line and column count from 1.
+ * `via` is set on what a spec layout instance draws: where the layout is
+ * used, so a finding points both at the layout's element and at the page's
+ * use of it.
+ */
+export type SourceLocation = { readonly file: string; readonly line: number; readonly column: number; readonly via?: readonly LayoutUse[] };
 
 /**
  * A prop as the extractor sees it.

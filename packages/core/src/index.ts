@@ -38,7 +38,7 @@ export { PROPOSAL_STATUSES } from "./proposals/types";
 export type { Issue, Result } from "./validate";
 export { formatIssues, parseProjectConfig, parsePrototype, parseSnapshots } from "./parse";
 
-export type { AmbientUse, ElementKind, ElementNode, ExtractionProblem, ModuleLoad, PageModel, PropValue, PrototypeModel, SourceLocation } from "./extract/model";
+export type { AmbientUse, ElementKind, ElementNode, ExtractionProblem, LayoutUse, ModuleLoad, PageModel, PropValue, PrototypeModel, SourceLocation } from "./extract/model";
 export { PAGE_KIT, extractPrototype } from "./extract";
 export { isScript, resolvePath } from "./extract/modules";
 
@@ -63,6 +63,12 @@ export { parseJson } from "./spec/json";
 export type { SpecIssue } from "./spec/read";
 export { readSpecs } from "./spec/read";
 export { specIssues, specModel } from "./spec/model";
+export type { ExpandedElement, ExpandedPage } from "./spec/expand";
+export { expandPage } from "./spec/expand";
 export type { FlatSpec } from "./spec/resolve";
 export { resolvePageSpec } from "./spec/resolve";
+export type { LayoutParam, LayoutParams, ListItem, ParamType, ScalarType } from "./spec/params";
+export { PARAM_STATE, PARAM_TYPES, describeParam } from "./spec/params";
+export type { LayoutSummary, ParamSummary } from "./spec/layouts";
+export { PREVIEW_FILE, PREVIEW_PAGE, layoutPreview, specLayouts } from "./spec/layouts";
 

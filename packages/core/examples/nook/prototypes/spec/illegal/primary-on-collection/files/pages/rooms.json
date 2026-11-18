@@ -4,7 +4,7 @@
     "page": {"type": "Page", "props": {}, "children": [], "slots": {"title": ["heading"], "intro": ["intro", "book"], "body": ["cards"]}},
     "heading": {"type": "Text.Root", "props": {"as": "h1", "text": "Rooms"}, "children": []},
     "intro": {"type": "Text.Root", "props": {"as": "p", "text": "Pick a free room to book or hold."}, "children": []},
-    "cards": {"type": "Layout", "props": {"id": "room-cards"}, "children": []},
+    "cards": {"type": "Layout", "props": {"id": "room-cards", "rooms": {"$state": "/rooms"}}, "children": []},
     "book": {"type": "Button.Root", "props": {"variant": "primary", "text": "Book room"}, "children": []}
   },
   "state": {

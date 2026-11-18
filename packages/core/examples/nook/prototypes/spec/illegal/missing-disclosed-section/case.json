@@ -1,5 +1,5 @@
 {
-  "what": "The room details disclosure is summarised as Room info, so no disclosure holds Room details",
+  "what": "The booking page gives the room details layout the summary Room info, so no disclosure holds Room details",
   "expect": [
     {
       "rule": "disclosed-sections",

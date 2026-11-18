@@ -1,8 +1,8 @@
 import { OVERLAY_ATTRIBUTE, collectSnapshot } from "./collect";
 import { installDeterminism } from "./determinism";
-import { PROTOCOL, clip, readParentMessage, type FrameMessage, type FrameStage, type RenderRequest } from "../runtime/protocol";
+import { PROTOCOL, clip, readParentMessage, type FrameMessage, type FrameStage, type RedrawRequest, type RenderRequest } from "../runtime/protocol";
 import type { PageProps } from "./kit";
-import type { specPage } from "./spec";
+import type { SpecPage, specPage } from "./spec";
 
 /**
  * The frame's boot script: a classic script inlined in every frame's
@@ -11,7 +11,9 @@ import type { specPage } from "./spec";
  * they are), imports the page kit and the page, renders the page in the
  * default shell, waits for the layout to settle, and sends back a snapshot of
  * what was painted. The frame renders once: a new prototype revision gets a
- * new document, so no state, module or import map carries over.
+ * new document, so no state, module or import map carries over. A spec page
+ * may be redrawn in place with a draft spec, which is shown and never
+ * measured.
  */
 
 type Kit = {
@@ -36,6 +38,8 @@ root.removeAttribute("data-parent-origin");
 
 let started = false;
 let generation = -1;
+/** A spec page's in-place redraw, once it has rendered; null for a TSX page. */
+let redraw: ((payload: RedrawRequest["spec"]) => void) | null = null;
 let nodes: readonly Element[] = [];
 let runtimeError: Error | null = null;
 
@@ -116,6 +120,7 @@ async function render(request: RenderRequest): Promise<void> {
   const view = request.view;
   let kit: Kit;
   let Page: unknown;
+  let pendingRedraw: typeof redraw = null;
   try {
     await addStyles(request);
     addImportMap(request);
@@ -124,7 +129,9 @@ async function render(request: RenderRequest): Promise<void> {
       // A spec page: the library and the spec renderer, and the spec as data. No prototype module exists to load.
       const payload = request.page.spec;
       const [renderer, library] = await Promise.all([import(/* @vite-ignore */ SPEC_RENDERER) as Promise<{ specPage: typeof specPage }>, import(/* @vite-ignore */ payload.library) as Promise<Record<string, unknown>>]);
-      Page = renderer.specPage(library, kit.Slot, payload, request.pageType.slots);
+      const page: SpecPage = renderer.specPage(library, kit.Slot, payload, request.pageType.slots);
+      Page = page;
+      pendingRedraw = page.redraw;
     } else {
       const module = (await import(/* @vite-ignore */ request.page.module)) as Record<string, unknown>;
       Page = module[request.page.export];
@@ -144,6 +151,7 @@ async function render(request: RenderRequest): Promise<void> {
     fail("render", error);
     return;
   }
+  redraw = pendingRedraw;
   const settled = await settle(request.settleMs);
   if (runtimeError) return fail("render", runtimeError);
   if (!settled) return fail("measure", new Error(`the page was still changing after ${request.settleMs} ms, so it cannot be measured the same way twice`));
@@ -198,7 +206,13 @@ window.addEventListener("message", (event) => {
     if (started) return;
     started = true;
     void render(message);
-  } else if (message.generation === generation) {
+  } else if (message.generation !== generation) {
+    return;
+  } else if (message.type === "redraw") {
+    // A draft drawn in place: the outline belongs to what was measured, so it goes.
+    highlight(null);
+    redraw?.(message.spec);
+  } else {
     highlight(message.element);
   }
 });

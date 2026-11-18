@@ -2,7 +2,7 @@ import type { BetaTool } from "@anthropic-ai/sdk/resources/beta/messages/message
 import { ROLE_NAMES, dryRunAdoption, formatIssues, parsePrototype, propose, revise, type CheckReport, type JsonValue, type FailingExample, type PassingExample, type ProjectConfig, type Proposal, type Prototype, type ProposalDraft } from "@design-harness/core";
 import type { CompileProblem } from "../runtime/transform";
 import { validateInput, type JsonSchema } from "./schema";
-import { SPEC_TOOL_DESCRIPTIONS, SPEC_TOOL_SCHEMAS, patchSpec, writeSpec } from "./spec-tools";
+import { SPEC_TOOL_DESCRIPTIONS, SPEC_TOOL_SCHEMAS, insertLayout, listLayouts, patchSpec, setLayoutParams, writeSpec } from "./spec-tools";
 
 /**
  * The agent's tools. They run in the app, against the app's state: the
@@ -163,14 +163,18 @@ const shared = (name: string): Tool => TOOLS.find((item) => item.definition.name
 /**
  * A spec prototype's tools: the same reading, manifest, checks and proposal
  * tools, and, in place of the file tools, write_spec and patch_spec, which
- * edit a spec as data and are checked against the catalog before they apply.
+ * edit a spec as data and are checked against the catalog before they apply,
+ * and the layout tools: list_layouts, insert_layout and set_layout_params.
  */
 const SPEC_TOOLS: readonly Tool[] = [
   shared("read_project"),
   shared("list_files"),
   shared("read_file"),
+  tool("list_layouts", SPEC_TOOL_DESCRIPTIONS.list_layouts, SPEC_TOOL_SCHEMAS.list_layouts),
   tool("write_spec", SPEC_TOOL_DESCRIPTIONS.write_spec, SPEC_TOOL_SCHEMAS.write_spec),
   tool("patch_spec", SPEC_TOOL_DESCRIPTIONS.patch_spec, SPEC_TOOL_SCHEMAS.patch_spec),
+  tool("insert_layout", SPEC_TOOL_DESCRIPTIONS.insert_layout, SPEC_TOOL_SCHEMAS.insert_layout),
+  tool("set_layout_params", SPEC_TOOL_DESCRIPTIONS.set_layout_params, SPEC_TOOL_SCHEMAS.set_layout_params),
   tool("delete_file", "Delete a spec file from the prototype. The change is a new revision at once.", { type: "object", properties: { path: SPEC_TOOL_SCHEMAS.patch_spec.properties.path }, required: ["path"], additionalProperties: false }),
   shared("set_manifest"),
   shared("run_checks"),
@@ -235,6 +239,12 @@ export async function runTool(call: ToolCall, host: AgentHost, signal: AbortSign
       return writeSpec(host, String(input.path), input.spec as JsonValue);
     case "patch_spec":
       return patchSpec(host, String(input.path), String(input.patches));
+    case "list_layouts":
+      return listLayouts(host);
+    case "insert_layout":
+      return insertLayout(host, input as Parameters<typeof insertLayout>[1]);
+    case "set_layout_params":
+      return setLayoutParams(host, input as Parameters<typeof setLayoutParams>[1]);
     case "set_manifest":
       return setManifest(host, input);
     case "run_checks": {
@@ -361,7 +371,13 @@ export function describeMeasured({ revision, report, frames }: Measured): string
     for (const finding of rule.findings.slice(0, 6)) {
       if (shown >= 40) break;
       shown += 1;
-      const place = [finding.file !== undefined ? `${finding.file}${finding.line !== undefined ? `:${finding.line}:${finding.column ?? 1}` : ""}` : null, finding.scenario !== undefined ? `scenario ${finding.scenario}` : null, finding.view !== undefined ? `view ${finding.view}` : null]
+      const place = [
+        finding.file !== undefined ? `${finding.file}${finding.line !== undefined ? `:${finding.line}:${finding.column ?? 1}` : ""}` : null,
+        // Inside a spec layout instance: the layout's use, so the agent knows which instance to change.
+        ...(finding.via ?? []).map((use) => (use.slot !== undefined ? `in slot "${use.slot}" of layout ${use.layout} at ${use.file}:${use.line}:${use.column}` : `in layout ${use.layout} used at ${use.file}:${use.line}:${use.column}`)),
+        finding.scenario !== undefined ? `scenario ${finding.scenario}` : null,
+        finding.view !== undefined ? `view ${finding.view}` : null,
+      ]
         .filter(Boolean)
         .join(", ");
       lines.push(`  ${finding.kind}: ${finding.message}${place ? ` [${place}]` : ""}`);

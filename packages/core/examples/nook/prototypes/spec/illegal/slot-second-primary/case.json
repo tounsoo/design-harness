@@ -1,0 +1,9 @@
+{
+  "what": "A primary Book room passed into the question layout's hint slot: the expanded page has two primary actions, flagged where the page writes it and where the layout places it",
+  "expect": [
+    {
+      "rule": "one-primary-per-page",
+      "message": "Page \"booking\" has 2 primary actions, more than 1: Button.Root \"Book room\" at pages/booking.json:21:5 (in slot \"hint\" of layout \"select-question\" at layouts/select-question.json:10:5), Button.Root \"Book room\" at pages/booking.json:24:5."
+    }
+  ]
+}
