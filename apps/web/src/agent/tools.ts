@@ -1,8 +1,9 @@
 import type { BetaTool } from "@anthropic-ai/sdk/resources/beta/messages/messages";
-import { ROLE_NAMES, dryRunAdoption, formatIssues, parsePrototype, propose, revise, type CheckReport, type JsonValue, type FailingExample, type PassingExample, type ProjectConfig, type Proposal, type Prototype, type ProposalDraft } from "@design-harness/core";
+import { ROLE_NAMES, dryRunAdoption, formatIssues, parsePrototype, propose, revise, type CheckReport, type JsonValue, type Variant, type VariantState, type FailingExample, type PassingExample, type ProjectConfig, type Proposal, type Prototype, type ProposalDraft } from "@design-harness/core";
 import type { CompileProblem } from "../runtime/transform";
 import { validateInput, type JsonSchema } from "./schema";
 import { SPEC_TOOL_DESCRIPTIONS, SPEC_TOOL_SCHEMAS, insertLayout, listLayouts, patchSpec, setLayoutParams, writeSpec } from "./spec-tools";
+import { VARIANT_TOOL_DESCRIPTIONS, VARIANT_TOOL_SCHEMAS, listVariants, proposeVariants, reviseVariant } from "./variant-tools";
 
 /**
  * The agent's tools. They run in the app, against the app's state: the
@@ -34,6 +35,10 @@ export interface AgentHost {
   measured(signal: AbortSignal): Promise<Measured>;
   /** The time, as ISO 8601, for a proposal's history. */
   now(): string;
+  /** The open prototype's variants and the picks the person applied. */
+  variants(): VariantState;
+  /** Keeps a new list of variants. It takes only variants: a pick is the person's, and nothing here applies one or changes the prototype. */
+  saveVariants(variants: readonly Variant[]): void;
 }
 
 type Tool = { readonly definition: BetaTool; readonly schema: JsonSchema };
@@ -180,6 +185,9 @@ const SPEC_TOOLS: readonly Tool[] = [
   shared("run_checks"),
   shared("draft_proposal"),
   shared("revise_proposal"),
+  tool("propose_variants", VARIANT_TOOL_DESCRIPTIONS.propose_variants, VARIANT_TOOL_SCHEMAS.propose_variants),
+  tool("revise_variant", VARIANT_TOOL_DESCRIPTIONS.revise_variant, VARIANT_TOOL_SCHEMAS.revise_variant),
+  tool("list_variants", VARIANT_TOOL_DESCRIPTIONS.list_variants, VARIANT_TOOL_SCHEMAS.list_variants),
 ];
 
 /** The spec mode's tool definitions, in a fixed order. */
@@ -197,6 +205,8 @@ export type ToolOutcome = {
   readonly measured?: Measured;
   readonly title: string;
   readonly proposal?: ProposalCard;
+  /** Variants the call kept or revised, for the chat's card that opens the comparison. */
+  readonly variants?: { readonly page: string; readonly ids: readonly string[] };
 };
 
 /** What the chat shows for a drafted or revised proposal: a card that links to its review page. */
@@ -255,6 +265,12 @@ export async function runTool(call: ToolCall, host: AgentHost, signal: AbortSign
       return draftProposal(host, input);
     case "revise_proposal":
       return reviseProposal(host, input);
+    case "propose_variants":
+      return proposeVariants(host, input as Parameters<typeof proposeVariants>[1]);
+    case "revise_variant":
+      return reviseVariant(host, input as Parameters<typeof reviseVariant>[1]);
+    case "list_variants":
+      return listVariants(host);
     default:
       return refused(`Unknown tool ${call.name}`, `There is no tool "${call.name}".`);
   }

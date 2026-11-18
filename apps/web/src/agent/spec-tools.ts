@@ -1,5 +1,5 @@
 import type { JsonPatch } from "@json-render/core";
-import { LAYOUT_TYPE, PAGE_TYPE, formatIssues, parseJson, parsePrototype, specIssues, specLayouts, type JsonValue, type ProjectConfig, type Prototype } from "@design-harness/core";
+import { LAYOUT_TYPE, PAGE_TYPE, formatIssues, formatSpec, parseJson, parsePrototype, specIssues, specLayouts, type JsonValue, type ProjectConfig, type Prototype } from "@design-harness/core";
 import type { JsonSchema } from "./schema";
 import type { AgentHost, ToolOutcome } from "./tools";
 
@@ -109,30 +109,8 @@ export const SPEC_TOOL_DESCRIPTIONS: Readonly<Record<keyof typeof SPEC_TOOL_SCHE
 
 const refused = (title: string, content: string): ToolOutcome => ({ content, isError: true, changed: false, title });
 
-/** One element per line, as the fixtures are written, so a finding's line is an element's line. */
-export function formatSpec(value: JsonValue): string {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return `${JSON.stringify(value, null, 2)}\n`;
-  const record = value as Record<string, JsonValue>;
-  const elements = record.elements;
-  if (typeof elements !== "object" || elements === null || Array.isArray(elements)) return `${JSON.stringify(value, null, 2)}\n`;
-  const lines = ["{"];
-  const keys = Object.keys(record);
-  keys.forEach((key, index) => {
-    const comma = index < keys.length - 1 ? "," : "";
-    if (key === "elements") {
-      const entries = Object.entries(elements as Record<string, JsonValue>);
-      lines.push('  "elements": {');
-      entries.forEach(([name, element], at) => lines.push(`    ${JSON.stringify(name)}: ${JSON.stringify(element)}${at < entries.length - 1 ? "," : ""}`));
-      lines.push(`  }${comma}`);
-    } else {
-      const text = JSON.stringify(record[key], null, 2).split("\n");
-      lines.push(`  ${JSON.stringify(key)}: ${text[0]}`, ...text.slice(1).map((line) => `  ${line}`));
-      lines[lines.length - 1] += comma;
-    }
-  });
-  lines.push("}");
-  return `${lines.join("\n")}\n`;
-}
+/** Spec files are written as core formats them, one element per line. */
+export { formatSpec };
 
 function pointerParts(path: string): string[] | null {
   if (path === "") return [];
