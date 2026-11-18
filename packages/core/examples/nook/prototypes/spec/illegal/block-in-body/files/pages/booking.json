@@ -6,8 +6,8 @@
     "seats": {"type": "Text.Root", "props": {"as": "p", "text": {"$template": "${/room/seats} seats, ${/room/floor}"}}, "children": []},
     "booked-note": {"type": "Text.Root", "props": {"as": "p", "text": "Booked until 3 pm"}, "visible": {"$state": "/scenario/state", "eq": "booked"}, "children": []},
     "held-note": {"type": "Text.Root", "props": {"as": "p", "text": "Held for 10 minutes"}, "visible": {"$state": "/scenario/state", "eq": "held"}, "children": []},
-    "question": {"type": "Layout", "props": {"id": "select-question"}, "children": []},
-    "details": {"type": "Layout", "props": {"id": "room-details"}, "children": []},
+    "question": {"type": "Layout", "props": {"id": "select-question", "label": "How long?", "choices": {"$state": "/durations"}, "answer": {"$bindState": "/duration"}}, "children": []},
+    "details": {"type": "Layout", "props": {"id": "room-details", "items": {"$state": "/room/details"}}, "children": []},
     "hold": {"type": "Button.Root", "props": {"variant": "secondary", "text": "Hold room"}, "children": []},
     "book": {"type": "Button.Root", "props": {"variant": "primary", "text": "Book room"}, "children": []},
     "free": {"type": "Text.Root", "props": {"as": "p", "text": "Free until 3 pm"}, "children": []}

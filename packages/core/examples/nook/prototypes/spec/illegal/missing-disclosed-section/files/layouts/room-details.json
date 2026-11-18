@@ -1,9 +1,0 @@
-{
-  "root": "details",
-  "elements": {
-    "details": {"type": "Disclosure.Root", "props": {}, "children": ["summary", "items"]},
-    "summary": {"type": "Disclosure.Summary", "props": {"text": "Room info"}, "children": []},
-    "items": {"type": "Stack.Root", "props": {"gap": "condensed"}, "repeat": {"statePath": "/room/details"}, "children": ["item"]},
-    "item": {"type": "Text.Root", "props": {"as": "p", "text": {"$item": ""}}, "children": []}
-  }
-}

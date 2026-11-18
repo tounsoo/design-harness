@@ -5,7 +5,7 @@ import type { Prototype } from "../prototype/types";
 import type { RenderedSnapshot } from "../rendered/types";
 import type { RuleSpec, RuleType } from "../rules/types";
 import { specModel } from "../spec/model";
-import type { CheckContext } from "./context";
+import { locate, type CheckContext } from "./context";
 import { EXTRACT_RULE, buildReport, sortFindings, type CheckReport, type Finding, type RuleReport } from "./report";
 import { evaluateContainment, evaluatePropValues, evaluateRequires } from "./rules/containment";
 import { evaluateCount } from "./rules/count";
@@ -67,7 +67,7 @@ export function checkPrototype(input: CheckInput): CheckReport {
     rule: EXTRACT_RULE,
     kind: "unverifiable",
     message: problem.message,
-    ...(problem.at ? { file: problem.at.file, line: problem.at.line, column: problem.at.column } : {}),
+    ...(problem.at ? locate(problem.at) : {}),
   }));
   const reports: RuleReport[] = [{ rule: EXTRACT_RULE, type: EXTRACT_RULE, status: extract.length > 0 ? "fail" : "pass", findings: sortFindings(extract) }];
   for (const rule of config.rules) {

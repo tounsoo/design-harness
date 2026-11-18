@@ -1,16 +1,18 @@
 import type { ProjectConfig } from "../config/types";
 import type { ElementNode, ExtractionProblem, PageModel, PropValue, PrototypeModel, SourceLocation } from "../extract/model";
-import type { Prototype } from "../prototype/types";
+import type { Prototype, Scenario } from "../prototype/types";
 import type { Literal } from "../rules/types";
 import { LAYOUT_TYPE, PAGE_TYPE, SCENARIO_STATE, TEXT_PROP } from "./catalog";
+import { expandPage, type ExpandedElement, type ExpandedPage } from "./expand";
 import { isRecord, type JsonValue } from "./json";
-import { isExpression, locateIn, readSpecs, type SpecDoc, type SpecElement, type SpecIssue } from "./read";
+import { isExpression, keysOf, locateIn, readSpecs, type SpecDoc, type SpecIssue } from "./read";
 
 /**
  * A spec prototype's page model: the same `PrototypeModel` the TSX extractor
  * builds, so every rule runs on it unchanged. There is no code to evaluate:
- * each element is data, a Layout is drawn in place, and a value an element
- * reads is resolved from the spec where the spec says it:
+ * each page is expanded first (every layout instance drawn in place with its
+ * parameters, expand.ts), each element is data, and a value an element reads
+ * is resolved from the spec where the spec says it:
  *
  * - from the page's `state`, when nothing in the page writes that path (a
  *   bound prop or a setState, pushState or removeState action);
@@ -20,18 +22,25 @@ import { isExpression, locateIn, readSpecs, type SpecDoc, type SpecElement, type
  *   expanded exactly, as the extractor does for a list written in the source.
  *
  * Anything else (a bound value, a path the page writes) is dynamic, and a
- * rule that depends on it reports that it cannot tell, as for TSX. An element
- * with a `visible` condition still counts: rules read every state at once.
- * Validation issues become extraction problems, which the always-on
- * `extract` rule reports.
+ * rule that depends on it reports that it cannot tell, as for TSX; so is a
+ * parameter given such a value. An element with a `visible` condition still
+ * counts: rules read every state at once. An element a layout draws is where
+ * the layout writes it, with `via` naming the page's use, so a finding about
+ * it points at both. Validation and expansion issues become extraction
+ * problems, which the always-on `extract` rule reports.
  */
 
 type Scope = {
-  readonly doc: SpecDoc;
-  readonly page: { readonly id: string; readonly state: { readonly [key: string]: JsonValue }; readonly scenarioStates: readonly string[]; readonly scenarioIds: readonly string[]; readonly writes: readonly string[] };
+  readonly page: {
+    readonly id: string;
+    readonly expanded: ExpandedPage;
+    readonly state: { readonly [key: string]: JsonValue };
+    readonly scenarioStates: readonly string[];
+    readonly scenarioIds: readonly string[];
+    readonly writes: readonly string[];
+  };
   /** The current repeat item, when it is known; `unknown` inside a repeat over a list that can change. */
   readonly item: { readonly known: true; readonly value: JsonValue; readonly index: number } | { readonly known: false } | null;
-  readonly layouts: readonly string[];
   readonly repeated: boolean;
   readonly conditional: boolean;
 };
@@ -65,17 +74,37 @@ function isLiteral(value: JsonValue): value is Literal {
   return value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
 }
 
+/** Where an expanded element is written, with the layout uses that draw it. */
+export function elementAt(element: ExpandedElement, ...path: (string | number)[]): SourceLocation {
+  const at = locateIn(element.doc.file, element.doc.positions, ["elements", element.source, ...path]);
+  return element.via.length > 0 ? { ...at, via: element.via } : at;
+}
+
+/** Every state path an expanded page can change at run time: what its parts bind, and what its actions write. */
+export function writesOf(page: ExpandedPage): string[] {
+  const out: string[] = [];
+  const visit = (value: JsonValue | undefined) => {
+    if (Array.isArray(value)) value.forEach(visit);
+    else if (isRecord(value)) {
+      if (typeof value.$bindState === "string") out.push(value.$bindState);
+      // A bound item field writes into the list it repeats over, which the repeat's path names.
+      if (typeof value.$bindItem === "string") out.push("*item");
+      Object.values(value).forEach(visit);
+    }
+  };
+  for (const element of page.elements.values()) {
+    visit(element.props);
+    for (const bindings of Object.values(element.on ?? {})) for (const binding of bindings) if (typeof binding.params.statePath === "string") out.push(binding.params.statePath);
+  }
+  return out;
+}
+
 export class SpecModeler {
   readonly problems: ExtractionProblem[] = [];
   private readonly reported = new Set<string>();
 
-  constructor(
-    private readonly prototype: Prototype,
-    private readonly docs: ReadonlyMap<string, SpecDoc>,
-  ) {}
-
   private problem(message: string, at: SourceLocation): void {
-    const key = `${at.file}:${at.line}:${at.column}:${message}`;
+    const key = JSON.stringify([at, message]);
     if (this.reported.has(key)) return;
     this.reported.add(key);
     this.problems.push({ message, at });
@@ -83,36 +112,6 @@ export class SpecModeler {
 
   at(doc: SpecDoc, ...path: (string | number)[]): SourceLocation {
     return locateIn(doc.file, doc.positions, path);
-  }
-
-  /** Every state path the page and the layouts it draws can change at run time. */
-  writesOf(doc: SpecDoc, seen: Set<string> = new Set()): string[] {
-    if (seen.has(doc.file)) return [];
-    seen.add(doc.file);
-    const out: string[] = [];
-    for (const element of doc.elements.values()) {
-      const visit = (value: JsonValue | undefined) => {
-        if (Array.isArray(value)) value.forEach(visit);
-        else if (isRecord(value)) {
-          if (typeof value.$bindState === "string") out.push(value.$bindState);
-          // A bound item field writes into the list it repeats over, which the repeat's path names.
-          if (typeof value.$bindItem === "string") out.push("*item");
-          Object.values(value).forEach(visit);
-        }
-      };
-      visit(element.props);
-      for (const bindings of Object.values(element.on ?? {})) for (const binding of bindings) if (typeof binding.params.statePath === "string") out.push(binding.params.statePath);
-      if (element.type === LAYOUT_TYPE && typeof element.props.id === "string") {
-        const layout = this.layoutDoc(element.props.id);
-        if (layout) out.push(...this.writesOf(layout, seen));
-      }
-    }
-    return out;
-  }
-
-  layoutDoc(id: string): SpecDoc | undefined {
-    const entry = this.prototype.layouts.find((layout) => layout.id === id);
-    return entry ? this.docs.get(entry.component.file) : undefined;
   }
 
   /** A value as the page will show it: literals it can be, or why it cannot be told. */
@@ -124,7 +123,7 @@ export class SpecModeler {
     if (typeof value.$bindItem === "string") return dynamic(`bound to the item's ${value.$bindItem}, which the person changes`);
     if (typeof value.$item === "string") {
       if (scope.item === null) {
-        this.problem(`${scope.doc.file}: reads { "$item": ${JSON.stringify(value.$item)} } outside a repeat, so it reads nothing.`, where);
+        this.problem(`${where.file}: reads { "$item": ${JSON.stringify(value.$item)} } outside a repeat, so it reads nothing.`, where);
         return dynamic("read from a repeat item outside any repeat");
       }
       if (!scope.item.known) return dynamic(`read from each item of a list the page changes`);
@@ -172,7 +171,7 @@ export class SpecModeler {
     if (page.writes.some((written) => written === "*item" || overlaps(written, path))) return dynamic(`read from state ${path}, which the page changes at run time`);
     const found = lookup(page.state, path);
     if (found === undefined) {
-      this.problem(`${scope.doc.file}: reads state ${path}, which the state of page "${page.id}" does not have, so it shows nothing there.`, where);
+      this.problem(`${where.file}: reads state ${path}, which the state of page "${page.id}" does not have, so it shows nothing there.`, where);
       return { kind: "values", values: [null] };
     }
     return { kind: "values", values: [found] };
@@ -190,25 +189,25 @@ export class SpecModeler {
 
   /** One element as it renders on a page, with everything under it; a repeat over a known list expands per item. */
   node(key: string, scope: Scope): ElementNode[] {
-    const { doc } = scope;
-    const element = doc.elements.get(key);
+    const element = scope.page.expanded.elements.get(key);
     if (!element) return [];
     if (element.visible === false) return [];
-    const at = this.at(doc, "elements", key);
-    const origin = `${doc.file}#${key}`;
+    const at = elementAt(element);
+    // Every instance of one layout element shares its origin, as every render of one JSX expression does.
+    const origin = `${element.doc.file}#${element.source}`;
     const conditional = scope.conditional || (element.visible !== undefined && element.visible !== true);
-    if (element.type === LAYOUT_TYPE) return [this.layoutNode(element, at, origin, { ...scope, conditional })];
+    if (element.layout !== undefined) return [this.layoutNode(element, at, origin, { ...scope, conditional })];
     const props: Record<string, PropValue> = {};
     for (const name of Object.keys(element.props).sort(compare)) {
       if (name === TEXT_PROP) continue;
-      props[name] = this.propValue(this.resolve(element.props[name], scope, this.at(doc, "elements", key, "props", name)));
+      props[name] = this.propValue(this.resolve(element.props[name], scope, elementAt(element, "props", name)));
     }
-    const text = this.propValue(this.resolve(element.props[TEXT_PROP], scope, this.at(doc, "elements", key, "props", TEXT_PROP)));
+    const text = this.propValue(this.resolve(element.props[TEXT_PROP], scope, elementAt(element, "props", TEXT_PROP)));
     const children = this.childrenOf(element, { ...scope, conditional });
     return [this.make("library", element.type, at, origin, props, text, children, scope, conditional)];
   }
 
-  private make(kind: ElementNode["kind"], name: string, at: SourceLocation, origin: string, props: Readonly<Record<string, PropValue>>, text: PropValue, children: readonly ElementNode[], scope: Scope, conditional: boolean, extra: Partial<ElementNode> = {}): ElementNode {
+  private make(kind: ElementNode["kind"], name: string, at: SourceLocation, origin: string, props: Readonly<Record<string, PropValue>>, text: PropValue, children: readonly ElementNode[], scope: Pick<Scope, "repeated">, conditional: boolean, extra: Partial<ElementNode> = {}): ElementNode {
     const own = text.kind === "literal" && text.value !== null ? String(text.value) : "";
     const dynamicText = text.kind !== "literal";
     return {
@@ -226,52 +225,50 @@ export class SpecModeler {
     };
   }
 
-  private childrenOf(element: SpecElement, scope: Scope): ElementNode[] {
+  private childrenOf(element: ExpandedElement, scope: Scope): ElementNode[] {
     const children = element.children;
     if (!element.repeat) return children.flatMap((child) => this.node(child, scope));
     const { statePath } = element.repeat;
-    const where = this.at(scope.doc, "elements", element.key, "repeat");
+    const where = elementAt(element, "repeat");
     const list = typeof statePath === "string" ? this.resolve({ $state: statePath }, scope, where) : this.resolve({ $item: statePath.$item }, scope, where);
     const items = list.kind === "values" && list.values.length === 1 ? list.values[0] : undefined;
     if (!Array.isArray(items)) {
-      if (list.kind === "values" && list.values.length === 1 && list.values[0] !== null) this.problem(`${scope.doc.file}: element "${element.key}" repeats over ${typeof statePath === "string" ? statePath : `the item's ${statePath.$item}`}, which is not a list.`, where);
+      if (list.kind === "values" && list.values.length === 1 && list.values[0] !== null) this.problem(`${where.file}: element "${element.source}" repeats over ${typeof statePath === "string" ? statePath : `the item's ${statePath.$item}`}, which is not a list.`, where);
       // A list the page can change: its items render any number of times.
       return children.flatMap((child) => this.node(child, { ...scope, item: { known: false }, repeated: true }));
     }
     return items.flatMap((item, index) => children.flatMap((child) => this.node(child, { ...scope, item: { known: true, value: item, index } })));
   }
 
-  private layoutNode(element: SpecElement, at: SourceLocation, origin: string, scope: Scope): ElementNode {
-    const id = typeof element.props.id === "string" ? element.props.id : "";
+  private layoutNode(element: ExpandedElement, at: SourceLocation, origin: string, scope: Scope): ElementNode {
+    const id = element.layout ?? "";
     const base = { kind: "component" as const, name: id, at, origin, props: { id: { kind: "literal" as const, value: id } }, conditional: scope.conditional, repeated: scope.repeated, layout: id };
-    if (scope.layouts.includes(id)) {
+    if (element.recursive) {
       return { ...base, kind: "unresolved", text: "", textDynamic: true, reason: `layout "${id}" draws itself, so how deep it goes cannot be known`, children: [] };
     }
-    const doc = this.layoutDoc(id);
-    // A layout the manifest lacks, or whose file did not read, is reported where the file or the manifest is.
-    const children = doc ? this.node(doc.root, { ...scope, doc, layouts: [...scope.layouts, id] }) : [];
+    const children = element.children.flatMap((child) => this.node(child, scope));
     return { ...base, text: children.map((child) => child.text).join("").replace(/\s+/g, " ").trim(), textDynamic: children.some((child) => child.textDynamic), children };
   }
 
   /** A page's tree: the page node, its slots in the page type's order as Slot nodes, and anything it puts outside them. */
-  page(id: string, pageType: string, doc: SpecDoc, slotOrder: readonly string[]): PageModel | null {
-    const root = doc.elements.get(doc.root);
+  page(expanded: ExpandedPage, pageType: string, slotOrder: readonly string[], scenarios: readonly Scenario[]): PageModel | null {
+    const root = expanded.elements.get(expanded.root);
     if (!root || root.type !== PAGE_TYPE) return null;
-    const scenarios = this.prototype.scenarios.filter((scenario) => scenario.page === id);
+    const mine = scenarios.filter((scenario) => scenario.page === expanded.id);
     const scope: Scope = {
-      doc,
       page: {
-        id,
-        state: doc.state ?? {},
-        scenarioStates: [...new Set(scenarios.map((scenario) => scenario.state))].sort(compare),
-        scenarioIds: scenarios.map((scenario) => scenario.id).sort(compare),
-        writes: this.writesOf(doc),
+        id: expanded.id,
+        expanded,
+        state: expanded.state,
+        scenarioStates: [...new Set(mine.map((scenario) => scenario.state))].sort(compare),
+        scenarioIds: mine.map((scenario) => scenario.id).sort(compare),
+        writes: writesOf(expanded),
       },
       item: null,
-      layouts: [],
       repeated: false,
       conditional: false,
     };
+    const { doc } = expanded;
     const rank = (slot: string) => (slotOrder.includes(slot) ? slotOrder.indexOf(slot) : slotOrder.length);
     const slots = Object.keys(root.slots ?? {}).sort((a, b) => rank(a) - rank(b) || compare(a, b));
     const children: ElementNode[] = slots.map((slot) => {
@@ -279,17 +276,22 @@ export class SpecModeler {
       return this.make("kit", "Slot", this.at(doc, "elements", doc.root, "slots", slot), `${doc.file}#${doc.root}/slots/${slot}`, { name: { kind: "literal", value: slot } }, { kind: "literal", value: null }, nodes, scope, false);
     });
     children.push(...root.children.flatMap((key) => this.node(key, scope)));
-    const node = this.make("component", PAGE_TYPE, this.at(doc, "elements", doc.root), `${doc.file}#${doc.root}`, {}, { kind: "literal", value: null }, children, scope, false, { page: id });
-    return { id, pageType, root: node };
+    const node = this.make("component", PAGE_TYPE, this.at(doc, "elements", doc.root), `${doc.file}#${doc.root}`, {}, { kind: "literal", value: null }, children, scope, false, { page: expanded.id });
+    return { id: expanded.id, pageType, root: node };
   }
 
-  /** Every element of a file as written: from the root, then any element nothing lists, each a tree of its own. Layouts are not drawn in. */
+  /**
+   * Every element of a file as written: from the root, then any element
+   * nothing lists, each a tree of its own. Layouts are not drawn in, and a
+   * value read from a parameter or state is unknown here, as it is in source.
+   */
   source(doc: SpecDoc): ElementNode[] {
     const listed = new Set<string>();
     for (const element of doc.elements.values()) {
-      for (const child of element.children) listed.add(child);
-      for (const list of Object.values(element.slots ?? {})) for (const child of list) listed.add(child);
+      for (const child of keysOf(element.children)) listed.add(child);
+      for (const list of Object.values(element.slots ?? {})) for (const child of keysOf(list)) listed.add(child);
     }
+    const scope = { repeated: false };
     const tree = (key: string): ElementNode[] => {
       const element = doc.elements.get(key);
       if (!element) return [];
@@ -299,16 +301,15 @@ export class SpecModeler {
       const props: Record<string, PropValue> = {};
       for (const name of Object.keys(element.props).sort(compare)) if (name !== TEXT_PROP) props[name] = literal(element.props[name]);
       const text = element.props[TEXT_PROP] === undefined ? ({ kind: "literal", value: null } as const) : literal(element.props[TEXT_PROP]);
-      const scope = { repeated: false } as Scope;
       const conditional = element.visible !== undefined && element.visible !== true;
-      if (element.type === LAYOUT_TYPE) {
-        const id = typeof element.props.id === "string" ? element.props.id : "";
-        return [this.make("component", id, at, origin, props, { kind: "literal", value: null }, [], scope, conditional, { layout: id })];
-      }
       const slotNodes = Object.keys(element.slots ?? {})
         .sort(compare)
-        .map((slot) => this.make("kit", "Slot", this.at(doc, "elements", key, "slots", slot), `${doc.file}#${key}/slots/${slot}`, { name: { kind: "literal", value: slot } }, { kind: "literal", value: null }, (element.slots?.[slot] ?? []).flatMap(tree), scope, false));
-      const children = [...slotNodes, ...element.children.flatMap(tree)];
+        .map((slot) => this.make("kit", "Slot", this.at(doc, "elements", key, "slots", slot), `${doc.file}#${key}/slots/${slot}`, { name: { kind: "literal", value: slot } }, { kind: "literal", value: null }, keysOf(element.slots?.[slot] ?? []).flatMap(tree), scope, false));
+      if (element.type === LAYOUT_TYPE) {
+        const id = typeof element.props.id === "string" ? element.props.id : "";
+        return [this.make("component", id, at, origin, { id: { kind: "literal", value: id } }, { kind: "literal", value: null }, slotNodes, scope, conditional, { layout: id })];
+      }
+      const children = [...slotNodes, ...keysOf(element.children).flatMap(tree)];
       return [this.make(element.type === PAGE_TYPE ? "kit" : "library", element.type, at, origin, props, text, children, scope, conditional)];
     };
     const roots = [doc.root, ...[...doc.elements.keys()].filter((key) => key !== doc.root && !listed.has(key)).sort(compare)];
@@ -318,22 +319,34 @@ export class SpecModeler {
 
 /**
  * The page model of a spec prototype, for core's rules: each manifest page's
- * tree, every element written in every spec file, and what could not be read.
- * Pure: the same prototype and config give the same model.
+ * tree with its layout instances expanded, every element written in every
+ * spec file, and what could not be read. Pure: the same prototype and config
+ * give the same model.
  */
 export function specModel(prototype: Prototype, config: ProjectConfig): PrototypeModel {
   const read = readSpecs(prototype, config);
-  const modeler = new SpecModeler(prototype, read.docs);
+  const modeler = new SpecModeler();
   const pageTypes = new Map(config.inventories.pageTypes.map((type) => [type.id, type]));
   const pages: PageModel[] = [];
+  const expansion: SpecIssue[] = [];
   for (const page of [...prototype.pages].sort((a, b) => compare(a.id, b.id))) {
     const doc = read.docs.get(page.component.file);
-    if (!doc || doc.elements.get(doc.root)?.type !== PAGE_TYPE) continue;
-    const model = modeler.page(page.id, page.pageType, doc, pageTypes.get(page.pageType)?.slots ?? []);
+    if (!doc || doc.role !== "page" || doc.elements.get(doc.root)?.type !== PAGE_TYPE) continue;
+    const expanded = expandPage(page, read, prototype);
+    expansion.push(...expanded.issues);
+    if (!expanded.page) continue;
+    const model = modeler.page(expanded.page, page.pageType, pageTypes.get(page.pageType)?.slots ?? [], prototype.scenarios);
     if (model) pages.push(model);
   }
   const source = [...read.docs.values()].flatMap((doc) => modeler.source(doc));
-  const problems: ExtractionProblem[] = [...read.issues.map((issue) => ({ message: issue.message, at: issue.at })), ...modeler.problems];
+  const seen = new Set<string>();
+  const problems: ExtractionProblem[] = [];
+  for (const problem of [...read.issues, ...expansion, ...modeler.problems]) {
+    const key = JSON.stringify([problem.at, problem.message]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    problems.push({ message: problem.message, ...(problem.at ? { at: problem.at } : {}) });
+  }
   return { pages, source, loads: [], ambient: [], problems };
 }
 

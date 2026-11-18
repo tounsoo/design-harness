@@ -1,0 +1,9 @@
+{
+  "what": "The question layout given a number for its label, which is a text parameter",
+  "expect": [
+    {
+      "rule": "extract",
+      "message": "pages/booking.json: element \"question\" gives \"label\" 30; \"label\" is text."
+    }
+  ]
+}

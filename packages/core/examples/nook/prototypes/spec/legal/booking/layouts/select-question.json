@@ -1,9 +1,15 @@
 {
+  "params": {
+    "label": { "type": "text", "description": "The question. The label names the field, so a screen reader announces it.", "example": "How long?" },
+    "choices": { "type": "list", "of": "option", "description": "What can be picked, one option each.", "example": [{ "value": "30", "label": "30 minutes" }, { "value": "60", "label": "1 hour" }] },
+    "answer": { "type": "binding", "description": "Where the picked value goes in the page's state, as { \"$bindState\": \"/path\" }." },
+    "hint": { "type": "slot", "required": false, "description": "Help shown under the field." }
+  },
   "root": "question",
   "elements": {
-    "question": { "type": "Stack.Root", "props": { "gap": "condensed" }, "children": ["label", "field"] },
-    "label": { "type": "Label.Root", "props": { "htmlFor": "duration", "text": "How long?" }, "children": [] },
-    "field": { "type": "Field.Root", "props": { "id": "duration" }, "children": ["select"] },
-    "select": { "type": "Field.Select", "props": { "value": { "$bindState": "/duration" }, "options": { "$state": "/durations" } }, "children": [] }
+    "question": { "type": "Stack.Root", "props": { "gap": "condensed" }, "children": ["label", "field", { "$param": "hint" }] },
+    "label": { "type": "Label.Root", "props": { "htmlFor": { "$scopedId": "field" }, "text": { "$param": "label" } }, "children": [] },
+    "field": { "type": "Field.Root", "props": { "id": { "$scopedId": "field" } }, "children": ["select"] },
+    "select": { "type": "Field.Select", "props": { "value": { "$param": "answer" }, "options": { "$param": "choices" } }, "children": [] }
   }
 }

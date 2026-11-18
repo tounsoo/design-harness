@@ -1,10 +1,16 @@
 {
+  "params": {
+    "label": {"type": "text", "example": "How long?"},
+    "choices": {"type": "list", "of": "option", "example": [{"value": "30", "label": "30 minutes"}]},
+    "answer": {"type": "binding"},
+    "hint": {"type": "slot", "required": false}
+  },
   "root": "question",
   "elements": {
-    "question": {"type": "Stack.Root", "props": {"gap": "condensed"}, "children": ["label", "field", "book"]},
-    "label": {"type": "Label.Root", "props": {"htmlFor": "duration", "text": "How long?"}, "children": []},
-    "field": {"type": "Field.Root", "props": {"id": "duration"}, "children": ["select"]},
-    "select": {"type": "Field.Select", "props": {"value": {"$bindState": "/duration"}, "options": {"$state": "/durations"}}, "children": []},
+    "question": {"type": "Stack.Root", "props": {"gap": "condensed"}, "children": ["label", "field", {"$param": "hint"}, "book"]},
+    "label": {"type": "Label.Root", "props": {"htmlFor": {"$scopedId": "field"}, "text": {"$param": "label"}}, "children": []},
+    "field": {"type": "Field.Root", "props": {"id": {"$scopedId": "field"}}, "children": ["select"]},
+    "select": {"type": "Field.Select", "props": {"value": {"$param": "answer"}, "options": {"$param": "choices"}}, "children": []},
     "book": {"type": "Button.Root", "props": {"text": "Book room"}, "children": []}
   }
 }

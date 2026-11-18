@@ -1,0 +1,9 @@
+{
+  "what": "The room details' summary given the duration the person picks, which the page changes at run time, so whether the disclosure is Room details cannot be told",
+  "expect": [
+    {
+      "rule": "disclosed-sections",
+      "message": "Cannot tell whether Disclosure.Summary at layouts/room-details.json:9:5 (in layout \"room-details\" used at pages/booking.json:21:5) is a disclosure summary reading \"Room details\" inside a disclosure: its text is partly computed at runtime. Until it can, the prototype's pages may have fewer than 1"
+    }
+  ]
+}
