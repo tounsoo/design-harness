@@ -1,0 +1,1 @@
+{ "what": "A ref on a rendered node, which hands prototype code the DOM", "expect": [{ "rule": "no-ambient-globals", "message": "uses useRef, which hands prototype code a DOM node" }] }

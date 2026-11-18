@@ -102,6 +102,7 @@ A rule is data with a stable `id`, a `type` from a fixed set, and an optional `d
 | `slot`: what a named slot (`$primary`, `$body`, `$chrome`, or a name) holds at its top level | `{ "type": "slot", "id": "primary-slot", "slot": "$primary", "holds": { "role": "primary-action" }, "min": 1, "max": 1, "only": { "role": "primary-action" } }` |
 | `reachable`: matching elements anywhere in the source are rendered from a page | `{ "type": "reachable", "id": "counted-parts-reached", "select": { "role": "action" } }` |
 | `page-structure` (named built-in): pages fill only their type's slots, once each, nothing outside | `{ "type": "page-structure", "id": "page-structure" }` |
+| `isolation` (named built-in): prototype code reaches only its imports and plain language built-ins (below) | `{ "type": "isolation", "id": "no-ambient-globals" }` |
 | `flow` (named built-in): `state-coverage`, `step-budget` | `{ "type": "flow", "id": "step-budget", "check": "step-budget" }` |
 | `rendered` (named built-ins over snapshots): `target-size`, `headings`, `contrast`, `accessible-names`, `first-view`, `no-sideways-scroll` | `{ "type": "rendered", "id": "target-size", "check": "target-size", "minPx": { "cap": "TARGET_MIN_PX" } }` |
 
@@ -116,6 +117,7 @@ A rule is data with a stable `id`, a `type` from a fixed set, and an optional `d
 | `components-from-inventory`, `imports-from-library`, `page-types-from-inventory`, `layouts-from-inventory`, `flow-states-from-inventory` | membership (named subjects) | `lint:product-ui`, `check:inventories` |
 | `no-raw-controls`, `no-inline-styles` | count, source | `lint:product-ui` |
 | `page-structure` | page-structure (named) | the page shells |
+| `no-ambient-globals` | isolation (named) | new: a prototype runs in the frame that measures it |
 | `primary-slot`, `body-from-layouts` | slot | `lint:slots`, page bodies from content layouts |
 | `one-primary-per-page`, `primary-is-rank-1`, `rank-1-shown`, `disclosed-sections` | count | `check:priority` |
 | `rank-2-secondary` | requires | `check:priority` |
@@ -125,6 +127,24 @@ A rule is data with a stable `id`, a `type` from a fixed set, and an optional `d
 | `counted-parts-reached` | reachable | the "not reached from any page" failures |
 | `state-coverage`, `step-budget` | flow (named) | `check:state-coverage`, `check:step-budget` |
 | `target-size`, `accessible-names`, `heading-structure`, `text-contrast`, `rank-1-in-first-view`, `no-sideways-scroll` | rendered (named) | `check:target-size`, `check:accessible-names`, `check:rendered-page` |
+
+### What prototype code may reach
+
+A prototype runs in the same frame as the code that measures it and posts its snapshot, so code that could reach the frame's window, its document, its channel to the app, or the built-ins the measuring code calls could change what its own frame reports. Now that a model writes prototype code, `no-ambient-globals` closes that from the source side. The extractor scans every file, rendered or not, with its own scope analysis (imports, declarations, parameters, `var` hoisting, catch and loop bindings; type-only code is skipped) into `model.ambient`, and the rule fails on each use:
+
+| The source has | Finding |
+| --- | --- |
+| a free name that is not on the allowlist of plain ECMAScript built-ins (`Math`, `JSON`, `Number`, `String`, `Boolean`, `Array`, `Object`, `Map`, `Set`, `WeakMap`, `WeakSet`, `Symbol`, `BigInt`, `Date`, `Intl`, `RegExp`, `Promise`, the `Error` types, `parseInt`, `parseFloat`, `isNaN`, `isFinite`, the URI functions, `console`, `undefined`, `NaN`, `Infinity`, `arguments`): `window`, `document`, `globalThis`, `self`, `parent`, `top`, `postMessage`, `addEventListener`, `eval`, `Function`, `setTimeout` and every other timer, `fetch`, or any name it does not know | violation: uses `window`, which is the frame's window or document |
+| `Object` or `JSON` other than as `Object.assign`, `freeze`, `fromEntries`, `hasOwn`, `is`, `isFrozen`, `keys`, `JSON.parse` or `stringify` (`Object.values` or `entries` would enumerate an event's values, a path to its window), `JSON.stringify` with a replacer, `Object.assign` into anything but a new `{}` | violation |
+| a property name, read or destructured, that leads from an ordinary value to a constructor or prototype (`constructor`, `prototype`, `__proto__` and every `__` name, `getPrototypeOf`, `defineProperty` and kin, `prepareStackTrace`), from a DOM node or event to the frame's document or window (`ownerDocument`, `defaultView`, `parentNode`, `getRootNode`, `target`, `currentTarget`, `view`, `nativeEvent`, ...), the frame's plumbing (`postMessage`, `addEventListener`, `dispatchEvent`), a global by name (`window`, `document`, `parent`, `top`, `setTimeout`, ...), or markup run as code (`innerHTML`, `insertAdjacentHTML`, `srcdoc`) | violation: reads `.target`, which leads from an event to a DOM node or the frame's window |
+| a property read or destructured by a key computed at run time (`rooms[key]`; a string or number literal key is read like a name) | unverifiable: cannot tell what it reaches, which fails the rule |
+| an assignment to a property, `delete`, `++` on a property (`numbers.round = ...` through any alias) | violation: built-ins the measuring code calls cannot be changed |
+| `useRef`, `createRef`, `useImperativeHandle` (imported or as a member), a `ref` prop, `dangerouslySetInnerHTML`, `srcDoc`, or a `<script>`, `<iframe>`, `<object>`, `<embed>`, `<base>`, `<meta>`, `<link>` element | violation: hands prototype code a DOM node or runs markup as code |
+| `import.meta` | violation |
+
+`require` is left to the `imports-from-library` rule, which already reports every call. Prototypes are built from library parts, React and plain data, and the legal Nook prototype uses none of these; nothing legitimate in it needed one. What the rule costs a prototype: event handlers cannot read `event.target` (library parts such as Todae's `Field.Select` hand over values through `onValueChange`), records cannot be looked up by a computed key (keep them in an array and `.find`), and a prop cannot be named `target`, `view` or `parent` when it is destructured.
+
+The rule is a source rule and cannot see what a library part hands to a callback at run time; it refuses the names that lead from such a value to the frame, and the ways to enumerate an object's values without naming them. The web app adds runtime defences of its own (apps/web/README.md, Isolation), so the rule and the frame together keep a frame's snapshot its own. The illegal fixtures `ambient-*` show each kind: a message posted to the app, a timer, a computed key, a path to the Function constructor, a patched `Math`, a ref, and `event.target`.
 
 ## The report
 
@@ -148,7 +168,7 @@ No step is skipped, and `adopted` and `declined` are final. Every function takes
 - every failing example fails its named rule, with its message, and no other rule;
 - every example of an earlier adopted proposal still behaves as it did: its passing examples pass every rule, and its failing examples are still flagged by their rule. The one exception is a failing example whose rule this proposal removes: the example has nothing left to prove, so it is retired, not broken.
 
-A refusal names the example and what happened instead, such as `failing example "only-one" is not flagged as it must be: "one-toast-per-page" passed it`, or, for an earlier proposal's example, `adopting "no-toasts" breaks passing example "one-toast" of adopted proposal "toast": ...` with `proposal` and `example` set on the refusal. Replacing a rule with another of the same id is not a removal: the earlier examples are held to the new rule. On success it returns the new config with the proposal adopted, a deterministic `classification` (`adds`, `tightens`, or `loosens-or-removes`, with each change's reason), the caller's `existing` prototypes that newly fail, and the earlier examples it retires. `rerunExamples(config)` re-runs every adopted proposal's examples against the config as it is now, and marks a failing example `retiredBy` the adopted proposal that removed its rule.
+A refusal names the example and what happened instead, such as `failing example "only-one" is not flagged as it must be: "one-toast-per-page" passed it`, or, for an earlier proposal's example, `adopting "no-toasts" breaks passing example "one-toast" of adopted proposal "toast": ...` with `proposal` and `example` set on the refusal. Replacing a rule with another of the same id is not a removal: the earlier examples are held to the new rule. On success it returns the new config with the proposal adopted, a deterministic `classification` (`adds`, `tightens`, or `loosens-or-removes`, with each change's reason), the caller's `existing` prototypes that newly fail, and the earlier examples it retires. `dryRunAdoption(config, id, stamp, existing?)` tells what adopting an open or approved proposal would do without changing anything: it approves the proposal on a copy and runs `adopt`, so its result, refusal reasons included, is `adopt`'s. The web app runs it when the agent drafts a proposal and hands the refusal back to the agent. `rerunExamples(config)` re-runs every adopted proposal's examples against the config as it is now, and marks a failing example `retiredBy` the adopted proposal that removed its rule.
 
 ## Size
 

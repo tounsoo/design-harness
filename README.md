@@ -14,7 +14,7 @@ The ideas come from [agent-design-loop](https://github.com/tounsoo/agent-design-
 ## What is here
 
 - [`packages/core`](packages/core/README.md): the checking engine. Project config and prototype as validated JSON, a page-model extractor, a rule engine of pure, deterministic checks, and the proposal lifecycle.
-- [`apps/web`](apps/web/README.md): the browser app. A seeded project (Nook, on [Todae](https://github.com/tounsoo/todae)), its prototype rendered as a board of sandboxed frames, one per scenario and view, and core's report beside it, with each finding pointed at in its frame or its file. A plain code view stands in for the agent, which comes next; the chat panel is reserved for it.
+- [`apps/web`](apps/web/README.md): the browser app. A seeded project (Nook, on [Todae](https://github.com/tounsoo/todae)), its prototype rendered as a board of sandboxed frames, one per scenario and view, and core's report beside it, with each finding pointed at in its frame or its file. An agent chat on your own Anthropic API key builds and changes the prototype: its changes re-render the frames, core's checks go back to it after every change, and when the work needs something outside the inventories it drafts a proposal for you. No model decides pass or fail; core does. A plain code view edits the same files by hand.
 
 ## Run it
 

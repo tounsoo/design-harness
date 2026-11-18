@@ -126,6 +126,15 @@ export type ReachableRule = Base<"reachable"> & { readonly select: Selector };
 /** Every page fills only its page type's slots, each at most once, and puts nothing outside them. A named built-in: it reads the page kit's Slot elements. */
 export type PageStructureRule = Base<"page-structure">;
 
+/**
+ * Prototype code reaches only its imports and plain language built-ins: no
+ * browser globals, frame plumbing, DOM handles, constructors or property
+ * reads by a computed key. A named built-in: it reads the source scan of what
+ * each file reaches. A prototype runs in the frame that measures it, so this
+ * is what keeps its rendered snapshots its own.
+ */
+export type IsolationRule = Base<"isolation">;
+
 export type FlowCheck = "state-coverage" | "step-budget";
 /**
  * `state-coverage`: every flow state has a scenario, and every scenario shows a modeled state on a known page.
@@ -152,6 +161,7 @@ export type RuleSpec =
   | SlotRule
   | ReachableRule
   | PageStructureRule
+  | IsolationRule
   | FlowRule
   | RenderedRule;
 

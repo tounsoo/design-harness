@@ -9,6 +9,7 @@ import { EXTRACT_RULE, buildReport, sortFindings, type CheckReport, type Finding
 import { evaluateContainment, evaluatePropValues, evaluateRequires } from "./rules/containment";
 import { evaluateCount } from "./rules/count";
 import { evaluateFlow } from "./rules/flow";
+import { evaluateIsolation } from "./rules/isolation";
 import { evaluateMembership } from "./rules/membership";
 import type { Outcome } from "./rules/outcome";
 import { evaluateRendered } from "./rules/rendered";
@@ -26,6 +27,7 @@ const EVALUATORS: Evaluators = {
   slot: evaluateSlot,
   reachable: evaluateReachable,
   "page-structure": evaluatePageStructure,
+  isolation: evaluateIsolation,
   flow: evaluateFlow,
   rendered: evaluateRendered,
 };

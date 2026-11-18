@@ -241,6 +241,21 @@ export function adopt(config: ProjectConfig, id: string, stamp: Stamp, existing:
 }
 
 /**
+ * What adopting a proposal would do, changing nothing: an open proposal is
+ * approved in memory and `adopt` runs on that copy, so the result is
+ * `adopt`'s, refusal reasons included. The config passed in is returned
+ * untouched by the caller; only `adopt` or the lifecycle steps change it.
+ */
+export function dryRunAdoption(config: ProjectConfig, id: string, stamp: Stamp, existing: readonly ExistingPrototype[] = []): Result<Adoption, Refusal> {
+  const proposal = config.proposals.find((item) => item.id === id);
+  if (!proposal) return refuse("not-found", `there is no proposal "${id}"`);
+  if (proposal.status !== "open" && proposal.status !== "approved") return refuse("wrong-status", `proposal "${id}" is ${proposal.status}; only an open or approved proposal can be tried`);
+  const approved = proposal.status === "open" ? approve(config, id, stamp) : { ok: true as const, value: config };
+  if (!approved.ok) return approved;
+  return adopt(approved.value, id, stamp, existing);
+}
+
+/**
  * Re-runs every adopted proposal's examples against the config as it is now:
  * passing examples must still pass every rule, and failing examples must
  * still be flagged by their rule. Later rules may add other reasons to fail,

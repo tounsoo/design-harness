@@ -70,6 +70,7 @@ const ruleVariants = tagged("type", {
   slot: obj({ ...base, type: oneOf(["slot"]), slot: str() }, { ...extra, pages: pageFilter, holds: selector, min: bound, max: bound, only: selector }),
   reachable: obj({ ...base, type: oneOf(["reachable"]), select: selector }, extra),
   "page-structure": obj({ ...base, type: oneOf(["page-structure"]) }, extra),
+  isolation: obj({ ...base, type: oneOf(["isolation"]) }, extra),
   flow: obj({ ...base, type: oneOf(["flow"]), check: oneOf(["state-coverage", "step-budget"]) }, extra),
   rendered,
 });

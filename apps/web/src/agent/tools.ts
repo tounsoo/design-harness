@@ -1,0 +1,377 @@
+import type { BetaTool } from "@anthropic-ai/sdk/resources/beta/messages/messages";
+import { ROLE_NAMES, dryRunAdoption, formatIssues, parsePrototype, propose, type CheckReport, type FailingExample, type PassingExample, type ProjectConfig, type Prototype, type ProposalDraft } from "@design-harness/core";
+import type { CompileProblem } from "../runtime/transform";
+import { validateInput, type JsonSchema } from "./schema";
+
+/**
+ * The agent's tools. They run in the app, against the app's state: the
+ * project config, the current prototype and the check session. A change goes
+ * through core's validation where one exists and becomes a new revision at
+ * once; the checks come back only for a revision every frame has measured.
+ * No tool decides pass or fail: run_checks returns core's report, and a
+ * proposal's verdict is core's adoption dry run. The agent can draft a
+ * proposal but never approve, decline or adopt one.
+ */
+
+/** The manifest file the agent sees beside the source files. */
+export const MANIFEST = "manifest.json";
+
+/** What a frame said instead of a snapshot, for the report the agent reads. */
+export type FrameProblem = { readonly frame: string; readonly stage: string; readonly message: string };
+
+export type Measured = { readonly revision: number; readonly report: CheckReport; readonly frames: readonly FrameProblem[] };
+
+/** What the tools need from the app. */
+export interface AgentHost {
+  config(): ProjectConfig;
+  prototype(): Prototype;
+  /** Makes `next` the prototype at once, as a new revision; returns it and what did not compile. */
+  apply(next: Prototype): { readonly revision: number; readonly compileProblems: readonly CompileProblem[] };
+  saveConfig(next: ProjectConfig): Promise<void>;
+  /** Core's report for the current source, once every frame has measured that revision. */
+  measured(signal: AbortSignal): Promise<Measured>;
+  /** The time, as ISO 8601, for a proposal's history. */
+  now(): string;
+}
+
+type Tool = { readonly definition: BetaTool; readonly schema: JsonSchema };
+
+const PATH: JsonSchema = {
+  type: "string",
+  pattern: "^(?!manifest\\.json$)[A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*\\.(?:tsx|ts|jsx|js)$",
+  maxLength: 160,
+  description: 'A path inside the prototype, such as "pages/booking.tsx": forward slashes, no leading "/", "./" or "..", ending .tsx, .ts, .jsx or .js.',
+};
+const SLUG = "^[a-z0-9]+(?:-[a-z0-9]+)*$";
+const NOTHING: JsonSchema = { type: "object", properties: {}, additionalProperties: false };
+const MANIFEST_SCHEMA: JsonSchema = {
+  type: "object",
+  description: "The manifest: pages, layouts, scenarios and flow, as list_files shows them.",
+  properties: {
+    pages: { type: "array", items: { type: "object" }, description: 'Each { "id", "pageType", "component": { "file", "export" } }.' },
+    layouts: { type: "array", items: { type: "object" }, description: 'Each { "id", "component": { "file", "export" } }.' },
+    scenarios: { type: "array", items: { type: "object" }, description: 'Each { "id", "state", "page" }: one row of frames, the page rendered in that flow state.' },
+    flow: { type: "object", description: '{ "states": [...], "tasks": [{ "task", "start", "transitions": [{ "from", "event", "to" }] }] }.' },
+  },
+  additionalProperties: false,
+};
+const EXAMPLE: JsonSchema = {
+  type: "object",
+  properties: {
+    name: { type: "string", pattern: SLUG },
+    files: { type: "object", additionalProperties: { type: "string" }, description: "Files that replace or add to the current prototype's, by path." },
+    remove_files: { type: "array", items: { type: "string" } },
+    manifest: MANIFEST_SCHEMA,
+  },
+  required: ["name"],
+  additionalProperties: false,
+};
+
+const tool = (name: string, description: string, schema: JsonSchema): Tool => ({
+  // Streamed requests with client tools stream each tool's input as it is generated; every input is validated here before it runs.
+  definition: { name, description, input_schema: schema as BetaTool["input_schema"], eager_input_streaming: true },
+  schema,
+});
+
+const TOOLS: readonly Tool[] = [
+  tool(
+    "read_project",
+    "Read the project: the component library and which parts are which roles, the inventories (components, layouts, page types and their slots, flow states), the rule inputs (tasks, ranking, disclosed sections, caps), the views, every rule in force as JSON, and every proposal with its status. Call it before building anything, and again after drafting a proposal.",
+    NOTHING,
+  ),
+  tool("list_files", "List the prototype's files with their line counts, and show its manifest (pages, layouts, scenarios, flow). Call it to see what exists before reading or writing.", NOTHING),
+  tool(
+    "read_file",
+    "Read one file of the prototype, or manifest.json for the manifest. Call it before editing a file you have not read in this conversation.",
+    { type: "object", properties: { path: { type: "string", maxLength: 160, description: 'A file from list_files, or "manifest.json".' } }, required: ["path"], additionalProperties: false },
+  ),
+  tool(
+    "write_file",
+    "Create a file, or replace a file's whole content. Use it for new files and rewrites; use edit_file for a small change. The change is a new revision at once: the frames re-render and the checks run again.",
+    { type: "object", properties: { path: PATH, content: { type: "string", maxLength: 100_000 } }, required: ["path", "content"], additionalProperties: false },
+  ),
+  tool(
+    "edit_file",
+    "Replace one exact piece of text in a file with another. old_text must appear exactly once in the file, whitespace included. The change is a new revision at once.",
+    {
+      type: "object",
+      properties: { path: PATH, old_text: { type: "string", minLength: 1, maxLength: 50_000 }, new_text: { type: "string", maxLength: 100_000 } },
+      required: ["path", "old_text", "new_text"],
+      additionalProperties: false,
+    },
+  ),
+  tool("delete_file", "Delete a file from the prototype. The change is a new revision at once.", { type: "object", properties: { path: PATH }, required: ["path"], additionalProperties: false }),
+  tool(
+    "set_manifest",
+    "Replace the prototype's manifest: its pages, layouts, scenarios and flow. Core validates it first; a manifest it refuses is not applied, and the reasons come back. The change is a new revision at once.",
+    { ...MANIFEST_SCHEMA, required: ["pages", "layouts", "scenarios", "flow"] },
+  ),
+  tool(
+    "run_checks",
+    "Run the project's checks on the current prototype. Waits until every frame has rendered and been measured, then returns core's report: the status, each failing rule with its findings, and any frame that did not render. The app also sends you this report after every round in which you changed files.",
+    NOTHING,
+  ),
+  tool(
+    "draft_proposal",
+    "Draft a proposal when the request needs something the inventories lack or a rule in force forbids: a component, layout, page type, flow state or task, a changed cap or ranking, or a new rule. Use it instead of working around a check. It is saved as open, and core's adoption dry run tells you whether it would be adopted or why not; draft again with the same id to replace your open draft. Only the user can approve or adopt it. Each example starts from the current prototype: files replace or add files, remove_files removes some, manifest replaces the manifest.",
+    {
+      type: "object",
+      properties: {
+        id: { type: "string", pattern: SLUG },
+        title: { type: "string", minLength: 1, maxLength: 200 },
+        reason: { type: "string", minLength: 1, maxLength: 2000 },
+        states: { type: "array", items: { type: "object", properties: { state: { type: "string" }, note: { type: "string" } }, required: ["state", "note"], additionalProperties: false }, description: "Notes on each state the change shows: ordinary states and edge cases." },
+        inventory: { type: "array", items: { type: "object" }, description: 'Inventory operations such as { "op": "add-component", "name": "Toast" }, { "op": "add-layout", "id": "..." }, { "op": "add-page-type", "pageType": {...} }, { "op": "add-flow-state", "state": "..." }, { "op": "set-cap", "name": "...", "value": 2 }.' },
+        rules: {
+          type: "object",
+          properties: { add: { type: "array", items: { type: "object" }, description: "Rules in the rule vocabulary, as read_project shows them." }, remove: { type: "array", items: { type: "string" }, description: "Ids of rules to take out of force." } },
+          additionalProperties: false,
+        },
+        examples: {
+          type: "object",
+          properties: {
+            pass: { type: "array", items: EXAMPLE, minItems: 1 },
+            fail: {
+              type: "array",
+              minItems: 1,
+              items: {
+                ...EXAMPLE,
+                properties: { ...EXAMPLE.properties, flagged_by: { type: "object", properties: { rule: { type: "string" }, message: { type: "string" } }, required: ["rule"], additionalProperties: false } },
+                required: ["name", "flagged_by"],
+              },
+            },
+          },
+          required: ["pass", "fail"],
+          additionalProperties: false,
+        },
+      },
+      required: ["id", "title", "reason", "examples"],
+      additionalProperties: false,
+    },
+  ),
+];
+
+/** The tool definitions sent with every request, in a fixed order so the cached prefix never changes. */
+export const TOOL_DEFINITIONS: readonly BetaTool[] = TOOLS.map((item) => item.definition);
+
+export type ToolCall = { readonly id: string; readonly name: string; readonly input: unknown };
+
+/** What one tool call did: the text the agent reads, and what the chat shows. */
+export type ToolOutcome = {
+  readonly content: string;
+  readonly isError: boolean;
+  /** The prototype changed. */
+  readonly changed: boolean;
+  /** A measured report, when the call returned one. */
+  readonly measured?: Measured;
+  readonly title: string;
+  readonly proposal?: { readonly id: string; readonly title: string; readonly adoptable: boolean; readonly verdict: string };
+};
+
+const refused = (title: string, content: string): ToolOutcome => ({ content, isError: true, changed: false, title });
+
+/** Validates a call's input against its tool's schema, then runs it. */
+export async function runTool(call: ToolCall, host: AgentHost, signal: AbortSignal): Promise<ToolOutcome> {
+  const found = TOOLS.find((item) => item.definition.name === call.name);
+  if (!found) return refused(`Unknown tool ${call.name}`, `There is no tool "${call.name}". The tools are ${TOOL_DEFINITIONS.map((item) => item.name).join(", ")}.`);
+  const issues = validateInput(found.schema, call.input);
+  if (issues.length > 0) {
+    return refused(`${call.name}: input refused`, `The input does not fit ${call.name}'s schema, so nothing ran:\n${issues.slice(0, 20).join("\n")}\nThe input as received: ${JSON.stringify({ INVALID_INPUT: JSON.stringify(call.input) }).slice(0, 2000)}`);
+  }
+  const input = call.input as Record<string, unknown>;
+  switch (call.name) {
+    case "read_project":
+      return { content: projectText(host.config()), isError: false, changed: false, title: "Read the project" };
+    case "list_files":
+      return listFiles(host.prototype());
+    case "read_file":
+      return readFile(host.prototype(), String(input.path));
+    case "write_file":
+      return writeFile(host, String(input.path), String(input.content));
+    case "edit_file":
+      return editFile(host, String(input.path), String(input.old_text), String(input.new_text));
+    case "delete_file":
+      return deleteFile(host, String(input.path));
+    case "set_manifest":
+      return setManifest(host, input);
+    case "run_checks": {
+      const measured = await host.measured(signal);
+      return { content: describeMeasured(measured), isError: false, changed: false, measured, title: checksTitle(measured.report) };
+    }
+    case "draft_proposal":
+      return draftProposal(host, input);
+    default:
+      return refused(`Unknown tool ${call.name}`, `There is no tool "${call.name}".`);
+  }
+}
+
+function manifestOf(prototype: Prototype): Omit<Prototype, "files"> {
+  const { files: _files, ...manifest } = prototype;
+  return manifest;
+}
+
+function projectText(config: ProjectConfig): string {
+  const { library, inventories, inputs, views, rules, proposals } = config;
+  return JSON.stringify(
+    {
+      project: { id: config.id, name: config.name },
+      library: { package: library.package, version: library.version, react: library.react, roles: Object.fromEntries(ROLE_NAMES.map((role) => [role, library.roles[role]])) },
+      pageKit: 'Pages import { Slot, type PageProps } from "@design-harness/page", fill their page type\'s slots with <Slot name="...">, and receive { scenario, state } as props.',
+      inventories,
+      inputs,
+      views,
+      rules,
+      proposals: proposals.map((proposal) => ({ id: proposal.id, title: proposal.title, status: proposal.status, inventory: proposal.inventory, rules: proposal.rules })),
+    },
+    null,
+    1,
+  );
+}
+
+function listFiles(prototype: Prototype): ToolOutcome {
+  const paths = Object.keys(prototype.files).sort();
+  const lines = paths.map((path) => `${path} (${(prototype.files[path] ?? "").split("\n").length} lines)`);
+  return {
+    content: `${paths.length} files:\n${lines.join("\n")}\n\n${MANIFEST}:\n${JSON.stringify(manifestOf(prototype), null, 1)}`,
+    isError: false,
+    changed: false,
+    title: `Listed ${paths.length} files`,
+  };
+}
+
+function readFile(prototype: Prototype, path: string): ToolOutcome {
+  if (path === MANIFEST) return { content: JSON.stringify(manifestOf(prototype), null, 2), isError: false, changed: false, title: `Read ${MANIFEST}` };
+  const text = prototype.files[path];
+  if (text === undefined) return refused(`read_file: no ${path}`, `There is no file "${path}". The files are: ${Object.keys(prototype.files).sort().join(", ")}.`);
+  return { content: text, isError: false, changed: false, title: `Read ${path}` };
+}
+
+/** Applies a new prototype after core's validation, and says what happened. */
+function change(host: AgentHost, next: Prototype, title: string, done: string, path?: string): ToolOutcome {
+  const parsed = parsePrototype(next);
+  if (!parsed.ok) return refused(`${title}: refused`, `Core refused the change, so it was not applied:\n${formatIssues(parsed.error)}`);
+  const { revision, compileProblems } = host.apply(parsed.value);
+  const problems = compileProblems.filter((problem) => path === undefined || problem.file === path).map((problem) => problem.message);
+  const compiled = problems.length > 0 ? `\nIt does not compile:\n${problems.join("\n")}` : "";
+  return { content: `${done} Revision ${revision} is rendering; the checks for it follow this round.${compiled}`, isError: false, changed: true, title };
+}
+
+function writeFile(host: AgentHost, path: string, content: string): ToolOutcome {
+  const current = host.prototype();
+  const existed = current.files[path] !== undefined;
+  if (current.files[path] === content) return { content: `${path} already has exactly this content; nothing changed.`, isError: false, changed: false, title: `Wrote ${path} (unchanged)` };
+  return change(host, { ...current, files: { ...current.files, [path]: content } }, `${existed ? "Rewrote" : "Created"} ${path}`, `${existed ? "Replaced" : "Created"} ${path} (${content.split("\n").length} lines).`, path);
+}
+
+function editFile(host: AgentHost, path: string, oldText: string, newText: string): ToolOutcome {
+  const current = host.prototype();
+  const text = current.files[path];
+  if (text === undefined) return refused(`edit_file: no ${path}`, `There is no file "${path}". Use write_file to create it.`);
+  const count = text.split(oldText).length - 1;
+  if (count !== 1) return refused(`edit_file: ${path} not changed`, `old_text appears ${count} times in ${path}; it must appear exactly once. Read the file and copy the text exactly, with enough around it to be unique.`);
+  const next = text.replace(oldText, () => newText);
+  if (next === text) return { content: "old_text and new_text are the same; nothing changed.", isError: false, changed: false, title: `Edited ${path} (unchanged)` };
+  return change(host, { ...current, files: { ...current.files, [path]: next } }, `Edited ${path}`, `Edited ${path}.`, path);
+}
+
+function deleteFile(host: AgentHost, path: string): ToolOutcome {
+  const current = host.prototype();
+  if (current.files[path] === undefined) return refused(`delete_file: no ${path}`, `There is no file "${path}".`);
+  const files = { ...current.files };
+  delete files[path];
+  return change(host, { ...current, files }, `Deleted ${path}`, `Deleted ${path}.`);
+}
+
+function setManifest(host: AgentHost, manifest: Record<string, unknown>): ToolOutcome {
+  const current = host.prototype();
+  return change(host, { ...(manifest as Omit<Prototype, "files">), files: current.files }, "Changed the manifest", "Replaced the manifest.");
+}
+
+const counts = (report: CheckReport) => {
+  const out = { pass: 0, fail: 0, "not-run": 0 };
+  for (const rule of report.rules) out[rule.status] += 1;
+  return out;
+};
+
+export function checksTitle(report: CheckReport): string {
+  const failing = report.rules.filter((rule) => rule.status === "fail").length;
+  return report.status === "pass" ? "Checks pass" : report.status === "fail" ? `Checks fail: ${failing} ${failing === 1 ? "rule" : "rules"}` : "Checks incomplete";
+}
+
+/** Core's report as text the agent reads: failing rules and their findings, word for word, with where each is. */
+export function describeMeasured({ revision, report, frames }: Measured): string {
+  const total = counts(report);
+  const lines = [`Checks for revision ${revision}, with every frame measured: ${report.status}. ${total.pass} pass, ${total.fail} fail, ${total["not-run"]} not run.`];
+  let shown = 0;
+  for (const rule of report.rules.filter((item) => item.status === "fail")) {
+    lines.push(`- ${rule.rule} (${rule.type})${rule.description ? `: ${rule.description}` : ""}`);
+    for (const finding of rule.findings.slice(0, 6)) {
+      if (shown >= 40) break;
+      shown += 1;
+      const place = [finding.file !== undefined ? `${finding.file}${finding.line !== undefined ? `:${finding.line}:${finding.column ?? 1}` : ""}` : null, finding.scenario !== undefined ? `scenario ${finding.scenario}` : null, finding.view !== undefined ? `view ${finding.view}` : null]
+        .filter(Boolean)
+        .join(", ");
+      lines.push(`  ${finding.kind}: ${finding.message}${place ? ` [${place}]` : ""}`);
+    }
+    if (rule.findings.length > 6) lines.push(`  and ${rule.findings.length - 6} more findings of ${rule.rule}`);
+  }
+  if (frames.length > 0) {
+    lines.push("Frames that did not render a snapshot:");
+    for (const frame of frames.slice(0, 8)) lines.push(`  ${frame.frame} (${frame.stage}): ${frame.message}`);
+  }
+  if (report.status === "pass") lines.push("Every rule in force passes.");
+  return lines.join("\n");
+}
+
+type ExampleInput = { readonly name: string; readonly files?: Record<string, string>; readonly remove_files?: readonly string[]; readonly manifest?: Partial<Omit<Prototype, "files">>; readonly flagged_by?: { readonly rule: string; readonly message?: string } };
+
+function examplePrototype(current: Prototype, example: ExampleInput): Prototype {
+  const files = { ...current.files, ...example.files };
+  for (const path of example.remove_files ?? []) delete files[path];
+  return { ...manifestOf(current), ...example.manifest, files };
+}
+
+async function draftProposal(host: AgentHost, input: Record<string, unknown>): Promise<ToolOutcome> {
+  const id = String(input.id);
+  const examples = input.examples as { pass: ExampleInput[]; fail: ExampleInput[] };
+  const current = host.prototype();
+  const rules = (input.rules ?? {}) as { add?: unknown[]; remove?: string[] };
+  const draft = {
+    id,
+    title: String(input.title),
+    reason: String(input.reason),
+    states: (input.states ?? []) as ProposalDraft["states"],
+    inventory: (input.inventory ?? []) as ProposalDraft["inventory"],
+    rules: { add: (rules.add ?? []) as ProposalDraft["rules"]["add"], remove: rules.remove ?? [] },
+    examples: {
+      pass: examples.pass.map((example): PassingExample => ({ name: example.name, prototype: examplePrototype(current, example) })),
+      fail: examples.fail.map(
+        (example): FailingExample => ({
+          name: example.name,
+          prototype: examplePrototype(current, example),
+          flaggedBy: { rule: example.flagged_by?.rule ?? "", ...(example.flagged_by?.message !== undefined ? { message: example.flagged_by.message } : {}) },
+        }),
+      ),
+    },
+  } satisfies ProposalDraft;
+
+  const config = host.config();
+  const existing = config.proposals.find((proposal) => proposal.id === id);
+  if (existing && existing.status !== "open") return refused(`Proposal ${id} not drafted`, `Proposal "${id}" is ${existing.status}, so it cannot be redrafted. Choose a new id.`);
+  const base = existing ? { ...config, proposals: config.proposals.filter((proposal) => proposal.id !== id) } : config;
+  const at = host.now();
+  const proposed = propose(base, draft, { at, by: "agent" });
+  if (!proposed.ok) return refused(`Proposal ${id} not drafted`, `Core refused the draft, so it was not saved: [${proposed.error.code}] ${proposed.error.message}`);
+  await host.saveConfig(proposed.value);
+  const saved = existing ? `Replaced your open draft "${id}".` : `Saved proposal "${id}" as open.`;
+  const tried = dryRunAdoption(proposed.value, id, { at, by: "agent (dry run)" }, [{ name: "the current prototype", prototype: current }]);
+  if (!tried.ok) {
+    const verdict = `Core's adoption dry run refuses it: [${tried.error.code}] ${tried.error.message}`;
+    return { content: `${saved} ${verdict}. Fix the draft and draft it again with the same id. Only the user can approve or adopt it.`, isError: false, changed: false, title: `Drafted proposal ${id}`, proposal: { id, title: draft.title, adoptable: false, verdict } };
+  }
+  const { classification, newlyFailing } = tried.value;
+  const changes = classification.changes.map((item) => `${item.change}: ${item.class} (${item.reason})`).join("; ");
+  const failing = newlyFailing.length === 0 ? "No prototype would newly fail." : `Would newly fail: ${newlyFailing.map((item) => `${item.name} (${item.rules.join(", ") || "new findings"})`).join("; ")}.`;
+  const verdict = `Core's adoption dry run passes: once approved it would be adopted, classified ${classification.class}. ${changes}. ${failing}`;
+  return { content: `${saved} ${verdict} Only the user can approve or adopt it; until then it stays open and the rules in force are unchanged.`, isError: false, changed: false, title: `Drafted proposal ${id}`, proposal: { id, title: draft.title, adoptable: true, verdict } };
+}

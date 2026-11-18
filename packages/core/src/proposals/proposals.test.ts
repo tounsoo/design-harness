@@ -8,7 +8,7 @@ import type { Prototype } from "../prototype/types";
 import type { RuleSpec } from "../rules/types";
 import type { Result } from "../validate";
 import { classifyProposal } from "./classify";
-import { adopt, approve, decline, propose, rerunExamples, type ProposalDraft, type Refusal } from "./lifecycle";
+import { adopt, approve, decline, dryRunAdoption, propose, rerunExamples, type ProposalDraft, type Refusal } from "./lifecycle";
 
 const legal = loadPrototype(join(EXAMPLES, "legal", "booking"));
 
@@ -59,6 +59,26 @@ function refusal<T>(result: Result<T, Refusal>): Refusal {
 function approved(config: ProjectConfig, proposal: ProposalDraft): ProjectConfig {
   return ok(approve(ok(propose(config, proposal, { at: "2026-11-17T09:00:00Z", by: "agent" })), proposal.id, { at: "2026-11-17T10:00:00Z", by: "ben" }));
 }
+
+describe("an adoption dry run", () => {
+  it("tells what adopting an open proposal would do, and leaves the config as it was", () => {
+    const config = ok(propose(nook, draft("toast"), { at: "2026-11-17T09:00:00Z", by: "agent" }));
+    const frozen = JSON.stringify(config);
+    const tried = ok(dryRunAdoption(config, "toast", { at: "2026-11-17T09:00:01Z", by: "agent" }, [{ name: "toast-heavy", prototype: twoToasts }]));
+    expect(tried.classification.class).toBe("tightens");
+    expect(tried.newlyFailing.map((item) => item.name)).toEqual(["toast-heavy"]);
+    expect(JSON.stringify(config)).toBe(frozen);
+    expect(config.proposals.find((item) => item.id === "toast")?.status).toBe("open");
+  });
+
+  it("gives adopt's refusal, word for word, and refuses what can no longer change", () => {
+    const config = ok(propose(nook, draft("toast", { fail: [{ name: "only-one", prototype: oneToast, flaggedBy: { rule: "one-toast-per-page" } }] }), { at: "t" }));
+    expect(refusal(dryRunAdoption(config, "toast", { at: "t" }))).toMatchObject({ code: "failing-example-passes", message: 'failing example "only-one" is not flagged as it must be: "one-toast-per-page" passed it' });
+    const declined = ok(decline(config, "toast", { at: "t" }));
+    expect(refusal(dryRunAdoption(declined, "toast", { at: "t" }))).toMatchObject({ code: "wrong-status" });
+    expect(refusal(dryRunAdoption(nook, "missing", { at: "t" }))).toMatchObject({ code: "not-found" });
+  });
+});
 
 describe("a proposal that adds a component with a governing rule", () => {
   it("is refused while open: it must be approved first", () => {

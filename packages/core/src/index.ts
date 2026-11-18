@@ -13,6 +13,7 @@ export type {
   CountRule,
   CountScope,
   FlowRule,
+  IsolationRule,
   Literal,
   MembershipRule,
   MembershipSubject,
@@ -37,7 +38,7 @@ export { PROPOSAL_STATUSES } from "./proposals/types";
 export type { Issue, Result } from "./validate";
 export { formatIssues, parseProjectConfig, parsePrototype, parseSnapshots } from "./parse";
 
-export type { ElementKind, ElementNode, ExtractionProblem, ModuleLoad, PageModel, PropValue, PrototypeModel, SourceLocation } from "./extract/model";
+export type { AmbientUse, ElementKind, ElementNode, ExtractionProblem, ModuleLoad, PageModel, PropValue, PrototypeModel, SourceLocation } from "./extract/model";
 export { PAGE_KIT, extractPrototype } from "./extract";
 export { isScript, resolvePath } from "./extract/modules";
 
@@ -52,4 +53,4 @@ export type { ChangeClass, Classification, ClassifiedChange } from "./proposals/
 export { classifyProposal } from "./proposals/classify";
 export { applyProposal } from "./proposals/apply";
 export type { Adoption, ExampleRun, ExistingPrototype, NewlyFailing, ProposalDraft, Refusal, RefusalCode, Stamp } from "./proposals/lifecycle";
-export { adopt, approve, decline, propose, rerunExamples } from "./proposals/lifecycle";
+export { adopt, approve, decline, dryRunAdoption, propose, rerunExamples } from "./proposals/lifecycle";
