@@ -108,6 +108,19 @@ A rule is data with a stable `id`, a `type` from a fixed set, and an optional `d
 
 `step-budget` measures every route from a task's start to its success state that never returns to a state it passed, and fails the longest one over the task's max steps, not only the shortest. Rendered rules read `RenderedSnapshot`s ([`src/rendered/types.ts`](src/rendered/types.ts)): per scenario and view, the page's content width and the width it lays out in (`viewportWidth`, less a vertical scrollbar drawn beside the page), and the elements with role, accessible name, rect, heading level, whether a control is turned off (`disabled`, which WCAG 1.4.3 exempts from contrast), and painted colours (with `overImage` when an image or gradient lies under the text, which makes contrast unverifiable rather than passed). The web app produces them from the live page in each frame. Without snapshots they report `not-run` and the report is `incomplete`; with them, a scenario and view with no snapshot is unverifiable. A rendered finding about one element carries `element`, its index in that snapshot's `elements`, so the app can point at it on the page.
 
+### A rule in words
+
+`describeRule(rule, config)` ([`src/engine/words.ts`](src/engine/words.ts)) says a rule in plain words, generated from its data, never written per rule. It names what a rule selects with the same selector describer that writes the engine's findings, so the words a reviewer reads before adoption match the messages the rule gives after it, and it names a cap with its value in the config. Two of its outputs, for a rule a proposal adds and for a built-in:
+
+```text
+{ "type": "count", "id": "one-toast-per-page", "scope": "page", "select": { "component": "Toast.Root" }, "max": 1 }
+  Each page holds at most 1 Toast.Root.
+{ "type": "slot", "id": "primary-slot", "slot": "$primary", "holds": { "role": "primary-action" }, "min": 1, "max": 1, "only": { "role": "primary-action" } }
+  The primary slot of each action page holds exactly 1 primary action at its top level, and holds nothing at its top level but primary actions.
+```
+
+A rule's `description`, when it has one, is its author's; the generated words are the rule's own.
+
 ### Built-in rules
 
 [`BUILT_IN_RULES`](src/builtins.ts) carries agent-design-loop's checks over. Each is data; the ones whose type is a named check rather than a selector rule are marked.
@@ -161,6 +174,15 @@ propose -> open -> approve -> approved -> adopt -> adopted
 
 No step is skipped, and `adopted` and `declined` are final. Every function takes the time and who as arguments and returns `{ ok: true, value }` or `{ ok: false, error: Refusal }`.
 
+Two things happen to an open proposal that are not status changes, and are kept in its optional `events`, oldest first:
+
+- `revise(config, id, draft, stamp)` replaces an open proposal's content with a new draft of the same id. Its status stays open and its status `history` is kept; the content it replaces is kept as a `revised` event with the stamp's time, who and note, so every version stays readable. A revision that says exactly what the proposal said is refused (`unchanged`), and only an open proposal can be revised: once approved, what was approved is what is adopted.
+- `sendBack(config, id, stamp)` records that a reviewer sent an open proposal back, as a `sent-back` event. The note is required (`missing-note`).
+
+Measured examples: a rendered rule needs snapshots, so a proposal that adds one is proven only on measured examples. `withExampleSnapshots(config, id, measured)` stores snapshots with each example of an open or approved proposal, by example name. It refuses a partial measurement (`incomplete-measurement`): every example, exactly one snapshot per scenario of the example and view of the config, each valid. `adopt` then runs the rendered rules on them, and the adopted proposal keeps them, so `rerunExamples` later gives the same result with no renderer. The web app measures every example in frames before it adopts.
+
+`tryExamples(config, id)` judges every example of an open or approved proposal on its own, as `adopt` would, without stopping at the first that does not behave: per example, whether it behaves, core's words for what happened (`adopt`'s refusal word for word when it does not), and core's whole report. `adopt` runs the same code. `newlyFailingOf(before, after, existing)` is `adopt`'s impact on the caller's prototypes for any two configs, such as the config with a proposal applied when its examples do not yet behave. An adopted proposal keeps its `classification`, since the config it was judged against is gone once adopted.
+
 `adopt(config, id, stamp, existing?)` applies the operations, re-validates the config, and refuses unless:
 
 - there is at least one passing and one failing example, and every rule the proposal adds is named by a failing example;
@@ -172,4 +194,4 @@ A refusal names the example and what happened instead, such as `failing example 
 
 ## Size
 
-`npm run bundle:core` bundles the library for the browser platform, which refuses Node built-ins, and prints its size. At this commit it is about 399 KiB minified and 107 KiB gzipped, of which `@babel/parser` is about 310 KiB minified. The parser is the one runtime dependency: it parses TSX with positions in the browser, synchronously, with no WebAssembly to load.
+`npm run bundle:core` bundles the library for the browser platform, which refuses Node built-ins, and prints its size. At this commit it is about 423 KiB minified and 114 KiB gzipped, of which `@babel/parser` is about 310 KiB minified; the proposal review milestone added 9 KiB minified and 2.5 KiB gzipped (rule words, revisions, measured examples). The parser is the one runtime dependency: it parses TSX with positions in the browser, synchronously, with no WebAssembly to load.

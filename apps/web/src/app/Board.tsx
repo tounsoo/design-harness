@@ -122,7 +122,7 @@ function statusOf(frameState: FrameState): { tone: "neutral" | "success" | "crit
   }
 }
 
-type CardProps = {
+export type CardProps = {
   readonly session: Session;
   readonly spec: FrameSpec;
   readonly revision: number;
@@ -131,10 +131,15 @@ type CardProps = {
   readonly focused: boolean;
   readonly hidden: boolean;
   readonly selected: boolean;
-  readonly onOpen: () => void;
+  /** Opens the frame at full size; without it the card has no Open button. */
+  readonly onOpen?: () => void;
+  /** Names the frame when the same scenario is shown more than once, as a proposal's examples are: "two-toasts: lantern-open at desktop". */
+  readonly label?: string;
 };
 
-function FrameCard({ session, spec, revision, frameState, scale, focused, hidden, selected, onOpen }: CardProps) {
+/** One frame of a session: its live iframe, scaled, with its view, size and measuring status. The review page shows examples with it too. */
+export function FrameCard({ session, spec, revision, frameState, scale, focused, hidden, selected, onOpen, label }: CardProps) {
+  const name = `${label ? `${label}: ` : ""}${spec.scenario.id} at ${spec.view.name}`;
   // A fresh document, on a fresh channel, for every revision.
   const doc = useMemo(() => (spec.blocked ? null : session.documentFor(spec.key)), [session, spec.key, spec.blocked, revision]);
   // One stable ref per document: a new callback on each render would detach and re-attach the frame.
@@ -161,7 +166,7 @@ function FrameCard({ session, spec, revision, frameState, scale, focused, hidden
         <Badge.Root tone={status.tone} className="frame-status">
           {status.text}
         </Badge.Root>
-        {!focused && (
+        {!focused && onOpen && (
           <Button.Root variant="ghost" onClick={onOpen} aria-label={`Open ${spec.scenario.id} at ${spec.view.name} full size`} className="frame-open">
             Open
           </Button.Root>
@@ -172,7 +177,7 @@ function FrameCard({ session, spec, revision, frameState, scale, focused, hidden
           <iframe
             key={doc.channel}
             ref={attach}
-            title={`${spec.scenario.id} at ${spec.view.name}`}
+            title={name}
             sandbox={FRAME_SANDBOX}
             referrerPolicy="no-referrer"
             srcDoc={doc.html}

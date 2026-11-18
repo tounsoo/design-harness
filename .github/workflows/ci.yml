@@ -9,6 +9,7 @@ permissions:
   contents: read
 
 jobs:
+  # The fast gate: typecheck, lint and unit tests.
   check:
     runs-on: ubuntu-latest
     steps:
@@ -19,3 +20,17 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+
+  # The built app in Chromium, with the fake Anthropic API: Playwright is the pinned dev dependency, and this installs its Chromium.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e

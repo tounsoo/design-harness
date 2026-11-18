@@ -15,6 +15,8 @@ import { ChatPanel } from "./ChatPanel";
 import { ChecksPanel } from "./ChecksPanel";
 import { CodePanel, MANIFEST_FILE } from "./CodePanel";
 import { ProjectView } from "./ProjectView";
+import { ProposalPage } from "./ProposalPage";
+import { ProposalsView } from "./ProposalsView";
 import { createSession } from "./runtime";
 
 /** How long typing pauses before a new revision is checked and rendered. */
@@ -49,6 +51,18 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   // The config changes when the agent drafts a proposal. Refs hold the newest values for the agent's tools between renders.
   const [config, setConfigState] = useState(initialConfig);
   const configRef = useRef(config);
+  /**
+   * The config the checks run with: the same object for as long as nothing
+   * a check reads changes. Drafting, revising, approving or declining a
+   * proposal changes only the proposals, which no check reads, so the board
+   * keeps its revision and its measured frames; adopting one changes the
+   * rules, and the board checks again.
+   */
+  const checkedRef = useRef(config);
+  const checked = useCallback((next: ProjectConfig): ProjectConfig => {
+    if (next !== checkedRef.current && checksKey(next) !== checksKey(checkedRef.current)) checkedRef.current = next;
+    return checkedRef.current;
+  }, []);
   const [records, setRecordsState] = useState(initial);
   const recordsRef = useRef(records);
   const setRecords = useCallback((update: (items: readonly PrototypeRecord[]) => readonly PrototypeRecord[]) => {
@@ -59,7 +73,11 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   const current = records.find((record) => record.id === currentId) ?? records[0];
   const [settings, setSettings] = useState<AgentSettings>(() => loadSettings());
   const settingsRef = useRef(settings);
-  const [center, setCenter] = useState<"canvas" | "project">("canvas");
+  const [center, setCenter] = useState<"canvas" | "project" | "proposals">("canvas");
+  /** The proposal whose review page is open in the Proposals view, or null for the list. */
+  const [reviewing, setReviewing] = useState<string | null>(null);
+  /** Text put into the chat's message box for the person to edit and send; the nonce makes the same text land twice. */
+  const [prefill, setPrefill] = useState<{ readonly text: string; readonly nonce: number } | null>(null);
   const [side, setSide] = useState<"checks" | "code">("checks");
   const [selected, setSelected] = useState<Finding | null>(null);
   const [code, setCode] = useState<CodeTarget>({ file: firstFile(current?.prototype) });
@@ -70,16 +88,17 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   const first = useRef(true);
   useEffect(() => {
     if (!prototype) return;
+    const checks = checked(config);
     const running = session.current();
-    if (running && running.prototype === prototype && running.config === config) return;
+    if (running && running.prototype === prototype && running.config === checks) return;
     if (first.current) {
       first.current = false;
-      session.update(config, prototype);
+      session.update(checks, prototype);
       return;
     }
-    const timer = setTimeout(() => session.update(config, prototype), EDIT_DEBOUNCE_MS);
+    const timer = setTimeout(() => session.update(checks, prototype), EDIT_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [session, config, prototype]);
+  }, [session, config, prototype, checked]);
 
   // Edits are saved in the browser once typing pauses.
   useEffect(() => {
@@ -96,6 +115,16 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     [currentId, setRecords],
   );
 
+  /** The one way the config changes: a proposal drafted or revised by the agent, or a review step by the person. */
+  const saveConfig = useCallback(
+    async (next: ProjectConfig) => {
+      configRef.current = next;
+      setConfigState(next);
+      await store.putProject(next);
+    },
+    [store],
+  );
+
   // The agent's view of the app, for the prototype open now: its changes are revisions at once, and its checks wait for every frame.
   const host = useMemo((): AgentHost => {
     const prototypeOf = () => recordsRef.current.find((record) => record.id === currentId)?.prototype ?? recordsRef.current[0]?.prototype;
@@ -109,28 +138,24 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
       apply: (next) => {
         setSelected(null);
         setRecords((items) => items.map((item) => (item.id === currentId ? { ...item, prototype: next } : item)));
-        session.update(configRef.current, next);
+        session.update(checked(configRef.current), next);
         const after = session.getState();
         return { revision: after.revision, compileProblems: after.compileProblems };
       },
-      saveConfig: async (next) => {
-        configRef.current = next;
-        setConfigState(next);
-        await store.putProject(next);
-      },
+      saveConfig: (next) => saveConfig(next),
       measured: (signal) =>
         waitForMeasured(
           session,
           () => {
             const value = prototypeOf();
             if (!value) throw new Error("no prototype is open");
-            return { config: configRef.current, prototype: value };
+            return { config: checked(configRef.current), prototype: value };
           },
           signal,
         ),
       now: () => new Date().toISOString(),
     };
-  }, [currentId, session, store, setRecords]);
+  }, [currentId, session, setRecords, saveConfig, checked]);
 
   const controller = useMemo(
     () => new AgentController({ host, store: chatStore(store, initialConfig.id, currentId), key: () => vault.get(), settings: () => settingsRef.current }),
@@ -144,6 +169,19 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     settingsRef.current = next;
     setSettings(next);
     saveSettings(next);
+  }, []);
+
+  const key = useSyncExternalStore(vault.subscribe, vault.getState);
+  const agentState = useSyncExternalStore(controller.subscribe, controller.getState);
+  const agent = !key.present
+    ? { ready: false, why: "Enter your Anthropic API key in the chat to send a proposal back to the agent." }
+    : agentState.running
+      ? { ready: false, why: "The agent is working on something now; send it back once it stops." }
+      : { ready: agentState.loaded, why: "The chat is still loading." };
+
+  const openProposal = useCallback((id: string) => {
+    setReviewing(id);
+    setCenter("proposals");
   }, []);
 
   const select = useCallback(
@@ -164,6 +202,39 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     },
     [session],
   );
+
+  /** Opens a prototype on the board, pointing at a finding when one is given. */
+  const openPrototype = useCallback(
+    (id: string, finding?: Finding) => {
+      const next = recordsRef.current.find((record) => record.id === id);
+      if (!next) return;
+      setCenter("canvas");
+      if (id !== currentId) {
+        setSelected(null);
+        setCurrentId(id);
+        setCode({ file: firstFile(next.prototype) });
+        return;
+      }
+      if (finding) select(finding);
+    },
+    [currentId, select],
+  );
+
+  /** "Ask the agent to propose this": a message for the person to edit and send, about a finding outside the inventories. */
+  const ask = useCallback((finding: Finding) => {
+    const place = finding.file !== undefined ? ` (${finding.file}${finding.line !== undefined ? `:${finding.line}` : ""})` : finding.page !== undefined ? ` (page ${finding.page})` : "";
+    const text = `The check "${finding.rule}" says: ${finding.message}${place}\n\nIf the prototype needs this, draft a proposal that adds it to the inventory, with a rule that governs it and examples that pass and fail. If it does not, change the prototype to use what the inventory has.`;
+    setPrefill((previous) => ({ text, nonce: (previous?.nonce ?? 0) + 1 }));
+  }, []);
+  const proposable = useCallback(
+    (finding: Finding) => {
+      const rule = configRef.current.rules.find((item) => item.id === finding.rule);
+      return rule?.type === "membership" && rule.of !== "imports";
+    },
+    [],
+  );
+
+  const openCount = config.proposals.filter((proposal) => proposal.status === "open").length;
 
   const download = () => {
     const blob = new Blob([exportProject(configRef.current, recordsRef.current)], { type: "application/json" });
@@ -224,10 +295,25 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
             {config.library.package} {config.library.version}
           </Badge.Root>
         </Stack.Root>
-        <Tabs.Root value={center} onValueChange={(value) => setCenter(value === "project" ? "project" : "canvas")} className="app-center-tabs">
+        <Tabs.Root
+          value={center}
+          onValueChange={(value) => {
+            if (value === "proposals" && center === "proposals") setReviewing(null);
+            setCenter(value === "project" ? "project" : value === "proposals" ? "proposals" : "canvas");
+          }}
+          className="app-center-tabs"
+        >
           <Tabs.List aria-label="Main view">
             <Tabs.Tab value="canvas">Canvas</Tabs.Tab>
             <Tabs.Tab value="project">Project</Tabs.Tab>
+            <Tabs.Tab value="proposals" onClick={() => center === "proposals" && setReviewing(null)}>
+              Proposals
+              {openCount > 0 && (
+                <Badge.Root tone="info" className="app-tab-count" data-testid="open-proposals" aria-label={`${openCount} open`}>
+                  {openCount}
+                </Badge.Root>
+              )}
+            </Tabs.Tab>
           </Tabs.List>
         </Tabs.Root>
         <Stack.Root direction="row" align="center" gap="condensed" className="app-header-end">
@@ -279,15 +365,37 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
       )}
 
       <div className="app-body">
-        <ChatPanel controller={controller} vault={vault} settings={settings} onSettings={changeSettings} />
-        <main className="app-main" aria-label={center === "canvas" ? "Canvas" : "Project"}>
+        <ChatPanel controller={controller} vault={vault} settings={settings} onSettings={changeSettings} onOpenProposal={openProposal} prefill={prefill} />
+        <main className="app-main" aria-label={center === "canvas" ? "Canvas" : center === "project" ? "Project" : "Proposals"}>
           {/* The board stays laid out under the project view, so frames keep their viewport and keep measuring. */}
           <div className="app-main-pane" data-inactive={center === "canvas" ? undefined : ""} aria-hidden={center === "canvas" ? undefined : true}>
             <Board session={session} state={state} selected={selected} />
           </div>
           {center === "project" && (
             <div className="app-main-pane app-main-scroll">
-              <ProjectView config={config} />
+              <ProjectView config={config} onOpenProposal={openProposal} />
+            </div>
+          )}
+          {center === "proposals" && (
+            <div className="app-main-pane app-main-scroll" data-testid="proposals-pane">
+              {reviewing === null ? (
+                <ProposalsView config={config} onOpen={openProposal} />
+              ) : (
+                <ProposalPage
+                  key={reviewing}
+                  config={config}
+                  id={reviewing}
+                  prototypes={records}
+                  openPrototypeId={current?.id ?? ""}
+                  board={{ session, state }}
+                  agent={agent}
+                  onBack={() => setReviewing(null)}
+                  onSave={saveConfig}
+                  onSendBack={(message) => void controller.send(message)}
+                  onOpenPrototype={openPrototype}
+                  onOpenProposal={openProposal}
+                />
+              )}
             </div>
           )}
         </main>
@@ -303,7 +411,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
               <Tabs.Tab value="code">Code</Tabs.Tab>
             </Tabs.List>
             <Tabs.Panel value="checks" keepMounted className="app-side-panel">
-              <ChecksPanel state={state} measuredCount={measuredCount} selected={selected} onSelect={select} />
+              <ChecksPanel state={state} measuredCount={measuredCount} selected={selected} onSelect={select} {...(key.present ? { onAsk: ask } : {})} proposable={proposable} config={config} />
             </Tabs.Panel>
             <Tabs.Panel value="code" keepMounted className="app-side-panel">
               {current && <CodePanel prototype={current.prototype} target={code} onTarget={setCode} onEdit={edit} problems={state.compileProblems} />}
@@ -313,6 +421,11 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
       </div>
     </div>
   );
+}
+
+/** Everything in a config a check reads: all of it but the proposals. */
+function checksKey(config: ProjectConfig): string {
+  return JSON.stringify({ ...config, proposals: [] });
 }
 
 function firstFile(prototype: Prototype | undefined): string {

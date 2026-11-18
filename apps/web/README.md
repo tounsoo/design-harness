@@ -17,11 +17,12 @@ npm run e2e           # builds, then runs the end-to-end tests in Chromium
 
 On first open the app seeds the Nook example from `packages/core/examples/nook/`: its config and its legal booking prototype, read from the files core's own tests read. What you see:
 
-- **Header:** project and prototype, the library, the Canvas and Project views, Export and Import.
+- **Header:** project and prototype, the library, the Canvas, Project and Proposals views (the Proposals tab shows how many proposals are open), Export and Import.
 - **Canvas:** one row per scenario and one frame per view in it (Nook: 4 scenarios × desktop and phone), each a live render scaled to fit. Zoom is Fit, 25, 50 or 100%. **Open** shows a frame at full size, in place.
 - **Checks:** core's report, rule by rule in core's order, with each finding's message word for word and where it is. Selecting a rendered finding outlines the element in its frame; selecting a source finding opens its file at its line. The report is also there as JSON.
 - **Code:** each prototype file and `manifest.json` in a plain editor. An edit is a new revision 300 ms after typing stops: the frames re-render and the checks run again. Edits are saved in the browser.
-- **Project:** the library and its role mapping, inventories, rule inputs, views, rules and proposals with their status, read-only.
+- **Project:** the library and its role mapping, inventories, rule inputs, views, rules and proposals with their status, read-only, and every adopted proposal's examples re-run on demand.
+- **Proposals:** every proposal, and each one's review page, where you approve, decline, send back or adopt it ([Reviewing a proposal](#reviewing-a-proposal)).
 - **Agent:** the chat (below). Paste a key, pick a model and effort, and ask. Each tool call is one line that opens to its input and result; the checks the app ran after a change show their verdict; each turn shows its tokens, an approximate cost and **Undo this turn**. **Stop** stops it at any time.
 
 Nothing in the app decides pass or fail. It renders frames, collects what they painted, and hands both the prototype and the snapshots to `checkPrototype`. The report it shows is core's.
@@ -30,7 +31,8 @@ Nothing in the app decides pass or fail. It renders frames, collects what they p
 
 | Path | What it is |
 | --- | --- |
-| `src/app/` | The UI: `App` (open the store and the key vault, seed), `Workspace` (layout, edits, selection, the agent's host), `Board`, `ChecksPanel`, `CodePanel`, `ProjectView`, `ChatPanel`, `app.css` |
+| `src/app/` | The UI: `App` (open the store and the key vault, seed), `Workspace` (layout, edits, selection, the agent's host), `Board`, `ChecksPanel`, `CodePanel`, `ProjectView`, `ChatPanel`, `ProposalsView` (the list), `ProposalPage` (a proposal's review page), `proposal-parts.tsx` (status and class badges, a rule in words), `sessions.ts` (prototypes measured in frames of their own), `app.css` |
+| `src/review/` | The review's logic, pure: `actions.ts` (approve, decline with a note, send back, adopt on a measurement), `timeline.ts` (the history and who "you" is), `diff.ts` (the inventory diff) |
 | `src/agent/` | The agent: `request.ts` (client, system prompt, request), `tools.ts` (tool definitions and handlers), `schema.ts` (tool input validation), `history.ts` (the append-only API history), `controller.ts` (the turn loop, stop, retry, undo, saving), `measure.ts` (a report only for fully measured current source), `errors.ts`, `models.ts` (models, effort, prices), `key-vault.ts`, `settings.ts` |
 | `src/runtime/session.ts` | One prototype's check loop: revisions, frames, snapshots, core's report |
 | `src/runtime/protocol.ts` | The frame protocol's message types and both sides' validators |
@@ -159,7 +161,7 @@ new Messages(client).stream({
   model, // claude-opus-5-5 (default), claude-sonnet-5-5 or claude-haiku-5-5
   max_tokens: 32000,
   system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-  tools, // the nine below, each with eager_input_streaming: true
+  tools, // the ten below, each with eager_input_streaming: true
   tool_choice: { type: "auto" }, // forced tool choice is a 400 on these models
   thinking: { type: "adaptive", display: "summarized" },
   output_config: { effort }, // low | medium (default) | high | xhigh | max
@@ -193,9 +195,12 @@ Each tool's input is validated against the same JSON Schema it is declared with 
 | `delete_file` | `path` | Deletes a file. |
 | `set_manifest` | `pages`, `layouts`, `scenarios`, `flow` | Replaces the manifest; core's `parsePrototype` refuses it or it is applied. |
 | `run_checks` | none | Core's report for the current revision, once every frame measured it. |
-| `draft_proposal` | `id`, `title`, `reason`, `states`, `inventory`, `rules.add`, `rules.remove`, `examples.pass` and `examples.fail` (each `name`, `files`, `remove_files`, `manifest`; a failing one also `flagged_by`) | Saves the proposal as `open` with core's `propose`, then runs core's `dryRunAdoption` against the current prototype and returns its verdict or refusal. Drafting again with the same id replaces an open draft. |
+| `draft_proposal` | `id`, `title`, `reason`, `states`, `inventory`, `rules.add`, `rules.remove`, `examples.pass` and `examples.fail` (each `name`, `files`, `remove_files`, `manifest`; a failing one also `flagged_by`) | Saves the proposal as `open` with core's `propose`, then runs core's `dryRunAdoption` against the current prototype and returns its verdict or refusal. An id that exists is refused, pointing to `revise_proposal`. |
+| `revise_proposal` | `id`, `note`, and any of the fields `draft_proposal` takes but `id`; each one given replaces that field whole | Revises an open proposal with core's `revise`: the status stays open, and the version it replaces is kept in its history with the note. Runs the dry run again. A proposal that is not open is refused. |
 
-Every change goes through core's `parsePrototype` and becomes a new revision at once (no debounce), so the frames re-render and the checks run again. `run_checks` and the checks after a round come from `measure.ts`, which resolves only with a report of the app's current source for which every frame answered, using the session's revisions: a report of older source is never returned, and if the source changes while frames measure it waits for the newer revision. The agent cannot approve, decline or adopt a proposal: there is no tool for it. An open proposal shows in the chat and in the Project view; approving is the next milestone.
+Every change goes through core's `parsePrototype` and becomes a new revision at once (no debounce), so the frames re-render and the checks run again. `run_checks` and the checks after a round come from `measure.ts`, which resolves only with a report of the app's current source for which every frame answered, using the session's revisions: a report of older source is never returned, and if the source changes while frames measure it waits for the newer revision. The agent cannot approve, decline or adopt a proposal: no tool does, no tool's input has a status field (the schemas refuse unknown fields), and nothing reads the chat's text for one. A drafted or revised proposal shows in the chat as a card that opens its review page.
+
+The dry run the agent gets reads source only: it has no frames. A proposal that adds a rendered rule therefore cannot be proven there, and the result says so (`needsMeasurement` on the card, which stays an info card rather than a warning) instead of telling the agent to fix it; the review page measures every example before the person can adopt it.
 
 ### Undo
 
@@ -218,7 +223,44 @@ The chat is Todae's `Conversation` (it follows the newest message while it strea
 
 ### Verified against a fake API only
 
-Nothing in this repository has called the real Anthropic API, and no real key was used. `e2e/fake-anthropic.mjs` writes scripted replies in the API's server-sent-event format (message_start, content blocks with text, thinking and signature deltas, tool input as `input_json_delta` fragments, message_delta with the stop reason, `stop_details` and usage, message_stop) and error bodies. Unit tests feed it to the real SDK through a scripted `fetch`. The end-to-end tests serve it over HTTPS with a throwaway certificate and CORS, and launch Chromium with `--host-resolver-rules` mapping `api.anthropic.com` to it and no proxy, so the built app, unchanged, talks to the API's real address and only the fake answers; the tests also check what the fake received (headers, model, effort, thinking, tool choice, fallbacks, that each request extends the last). They cover: an edit whose frames and checks follow; a second primary action whose failing check reaches the agent, and a fix that passes; a proposal saved open with its dry run, surviving a reload; stopping mid-stream; an auth error and a refusal; undo; and the key's absence from frames, exports and storage. What only the real API can show is untested: that it accepts this exact request (the beta names, `fallbacks: "default"`, `display: "summarized"`, the tool schemas), real streaming timing, real refusal and fallback behaviour, prompt caching hit rates, and the costs shown.
+Nothing in this repository has called the real Anthropic API, and no real key was used. `e2e/fake-anthropic.mjs` writes scripted replies in the API's server-sent-event format (message_start, content blocks with text, thinking and signature deltas, tool input as `input_json_delta` fragments, message_delta with the stop reason, `stop_details` and usage, message_stop) and error bodies. Unit tests feed it to the real SDK through a scripted `fetch`. The end-to-end tests serve it over HTTPS with a throwaway certificate and CORS, and launch Chromium with `--host-resolver-rules` mapping `api.anthropic.com` to it and no proxy, so the built app, unchanged, talks to the API's real address and only the fake answers; the tests also check what the fake received (headers, model, effort, thinking, tool choice, fallbacks, that each request extends the last). They cover: an edit whose frames and checks follow; a second primary action whose failing check reaches the agent, and a fix that passes; a proposal saved open with its dry run, surviving a reload; stopping mid-stream; an auth error and a refusal; undo; and the key's absence from frames, exports and storage. For the review: a drafted proposal opening to its page with its examples side by side and the flagged line marked; approve then adopt, after which the Checks panel runs the new rule and flags a prototype that breaks it; a refused adoption shown in core's words; a decline that needs a note; a send-back that reaches the agent, which revises the proposal (scripted), with both versions in the history; the impact list; a rendered rule adopted on measured snapshots, outlined in its frame, with the same results after a reload; tool calls and a chat message that try to change a status and change nothing; and asking the agent from a finding. What only the real API can show is untested: that it accepts this exact request (the beta names, `fallbacks: "default"`, `display: "summarized"`, the tool schemas), real streaming timing, real refusal and fallback behaviour, prompt caching hit rates, and the costs shown.
+
+## Reviewing a proposal
+
+The Proposals view lists every proposal: title and id, status, core's classification (only adds, tightens, or loosens or removes), who drafted it and when, and its examples, filtered by status with a count on each filter. The Proposals tab shows the number of open proposals as a badge, and nothing else asks for attention. A proposal opens to its review page from the list, from the chat's card, or from the Project view.
+
+### The page
+
+- **Header and actions.** Title, status, classification, id, who drafted it and when. The actions are a sticky bar with core's adoption dry run beside them: Approve (open), Adopt (approved), Send back to the agent (open), Decline. Each is a deliberate click; decline and send back open a note form and refuse to go on without a note. Every status change goes through core's lifecycle and is stamped with the time and `by: "you"`: there is one user, and the field is kept for accounts. A refusal is shown in core's words with its code, the example it names (a button scrolls to it), and for an earlier adopted proposal's broken example, that proposal (a button opens its page), with its findings.
+- **Why.** The reason and the state notes.
+- **What it changes.** The inventories and rule inputs before and after, from core's `applyProposal` on the config as it is (`src/review/diff.ts`): lists as badges, with what is added or removed marked, and changed rows (caps, tasks, page types, ranking, roles) as before and after. Each rule it adds or removes in core's `describeRule` words, its author's description under them, and its data one click away.
+- **Examples.** Passing examples on the left, failing on the right, each a card with its frames at the chosen scenario and views (below), core's verdict as a badge ("passes", "fails for one-toast-per-page alone", "does not behave"), core's words for what happened, and the findings. On a failing example, a rendered finding is outlined in its frame with the board's own highlight (the frame's overlay), and a source finding's line is shown marked, as the code view marks it. The scenario picker opens on the scenario the first failing example is flagged in.
+- **Impact on the project.** Core's adoption check against every prototype in the project, each measured: the prototypes that would newly fail, with the findings, and Open on the board, which shows the prototype and points at the finding. When the dry run refuses (an example misbehaves), the impact still comes from core's `newlyFailingOf` with the proposal applied.
+- **Classification**, change by change with core's reasons, and **History**: every status change, revision and send-back, by whom and when, with its note; a revision opens to the version it replaced.
+
+Once adopted, the page says which rules are in force and what the re-check of every prototype found; the open prototype's checks run again at once with the new rule, and the Checks panel shows a rule without a description in core's words. An adopted proposal's examples are judged with core's `rerunExamples`, on the snapshots stored at adoption.
+
+### How examples are rendered and measured
+
+Each example is a prototype. `useSessions` (`src/app/sessions.ts`) gives each one a check session of its own, the same `Session` the board uses, with the same frame documents, sandbox, protocol and collector: one frame per scenario and view, rendered with the proposal applied to the config (so a component or page type it adds is there). A session is keyed by a hash of everything a frame's paint depends on: the library, its version and stylesheets, the views, the page types and the example's source. When a revision changes an example, its key changes, a new session measures it from scratch and the old one is dropped, so no measurement is ever reported for content it was not taken of. Frames of other scenarios stay laid out, hidden, so every scenario is measured, not only the one shown. The project's other prototypes are measured the same way for the impact; the open prototype's snapshots are the board's.
+
+The verdicts wait for a complete measurement: until every frame of every example has answered with a snapshot, the cards say how many have, and Adopt is disabled with the reason beside it. A frame that fails or times out leaves its example "not measured", and core's `withExampleSnapshots` would refuse the partial measurement anyway, so adoption never runs on one.
+
+### Where the adoption snapshots are stored
+
+With the proposal, in the project config: Adopt calls core's `withExampleSnapshots` with the measurement, which stores each example's snapshots on the example (`examples.pass[i].snapshots`, `examples.fail[i].snapshots`, core's existing optional field), and then core's `adopt` on that config, which keeps them on the adopted proposal. The config is saved to IndexedDB and goes into the export. Re-running the examples later, on the Project view or after a reload, reads those snapshots: nothing is rendered again, and the end-to-end test checks that no example frame exists while it re-runs and that the results equal the ones at adoption.
+
+### Send back, and the agent's revision
+
+Send back records the note in the proposal's history (core's `sendBack`) and sends it as the person's next chat message, naming the proposal and asking for `revise_proposal`. It needs a key and an idle agent; the page says which is missing. The agent revises with `revise_proposal`, which keeps the history; the chat shows a "Proposal revised" card, the open review page follows the new version, and its examples are measured again.
+
+### Asking the agent to propose
+
+A failing check whose finding is about something outside the inventories (a membership rule over components, page types, layouts or flow states) offers "Ask the agent to propose this" in the Checks panel, when a key is set. It puts a message into the chat's box, quoting core's finding and where it is, for the person to edit and send; it never sends on its own.
+
+### Built with Todae
+
+The review uses Todae's `Card` (actions, example cards, impact), `Table` (the list, rows of the diff, the classification, the re-run examples), `ToggleGroup` (filters), `Badge`, `Steps` (the history), `Disclosure` (rule data, earlier versions), `Alert` (refusals, the adopted notice), `DataList`, `EmptyState`, `Field` (`Textarea` for notes and the read-only marked excerpt, `Select` for scenario and view), `ErrorMessage`, `Label`, `Code`, `Stack`, `Text` and `Button`. What Todae lacked, done in `app.css`: two columns of example cards that hold scaled frames, a before-and-after layout for the diff, a sticky action bar, and a read-only code excerpt sized to its lines. `ToggleGroup` wraps each text child of an item in its own span, which splits the button's accessible name, so each filter label is one string.
 
 ## Storage and the project file
 
@@ -244,9 +286,9 @@ Runtime, each for one job:
 | `@babel/parser` | Already in core; finds import specifiers to rewrite. |
 | `dom-accessibility-api` | The accessible-name computation in the frame (12 kB minified). |
 
-Development only: `@types/react`, `@types/react-dom`, `fake-indexeddb` (storage and key tests in Node). Playwright is not a dependency: `e2e/run.mjs` uses the `playwright` package and Chromium the environment provides.
+Development only: `@types/react`, `@types/react-dom`, `fake-indexeddb` (storage and key tests in Node), and at the root `playwright` 1.63.0, exact, for `e2e/run.mjs`. CI installs its Chromium (`npx playwright install --with-deps chromium`); a local run uses the Chromium at `/opt/pw-browsers/chromium` when it is there, and Playwright's own otherwise.
 
-Size of `npm run build`, in kB of 1000 bytes: the app's JS is 1,292 kB minified, 368 kB gzipped (Todae, React DOM, core with `@babel/parser` at 318 kB, sucrase at 206 kB, the Anthropic SDK at 160 kB, and the frame runtime as text: boot script 23 kB, page kit 2.5 kB); its CSS 284 kB, 38 kB gzipped, nearly all Todae's. The agent milestone added 244 kB minified and 76 kB gzipped to the JS (the web shell's build was 1,048 kB and 292 kB): the SDK, the chat and the agent, and core's source scan. The local package source adds 907 kB, 239 kB gzipped, fetched once per session: Todae 405 kB, React DOM 215 kB, React 11 kB, Todae's CSS 276 kB.
+Size of `npm run build`, in kB of 1000 bytes: the app's JS is 1,292 kB minified, 368 kB gzipped (Todae, React DOM, core with `@babel/parser` at 318 kB, sucrase at 206 kB, the Anthropic SDK at 160 kB, and the frame runtime as text: boot script 23 kB, page kit 2.5 kB); its CSS 284 kB, 38 kB gzipped, nearly all Todae's. The agent milestone added 244 kB minified and 76 kB gzipped to the JS (the web shell's build was 1,048 kB and 292 kB): the SDK, the chat and the agent, and core's source scan. The proposal review milestone took the JS from 1,292 kB to 1,351 kB minified (+59 kB) and from 368 kB to 385 kB gzipped (+17 kB), and the CSS from 284 kB to 286 kB (38 kB gzipped): the Proposals view and review page, the review logic, and core's rule words and lifecycle additions. It adds no runtime dependency. The local package source adds 907 kB, 239 kB gzipped, fetched once per session: Todae 405 kB, React DOM 215 kB, React 11 kB, Todae's CSS 276 kB.
 
 ## Known gaps
 
@@ -259,4 +301,8 @@ Size of `npm run build`, in kB of 1000 bytes: the app's JS is 1,292 kB minified,
 - A project stored before this milestone keeps its own copy of the rules, without `no-ambient-globals`: the seed has it, and a stored project gets it by importing a config that has it (or, later, by a proposal).
 - The default shell is generic: no per-page-type shell code and no prototype-wide frame yet.
 - Rendered measurements depend on the browser: fonts and scrollbar style differ between machines, so a report is reproducible on one browser and machine, not across them.
-- The end-to-end tests are not in CI (see AGENTS.md).
+- The review page measures every example in every scenario and view, so a proposal with many examples renders many frames at once (Nook: 8 per example); nothing yet limits how many.
+- The agent's dry run reads source only, with no frames: for a rendered rule, the first verdict with measurements is the review page's.
+- The project's other prototypes are measured for the impact while a review page is open, but only the open prototype is re-checked on the board after an adoption; another prototype's checks run when it is opened.
+- A send-back is recorded in the history before its chat message is sent; if the request then fails, the note stays recorded and the turn shows the error, with Retry where it helps.
+- An adopted proposal's examples keep the snapshots measured at adoption: if the project's views or library change later, re-running them reports the missing views as not measured rather than measuring again.

@@ -32,7 +32,7 @@ export type {
   TextMatch,
 } from "./rules/types";
 export { PAGE_KINDS, ROLE_NAMES } from "./rules/types";
-export type { FailingExample, InventoryOp, PassingExample, Proposal, ProposalStatus, StateNote, StatusChange } from "./proposals/types";
+export type { FailingExample, InventoryOp, PassingExample, Proposal, ProposalContent, ProposalEvent, ProposalStatus, StateNote, StatusChange } from "./proposals/types";
 export { PROPOSAL_STATUSES } from "./proposals/types";
 
 export type { Issue, Result } from "./validate";
@@ -48,9 +48,10 @@ export type { CheckInput } from "./engine/check";
 export { checkPrototype } from "./engine/check";
 
 export { BUILT_IN_RULES } from "./builtins";
+export { describeRule } from "./engine/words";
 
 export type { ChangeClass, Classification, ClassifiedChange } from "./proposals/classify";
 export { classifyProposal } from "./proposals/classify";
 export { applyProposal } from "./proposals/apply";
-export type { Adoption, ExampleRun, ExistingPrototype, NewlyFailing, ProposalDraft, Refusal, RefusalCode, Stamp } from "./proposals/lifecycle";
-export { adopt, approve, decline, dryRunAdoption, propose, rerunExamples } from "./proposals/lifecycle";
+export type { Adoption, ExampleResult, ExampleRun, ExistingPrototype, NewlyFailing, ProposalDraft, Refusal, RefusalCode, Stamp } from "./proposals/lifecycle";
+export { adopt, approve, contentOf, decline, dryRunAdoption, newlyFailingOf, propose, rerunExamples, revise, sendBack, tryExamples, withExampleSnapshots } from "./proposals/lifecycle";

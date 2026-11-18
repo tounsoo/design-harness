@@ -1,8 +1,10 @@
-import { Badge, Code, DataList, Disclosure, Stack, Table, Text } from "@tounsoo/todae";
-import { ROLE_NAMES, type ProjectConfig, type Proposal, type RoleMapping } from "@design-harness/core";
+import { Badge, Button, Code, DataList, Disclosure, Stack, Table, Text } from "@tounsoo/todae";
+import { useState } from "react";
+import { ROLE_NAMES, rerunExamples, type ExampleRun, type ProjectConfig, type Proposal, type RoleMapping } from "@design-harness/core";
+import { formatTime } from "../review/timeline";
 
-/** The project, read-only: library and roles, inventories, rule inputs, views, rules and proposals. */
-export function ProjectView({ config }: { readonly config: ProjectConfig }) {
+/** The project, read-only: library and roles, inventories, rule inputs, views, rules, proposals, and their examples re-run on demand. */
+export function ProjectView({ config, onOpenProposal }: { readonly config: ProjectConfig; readonly onOpenProposal: (id: string) => void }) {
   const { library, inventories, inputs } = config;
   return (
     <Stack.Root gap="spacious" className="project">
@@ -157,11 +159,13 @@ export function ProjectView({ config }: { readonly config: ProjectConfig }) {
         ) : (
           <ul className="project-rules">
             {config.proposals.map((proposal) => (
-              <ProposalItem key={proposal.id} proposal={proposal} />
+              <ProposalItem key={proposal.id} proposal={proposal} onOpen={() => onOpenProposal(proposal.id)} />
             ))}
           </ul>
         )}
       </section>
+
+      <Regression config={config} onOpenProposal={onOpenProposal} />
     </Stack.Root>
   );
 }
@@ -181,7 +185,7 @@ function propText(mapping: RoleMapping): string {
   return `${mapping.prop.name} = ${values}${mapping.prop.whenMissing ? ", or none" : ""}`;
 }
 
-function ProposalItem({ proposal }: { readonly proposal: Proposal }) {
+function ProposalItem({ proposal, onOpen }: { readonly proposal: Proposal; readonly onOpen: () => void }) {
   const tone = proposal.status === "adopted" ? "success" : proposal.status === "declined" ? "critical" : proposal.status === "approved" ? "info" : "neutral";
   return (
     <li>
@@ -196,7 +200,80 @@ function ProposalItem({ proposal }: { readonly proposal: Proposal }) {
         <Text.Root as="p" tone="muted">
           {proposal.inventory.length} inventory changes, {proposal.rules.add.length} rules added, {proposal.rules.remove.length} removed, {proposal.examples.pass.length} passing and {proposal.examples.fail.length} failing examples.
         </Text.Root>
+        <Button.Root variant="secondary" onClick={onOpen}>
+          {`Review ${proposal.id}`}
+        </Button.Root>
       </Disclosure.Root>
     </li>
+  );
+}
+
+/**
+ * Every adopted proposal's examples re-run, on demand, with core's
+ * rerunExamples against the config as it is now: passing examples must still
+ * pass every rule, failing ones must still be flagged by their rule. Rendered
+ * rules read the snapshots stored with each example when it was adopted, so
+ * nothing is rendered again and the result is the same after a reload.
+ */
+function Regression({ config, onOpenProposal }: { readonly config: ProjectConfig; readonly onOpenProposal: (id: string) => void }) {
+  const [runs, setRuns] = useState<{ readonly at: string; readonly runs: readonly ExampleRun[] } | null>(null);
+  const adopted = config.proposals.filter((proposal) => proposal.status === "adopted");
+  const broken = runs?.runs.filter((run) => !run.ok) ?? [];
+  return (
+    <section aria-labelledby="project-regression" data-testid="regression">
+      <Text.Root as="h2" id="project-regression">
+        Adopted proposals&apos; examples
+      </Text.Root>
+      <Text.Root as="p" tone="muted">
+        Each adopted proposal keeps its examples as regression tests, with the snapshots it was adopted on. Re-run them to see whether the project as it is now still holds them.
+      </Text.Root>
+      <div>
+        <Button.Root variant="secondary" onClick={() => setRuns({ at: new Date().toISOString(), runs: rerunExamples(config) })} disabled={adopted.length === 0}>
+          Re-run every adopted proposal&apos;s examples
+        </Button.Root>
+      </div>
+      {adopted.length === 0 && (
+        <Text.Root as="p" tone="muted">
+          No proposal is adopted yet.
+        </Text.Root>
+      )}
+      {runs && (
+        <>
+          <Text.Root as="p" data-testid="regression-summary" aria-live="polite">
+            {broken.length === 0 ? `All ${runs.runs.length} examples behave` : `${broken.length} of ${runs.runs.length} examples no longer behave`}, re-run <time dateTime={runs.at}>{formatTime(runs.at)}</time>.
+          </Text.Root>
+          <Table.Root className="project-table" aria-label="Re-run examples">
+            <Table.Head>
+              <Table.Row>
+                <Table.HeaderCell>Proposal</Table.HeaderCell>
+                <Table.HeaderCell>Example</Table.HeaderCell>
+                <Table.HeaderCell>Must</Table.HeaderCell>
+                <Table.HeaderCell>Result</Table.HeaderCell>
+                <Table.HeaderCell>What core says</Table.HeaderCell>
+              </Table.Row>
+            </Table.Head>
+            <Table.Body>
+              {runs.runs.map((run) => (
+                <Table.Row key={`${run.proposal}/${run.example}`} data-example={run.example} data-ok={run.ok ? "" : undefined}>
+                  <Table.Cell>
+                    <Button.Root variant="ghost" onClick={() => onOpenProposal(run.proposal)}>
+                      {run.proposal}
+                    </Button.Root>
+                  </Table.Cell>
+                  <Table.Cell>
+                    <Code.Root>{run.example}</Code.Root>
+                  </Table.Cell>
+                  <Table.Cell>{run.expect}</Table.Cell>
+                  <Table.Cell>
+                    <Badge.Root tone={run.retiredBy ? "neutral" : run.ok ? "success" : "critical"}>{run.retiredBy ? "retired" : run.ok ? "behaves" : "no longer behaves"}</Badge.Root>
+                  </Table.Cell>
+                  <Table.Cell>{run.detail}</Table.Cell>
+                </Table.Row>
+              ))}
+            </Table.Body>
+          </Table.Root>
+        </>
+      )}
+    </section>
   );
 }

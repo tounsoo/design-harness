@@ -1,5 +1,5 @@
 import { Alert, Badge, Button, Checkbox, CodeBlock, Conversation, Disclosure, ErrorMessage, Field, Label, Loader, Message, Stack, Text } from "@tounsoo/todae";
-import { useState, useSyncExternalStore, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent } from "react";
 import type { AgentController, Turn, TurnItem } from "../agent/controller";
 import { KEY_DB, keyProblem, type KeyVault } from "../agent/key-vault";
 import { EFFORTS, MODELS, formatCost, isEffort, isModel, type AgentSettings } from "../agent/models";
@@ -12,10 +12,31 @@ import { DB_NAME } from "../store/db";
  * show their verdict, and each turn shows its tokens, an approximate cost,
  * and an Undo for its changes. Nothing here decides pass or fail.
  */
-export function ChatPanel({ controller, vault, settings, onSettings }: { readonly controller: AgentController; readonly vault: KeyVault; readonly settings: AgentSettings; readonly onSettings: (next: AgentSettings) => void }) {
+export function ChatPanel({
+  controller,
+  vault,
+  settings,
+  onSettings,
+  onOpenProposal,
+  prefill,
+}: {
+  readonly controller: AgentController;
+  readonly vault: KeyVault;
+  readonly settings: AgentSettings;
+  readonly onSettings: (next: AgentSettings) => void;
+  readonly onOpenProposal: (id: string) => void;
+  /** A message put into the box for the person to edit and send, never sent on its own. */
+  readonly prefill: { readonly text: string; readonly nonce: number } | null;
+}) {
   const state = useSyncExternalStore(controller.subscribe, controller.getState);
   const key = useSyncExternalStore(vault.subscribe, vault.getState);
   const [draft, setDraft] = useState("");
+  const composer = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (!prefill) return;
+    setDraft(prefill.text);
+    composer.current?.querySelector("textarea")?.focus();
+  }, [prefill]);
   const undoable = controller.undoable();
   const model = MODELS.find((item) => item.id === settings.model)?.name ?? settings.model;
 
@@ -69,6 +90,7 @@ export function ChatPanel({ controller, vault, settings, onSettings }: { readonl
               <TurnView
                 key={turn.id}
                 turn={turn}
+                onOpenProposal={onOpenProposal}
                 running={state.running && index === state.turns.length - 1}
                 canUndo={undoable?.id === turn.id}
                 onUndo={() => void controller.undo(turn.id)}
@@ -80,7 +102,7 @@ export function ChatPanel({ controller, vault, settings, onSettings }: { readonl
         <Conversation.ScrollButton />
       </Conversation.Root>
 
-      <form className="chat-composer" onSubmit={send}>
+      <form className="chat-composer" onSubmit={send} ref={composer}>
         <Field.Root aria-label="Message the agent" disabled={!key.present} className="chat-input">
           <Field.Textarea value={draft} onValueChange={setDraft} onKeyDown={onKeyDown} rows={3} maxRows={8} autoGrow placeholder={key.present ? "Ask for a change. Enter sends, Shift+Enter is a new line." : "Enter your API key first"} />
         </Field.Root>
@@ -195,7 +217,7 @@ function usageText(turn: Turn): string {
   return `${input.toLocaleString()} in${cached} · ${usage.output.toLocaleString()} out · about ${formatCost(turn.cost)}`;
 }
 
-function TurnView({ turn, running, canUndo, onUndo, onRetry }: { readonly turn: Turn; readonly running: boolean; readonly canUndo: boolean; readonly onUndo: () => void; readonly onRetry: () => void }) {
+function TurnView({ turn, running, canUndo, onUndo, onRetry, onOpenProposal }: { readonly turn: Turn; readonly running: boolean; readonly canUndo: boolean; readonly onUndo: () => void; readonly onRetry: () => void; readonly onOpenProposal: (id: string) => void }) {
   return (
     <>
       <Message.Root from="user" data-turn={turn.id}>
@@ -208,7 +230,7 @@ function TurnView({ turn, running, canUndo, onUndo, onRetry }: { readonly turn: 
       <Message.Root from="assistant" streaming={running} data-turn={turn.id} data-end={turn.end.status} className="chat-reply">
         <Message.Content className="chat-items">
           {turn.items.map((item, index) => (
-            <Item key={index} item={item} />
+            <Item key={index} item={item} onOpenProposal={onOpenProposal} />
           ))}
           {running && turn.items.length === 0 && (
             <Text.Root as="p" tone="muted">
@@ -291,7 +313,7 @@ function toolTone(status: string): "neutral" | "info" | "success" | "critical" {
   return status === "error" ? "critical" : status === "done" ? "success" : "info";
 }
 
-function Item({ item }: { readonly item: TurnItem }) {
+function Item({ item, onOpenProposal }: { readonly item: TurnItem; readonly onOpenProposal: (id: string) => void }) {
   switch (item.kind) {
     case "text":
       return item.text ? (
@@ -347,13 +369,16 @@ function Item({ item }: { readonly item: TurnItem }) {
       );
     case "proposal":
       return (
-        <Alert.Root tone={item.adoptable ? "info" : "warning"} className="chat-proposal" data-proposal={item.id}>
+        <Alert.Root tone={item.adoptable || item.needsMeasurement ? "info" : "warning"} className="chat-proposal" data-proposal={item.id} data-action={item.action ?? "drafted"}>
           <Alert.Title>
-            Proposal drafted: {item.title} ({item.id}), open
+            Proposal {item.action ?? "drafted"}: {item.title} ({item.id}), open
           </Alert.Title>
-          <Alert.Description>
-            {item.verdict} Only you can approve or adopt it; it is listed in the Project view.
-          </Alert.Description>
+          <Alert.Description>{item.verdict} Only you can approve, decline or adopt it, on its review page.</Alert.Description>
+          <Alert.Actions>
+            <Button.Root type="button" variant="secondary" onClick={() => onOpenProposal(item.id)}>
+              {`Review ${item.id}`}
+            </Button.Root>
+          </Alert.Actions>
         </Alert.Root>
       );
     case "notice":
