@@ -268,6 +268,8 @@ ids      heading-b on the title, heading-c on the facts
 state    room-b (Lantern) and room-c (Harbor); C's facts read ${/room-c/seats}
 ```
 
+`pickScope(before, after, prototype, page)` says what a pick on one page answers for, given core's report on the prototype as it is and on the prototype with the page replaced. It sorts every finding of `after`: `page` (about the picked page: the finding names the page, one of its scenarios, its file, or a layout its file draws), `introduced` (elsewhere, and not in `before` word for word, so the change brought or changed it, as a flow or step-budget finding would be), and `existing` (elsewhere, and in `before` exactly as it is). `stopped` lists rules that ran in `before` and did not run in `after`. `clear` is true when `page`, `introduced` and `stopped` are all empty: a failure another page already had never blocks. It is pure, compares findings as a multiset, and keeps core's order.
+
 A pick is the person's alone: core has no function that applies one, and a pick is recorded (`PickRecord`: the time, the page, which source supplied each slot, each variant's note, and the page's file before and after) by the app that applied it, so it can be undone.
 
 ## Code export

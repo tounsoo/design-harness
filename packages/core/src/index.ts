@@ -79,6 +79,8 @@ export { CURRENT, NO_VARIANTS } from "./variants/types";
 export { checkVariant, nextVariantIds, parseVariantState, variantLabel, variantPrototype, withPageSpec } from "./variants/variants";
 export type { Recombination, Rename } from "./variants/recombine";
 export { recombine } from "./variants/recombine";
+export type { PickScope } from "./variants/pick-scope";
+export { findingIsOfPage, pickScope } from "./variants/pick-scope";
 
 export type { TsxExport } from "./export/tsx";
 export { specToTsx } from "./export/tsx";
