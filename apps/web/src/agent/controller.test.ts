@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { errorBody, scriptedFetch, streamEvents, type FakeReply } from "../../e2e/fake-anthropic.mjs";
 import { fakeHost } from "../../test/agent-host";
-import { seedLegal, seedSpec } from "../../test/nook";
+import { seedSpec } from "../../test/nook";
 import { AgentController, type ChatRecord, type Turn } from "./controller";
 import { DEFAULT_SETTINGS } from "./models";
 import { createClient, FALLBACK_BETA, SYSTEM_PROMPT } from "./request";
@@ -80,12 +80,12 @@ describe("an agent turn", () => {
   });
 
   it("refuses a turn on a TSX prototype: nothing is sent, nothing runs, and the history stays as it is", async () => {
-    const tsx = fakeHost(seedLegal());
+    const tsx = fakeHost(seedSpec(), undefined, undefined, { tsx: true });
     const { controller, fake, saved } = setup([done("Hello.")], { host: tsx.host });
     await controller.send("Rename the rooms page");
     expect(fake.requests).toEqual([]);
     expect(fake.left()).toBe(1);
-    expect(controller.getState()).toMatchObject({ turns: [], running: false, problem: expect.stringMatching(/^This prototype is TSX\. TSX prototypes are no longer edited here: the agent writes specs only\./) });
+    expect(controller.getState()).toMatchObject({ turns: [], running: false, problem: expect.stringMatching(/^This prototype is TSX\. TSX prototypes are no longer edited or checked here: the agent writes specs only\./) });
     expect(controller.messages()).toEqual([]);
     expect(controller.undoable()).toBeUndefined();
     expect(tsx.applied).toEqual([]);

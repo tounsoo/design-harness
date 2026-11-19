@@ -1,12 +1,14 @@
 import { Badge, Button, Card, Code, DataList, Disclosure, Stack, Table, Text, ToggleGroup, VisuallyHidden } from "@tounsoo/todae";
 import { Pencil, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { ROLE_NAMES, describeRule, flowFacts, rerunExamples, type ConfirmedRole, type ExampleRun, type ProjectConfig, type RoleMapping, type RuleSpec } from "@design-harness/core";
+import { ROLE_NAMES, describeRule, flowFacts, rerunExamples, type ConfirmedRole, type ExampleRun, type ProjectConfig, type RoleMapping, type RuleSpec, type Task } from "@design-harness/core";
+import { budgetWaiting, budgetWaitingWords, taskName } from "../review/budget-change";
 import { waitingOn, waitingWords } from "../review/rule-change";
 import { formatTime } from "../review/timeline";
-import type { PrototypeRecord } from "../store/project-file";
+import { isSpecRecord, type PrototypeRecord } from "../store/project-file";
 import { BudgetFigure, CapMeterView, PageTypeFigure, RuleFigure, SlotLegend } from "../visual/project-figures";
-import { RULE_GROUPS, budgetMeter, capReaders, capsRead, groupRules, projectTimeline, ruleBound, ruleGroup, ruleSource, type RuleGroupId } from "../visual/project-model";
+import { RULE_GROUPS, budgetMeter, capReaders, capsRead, groupRules, projectTimeline, ruleBound, ruleGroup, ruleSource, type BudgetMeter, type RuleGroupId } from "../visual/project-model";
+import { BudgetFlowDialog, type BudgetFlow } from "./BudgetChange";
 import { TaskMaps } from "./ChecksPanel";
 import { LayoutsView } from "./LayoutsView";
 import { LibraryVersionSection } from "./LibraryVersion";
@@ -46,7 +48,7 @@ export function ProjectView({
 }: {
   readonly config: ProjectConfig;
   readonly onOpenProposal: (id: string) => void;
-  /** Opens the Proposals tab. */
+  /** Opens the Proposals view. */
   readonly onOpenProposals?: (() => void) | undefined;
   readonly prototype?: PrototypeRecord | undefined;
   /** Goes to a flow state's artboard on the canvas, from a flow map. */
@@ -65,15 +67,19 @@ export function ProjectView({
   /** Puts a message in the chat for the person to edit and send. */
   readonly onAskAgent?: ((message: string) => void) | undefined;
 }) {
-  /** The rule a person is removing or changing, from its card. The flow ends in a proposal; nothing here edits a rule. */
-  const [ruleFlow, setRuleFlow] = useState<RuleFlow | null>(null);
+  /** The rule a person is removing or changing, from its card, or the task whose step budget they are changing. The flow ends in a proposal; nothing here edits a rule or a task. */
+  const [ruleFlow, setRuleFlow] = useState<RuleFlow | BudgetFlow | null>(null);
   const editable = board !== undefined && onStartProposal !== undefined;
   // Core's facts about the open prototype's flow: each task's routes against its budget.
-  const flow = prototype ? flowFacts(config, prototype.prototype) : null;
+  // A TSX prototype is kept for its files alone: core reads no flow from it.
+  const spec = prototype && isSpecRecord(prototype) ? prototype : null;
+  const flow = spec ? flowFacts(config, spec.prototype) : null;
   const { library, inventories, inputs } = config;
   const open = config.proposals.filter((proposal) => proposal.status === "open").length;
   const ranking = [...inputs.ranking].sort((a, b) => a.rank - b.rank);
   const caps = Object.entries(inputs.caps).sort(([a], [b]) => (a < b ? -1 : 1));
+  const meterOf = (task: Task) => budgetMeter(task, flow?.tasks.find((item) => item.task === task.id), prototype?.name);
+  const budgetTask = ruleFlow?.kind === "budget" ? inputs.tasks.find((task) => task.id === ruleFlow.task) : undefined;
   return (
     <Stack.Root gap="spacious" className="project">
       <div className="project-intro">
@@ -95,7 +101,7 @@ export function ProjectView({
 
       {onSave && <LibraryVersionSection config={config} prototypes={prototypes} onSave={onSave} target={libraryTarget} />}
 
-      {prototype?.prototype.format === "spec" && <LayoutsView config={config} record={prototype} />}
+      {spec && <LayoutsView config={config} record={spec} />}
 
       <section aria-labelledby="project-inventories">
         <SectionHead
@@ -134,6 +140,7 @@ export function ProjectView({
       {editable && ruleFlow && (
         <RuleFlowHost
           flow={ruleFlow}
+          meter={budgetTask ? meterOf(budgetTask) : undefined}
           config={config}
           prototypes={prototypes}
           openPrototypeId={prototype?.id ?? ""}
@@ -153,7 +160,7 @@ export function ProjectView({
       )}
 
       <section aria-labelledby="project-inputs">
-        <SectionHead id="project-inputs" title="Tasks and limits" text={`The numbers the rules read: how many steps each task may take, which action matters most, and the project's caps.${prototype && flow ? ` Under each task is what ${prototype.name}'s longest route takes today.` : ""}`} />
+        <SectionHead id="project-inputs" title="Tasks and limits" text={`The numbers the rules read: how many steps each task may take, which action matters most, and the project's caps.${editable ? " To change a task's step budget, start from the task: that opens a proposal, and the budget stays as it is until you approve and adopt it." : ""}${prototype && flow ? ` Under each task is what ${prototype.name}'s longest route takes today.` : ""}`} />
         <div className="limits">
           <Card.Root className="figure-card" data-testid="project-tasks">
             <Text.Root as="h3" className="figure-title">
@@ -170,10 +177,32 @@ export function ProjectView({
                   <Text.Root as="h4" className="figure-title">
                     {task.description ?? humanize(task.id)}
                   </Text.Root>
-                  <BudgetFigure meter={budgetMeter(task, flow?.tasks.find((item) => item.task === task.id), prototype?.name)} />
+                  <BudgetFigure meter={meterOf(task)} />
                   <Text.Root as="p" tone="muted">
                     Done at <Badge.Root tone="neutral">{humanize(task.successState)}</Badge.Root> <Code.Root>{task.id}</Code.Root>
                   </Text.Root>
+                  {editable &&
+                    budgetWaiting(config, task.id).map((proposal) => (
+                      <div key={proposal.id} className="rule-card-source" data-testid="budget-waiting-proposal">
+                        <Badge.Root tone="warning">{proposal.status}</Badge.Root>
+                        <Text.Root as="p" tone="muted">
+                          A proposal waiting for you {budgetWaitingWords(proposal, task.id)}.
+                        </Text.Root>
+                        <Button.Root variant="ghost" onClick={() => onOpenProposal(proposal.id)}>
+                          {`Open ${proposal.title}`}
+                        </Button.Root>
+                      </div>
+                    ))}
+                  {editable && (
+                    <div className="rule-card-actions">
+                      <Button.Root variant="ghost" onClick={() => setRuleFlow({ kind: "budget", task: task.id })} aria-label={`Change its step budget… ${taskName(task)}`}>
+                        <Button.Icon>
+                          <Pencil />
+                        </Button.Icon>
+                        Change its step budget…
+                      </Button.Root>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -383,11 +412,18 @@ function Rules({ config, onOpenProposal, onFlow }: { readonly config: ProjectCon
  * project is measured while a flow is open, so core reads each as it is
  * drawn, and not at all while none is.
  */
-function RuleFlowHost({ prototypes, openPrototypeId, board, ...rest }: Omit<Parameters<typeof RuleFlowDialog>[0], "existing" | "progress"> & { readonly prototypes: readonly PrototypeRecord[]; readonly openPrototypeId: string; readonly board: BoardSession }) {
+function RuleFlowHost({
+  flow,
+  meter,
+  prototypes,
+  openPrototypeId,
+  board,
+  ...rest
+}: Omit<Parameters<typeof RuleFlowDialog>[0], "existing" | "progress" | "flow"> & { readonly flow: RuleFlow | BudgetFlow; /** The budget as the page shows it, for a flow on a task. */ readonly meter: BudgetMeter | undefined; readonly prototypes: readonly PrototypeRecord[]; readonly openPrototypeId: string; readonly board: BoardSession }) {
   const { existing, frames, progress } = useProjectExisting({ config: rest.config, prototypes, openPrototypeId, board, live: true });
   return (
     <>
-      <RuleFlowDialog {...rest} existing={existing} progress={progress} />
+      {flow.kind !== "budget" ? <RuleFlowDialog flow={flow} {...rest} existing={existing} progress={progress} /> : meter ? <BudgetFlowDialog flow={flow} meter={meter} {...rest} existing={existing} progress={progress} /> : null}
       <MeasureFrames items={frames} />
     </>
   );
@@ -469,12 +505,12 @@ function RuleCard({ rule, config, onOpenProposal, onFlow }: { readonly rule: Rul
   );
 }
 
-/** How the project got like this, in five lines: the newest proposals, open ones waiting. The Proposals tab is their home. */
+/** How the project got like this, in five lines: the newest proposals, open ones waiting. The Proposals view is their home. */
 function History({ config, onOpenProposal, onOpenProposals }: { readonly config: ProjectConfig; readonly onOpenProposal: (id: string) => void; readonly onOpenProposals?: (() => void) | undefined }) {
   const { items, more } = projectTimeline(config);
   return (
     <section aria-labelledby="project-proposals" data-testid="project-history">
-      <SectionHead id="project-proposals" title={`Proposals (${config.proposals.length})`} text="How the project got like this: the newest changes proposed, by the agent or by you. The Proposals tab is where you review them." />
+      <SectionHead id="project-proposals" title={`Proposals (${config.proposals.length})`} text="How the project got like this: the newest changes proposed, by the agent or by you. The Proposals view is where you review them." />
       {items.length === 0 ? (
         <Text.Root as="p" tone="muted">
           No proposals yet. A proposal carries an inventory change, the rule that governs it, and examples that must pass and fail; it is adopted only when its rules prove themselves on its examples.
@@ -507,7 +543,7 @@ function History({ config, onOpenProposal, onOpenProposals }: { readonly config:
       {(more > 0 || items.length > 0) && onOpenProposals && (
         <div>
           <Button.Root variant="secondary" onClick={onOpenProposals}>
-            {more > 0 ? `All ${config.proposals.length} proposals` : "Open the Proposals tab"}
+            {more > 0 ? `All ${config.proposals.length} proposals` : "Open the Proposals view"}
           </Button.Root>
         </div>
       )}

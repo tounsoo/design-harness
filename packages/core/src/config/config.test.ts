@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { nook } from "../../examples/nook/project";
 import { BUILT_IN_RULES } from "../builtins";
 import { parseProjectConfig, parsePrototype, parseSnapshots } from "../parse";
+import { TSX_REFUSED } from "../prototype/schema";
 import { legalSnapshots } from "../../examples/nook/snapshots";
 
 const json = <T>(value: T): unknown => JSON.parse(JSON.stringify(value));
@@ -85,19 +86,52 @@ describe("the project config", () => {
   it("accepts the built-in rules on their own", () => {
     expect(issues(parseProjectConfig(json({ ...nook, rules: BUILT_IN_RULES })))).toEqual([]);
   });
+
+  it("refuses the TSX-only rule types and the imports subject, which the vocabulary no longer has", () => {
+    const retired = [
+      { type: "isolation", id: "no-ambient-globals" },
+      { type: "style-props", id: "no-inline-styles" },
+      { type: "membership", id: "imports-from-library", of: "imports" },
+    ];
+    expect(issues(parseProjectConfig(json({ ...nook, rules: retired })))).toEqual([
+      '$.rules[0].type: expected one of "membership", "count", "containment", "prop-values", "requires", "slot", "reachable", "page-structure", "flow", "rendered", got "isolation"',
+      '$.rules[1].type: expected one of "membership", "count", "containment", "prop-values", "requires", "slot", "reachable", "page-structure", "flow", "rendered", got "style-props"',
+      '$.rules[2].of: expected one of "components", "page-types", "layouts", "flow-states", got "imports"',
+    ]);
+  });
 });
 
 describe("the prototype and snapshots", () => {
   it("rejects duplicate ids and paths that are not relative", () => {
     const prototype = {
-      files: { "./pages/a.tsx": "", "pages/../b.tsx": "" },
-      pages: [{ id: "a", pageType: "booking", component: { file: "pages/a.tsx", export: "A" } }, { id: "a", pageType: "booking", component: { file: "pages/a.tsx", export: "B" } }],
+      format: "spec",
+      files: { "./pages/a.json": "", "pages/../b.json": "" },
+      pages: [{ id: "a", pageType: "booking", component: { file: "pages/a.json", export: "default" } }, { id: "a", pageType: "booking", component: { file: "pages/a.json", export: "default" } }],
       layouts: [],
       scenarios: [],
       flow: { states: [], tasks: [] },
     };
-    expect(issues(parsePrototype(prototype)).map((issue) => issue.split(":")[0])).toEqual(["$.files../pages/a.tsx", "$.files.pages/../b.tsx"]);
+    expect(issues(parsePrototype(prototype)).map((issue) => issue.split(":")[0])).toEqual(["$.files../pages/a.json", "$.files.pages/../b.json"]);
     expect(issues(parsePrototype({ ...prototype, files: {} }))).toEqual(['$.pages[1]: page id "a" appears twice']);
+  });
+
+  it("refuses a TSX prototype, said or meant by a missing format, and hands a whole one back as it was stored", () => {
+    const manifest = {
+      files: { "pages/a.tsx": "export const A = () => null;" },
+      pages: [{ id: "a", pageType: "booking", component: { file: "pages/a.tsx", export: "A" } }],
+      layouts: [],
+      scenarios: [],
+      flow: { states: [], tasks: [] },
+    };
+    for (const stored of [{ ...manifest, format: "tsx" }, manifest]) {
+      const read = parsePrototype(json(stored));
+      expect(issues(read)).toEqual([`$.format: ${TSX_REFUSED}`]);
+      expect(!read.ok && "tsx" in read && read.tsx).toEqual({ ...manifest, format: "tsx" });
+    }
+    const broken = parsePrototype(json({ ...manifest, format: "tsx", pages: "none" }));
+    expect(issues(broken)).toEqual([`$.format: ${TSX_REFUSED}`, "$.pages: expected an array, got a string"]);
+    expect("tsx" in broken).toBe(false);
+    expect(issues(parsePrototype(json({ ...manifest, format: "jsx" })))).toEqual(['$.format: expected one of "spec", got "jsx"']);
   });
 
   it("round-trips the example's snapshots through JSON", () => {

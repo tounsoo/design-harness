@@ -1,15 +1,9 @@
 import { propose, type ProjectConfig, type Prototype, type ProposalDraft, type RuleSpec } from "@design-harness/core";
 import { nook } from "../../../packages/core/examples/nook/project";
 import { legalSnapshots } from "../../../packages/core/examples/nook/snapshots";
-import { seedLegal, seedSpec } from "./nook";
+import { seedSpec } from "./nook";
 
 /** Proposals over the legal Nook prototype, for the review's unit tests. */
-
-/** The legal prototype with `count` toasts in the booking page's facts slot. */
-export function withToasts(count: number, base: Prototype = seedLegal()): Prototype {
-  const file = (base.files["pages/booking.tsx"] ?? "").replace('import { Button, Text } from "@tounsoo/todae";', 'import { Button, Text, Toast } from "@tounsoo/todae";').replace('<Slot name="facts">', `<Slot name="facts">${"<Toast.Root>Booked</Toast.Root>".repeat(count)}`);
-  return { ...base, files: { ...base.files, "pages/booking.tsx": file } };
-}
 
 /** The legal spec prototype with `count` toasts in the booking page's facts slot. */
 export function withSpecToasts(count: number, base: Prototype = seedSpec()): Prototype {
@@ -30,15 +24,12 @@ export function toastDraft(failCount = 2): ProposalDraft {
     states: [{ state: "booked", note: "the toast says the room is booked" }],
     inventory: [{ op: "add-component", name: "Toast" }],
     rules: { add: [toastRule], remove: [] },
-    examples: { pass: [{ name: "one-toast", prototype: withToasts(1) }], fail: [{ name: "toasts", prototype: withToasts(failCount), flaggedBy: { rule: "one-toast-per-page" } }] },
+    examples: { pass: [{ name: "one-toast", prototype: withSpecToasts(1) }], fail: [{ name: "toasts", prototype: withSpecToasts(failCount), flaggedBy: { rule: "one-toast-per-page" } }] },
   };
 }
 
-/** The same proposal with spec examples, as the agent drafts it now. */
-export function specToastDraft(failCount = 2): ProposalDraft {
-  const draft = toastDraft(failCount);
-  return { ...draft, examples: { pass: [{ name: "one-toast", prototype: withSpecToasts(1) }], fail: [{ name: "toasts", prototype: withSpecToasts(failCount), flaggedBy: { rule: "one-toast-per-page" } }] } };
-}
+/** The same proposal, as the agent drafts it now: every example is a spec. */
+export const specToastDraft = toastDraft;
 
 export const harborRule: RuleSpec = { type: "rendered", id: "harbor-in-first-view", check: "first-view", action: "Open Harbor" };
 
@@ -50,7 +41,7 @@ export function harborDraft(): ProposalDraft {
     states: [],
     inventory: [],
     rules: { add: [harborRule], remove: [] },
-    examples: { pass: [{ name: "as-is", prototype: seedLegal() }], fail: [{ name: "long-intro", prototype: seedLegal(), flaggedBy: { rule: "harbor-in-first-view" } }] },
+    examples: { pass: [{ name: "as-is", prototype: seedSpec() }], fail: [{ name: "long-intro", prototype: seedSpec(), flaggedBy: { rule: "harbor-in-first-view" } }] },
   };
 }
 

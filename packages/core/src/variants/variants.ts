@@ -68,7 +68,6 @@ export function variantPrototype(prototype: Prototype, variant: Variant): Protot
  * failing. Returns the spec as core formats it, or every problem.
  */
 export function checkVariant(prototype: Prototype, config: ProjectConfig, page: string, spec: string): Result<string, readonly string[]> {
-  if (prototype.format !== "spec") return { ok: false, error: ["Variants are for spec prototypes; this prototype is TSX."] };
   const entry = prototype.pages.find((item) => item.id === page);
   if (!entry) return { ok: false, error: [`There is no page "${page}" in the manifest (${prototype.pages.map((item) => `"${item.id}"`).join(", ") || "none"}).`] };
   const parsed = parseJson(spec);

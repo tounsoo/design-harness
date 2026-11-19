@@ -4,11 +4,11 @@ import { nook } from "../examples/nook/project";
 import { legalSnapshots } from "../examples/nook/snapshots";
 import type { ProjectConfig } from "../src/config/types";
 import { checkPrototype } from "../src/engine/check";
-import { extractPrototype } from "../src/extract";
+import { specModel } from "../src/spec/model";
 import type { Prototype } from "../src/prototype/types";
 import { EXAMPLES, loadCases, loadPrototype } from "./fixtures";
 
-const legal = loadPrototype(join(EXAMPLES, "legal", "booking"));
+const legal = loadPrototype(join(EXAMPLES, "spec", "legal", "booking"));
 
 function reversedKeys<T extends object>(value: T): T {
   return Object.fromEntries(Object.entries(value).reverse()) as T;
@@ -44,11 +44,11 @@ describe("checks are deterministic", () => {
   });
 
   it("the page model does not depend on the order files are given in", () => {
-    expect(JSON.stringify(extractPrototype(shuffledPrototype(legal), "@tounsoo/todae"))).toBe(JSON.stringify(extractPrototype(legal, "@tounsoo/todae")));
+    expect(JSON.stringify(specModel(shuffledPrototype(legal), nook))).toBe(JSON.stringify(specModel(legal, nook)));
   });
 
   it("reports with findings are identical whatever order files, keys, lists, rules and snapshots come in", () => {
-    const cases = loadCases(legal, join(EXAMPLES, "illegal"));
+    const cases = ["illegal", "refused"].flatMap((kind) => loadCases(legal, join(EXAMPLES, "spec", kind)));
     expect(cases.length).toBeGreaterThan(0);
     for (const item of [...cases, { name: "legal", prototype: legal }]) {
       const snapshots = legalSnapshots();
@@ -63,9 +63,19 @@ describe("checks are deterministic", () => {
       ...legal,
       files: {
         ...legal.files,
-        "pages/extra.tsx": `import { Button, Disclosure } from "@tounsoo/todae";\nexport const Extra = () => <><button>a</button><Button.Root variant={x}>b</Button.Root><Disclosure.Root><Disclosure.Root /></Disclosure.Root></>;`,
+        "pages/extra.json": JSON.stringify({
+          root: "page",
+          elements: {
+            page: { type: "Page", props: {}, slots: { body: ["raw", "b", "outer"], footer: [] }, children: ["loose"] },
+            raw: { type: "button", props: {}, children: [] },
+            b: { type: "Button.Root", props: { text: "b", variant: { $cond: { $state: "/scenario/state", eq: "held" }, $then: "primary", $else: "ghost" } }, children: [] },
+            outer: { type: "Disclosure.Root", props: {}, children: ["inner"] },
+            inner: { type: "Disclosure.Root", props: {}, children: [] },
+            loose: { type: "Text.Root", props: { text: "loose" }, children: [] },
+          },
+        }),
       },
-      pages: [...legal.pages, { id: "extra", pageType: "booking", component: { file: "pages/extra.tsx", export: "Extra" } }],
+      pages: [...legal.pages, { id: "extra", pageType: "booking", component: { file: "pages/extra.json", export: "default" } }],
     };
     const report = checkPrototype({ config: nook, prototype: messy });
     expect(report.findings.length).toBeGreaterThan(5);

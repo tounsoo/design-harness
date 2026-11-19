@@ -1,6 +1,6 @@
 import type { Prototype } from "@design-harness/core";
 import { describe, expect, it } from "vitest";
-import { seedLegal, seedSpec } from "../../test/nook";
+import { seedSpec } from "../../test/nook";
 import { partialString, SpecStreamPreview, streamedPatchInput } from "./spec-stream";
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 30));
@@ -42,16 +42,12 @@ describe("the streaming preview", () => {
     expect(shown.at(-1)).toBeNull();
   });
 
-  it("follows nothing but a spec prototype's patch_spec", async () => {
+  it("follows nothing but patch_spec", async () => {
     const shown: unknown[] = [];
-    const tsx = new SpecStreamPreview((draft) => shown.push(draft), () => seedLegal(), 0);
-    tsx.start("patch_spec");
-    tsx.delta('{"path":"pages/booking.tsx","patches":"{\\"op\\":\\"add\\",\\"path\\":\\"/x\\",\\"value\\":1}\\n"}');
     const spec = new SpecStreamPreview((draft) => shown.push(draft), () => seedSpec(), 0);
     spec.start("write_spec");
     spec.delta('{"path":"pages/booking.json"');
     await flush();
-    tsx.finish();
     spec.finish();
     expect(shown).toEqual([]);
   });

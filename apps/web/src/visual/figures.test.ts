@@ -4,10 +4,10 @@ import { describe, expect, it } from "vitest";
 import { EVIDENCE_KINDS, RULE_EVIDENCE, RULE_TYPES, checkPrototype, type Evidence, type EvidenceDeclaration, type Finding } from "@design-harness/core";
 import { nook } from "../../../../packages/core/examples/nook/project";
 import { renderedCases } from "../../../../packages/core/examples/nook/rendered-cases";
-import { seedLegal } from "../../test/nook";
+import { seedSpec } from "../../test/nook";
 import { EvidenceFigure, FIGURES, drawsFigure } from "./figures";
 
-const legal = seedLegal();
+const legal = seedSpec();
 
 /** Every evidence kind a rule type in core's vocabulary declares. */
 function declaredKinds(): string[] {

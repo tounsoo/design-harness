@@ -12,20 +12,25 @@ import { legalSnapshots } from "../../examples/nook/snapshots";
 import { parseProjectConfig } from "../parse";
 import { adopt, approve, contentOf, decline, dryRunAdoption, propose, rerunExamples, revise, sendBack, tryExamples, withExampleSnapshots, type ProposalDraft, type Refusal } from "./lifecycle";
 
-const legal = loadPrototype(join(EXAMPLES, "legal", "booking"));
+const legal = loadPrototype(join(EXAMPLES, "spec", "legal", "booking"));
+
+type Fact = { readonly type: string; readonly props: Record<string, unknown> };
+const toast = (text: string): Fact => ({ type: "Toast.Root", props: { text } });
+/** A paragraph set as strong, which Nook's text-as-heading-or-paragraph rule flags. */
+const strong: Fact = { type: "Text.Root", props: { as: "strong", text: "strong" } };
 
 /** The legal prototype with the booking page's facts slot holding `facts`. */
-function withFacts(facts: string, extraImport = ""): Prototype {
-  const file = legal.files["pages/booking.tsx"] ?? "";
-  const changed = file
-    .replace('import { Button, Text } from "@tounsoo/todae";', `import { Button, Text, Toast } from "@tounsoo/todae";${extraImport}`)
-    .replace(/<Slot name="facts">[\s\S]*?<\/Slot>/, `<Slot name="facts">${facts}</Slot>`);
-  return { ...legal, files: { ...legal.files, "pages/booking.tsx": changed } };
+function withFacts(...facts: readonly Fact[]): Prototype {
+  const spec = JSON.parse(legal.files["pages/booking.json"] ?? "{}") as { elements: Record<string, { slots?: Record<string, string[]> } & Record<string, unknown>> };
+  const keys = facts.map((_, index) => `fact-${index + 1}`);
+  facts.forEach((fact, index) => (spec.elements[keys[index] as string] = { ...fact, children: [] }));
+  (spec.elements.page?.slots as Record<string, string[]>).facts = keys;
+  return { ...legal, files: { ...legal.files, "pages/booking.json": JSON.stringify(spec, null, 2) } };
 }
 
-const oneToast = withFacts(`<Toast.Root>Booked</Toast.Root>`);
-const twoToasts = withFacts(`<Toast.Root>Booked</Toast.Root><Toast.Root>Again</Toast.Root>`);
-const twoToastsAndRaw = withFacts(`<Toast.Root>Booked</Toast.Root><Toast.Root>Again</Toast.Root><button>raw</button>`);
+const oneToast = withFacts(toast("Booked"));
+const twoToasts = withFacts(toast("Booked"), toast("Again"));
+const twoToastsAndStrong = withFacts(toast("Booked"), toast("Again"), strong);
 
 const toastRule: RuleSpec = { type: "count", id: "one-toast-per-page", scope: "page", select: { component: "Toast.Root" }, max: 1, description: "A page shows at most one toast." };
 
@@ -100,8 +105,8 @@ describe("a proposal that adds a component with a governing rule", () => {
   it("is refused when its failing example fails for the wrong reason, or for another reason too", () => {
     const wrongWords = approved(nook, draft("toast", { fail: [{ name: "two-toasts", prototype: twoToasts, flaggedBy: { rule: "one-toast-per-page", message: "three toasts" } }] }));
     expect(refusal(adopt(wrongWords, "toast", { at: "t" })).message).toContain(`"one-toast-per-page" flagged it, but no finding says "three toasts"; it said: one-toast-per-page: Page "booking" has 2 Toast.Root`);
-    const alsoRaw = approved(nook, draft("toast", { fail: [{ name: "two-and-raw", prototype: twoToastsAndRaw, flaggedBy: { rule: "one-toast-per-page" } }] }));
-    expect(refusal(adopt(alsoRaw, "toast", { at: "t" }))).toMatchObject({ code: "fails-for-another-reason", example: "two-and-raw" });
+    const alsoStrong = approved(nook, draft("toast", { fail: [{ name: "two-and-strong", prototype: twoToastsAndStrong, flaggedBy: { rule: "one-toast-per-page" } }] }));
+    expect(refusal(adopt(alsoStrong, "toast", { at: "t" }))).toMatchObject({ code: "fails-for-another-reason", example: "two-and-strong" });
   });
 
   it("is refused when its passing example fails", () => {
@@ -113,7 +118,7 @@ describe("a proposal that adds a component with a governing rule", () => {
 
   it("is refused without examples, or with a new rule no failing example names", () => {
     expect(refusal(adopt(approved(nook, draft("toast", { fail: [] })), "toast", { at: "t" })).code).toBe("missing-examples");
-    const unnamed = approved(nook, draft("toast", { fail: [{ name: "raw", prototype: withFacts(`<button>raw</button>`), flaggedBy: { rule: "no-raw-controls" } }] }));
+    const unnamed = approved(nook, draft("toast", { fail: [{ name: "strong", prototype: withFacts(strong), flaggedBy: { rule: "text-as-heading-or-paragraph" } }] }));
     expect(refusal(adopt(unnamed, "toast", { at: "t" }))).toMatchObject({ code: "unproven-rule", message: 'rule "one-toast-per-page" has no failing example that names it, so nothing shows it fires' });
   });
 
@@ -143,14 +148,14 @@ describe("a proposal that adds a component with a governing rule", () => {
     ]);
     expect(adoption.config.inventories.components).toContain("Toast");
 
-    // A prototype written after adoption, with two toasts on the rooms page under an alias.
-    const rooms = (legal.files["pages/rooms.tsx"] ?? "")
-      .replace('import { Text } from "@tounsoo/todae";', 'import { Text, Toast as Note } from "@tounsoo/todae";')
-      .replace('<Text.Root as="p">Pick a free room to book or hold.</Text.Root>', '<Text.Root as="p">Pick a free room to book or hold.</Text.Root>\n        <Note.Root>Lantern is free</Note.Root>\n        <Note.Root>Harbor is free</Note.Root>');
-    const freshTwo: Prototype = { ...legal, files: { ...legal.files, "pages/rooms.tsx": rooms } };
+    // A prototype written after adoption, with two toasts in the rooms page's intro.
+    const rooms = (legal.files["pages/rooms.json"] ?? "")
+      .replace('"intro": ["intro"]', '"intro": ["intro", "lantern-free", "harbor-free"]')
+      .replace('"cards": {', '"lantern-free": { "type": "Toast.Root", "props": { "text": "Lantern is free" }, "children": [] },\n    "harbor-free": { "type": "Toast.Root", "props": { "text": "Harbor is free" }, "children": [] },\n    "cards": {');
+    const freshTwo: Prototype = { ...legal, files: { ...legal.files, "pages/rooms.json": rooms } };
     const report = checkPrototype({ config: adoption.config, prototype: freshTwo });
     expect(report.rules.filter((rule) => rule.status === "fail").map((rule) => rule.rule)).toEqual(["one-toast-per-page"]);
-    expect(report.findings[0]?.message).toContain(`Page "rooms" has 2 Toast.Root, more than 1: Toast.Root "Lantern is free" at pages/rooms.tsx`);
+    expect(report.findings[0]?.message).toContain(`Page "rooms" has 2 Toast.Root, more than 1: Toast.Root "Lantern is free" at pages/rooms.json`);
 
     expect(rerunExamples(adoption.config)).toEqual([
       { proposal: "toast", example: "one-toast", expect: "pass", ok: true, detail: "passes every rule" },
@@ -165,7 +170,7 @@ describe("a proposal that adds a component with a governing rule", () => {
       title: "Let pages show any number of toasts",
       inventory: [],
       rules: { add: [], remove: ["one-toast-per-page"] },
-      examples: { pass: [{ name: "two-toasts-pass", prototype: twoToasts }], fail: [{ name: "raw", prototype: withFacts(`<button>raw</button>`), flaggedBy: { rule: "no-raw-controls" } }] },
+      examples: { pass: [{ name: "two-toasts-pass", prototype: twoToasts }], fail: [{ name: "strong", prototype: withFacts(strong), flaggedBy: { rule: "text-as-heading-or-paragraph" } }] },
     };
     const adoption = ok(adopt(approved(adopted, removal), "drop-toast-cap", { at: "t2" }));
     expect(adoption.classification.class).toBe("loosens-or-removes");
@@ -190,7 +195,7 @@ describe("a proposal that adds a component with a governing rule", () => {
 
   it("is refused when an earlier failing example stops failing while its rule stays in force, even under a replaced rule of the same id", () => {
     const adopted = ok(adopt(approved(nook, draft("toast")), "toast", { at: "t1" })).config;
-    const threeToasts = withFacts(`<Toast.Root>One</Toast.Root><Toast.Root>Two</Toast.Root><Toast.Root>Three</Toast.Root>`);
+    const threeToasts = withFacts(toast("One"), toast("Two"), toast("Three"));
     const twoAllowed: ProposalDraft = {
       ...draft("two-toasts-ok"),
       title: "Allow two toasts",
@@ -242,6 +247,14 @@ describe("classification", () => {
     expect(classify([{ op: "add-disclosed-section", section: "Accessibility" }])).toBe("tightens");
     expect(classify([{ op: "add-layout", id: "side-panel" }, { op: "remove-layout", id: "room-cards" }])).toBe("loosens-or-removes");
     expect(classify([], { add: [], remove: ["no-raw-controls"] })).toBe("loosens-or-removes");
+  });
+
+  it("says a moved step budget before and after in the words of a limit, with the way it moved", () => {
+    const changes = (value: number) => classifyProposal({ ...draft("x"), status: "open", history: [{ status: "open", at: "t" }], inventory: [{ op: "set-max-steps", task: "book-room", value }], rules: { add: [], remove: [] } }, nook).changes;
+    expect(changes(2)).toEqual([{ change: 'set-max-steps "book-room" to 2', class: "tightens", reason: "lowers max steps from 3 to 2", bounds: [{ bound: "max", before: "at most 3", after: "at most 2", direction: "stricter" }] }]);
+    expect(changes(4)).toEqual([{ change: 'set-max-steps "book-room" to 4', class: "loosens-or-removes", reason: "raises max steps from 3 to 4", bounds: [{ bound: "max", before: "at most 3", after: "at most 4", direction: "looser" }] }]);
+    // A task the config does not have has no budget to say.
+    expect(classifyProposal({ ...draft("x"), status: "open", history: [{ status: "open", at: "t" }], inventory: [{ op: "set-max-steps", task: "no-such-task", value: 2 }], rules: { add: [], remove: [] } }, nook).changes[0]).toEqual({ change: 'set-max-steps "no-such-task" to 2', class: "loosens-or-removes", reason: "names a task the config does not have" });
   });
 });
 

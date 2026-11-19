@@ -22,21 +22,16 @@ export type PinBox = { readonly rect: Rect; readonly within: Point };
  * What was under the click.
  *
  * `source` is the part the page drew there, by its element tag
- * (`runtime/tags.ts`): where a TSX element is written, `file:line:column`,
- * or a spec element's key in the expanded page. `nth` tells its boxes apart
- * when the part drew several. `label` is the measured element there, as the
+ * (`runtime/tags.ts`): a spec element's key in the expanded page, which
+ * names its element whatever is around it. `nth` tells its boxes apart when
+ * the part drew several. `label` is the measured element there, as the
  * snapshot names it: its role, accessible name and HTML tag.
  *
- * A TSX tag is a place in a file, which another element can come to hold
- * after an edit, so a `source` of that kind also keeps `elsewhere`: a short
- * print (`anchor.ts`) of every named element the frame drew under another
- * tag when the pin was last found. It is what tells an element renamed where
- * it stands from a neighbour that moved into its place, and it is kept with
- * the pin so the answer is the same after a reload or an import. A spec's
- * key names its element whatever is around it, so a `key` source has none.
- * Absent on a pin stored before this was kept.
+ * A pin stored on a TSX prototype was anchored to a place in a file
+ * (`kind: "source"`), which nothing draws any more: `parsePinState` keeps
+ * such a pin, without that place, and marks it lost.
  */
-export type PinSource = PinBox & { readonly tag: string; readonly nth: number } & ({ readonly kind: "key" } | { readonly kind: "source"; readonly elsewhere?: readonly string[] });
+export type PinSource = PinBox & { readonly tag: string; readonly nth: number; readonly kind: "key" };
 
 export type PinElement = {
   readonly source?: PinSource;
@@ -80,7 +75,17 @@ export type PinEvent =
   | { readonly kind: "closed"; readonly at: string; readonly by: "you" }
   | { readonly kind: "reopened"; readonly at: string; readonly by: "you" }
   /** The person undid the agent's turn that addressed the note: it is open again, and that reply no longer stands. */
-  | { readonly kind: "undone"; readonly at: string; readonly by: "you" };
+  | { readonly kind: "undone"; readonly at: string; readonly by: "you" }
+  /**
+   * The person applied a pick that took the note's part of the page from the
+   * variant it was pinned on, so the note went with it onto the prototype
+   * (`pick.ts`). `at` is the pick's own time, which names it among the picks
+   * applied; `from` is the note's anchor on the variant as it was, which
+   * undoing the pick puts back.
+   */
+  | { readonly kind: "picked"; readonly at: string; readonly by: "you"; readonly variant: string; readonly from: PinAnchor }
+  /** The person undid that pick: the note is back on the variant, where it was. */
+  | { readonly kind: "unpicked"; readonly at: string; readonly by: "you"; readonly variant: string };
 
 export type Pin = {
   /** The pin's number on the canvas, from 1, never reused. */
@@ -185,6 +190,26 @@ export function moveAnchor(state: PinState, number: number, anchor: PinAnchor): 
   return { ...state, pins: state.pins.map((pin) => (pin.number === number ? { ...pin, anchor } : pin)) };
 }
 
+/**
+ * The variant a note is away from: the one a pick took it off, while that
+ * pick is not undone; null for a note no pick holds. False for a history
+ * that could not have happened: a note picked twice with no undoing
+ * between, or put back with no pick, or to another variant.
+ */
+export function awayOn(history: readonly PinEvent[]): string | null | false {
+  let away: string | null = null;
+  for (const event of history) {
+    if (event.kind === "picked") {
+      if (away !== null) return false;
+      away = event.variant;
+    } else if (event.kind === "unpicked") {
+      if (away !== event.variant) return false;
+      away = null;
+    }
+  }
+  return away;
+}
+
 export const openPins = (state: PinState): Pin[] => state.pins.filter((pin) => pin.status === "open");
 
 // ---- reading stored pins ---------------------------------------------------
@@ -200,17 +225,20 @@ const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const slug = (value: unknown): value is string => typeof value === "string" && value.length <= 200 && SLUG.test(value);
 /** A variant's id, as core gives them. */
 const VARIANT = /^[a-z]{1,3}$/;
-/** One print of `elsewhere` (`anchor.ts`), and how many a pin keeps at most. */
+/** One print of a TSX pin's `elsewhere`, and how many one kept at most: read only to load such a pin, which drops them. */
 const PRINT = /^[0-9a-f]{8}$/;
-export const MAX_ELSEWHERE = 256;
+const MAX_ELSEWHERE = 256;
+
+/** The kind of a stored pin's source anchored to a place in a TSX file, which nothing draws any more. */
+const TSX_SOURCE = "source";
 
 function elementOk(value: unknown): boolean {
   if (!isObject(value) || !only(value, ["source", "label"])) return false;
   const { source, label } = value;
   if (source !== undefined) {
-    if (!isObject(source) || !(source.kind === "source" || source.kind === "key")) return false;
-    // Only a place in a TSX file keeps what was drawn elsewhere.
-    if (!only(source, source.kind === "source" ? ["tag", "kind", "nth", "rect", "within", "elsewhere"] : ["tag", "kind", "nth", "rect", "within"])) return false;
+    if (!isObject(source) || !(source.kind === TSX_SOURCE || source.kind === "key")) return false;
+    // Only a place in a TSX file kept what was drawn elsewhere.
+    if (!only(source, source.kind === TSX_SOURCE ? ["tag", "kind", "nth", "rect", "within", "elsewhere"] : ["tag", "kind", "nth", "rect", "within"])) return false;
     if (!(text(source.tag, 1024) && Number.isSafeInteger(source.nth) && (source.nth as number) >= 0 && rect(source.rect) && point(source.within))) return false;
     const elsewhere = source.elsewhere;
     if (elsewhere !== undefined && !(Array.isArray(elsewhere) && elsewhere.length <= MAX_ELSEWHERE && elsewhere.every((item) => typeof item === "string" && PRINT.test(item)))) return false;
@@ -245,6 +273,10 @@ function eventOk(value: unknown): boolean {
     case "reopened":
     case "undone":
       return only(value, ["kind", "at", "by"]) && value.by === "you";
+    case "picked":
+      return only(value, ["kind", "at", "by", "variant", "from"]) && value.by === "you" && typeof value.variant === "string" && VARIANT.test(value.variant) && anchorOk(value.from) && (value.from as Json).variant === value.variant;
+    case "unpicked":
+      return only(value, ["kind", "at", "by", "variant"]) && value.by === "you" && typeof value.variant === "string" && VARIANT.test(value.variant);
     default:
       return false;
   }
@@ -278,8 +310,35 @@ export function parsePinState(value: unknown): { readonly ok: true; readonly val
     else if ((pin.history[0] as Json).kind !== "created") errors.push(`${at}.history: a pin's history starts with its creation`);
     // An agent's turn is undone only right after it addressed the note.
     else if ((pin.history as Json[]).some((event, place, all) => event.kind === "undone" && all[place - 1]?.kind !== "addressed")) errors.push(`${at}.history: a turn is undone only straight after the agent addressed the note`);
+    else {
+      // A pick takes a note off its variant and undoing it puts the note back, in turn; where the note is now is where the last of them left it.
+      const away = awayOn(pin.history as unknown as readonly PinEvent[]);
+      const variant = isObject(pin.anchor) ? pin.anchor.variant : undefined;
+      if (away === false) errors.push(`${at}.history: a pick takes a note from its variant once, and only that pick's undoing puts it back`);
+      else if (away !== null && variant !== undefined) errors.push(`${at}.anchor: a note that came with a pick is on the prototype, not on a variant`);
+      else if (away === null) {
+        const back = (pin.history as Json[]).filter((event) => event.kind === "unpicked").at(-1);
+        if (back && back.variant !== variant) errors.push(`${at}.anchor: a note put back by undoing a pick is on the variant it came from`);
+      }
+    }
   });
   if (!Number.isSafeInteger(value.next) || (value.next as number) <= highest) errors.push("$.next: expected a number above every pin's");
   if (errors.length > 0) return { ok: false, error: errors };
-  return { ok: true, value: value as unknown as PinState };
+  return { ok: true, value: { ...(value as unknown as PinState), pins: (value.pins as Json[]).map(withoutTsxPlace) as unknown as PinState["pins"] } };
+}
+
+/**
+ * A stored pin anchored to a place in a TSX file, as it is kept now: that
+ * place is gone, since no frame draws TSX, so the pin keeps its note, point,
+ * label and history, loses the place, and is marked lost. Any other pin is
+ * returned as it was.
+ */
+function withoutTsxPlace(pin: Json): Json {
+  const anchor = pin.anchor as Json;
+  const element = anchor.element as Json | undefined;
+  const source = element?.source as Json | undefined;
+  if (!element || source?.kind !== TSX_SOURCE) return pin;
+  const { source: _place, ...rest } = element;
+  const { element: _element, ...bare } = anchor;
+  return { ...pin, anchor: { ...bare, ...(Object.keys(rest).length > 0 ? { element: rest } : {}), lost: true } };
 }

@@ -1,4 +1,4 @@
-import type { LayoutUse, SourceLocation } from "../extract/model";
+import type { LayoutUse, SourceLocation } from "../prototype/model";
 import type { PageEntry, Prototype } from "../prototype/types";
 import { LAYOUT_TYPE } from "./catalog";
 import { isRecord, pointer, type JsonValue } from "./json";

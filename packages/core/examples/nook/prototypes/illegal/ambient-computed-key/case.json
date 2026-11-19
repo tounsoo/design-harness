@@ -1,1 +1,0 @@
-{ "what": "A property read by a key built at run time, which could be any property", "expect": [{ "rule": "no-ambient-globals", "message": "Cannot tell what data/rooms.ts:17:27 reaches: it reads a property whose key is computed at run time" }] }

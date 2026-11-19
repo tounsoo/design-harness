@@ -27,8 +27,17 @@ export function proposalTimeline(proposal: Proposal): TimelineEntry[] {
 
 const VERB: Readonly<Record<ProposalStatus, string>> = { open: "Drafted", approved: "Approved", adopted: "Adopted", declined: "Declined" };
 
-/** The line a history entry reads as: "Drafted by agent", "Sent back by you", "Revised by agent". */
-export function timelineTitle(entry: TimelineEntry): string {
+/** Whether the person using the app drafted the proposal, from a rule's card, and not the agent. */
+export function ownProposal(proposal: Proposal): boolean {
+  return draftedBy(proposal).by === REVIEWER;
+}
+
+/**
+ * The line a history entry reads as: "Drafted by agent", "Sent back by you",
+ * "Revised by agent". `own` says the person drafted the proposal: a note they
+ * then send the agent goes back to no one, so it reads "Revision asked by you".
+ */
+export function timelineTitle(entry: TimelineEntry, own = false): string {
   const by = entry.by ? ` by ${entry.by}` : "";
   switch (entry.kind) {
     case "status":
@@ -36,7 +45,7 @@ export function timelineTitle(entry: TimelineEntry): string {
     case "revised":
       return `Revised${by}`;
     case "sent-back":
-      return `Sent back${by}`;
+      return `${own && entry.by === REVIEWER ? "Revision asked" : "Sent back"}${by}`;
   }
 }
 

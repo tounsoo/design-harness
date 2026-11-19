@@ -1,14 +1,11 @@
-import { checkPrototype, extractPrototype, specModel, type CheckReport, type ProjectConfig, type Prototype, type PrototypeModel, type RenderedSnapshot } from "@design-harness/core";
+import { checkPrototype, specModel, type CheckReport, type ProjectConfig, type Prototype, type PrototypeModel, type RenderedSnapshot } from "@design-harness/core";
 import type { SpecPayload } from "./protocol";
 import { specParts, specPayload } from "./spec-payload";
-import { tagSites } from "./tags";
-import { compilePrototype, type CompileProblem } from "./transform";
 
 /**
  * Where core's engine runs for a check session: the page model, the rules,
  * the rendered rules on the frames' snapshots, and what a frame needs that
- * comes from the same model (a TSX prototype's compiled modules with their
- * element tags, a spec prototype's page for each scenario).
+ * comes from the same prototype: each scenario's page, as core resolves it.
  *
  * `runEngine` is the one function that does it. The app runs it in a module
  * worker (`check-worker.ts`), so typing in the code view and scrolling the
@@ -28,18 +25,13 @@ export type PrepareRequest = {
   readonly revision: number;
   readonly config: ProjectConfig;
   readonly prototype: Prototype;
-  /** Whether a TSX prototype's elements are tagged (`tags.ts`). */
-  readonly tags: boolean;
 };
 
 export type Prepared = {
   /** Core's report with no snapshots: rendered rules say not-run. */
   readonly report: CheckReport;
-  /** A TSX prototype's modules by specifier; empty for a spec prototype. */
-  readonly modules: Readonly<Record<string, string>>;
-  readonly problems: readonly CompileProblem[];
-  /** A spec prototype's page for each scenario id, or null where its spec could not be read; absent for TSX. */
-  readonly payloads?: Readonly<Record<string, SpecPayload | null>>;
+  /** The page for each scenario id, or null where its spec could not be read. */
+  readonly payloads: Readonly<Record<string, SpecPayload | null>>;
 };
 
 /** A revision's check once every frame has answered, with the snapshots it has. */
@@ -55,11 +47,11 @@ export type MeasureRequest = {
 export type EngineRequest = PrepareRequest | MeasureRequest;
 export type EngineResult<R extends EngineRequest> = R extends PrepareRequest ? Prepared : CheckReport;
 
-/** The model each session's revision was checked with, so its second check does not read the source again. One per session: a revision replaces the one before. */
+/** The model each session's revision was checked with, so its second check does not read the specs again. One per session: a revision replaces the one before. */
 export type EngineCache = Map<string, { readonly revision: number; readonly model: PrototypeModel }>;
 
 function modelOf(config: ProjectConfig, prototype: Prototype): PrototypeModel {
-  return prototype.format === "spec" ? specModel(prototype, config) : extractPrototype(prototype, config.library.package);
+  return specModel(prototype, config);
 }
 
 export function runEngine(cache: EngineCache, request: PrepareRequest): Prepared;
@@ -75,15 +67,10 @@ export function runEngine(cache: EngineCache, request: EngineRequest): Prepared 
   const model = modelOf(config, prototype);
   cache.set(request.session, { revision: request.revision, model });
   const report = checkPrototype({ config, prototype, model });
-  if (prototype.format === "spec") {
-    const parts = specParts(config);
-    const payloads: Record<string, SpecPayload | null> = {};
-    for (const scenario of prototype.scenarios) if (!(scenario.id in payloads)) payloads[scenario.id] = prototype.pages.some((page) => page.id === scenario.page) ? specPayload(config, prototype, scenario, parts) : null;
-    return { report, modules: {}, problems: [], payloads };
-  }
-  // A TSX prototype's elements are tagged where core found them, after core has read the source.
-  const compiled = compilePrototype(prototype.files, request.tags ? tagSites(model) : undefined);
-  return { report, modules: compiled.modules, problems: compiled.problems };
+  const parts = specParts(config);
+  const payloads: Record<string, SpecPayload | null> = {};
+  for (const scenario of prototype.scenarios) if (!(scenario.id in payloads)) payloads[scenario.id] = prototype.pages.some((page) => page.id === scenario.page) ? specPayload(config, prototype, scenario, parts) : null;
+  return { report, payloads };
 }
 
 /** Runs the engine for check sessions, and forgets a session's model when it is disposed. */

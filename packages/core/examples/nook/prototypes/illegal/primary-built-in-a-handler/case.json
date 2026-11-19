@@ -1,1 +1,0 @@
-{ "what": "A primary Confirm built inside Hold room's click handler, which no page renders, so no per-page count sees it", "expect": [{ "rule": "counted-parts-reached", "message": "Button.Root \"Confirm\" at pages/booking.tsx" }] }

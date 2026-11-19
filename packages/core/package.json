@@ -2,7 +2,7 @@
   "name": "@design-harness/core",
   "version": "0.0.0",
   "private": true,
-  "description": "Deterministic design checks: project config, prototype model, page-model extraction, rule engine and proposal lifecycle. Runs unchanged in a browser and in Node.",
+  "description": "Deterministic design checks: project config, spec prototypes and their page model, rule engine and proposal lifecycle. Runs unchanged in a browser and in Node.",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -11,11 +11,5 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
     "bundle": "node scripts/bundle-browser.mjs"
-  },
-  "dependencies": {
-    "@babel/parser": "^7.29.0"
-  },
-  "devDependencies": {
-    "@babel/types": "^7.29.0"
   }
 }

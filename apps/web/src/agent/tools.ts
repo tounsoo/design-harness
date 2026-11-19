@@ -27,7 +27,10 @@ export type Measured = { readonly revision: number; readonly report: CheckReport
 /** What the tools need from the app. */
 export interface AgentHost {
   config(): ProjectConfig;
+  /** The open prototype. Never called while `tsx` says the open one is TSX: there is no spec to give. */
   prototype(): Prototype;
+  /** True while the open prototype is a stored TSX one, which takes no turn and no tool; absent where every prototype is a spec. */
+  tsx?(): boolean;
   /** Makes `next` the prototype at once, as a new revision, and returns that revision. */
   apply(next: Prototype): { readonly revision: number };
   saveConfig(next: ProjectConfig): Promise<void>;
@@ -94,7 +97,7 @@ const PROPOSAL_FIELDS: Readonly<Record<string, JsonSchema>> = {
   title: { type: "string", minLength: 1, maxLength: 200 },
   reason: { type: "string", minLength: 1, maxLength: 2000 },
   states: { type: "array", items: { type: "object", properties: { state: { type: "string" }, note: { type: "string" } }, required: ["state", "note"], additionalProperties: false }, description: "Notes on each state the change shows: ordinary states and edge cases." },
-  inventory: { type: "array", items: { type: "object" }, description: 'Inventory operations such as { "op": "add-component", "name": "Toast" }, { "op": "add-layout", "id": "..." }, { "op": "add-page-type", "pageType": {...} }, { "op": "add-flow-state", "state": "..." }, { "op": "set-cap", "name": "...", "value": 2 }.' },
+  inventory: { type: "array", items: { type: "object" }, description: 'Inventory operations such as { "op": "add-component", "name": "Toast" }, { "op": "add-layout", "id": "..." }, { "op": "add-page-type", "pageType": {...} }, { "op": "add-flow-state", "state": "..." }, { "op": "set-cap", "name": "...", "value": 2 }, { "op": "set-max-steps", "task": "...", "value": 3 } (a task step budget).' },
   rules: {
     type: "object",
     properties: {
@@ -179,7 +182,7 @@ const TOOLS: readonly Tool[] = [
   ),
   tool(
     "draft_proposal",
-    "Draft a proposal when the request needs something the inventories lack or a rule in force forbids: a component, layout, page type, flow state or task, a changed cap or ranking, a new rule, or a rule in force removed (rules.remove) or changed (its id in rules.remove and the changed rule under that id in rules.add). Use it instead of working around a check. It is saved as open, and core's adoption dry run tells you whether it would be adopted or why not. To change a proposal you drafted, use revise_proposal, which keeps its history; draft_proposal refuses an id that exists. Only the user can approve, decline or adopt it. Each example starts from the current prototype: files replace or add files, remove_files removes some, manifest replaces the manifest. Give examples, or, only when no rule type in the vocabulary can express the rule, needs_rule_type in place of rules, inventory and examples: a request for a code change that can never be adopted.",
+    "Draft a proposal when the request needs something the inventories lack or a rule in force forbids: a component, layout, page type, flow state or task, a changed cap, step budget or ranking, a new rule, or a rule in force removed (rules.remove) or changed (its id in rules.remove and the changed rule under that id in rules.add). Use it instead of working around a check. It is saved as open, and core's adoption dry run tells you whether it would be adopted or why not. To change a proposal you drafted, use revise_proposal, which keeps its history; draft_proposal refuses an id that exists. Only the user can approve, decline or adopt it. Each example starts from the current prototype: files replace or add files, remove_files removes some, manifest replaces the manifest. Give examples, or, only when no rule type in the vocabulary can express the rule, needs_rule_type in place of rules, inventory and examples: a request for a code change that can never be adopted.",
     { type: "object", properties: { id: { type: "string", pattern: SLUG }, ...PROPOSAL_FIELDS }, required: ["id", "title", "reason"], additionalProperties: false },
   ),
   tool(
@@ -205,11 +208,8 @@ const TOOLS: readonly Tool[] = [
 /** The tool definitions sent with every request. */
 export const TOOL_DEFINITIONS: readonly BetaTool[] = TOOLS.map((item) => item.definition);
 
-/** Why a prototype that is not a spec takes no tool and no turn: TSX prototypes are kept, read-only. */
-export const TSX_READ_ONLY = "This prototype is TSX. TSX prototypes are no longer edited here: the agent writes specs only. It still renders and checks, read-only. Export its code, or start a spec version of it.";
-
-/** Whether the agent can work on a prototype: only a spec one. */
-export const isSpec = (prototype: Prototype): boolean => prototype.format === "spec";
+/** Why a stored TSX prototype takes no tool and no turn: core no longer reads TSX, so nothing renders, checks or changes it. */
+export const TSX_READ_ONLY = "This prototype is TSX. TSX prototypes are no longer edited or checked here: the agent writes specs only. Export its code, or start a spec version of it.";
 
 export type ToolCall = { readonly id: string; readonly name: string; readonly input: unknown };
 
@@ -249,7 +249,7 @@ const refused = (title: string, content: string): ToolOutcome => ({ content, isE
 
 /** Validates a call's input against its tool's schema, then runs it. */
 export async function runTool(call: ToolCall, host: AgentHost, signal: AbortSignal): Promise<ToolOutcome> {
-  if (!isSpec(host.prototype())) return refused(`${call.name} not run: TSX is read-only`, `${TSX_READ_ONLY} Nothing ran.`);
+  if (host.tsx?.()) return refused(`${call.name} not run: TSX is read-only`, `${TSX_READ_ONLY} Nothing ran.`);
   const found = TOOLS.find((item) => item.definition.name === call.name);
   if (!found) return refused(`Unknown tool ${call.name}`, `There is no tool "${call.name}" for this prototype. The tools are ${TOOLS.map((item) => item.definition.name).join(", ")}.`);
   const issues = validateInput(found.schema, call.input);

@@ -1,1 +1,0 @@
-{ "what": "A heading level computed from a prop the extractor cannot see", "expect": [{ "rule": "text-as-heading-or-paragraph", "message": "Cannot tell whether Text.Root \"Lantern\" at pages/booking.tsx" }] }

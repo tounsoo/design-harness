@@ -10,7 +10,7 @@ import { reportRules, type LoopEvent } from "./patterns";
 import { describePins } from "../pins/describe";
 import { openPins, unaddressPin } from "../pins/model";
 import type { SpecStreamPreview } from "./spec-stream";
-import { TSX_READ_ONLY, checksTitle, describeMeasured, isSpec, runTool, type AddressedNote, type AgentHost, type ToolOutcome } from "./tools";
+import { TSX_READ_ONLY, checksTitle, describeMeasured, runTool, type AddressedNote, type AgentHost, type ToolOutcome } from "./tools";
 
 /**
  * One prototype's conversation with the agent. A turn is one message from
@@ -202,7 +202,7 @@ export class AgentController {
     if (this.loading) await this.loading;
     if (!message || this.state.running) return;
     // A TSX prototype is read-only: nothing is sent, and the history is left as it is.
-    if (!isSpec(this.options.host.prototype())) {
+    if (this.options.host.tsx?.()) {
       this.set({ problem: TSX_READ_ONLY });
       return;
     }
@@ -235,7 +235,7 @@ export class AgentController {
   /** Runs the last turn again from where it failed, when its error allows a retry. */
   async retry(): Promise<void> {
     const last = this.state.turns.at(-1);
-    if (!last || this.state.running || last.end.status !== "error" || !last.end.retry || !isSpec(this.options.host.prototype())) return;
+    if (!last || this.state.running || last.end.status !== "error" || !last.end.retry || this.options.host.tsx?.()) return;
     this.patchTurn(last.id, () => ({ end: { status: "running" } }));
     await this.run(last.id);
   }
@@ -259,7 +259,7 @@ export class AgentController {
    */
   undoable(): Turn | undefined {
     // A TSX prototype is read-only: undo would change it.
-    if (this.state.running || !isSpec(this.options.host.prototype())) return undefined;
+    if (this.state.running || this.options.host.tsx?.()) return undefined;
     return [...this.state.turns].reverse().find((turn) => !turn.undone && (turn.before !== null || this.standing(turn).length > 0));
   }
 

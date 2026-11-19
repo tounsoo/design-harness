@@ -1,13 +1,14 @@
 import type { PageType, ProjectConfig } from "../config/types";
-import { PAGE_KIT } from "../extract/evaluator";
-import type { Prototype } from "../prototype/types";
-import { fresh, isIdentifier, pascal } from "./names";
+import type { Prototype, TsxPrototype } from "../prototype/types";
+import { PAGE_KIT, fresh, isIdentifier, pascal } from "./names";
 import { specToTsx } from "./tsx";
 
 /**
  * A prototype as a runnable React project: the place the spec format turns
  * back into product code. A spec prototype is written as TSX first
- * (tsx.ts); a TSX prototype's files go in as they are. Around them, the
+ * (tsx.ts); a TSX prototype stored from before every prototype was a spec,
+ * which core no longer reads, goes in with its files as they are. Around
+ * them, the
  * least a Vite app needs: an entry with a scenario switcher, the page kit
  * the pages import, and a package.json pinning the exact library and React
  * versions of the project config. Pure: the caller gives the time.
@@ -21,7 +22,8 @@ export const EXPORT_PROTOTYPE_DIR = "src/prototype";
 
 export type ProjectExportInput = {
   readonly config: ProjectConfig;
-  readonly prototype: Prototype;
+  /** A spec prototype, or a stored TSX one, whose files are written unchanged and unchecked. */
+  readonly prototype: Prototype | TsxPrototype;
   /** The prototype's name, as the app shows it. */
   readonly name: string;
   /** When it was exported, ISO 8601. */
@@ -36,7 +38,7 @@ export type ProjectExport = {
   /** Path inside the folder → text. */
   readonly files: Readonly<Record<string, string>>;
   /** The prototype as it is in the project: TSX, with the same manifest. */
-  readonly prototype: Prototype;
+  readonly prototype: TsxPrototype;
   readonly notes: readonly string[];
 };
 
@@ -186,7 +188,7 @@ if (root) createRoot(root).render(<StrictMode>${root ? `${rootOpen}<App /></${ro
 `;
 }
 
-function scenariosFile(prototype: Prototype, config: ProjectConfig): string {
+function scenariosFile(prototype: TsxPrototype, config: ProjectConfig): string {
   const taken = new Set<string>(["pages", "scenarios", "PageProps", "PageType", "ComponentType"]);
   const imports: string[] = [];
   const entries: string[] = [];
@@ -217,7 +219,7 @@ ${scenarios.join("\n")}
 `;
 }
 
-function readme(input: ProjectExportInput, folder: string, prototype: Prototype, notes: readonly string[]): string {
+function readme(input: ProjectExportInput, folder: string, prototype: TsxPrototype, notes: readonly string[]): string {
   const { config } = input;
   const spec = input.prototype.format === "spec";
   const files = Object.keys(prototype.files)
@@ -231,7 +233,7 @@ Exported from design-harness on ${input.at}: prototype "${input.name}" of projec
 ${
   spec
     ? "The prototype was written as json-render specs. design-harness core wrote each page and each layout as React: a layout is a component whose props are its parameters, a page's state is data (and `useState` for what the person can change), and a page reads its scenario from its `scenario` and `state` props."
-    : "The prototype was written as TSX; its files are here as they were."
+    : "The prototype was written as TSX, which design-harness no longer reads: its files are here as they were stored, and nothing checked them at export."
 }${input.checks ? `\n\nCore's checks at export: ${input.checks}.` : ""}
 
 ## Run it
@@ -247,9 +249,9 @@ npm run typecheck  # TypeScript, no output
 
 ## What is here
 
-- \`${EXPORT_PROTOTYPE_DIR}/\`: the prototype. Its pages and layouts import only ${config.library.package}, React, and \`${PAGE_KIT}\`, the page kit.
+- \`${EXPORT_PROTOTYPE_DIR}/\`: the prototype.${spec ? ` Its pages and layouts import only ${config.library.package}, React, and \`${PAGE_KIT}\`, the page kit.` : ""}
 ${files.join("\n")}
-- \`${EXPORT_PROTOTYPE_DIR}/manifest.json\`: the prototype's pages, layouts, scenarios and flow, as design-harness reads them. Together with the files above it is a TSX prototype design-harness can check: core gives it the same report as the prototype it was exported from, unless core refused part of a spec (then the next section says so).
+- \`${EXPORT_PROTOTYPE_DIR}/manifest.json\`: the prototype's pages, layouts, scenarios and flow, as design-harness kept them. design-harness reads spec prototypes only, so it does not check this TSX or import it back: it is product code, the place a design leaves the harness.
 - \`src/page-kit.tsx\`: \`Slot\`, \`PageProps\` and the page shell, which arranges a page type's slots. \`vite.config.ts\` and \`tsconfig.json\` point \`${PAGE_KIT}\` at it.
 - \`src/scenarios.ts\`: each page with its page type, and the scenarios.
 - \`src/main.tsx\`: the entry, with the scenario switcher.
@@ -265,17 +267,18 @@ The folder is \`${folder}\`.
 /** The whole project: every file by path inside its folder. Refused only when a spec prototype cannot be read. */
 export function exportReactProject(input: ProjectExportInput): { ok: true; value: ProjectExport } | { ok: false; error: string } {
   const { config } = input;
-  let prototype = input.prototype;
+  let prototype: TsxPrototype;
   let notes: readonly string[] = [];
-  if (prototype.format === "spec") {
-    const written = specToTsx(prototype, config);
+  if (input.prototype.format === "spec") {
+    const written = specToTsx(input.prototype, config);
     if (!written.ok) return written;
     prototype = written.value.prototype;
     notes = written.value.notes;
+  } else {
+    prototype = input.prototype;
   }
   const folder = slugOf(`${config.id} ${input.name}`);
   const { files: source, ...manifest } = prototype;
-  const tsxManifest = { ...manifest, format: "tsx" as const };
   const files: Record<string, string> = {};
   files["package.json"] = json({
     name: folder,
@@ -333,7 +336,7 @@ export default defineConfig({
   files["src/shell.css"] = SHELL_CSS;
   files["src/page-kit.tsx"] = pageKit();
   files["src/scenarios.ts"] = scenariosFile(prototype, config);
-  files[`${EXPORT_PROTOTYPE_DIR}/manifest.json`] = json(tsxManifest);
+  files[`${EXPORT_PROTOTYPE_DIR}/manifest.json`] = json(manifest);
   for (const path of Object.keys(source).sort(compare)) files[`${EXPORT_PROTOTYPE_DIR}/${path}`] = source[path] as string;
   return { ok: true, value: { folder, files, prototype, notes } };
 }

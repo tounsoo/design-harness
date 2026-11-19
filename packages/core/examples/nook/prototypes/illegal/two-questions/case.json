@@ -1,1 +1,0 @@
-{ "what": "A second question, who is coming, outside the disclosure", "expect": [{ "rule": "visible-questions", "message": "Page \"booking\" has 2 questions outside every disclosure, more than 1 (MAX_VISIBLE_QUESTIONS)" }] }
