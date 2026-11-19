@@ -1263,9 +1263,14 @@ test("a proposal that adds a rendered rule adopts on measured snapshots, and giv
   await page.reload();
   await measured(page, 1);
   await page.getByRole("tab", { name: "Project" }).click();
+  // The Project tab's palette draws its own frames as its tiles are scrolled to; a re-run adds none.
+  await page.getByTestId("regression").scrollIntoViewIfNeeded();
+  await page.waitForTimeout(500);
+  const framesBefore = await page.locator("iframe").count();
   await page.getByRole("button", { name: "Re-run every adopted proposal's examples" }).click();
   assert.match(await page.getByTestId("regression-summary").textContent(), /^All 2 examples behave/);
-  assert.equal(await page.locator("iframe").count(), FRAMES, "re-running reads the stored snapshots: no example is rendered again");
+  assert.equal(await page.locator("iframe").count(), framesBefore, "re-running reads the stored snapshots: no example is rendered again");
+  assert.equal(await page.locator('iframe:not([title*="drawn by"])').count(), FRAMES, "the only other frames are the board's");
   assert.deepEqual(await page.locator('[data-testid="regression"] tbody tr').evaluateAll((rows) => rows.map((row) => [...row.cells].map((cell) => cell.textContent.trim()))), [
     ["harbor-first-view", "as-is", "pass", "behaves", "passes every rule"],
     ["harbor-first-view", "long-intro", "fail", "behaves", 'flagged by "harbor-in-first-view"'],
@@ -3303,7 +3308,7 @@ async function tileDrawn(page, component) {
 }
 
 test("the Project tab draws the palette live: each component in a sandboxed frame when scrolled to, with its roles and ranked actions", async ({ browser, base }) => {
-  const { page, errors } = await openApp(browser, base);
+  const { page, errors, context } = await openApp(browser, base);
   await measured(page, 1);
   const boardFrames = await page.locator("iframe").count();
   await page.getByRole("tab", { name: "Project" }).click();
@@ -3350,12 +3355,20 @@ test("the Project tab draws the palette live: each component in a sandboxed fram
   await page.locator("#project-inventories").evaluate((element) => element.scrollIntoView({ block: "start" }));
   await page.waitForTimeout(400);
   await shot(page, "project-palette-light");
-  await shotDark(page, "project-palette-dark");
+  if (shots) {
+    // In dark the tiles are drawn again, in the app's scheme: wait for the library before the picture.
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.locator('[data-testid="palette"] [data-testid="specimen-stage"]:not([data-state="measured"])').first().waitFor({ state: "attached", timeout: 10000 }).catch(() => undefined);
+    await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="palette"] [data-testid="specimen-stage"]')].every((stage) => stage.dataset.state === "measured"), null, { timeout: 90000 });
+    await page.waitForTimeout(400);
+    await shot(page, "project-palette-dark");
+  }
   assert.deepEqual(errors, []);
+  await context.close();
 });
 
 test("the Project tab draws page types as slot diagrams, caps as meters, budgets against today's routes, and rules as grouped cards", async ({ browser, base }) => {
-  const { page, errors } = await openApp(browser, base);
+  const { page, errors, context } = await openApp(browser, base);
   await measured(page, 1);
   await page.getByRole("tab", { name: "Project" }).click();
   // Page types: slots in the project's order, each as chrome, body or the primary slot, readable as a list.
@@ -3405,10 +3418,11 @@ test("the Project tab draws page types as slot diagrams, caps as meters, budgets
   // The Proposals section is a short timeline; with none, it says so.
   assert.match(await page.getByTestId("project-history").textContent(), /Proposals \(0\).*No proposals yet\./s);
   assert.deepEqual(errors, []);
+  await context.close();
 });
 
 test("Tally's palette is drawn by Mantine: its buttons by variant with the ranked actions, and its accordion closed", async ({ browser, base }) => {
-  const { page, errors } = await openTally(browser, base);
+  const { page, errors, context } = await openTally(browser, base);
   await page.getByRole("tab", { name: "Project" }).click();
   const palette = page.getByTestId("palette");
   await palette.waitFor();
@@ -3431,10 +3445,11 @@ test("Tally's palette is drawn by Mantine: its buttons by variant with the ranke
   await page.waitForTimeout(400);
   await shot(page, "project-palette-tally-light");
   assert.deepEqual(errors, []);
+  await context.close();
 });
 
 test("the proposals list is cards that lead with the change: a cap before and after with its direction, and a rule's glyph", async ({ browser, base, api }) => {
-  const { page, errors } = await openApp(browser, base);
+  const { page, errors, context } = await openApp(browser, base);
   await measured(page, 1);
   await draftByAgent(page, api, {
     id: "two-questions",
@@ -3478,6 +3493,7 @@ test("the proposals list is cards that lead with the change: a cap before and af
   assert.equal(await page.locator('[data-testid="op-figures"] [data-testid="cap-change"]').getAttribute("data-moved"), "looser");
   assert.equal(await page.locator('.review [data-testid="class-scale"]').getAttribute("data-class"), "loosens-or-removes");
   assert.deepEqual(errors, []);
+  await context.close();
 });
 
 // ---- runner ----------------------------------------------------------------
