@@ -1,9 +1,9 @@
 import { Code, Text, VisuallyHidden } from "@tounsoo/todae";
 import { ArrowRight } from "lucide-react";
 import { useId } from "react";
-import { describeRule, type Finding, type ProjectConfig, type Proposal, type RenderedSnapshot } from "@design-harness/core";
+import { describeRule, type BoundChange, type Finding, type ProjectConfig, type Proposal, type RenderedSnapshot } from "@design-harness/core";
 import { CapChange, RuleFigure, SlotDiagram } from "../visual/project-figures";
-import { changeCount, previewLabel, proposalPreview, ruleBound, type ProposalPreview as Preview, type RuleLine } from "../visual/project-model";
+import { changeCount, previewLabel, proposalPreview, ruleBound, type BudgetLine, type ProposalPreview as Preview, type RuleLine } from "../visual/project-model";
 import { SpecimenStage, useSpecimen } from "./Palette";
 import { humanize } from "./words";
 
@@ -12,7 +12,8 @@ import { humanize } from "./words";
  * the project's library, a page type's slots, a length cap at its actual
  * size before and after, or its first rule's glyph when the rule is about
  * how the page looks. A count cap, a step budget, a state and any other
- * rule are words: the limit before and after with which way it moved. The
+ * rule are words: the limit before and after with which way it moved (a
+ * moved budget leads with its task, as a changed rule leads with its id). The
  * lead is chosen by the kind of its first change (`proposalPreview`).
  */
 
@@ -50,20 +51,11 @@ export function PreviewFigure({ preview, config }: { readonly preview: Preview; 
           <Text.Root as="p" weight="medium">
             {preview.task}
           </Text.Root>
-          {preview.before !== undefined && (
-            <>
-              <BudgetWords value={preview.before} />
-              <ArrowRight aria-hidden="true" className="cap-arrow" />
-            </>
-          )}
           <BudgetWords value={preview.after} />
-          {preview.before !== undefined && preview.before !== preview.after && (
-            <Text.Root as="span" weight="medium">
-              {preview.after < preview.before ? "stricter: fewer steps" : "looser: more steps"}
-            </Text.Root>
-          )}
         </div>
       );
+    case "budget-line":
+      return <BudgetLineView line={preview.line} />;
     case "page-type":
       return <SlotDiagram type={preview.pageType} />;
     case "flow-state":
@@ -122,29 +114,53 @@ export function RuleLineView({ line, withoutWas = false }: { readonly line: Rule
         <Code.Root>{line.rule}</Code.Root>
         {line.detail !== undefined ? `: ${line.detail}` : ""}
       </Text.Root>
-      {line.moves.length > 0 && (
-        <ul className="rule-change-list" aria-label="Limits it moves">
-          {line.moves.map((move) => (
-            <li key={move.bound} className="rule-move" data-direction={move.direction}>
-              <span className="rule-move-words">
-                <span>{move.before}</span>
-                <ArrowRight aria-hidden="true" />
-                <VisuallyHidden.Root> becomes </VisuallyHidden.Root>
-                <strong>{move.after}</strong>
-              </span>
-              <Text.Root as="span" weight="medium">
-                {move.direction === "unknown" ? "not provably stricter" : move.direction}
-              </Text.Root>
-            </li>
-          ))}
-        </ul>
-      )}
+      <LimitMoves moves={line.moves} />
       {line.was !== undefined && !withoutWas && (
         <Text.Root as="p" tone="muted" data-testid="rule-line-was">
           {line.kind === "removes" ? "It says: " : "Before: "}
           {line.was}
         </Text.Root>
       )}
+    </div>
+  );
+}
+
+/** Each limit a change moves, before and after in core's words, with the way it moved. */
+function LimitMoves({ moves }: { readonly moves: readonly BoundChange[] }) {
+  if (moves.length === 0) return null;
+  return (
+    <ul className="rule-change-list" aria-label="Limits it moves">
+      {moves.map((move) => (
+        <li key={move.bound} className="rule-move" data-direction={move.direction}>
+          <span className="rule-move-words">
+            <span>{move.before}</span>
+            <ArrowRight aria-hidden="true" />
+            <VisuallyHidden.Root> becomes </VisuallyHidden.Root>
+            <strong>{move.after}</strong>
+          </span>
+          <Text.Root as="span" weight="medium">
+            {move.direction === "unknown" ? "not provably stricter" : move.direction}
+          </Text.Root>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * A task's step budget a proposal moves, in words, as a changed rule's
+ * limit reads: which task, then the budget before and after with the way
+ * it moved. Once adopted with nothing kept to say what it was, only the
+ * budget it set.
+ */
+export function BudgetLineView({ line }: { readonly line: BudgetLine }) {
+  return (
+    <div className="rule-change" data-testid="budget-line" data-task={line.task} {...(line.move ? { "data-direction": line.move.direction } : {})}>
+      <Text.Root as="p" weight="medium" data-testid="budget-line-words">
+        Changes the step budget of {line.name}
+        {line.move ? "" : `: to at most ${steps(line.after)}`}
+      </Text.Root>
+      <LimitMoves moves={line.move ? [line.move] : []} />
     </div>
   );
 }

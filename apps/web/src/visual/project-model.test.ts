@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { flowFacts, type Proposal, type RuleSpec } from "@design-harness/core";
+import { classifyProposal, flowFacts, type Proposal, type RuleSpec } from "@design-harness/core";
 import { nook } from "../../../../packages/core/examples/nook/project";
 import { tally } from "../../../../packages/core/examples/tally/project";
 import { seedSpec } from "../../test/nook";
-import { RULE_GROUPS, budgetMeter, capDirection, capMeter, capReaders, capsRead, changeCount, changeLine, groupRules, pageTypeWords, projectTimeline, proofPair, proposalPreview, proposalTrack, previewLabel, ruleBound, ruleGlyph, ruleGroup, ruleLines, ruleSource, slotRows, sortProposals } from "./project-model";
+import { RULE_GROUPS, budgetLines, budgetMeter, capDirection, capMeter, capReaders, capsRead, changeCount, changeLine, groupRules, pageTypeWords, projectTimeline, proofPair, proposalPreview, proposalTrack, previewLabel, ruleBound, ruleGlyph, ruleGroup, ruleLines, ruleSource, slotRows, sortProposals } from "./project-model";
 
 const proposal = (change: Partial<Proposal>): Proposal => ({ id: "p", title: "A change", reason: "Because.", states: [], inventory: [], rules: { add: [], remove: [] }, examples: { pass: [], fail: [] }, status: "open", history: [{ status: "open", at: "2026-11-01T10:00:00.000Z", by: "agent" }], ...change });
 const toastRule: RuleSpec = { type: "count", id: "one-toast-per-page", select: { component: "Toast.Root" }, scope: "page", max: 1 };
@@ -125,7 +125,8 @@ describe("a proposal on its card and its track", () => {
     expect(proposalPreview(proposal({ inventory: [{ op: "set-cap", name: "MAX_VISIBLE_QUESTIONS", value: 2 }] }), nook)).toMatchObject({ kind: "cap", before: 1, moved: "looser", cap: { value: 2, stricter: "lower" } });
     // Once adopted, the config already holds the new value: there is no before to draw.
     expect(proposalPreview(proposal({ status: "adopted", inventory: [{ op: "set-cap", name: "MAX_VISIBLE_QUESTIONS", value: 1 }] }), nook)).toMatchObject({ kind: "cap", moved: "the same" });
-    expect(proposalPreview(proposal({ inventory: [{ op: "set-max-steps", task: "book-room", value: 2 }] }), nook)).toEqual({ kind: "budget", task: "Pick a free room and book it", before: 3, after: 2 });
+    expect(proposalPreview(proposal({ inventory: [{ op: "set-max-steps", task: "book-room", value: 2 }] }), nook)).toMatchObject({ kind: "budget-line", line: { task: "book-room", words: "Changes the step budget of Pick a free room and book it: at most 3 → at most 2, stricter" } });
+    expect(proposalPreview(proposal({ inventory: [{ op: "add-task", task: { id: "cancel", description: "Cancel a booking", successState: "rooms", maxSteps: 2 } }] }), nook)).toEqual({ kind: "budget", task: "Cancel a booking", after: 2 });
     expect(proposalPreview(proposal({ inventory: [{ op: "add-flow-state", state: "waitlisted" }] }), nook)).toEqual({ kind: "flow-state", state: "waitlisted", removed: false });
     expect(proposalPreview(proposal({ inventory: [{ op: "add-page-type", pageType: { id: "search", kind: "collection", slots: ["title", "filters", "body"], chrome: ["title"] } }] }), nook).kind).toBe("page-type");
     expect(proposalPreview(proposal({ needsRuleType: { checks: "x", whyNot: "y", pass: [], fail: [] } }), nook)).toEqual({ kind: "request" });
@@ -202,5 +203,36 @@ describe("a rule a proposal removes or changes, as a line", () => {
   it("counts a proposal's changes with a changed rule once", () => {
     expect(changeLine(proposal({ inventory: [{ op: "set-cap", name: "MAX_VISIBLE_QUESTIONS", value: 2 }], rules: { remove: ["one-primary-per-page", "rank-1-shown"], add: [{ ...onePrimary, max: 2 } as RuleSpec, toastRule] } }))).toBe("Changes 1 cap and 1 rule, adds 1 rule and removes 1 rule.");
     expect(changeCount(proposal({ inventory: [{ op: "set-cap", name: "MAX_VISIBLE_QUESTIONS", value: 2 }], rules: { remove: ["one-primary-per-page", "rank-1-shown"], add: [{ ...onePrimary, max: 2 } as RuleSpec, toastRule] } }))).toBe(4);
+  });
+});
+
+describe("a step budget a proposal moves, as a line", () => {
+  const moved = (value: number, change: Partial<Proposal> = {}) => proposal({ inventory: [{ op: "set-max-steps", task: "book-room", value }], ...change });
+
+  it("names the task, then the budget before and after with the way it moved", () => {
+    expect(budgetLines(moved(2), nook)).toEqual([
+      { task: "book-room", name: "Pick a free room and book it", words: "Changes the step budget of Pick a free room and book it: at most 3 → at most 2, stricter", after: 2, move: { bound: "max", before: "at most 3", after: "at most 2", direction: "stricter" } },
+    ]);
+    expect(budgetLines(moved(4), nook)[0]?.words).toBe("Changes the step budget of Pick a free room and book it: at most 3 → at most 4, looser");
+    expect(budgetLines(proposal({ inventory: [{ op: "add-layout", id: "side-panel" }, { op: "set-max-steps", task: "hold-room", value: 1 }] }), nook).map((line) => line.words)).toEqual(["Changes the step budget of Pick a free room and hold it while you decide: at most 2 → at most 1, stricter"]);
+    expect(budgetLines(proposal({ rules: { add: [], remove: ["one-primary-per-page"] } }), nook)).toEqual([]);
+  });
+
+  it("keeps the budget it was once adopted, from core's kept classification", () => {
+    const open = moved(2);
+    const after = { ...nook, inputs: { ...nook.inputs, tasks: nook.inputs.tasks.map((task) => (task.id === "book-room" ? { ...task, maxSteps: 2 } : task)) } };
+    const adopted = { ...open, status: "adopted" as const, classification: classifyProposal(open, nook) };
+    expect(budgetLines(adopted, after)[0]?.words).toBe("Changes the step budget of Pick a free room and book it: at most 3 → at most 2, stricter");
+    // Shown one operation at a time, as the review page does, it still finds its own change.
+    expect(proposalPreview({ ...adopted, inventory: [adopted.inventory[0] as Proposal["inventory"][number]] }, after)).toMatchObject({ kind: "budget-line", line: { move: { before: "at most 3", after: "at most 2" } } });
+  });
+
+  it("says only the budget it set when nothing says what it was", () => {
+    // Adopted before classifications kept a budget's limits, or with none kept at all.
+    const bare = { class: "tightens" as const, changes: [{ change: 'set-max-steps "book-room" to 2', class: "tightens" as const, reason: "lowers max steps from 3 to 2" }] };
+    expect(budgetLines(moved(2, { status: "adopted", classification: bare }), nook)[0]).toEqual({ task: "book-room", name: "Pick a free room and book it", words: "Changes the step budget of Pick a free room and book it: to at most 2", after: 2 });
+    expect(budgetLines(moved(3, { status: "adopted" }), nook)[0]?.words).toBe("Changes the step budget of Pick a free room and book it: to at most 3");
+    // A task the project does not have is named by its id in words.
+    expect(budgetLines(proposal({ inventory: [{ op: "set-max-steps", task: "check-out", value: 2 }] }), nook)[0]?.words).toBe("Changes the step budget of Check out: to at most 2");
   });
 });

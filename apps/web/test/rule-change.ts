@@ -25,3 +25,15 @@ export function withTwoQuestions(base: Prototype = seedSpec()): Prototype {
   if (text === page(base)) throw new Error("the booking page has no body to add to");
   return withPage(base, text);
 }
+
+/**
+ * The legal prototype with book-room's way through a held room taken out
+ * of that task: its longest route is then 2 steps, where the legal one's
+ * is 3. It passes every rule; under a book-room budget of 2 it still does,
+ * and the legal prototype fails `step-budget` alone.
+ */
+export function withShorterRoute(base: Prototype = seedSpec()): Prototype {
+  const tasks = base.flow.tasks.map((task) => (task.task === "book-room" ? { ...task, transitions: task.transitions.filter((step) => step.from !== "held" && step.to !== "held") } : task));
+  if (tasks.every((task, index) => task.transitions.length === base.flow.tasks[index]?.transitions.length)) throw new Error("book-room has no route through a held room to take out");
+  return { ...base, flow: { ...base.flow, tasks } };
+}
