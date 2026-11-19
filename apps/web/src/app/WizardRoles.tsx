@@ -267,14 +267,22 @@ function RoleCard({ role, library, draft, state, options, preview, previewWhy, a
         </Stack.Root>
       </Card.Body>
       <Card.Footer>
-        {standing === "drafted" || standing === "accepted" ? (
-          <Button.Root type="button" variant="secondary" pressed={standing === "accepted"} onPressedChange={(accepted) => onChange({ ...state, accepted })} data-testid="role-accept">
-            {standing === "accepted" && (
-              <Button.Icon>
-                <Check />
-              </Button.Icon>
-            )}
-            {standing === "accepted" ? "Accepted" : "Accept"}
+        {standing === "accepted" ? (
+          <Stack.Root direction="row" align="center" gap="condensed">
+            <span className="role-accepted">
+              <Check aria-hidden="true" />
+              Accepted
+            </span>
+            <Button.Root type="button" variant="ghost" onClick={() => onChange({ ...state, accepted: false })} aria-label={`Undo accepting ${words.title}`}>
+              Undo
+            </Button.Root>
+          </Stack.Root>
+        ) : standing === "drafted" ? (
+          <Button.Root type="button" variant="secondary" onClick={() => onChange({ ...state, accepted: true })} data-testid="role-accept" aria-label={`Accept ${words.title}`}>
+            <Button.Icon>
+              <Check />
+            </Button.Icon>
+            Accept
           </Button.Root>
         ) : guess ? (
           <Button.Root type="button" variant="ghost" onClick={() => onChange({ mapping: guess.mapping, why: "", accepted: false })}>

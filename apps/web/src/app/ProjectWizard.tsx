@@ -788,14 +788,22 @@ function ExcludedProps({ draft, state, library, onChange, invalid }: { readonly 
             </Stack.Root>
           </Card.Body>
           <Card.Footer>
-            {isDraft ? (
-              <Button.Root type="button" variant="secondary" pressed={state.accepted} onPressedChange={(accepted) => onChange({ ...state, accepted })} data-testid="exclusion-accept">
-                {state.accepted && (
-                  <Button.Icon>
-                    <Check />
-                  </Button.Icon>
-                )}
-                {state.accepted ? "Accepted" : "Accept"}
+            {isDraft && state.accepted ? (
+              <Stack.Root direction="row" align="center" gap="condensed">
+                <span className="role-accepted">
+                  <Check aria-hidden="true" />
+                  Accepted
+                </span>
+                <Button.Root type="button" variant="ghost" onClick={() => onChange({ ...state, accepted: false })} aria-label="Undo accepting the excluded props">
+                  Undo
+                </Button.Root>
+              </Stack.Root>
+            ) : isDraft ? (
+              <Button.Root type="button" variant="secondary" onClick={() => onChange({ ...state, accepted: true })} data-testid="exclusion-accept">
+                <Button.Icon>
+                  <Check />
+                </Button.Icon>
+                Accept
               </Button.Root>
             ) : (
               <Button.Root type="button" variant="ghost" onClick={() => onChange({ props: drafted, why: "", accepted: false })}>
@@ -1110,7 +1118,7 @@ function Review({ project, onEdit, creating, failed, onCreate, back }: { readonl
               {measured && (
                 <div className="wizard-frames">
                   {measured.state.frames.map((frame) => (
-                    <FrameCard key={frame.key} session={measured.session} spec={frame} revision={measured.state.revision} frameState={measured.state.frameStates[frame.key] ?? { state: "waiting" }} scale={0.32} focused={false} hidden={!first.includes(frame)} selected={false} label={scenarioLabel(frame.scenario.id)} />
+                    <FrameCard key={frame.key} session={measured.session} spec={frame} revision={measured.state.revision} frameState={measured.state.frameStates[frame.key] ?? { state: "waiting" }} scale={0.28} focused={false} hidden={!first.includes(frame)} selected={false} label={scenarioLabel(frame.scenario.id)} />
                   ))}
                 </div>
               )}
