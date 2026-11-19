@@ -2603,7 +2603,13 @@ test("the tap-target lens draws failing and passing boxes on every artboard, wit
     assert.equal(await board.locator('[data-testid="lens-box"][data-tone="quiet"]').count(), 4);
     assert.equal(await board.getByTestId("lens-circle").count(), 2);
     assert.match(await board.getByTestId("lens-circle").first().getAttribute("fill"), /^url\(#.*hatch\)$/, "the circle is hatched, not only coloured");
-    assert.deepEqual(await board.getByTestId("lens-label").evaluateAll((items) => items.map((item) => item.textContent)), ["✕ A · 11 × 20", "✕ B · 10 × 20"]);
+    // Each label gives its control's size as the frame measured it: text metrics differ between machines, so the expected sizes come from the frame.
+    const sized = async (name) => {
+      const [box] = await buttonBoxes(page, scenario, view, name);
+      assert.ok(box.width < 24 && box.height < 24, `${key}: ${name} is under 24 px (${box.width} × ${box.height})`);
+      return `✕ ${name} · ${Math.round(box.width)} × ${Math.round(box.height)}`;
+    };
+    assert.deepEqual(await board.getByTestId("lens-label").evaluateAll((items) => items.map((item) => item.textContent)), [await sized("A"), await sized("B")]);
     const styles = await board.evaluate((element) => ({ fail: window.getComputedStyle(element.querySelector('[data-testid="lens-box"][data-tone="fail"]')).strokeDasharray, quiet: window.getComputedStyle(element.querySelector('[data-testid="lens-box"][data-tone="quiet"]')).strokeDasharray }));
     assert.equal(styles.fail, "none", "a failing box is solid");
     assert.notEqual(styles.quiet, "none", "a passing box is dashed");
