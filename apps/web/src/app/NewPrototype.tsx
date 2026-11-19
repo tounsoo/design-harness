@@ -7,10 +7,13 @@ import { defaultFormat, type PrototypeFormat } from "./new-prototype";
 /**
  * New prototype: a name and a format, json-render spec by default. TSX is
  * one choice away; the prototypes already in the project keep the format
- * they were made in.
+ * they were made in. It draws its own button unless `dialog` is given: then
+ * the caller opens it, from a menu item say, and owns whether it is open.
  */
-export function NewPrototype({ config, onCreate }: { readonly config: ProjectConfig; readonly onCreate: (name: string, format: PrototypeFormat) => void }) {
-  const [open, setOpen] = useState(false);
+export function NewPrototype({ config, onCreate, dialog }: { readonly config: ProjectConfig; readonly onCreate: (name: string, format: PrototypeFormat) => void; readonly dialog?: { readonly open: boolean; readonly onOpenChange: (open: boolean) => void } }) {
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = dialog ? dialog.open : ownOpen;
+  const setOpen = dialog ? dialog.onOpenChange : setOwnOpen;
   const [name, setName] = useState("");
   const specs = specCatalog(config) !== null;
   const [format, setFormat] = useState<PrototypeFormat>(defaultFormat(config));
@@ -24,12 +27,14 @@ export function NewPrototype({ config, onCreate }: { readonly config: ProjectCon
   };
   return (
     <>
-      <Button.Root variant="ghost" onClick={() => setOpen(true)}>
-        <Button.Icon>
-          <Plus />
-        </Button.Icon>
-        New prototype
-      </Button.Root>
+      {!dialog && (
+        <Button.Root variant="ghost" onClick={() => setOpen(true)}>
+          <Button.Icon>
+            <Plus />
+          </Button.Icon>
+          New prototype
+        </Button.Root>
+      )}
       <Dialog.Root open={open} onOpenChange={(next) => setOpen(next)} aria-label="New prototype" className="new-prototype">
         <Dialog.Header>
           <Dialog.Title>New prototype</Dialog.Title>

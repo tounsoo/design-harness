@@ -88,5 +88,9 @@ export function usePanels() {
   const toggle = useCallback((name: PanelName, open?: boolean) => {
     setPanels((current) => ({ ...current, [name]: { ...current[name], open: open ?? !current[name].open } }));
   }, []);
-  return { panels, resize, toggle };
+  /** Keeps a width without opening the panel: for a narrow window, where which panel shows is not what is stored. */
+  const setWidth = useCallback((name: PanelName, width: number) => {
+    setPanels((current) => (width > 0 && width !== current[name].width ? { ...current, [name]: { ...current[name], width } } : current));
+  }, []);
+  return { panels, resize, toggle, setWidth };
 }

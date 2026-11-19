@@ -2210,6 +2210,281 @@ test("the chat and the checks panels collapse and come back, and keep their stat
   await blocked.close();
 });
 
+// ---- the shell at phone, tablet and laptop widths ----
+
+/**
+ * The header's parts, each with its box: every control and name it shows,
+ * outermost only (a tab's count badge is part of its tab).
+ */
+async function headerParts(page) {
+  return page.locator(".shell-header").evaluate((header) => {
+    const shown = (element) => {
+      const style = element.ownerDocument.defaultView.getComputedStyle(element);
+      const box = element.getBoundingClientRect();
+      return style.visibility !== "hidden" && style.display !== "none" && box.width > 0 && box.height > 0;
+    };
+    const found = [...header.querySelectorAll('button, select, [role="tab"], .shell-mark, .shell-project, .shell-prototype-name, [data-testid="prototype-format"]')].filter(shown);
+    return found
+      .filter((element) => !found.some((other) => other !== element && other.contains(element)))
+      .map((element) => {
+        const box = element.getBoundingClientRect();
+        return { name: element.getAttribute("aria-label") ?? (element.textContent.trim() || element.className), control: element.matches('button, select, [role="tab"]'), x: box.x, y: box.y, width: box.width, height: box.height };
+      });
+  });
+}
+
+/** Fails when two of the header's parts overlap, one leaves the window, or a control is under 24 by 24 CSS px. */
+async function headerIsLaidOut(page, where) {
+  const parts = await headerParts(page);
+  const wide = await page.evaluate(() => window.innerWidth);
+  for (const part of parts) {
+    assert.ok(part.x >= 0 && part.x + part.width <= wide + 0.5, `${where}: "${part.name}" is inside the window: ${JSON.stringify(part)}`);
+    if (part.control) assert.ok(part.width >= 24 && part.height >= 24, `${where}: "${part.name}" is at least 24 by 24 CSS px: ${JSON.stringify(part)}`);
+  }
+  for (const [index, a] of parts.entries()) {
+    for (const b of parts.slice(index + 1)) {
+      const apart = a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5 || a.y + a.height <= b.y + 0.5 || b.y + b.height <= a.y + 0.5;
+      assert.ok(apart, `${where}: "${a.name}" and "${b.name}" do not overlap: ${JSON.stringify([a, b])}`);
+    }
+  }
+  return parts;
+}
+
+/** Fails when the page scrolls sideways. */
+async function noSidewaysScroll(page, where) {
+  const sizes = await page.evaluate(() => ({ window: window.innerWidth, page: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
+  assert.ok(sizes.page <= sizes.window && sizes.body <= sizes.window, `${where}: the page does not scroll sideways: ${JSON.stringify(sizes)}`);
+}
+
+const storedPanels = async (page) => JSON.parse(await page.evaluate(() => localStorage.getItem("design-harness.panels")));
+
+test("at phone width the header's parts do not overlap, the page does not scroll sideways, every header action is reachable, and the chat and the checks open and close one at a time", async ({ browser, base }) => {
+  const { page, errors, context } = await openApp(browser, base, { viewport: { width: 390, height: 844 } });
+  await measured(page, 1);
+  await page.locator('.shell[data-width="phone"]').waitFor();
+  const chat = page.getByRole("complementary", { name: "Agent chat" });
+  const side = page.getByRole("complementary", { name: "Checks and code" });
+  const main = page.getByRole("main");
+  const chatToggle = page.getByRole("button", { name: /^Chat \(/ });
+  const sideToggle = page.getByRole("button", { name: /^Checks and code \(/ });
+  const more = page.getByRole("button", { name: "More actions" });
+  const menu = page.getByRole("menu");
+
+  // The canvas first: no panel covers it, and the header is laid out in the window.
+  assert.deepEqual([await main.isVisible(), await chat.isVisible(), await side.isVisible()], [true, false, false], "a phone opens on the canvas");
+  assert.deepEqual([await chatToggle.getAttribute("aria-expanded"), await sideToggle.getAttribute("aria-expanded")], ["false", "false"]);
+  const parts = await headerIsLaidOut(page, "phone");
+  for (const name of ["Canvas", "Variants", "Project", "Proposals"]) assert.ok(parts.some((part) => part.name === name), `the ${name} tab is in the header`);
+  assert.equal(await page.getByRole("combobox", { name: "Prototype" }).isVisible(), true, "the prototype picker stays");
+  await noSidewaysScroll(page, "phone");
+  assert.deepEqual(await page.locator(".frame-card").evaluateAll((cards) => cards.map((card) => card.dataset.state)), Array(FRAMES).fill("measured"), "every frame is measured at phone width");
+
+  // By keyboard: the first stops are the skip link and the chat's toggle, each with a focus ring.
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await becomesFocused(page, chatToggle, "the second Tab stop is the chat's toggle");
+  const ring = await chatToggle.evaluate((element) => {
+    const style = element.ownerDocument.defaultView.getComputedStyle(element);
+    return { visible: element.matches(":focus-visible"), outline: style.outlineStyle, shadow: style.boxShadow };
+  });
+  assert.ok(ring.visible && (ring.outline !== "none" || ring.shadow !== "none"), `the focused toggle shows a ring: ${JSON.stringify(ring)}`);
+
+  // Every secondary action is in the More menu, by keyboard too.
+  await more.focus();
+  await page.keyboard.press("Enter");
+  await menu.waitFor();
+  assert.deepEqual(await menu.getByRole("menuitem").evaluateAll((items) => items.map((item) => item.textContent.replace(/\s+/g, " ").trim().replace(/ (Ctrl\+|⌘)\.$/, ""))), ["New prototype", "New project", "Export", "Import", "Export code", "Canvas only"]);
+  for (const item of await menu.getByRole("menuitem").evaluateAll((items) => items.map((element) => element.getBoundingClientRect().toJSON()))) assert.ok(item.width >= 24 && item.height >= 24 && item.x >= 0 && item.x + item.width <= 390, `a menu item is a target inside the window: ${JSON.stringify(item)}`);
+  await shot(page, "phone-menu-light");
+  await page.keyboard.press("Escape");
+  await menu.waitFor({ state: "hidden" });
+  await becomesFocused(page, more, "Escape gives focus back to the menu's button");
+
+  const choose = async (name) => {
+    await more.click();
+    await menu.getByRole("menuitem", { name, exact: typeof name === "string" }).click();
+  };
+  await choose("New prototype");
+  const dialog = page.getByRole("dialog", { name: "New prototype" });
+  await dialog.waitFor();
+  const dialogBox = await dialog.boundingBox();
+  assert.ok(dialogBox.x >= 0 && dialogBox.x + dialogBox.width <= 390, `the dialog fits the window: ${JSON.stringify(dialogBox)}`);
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await dialog.waitFor({ state: "hidden" });
+  const [download] = await Promise.all([page.waitForEvent("download"), choose("Export")]);
+  assert.equal(download.suggestedFilename(), "nook.design-harness.json");
+  const [chooser] = await Promise.all([page.waitForEvent("filechooser"), choose("Import")]);
+  assert.equal(chooser.isMultiple(), false);
+  const [code] = await Promise.all([page.waitForEvent("download"), choose("Export code")]);
+  assert.match(code.suggestedFilename(), /\.zip$/);
+  await choose("New project");
+  await page.getByLabel("Product name").waitFor();
+  await page.locator(".wizard-cancel").click();
+  await measured(page, 1);
+
+  // Canvas only, from the menu and from its shortcut; focus comes back to the menu's button.
+  await choose(/^Canvas only/);
+  await page.locator(".shell[data-canvas-only]").waitFor();
+  const exit = page.getByRole("button", { name: "Show panels" });
+  await becomesFocused(page, exit, "focus moves to the way back");
+  assert.equal(await page.locator(".shell-header").isVisible(), false);
+  const bar = await page.getByRole("toolbar", { name: "Canvas" }).boundingBox();
+  const firstHeading = await page.locator(".board-area").boundingBox();
+  assert.ok(bar.x >= 0 && bar.x + bar.width <= 390 && bar.y + bar.height <= firstHeading.y + 0.5, `the canvas-only bar sits above the board, inside the window: ${JSON.stringify([bar, firstHeading])}`);
+  await noSidewaysScroll(page, "phone, canvas only");
+  await shot(page, "phone-canvas-only-light");
+  await page.keyboard.press("Escape");
+  await page.locator(".shell:not([data-canvas-only])").waitFor();
+  await becomesFocused(page, more, "focus goes back to the menu's button");
+  await page.keyboard.press("Control+.");
+  await page.locator(".shell[data-canvas-only]").waitFor();
+  await page.keyboard.press("Control+.");
+  await page.locator(".shell:not([data-canvas-only])").waitFor();
+
+  // The chat takes the whole width in place of the canvas, and its toggle, its own button and its shortcut close it.
+  await chatToggle.click();
+  await chat.waitFor();
+  await eventually(page, () => chatToggle.getAttribute("aria-expanded"), (value) => value === "true", "the chat toggle says the panel is open");
+  await eventually(page, async () => (await chat.boundingBox())?.width, (width) => width === 390, "the chat takes the whole width");
+  assert.equal(await main.isVisible(), false, "the canvas steps aside for the chat");
+  await headerIsLaidOut(page, "phone, chat open");
+  await noSidewaysScroll(page, "phone, chat open");
+  await shot(page, "phone-chat-light");
+  await shotDark(page, "phone-chat-dark");
+  await page.getByRole("button", { name: "Hide the chat" }).click();
+  await chat.waitFor({ state: "hidden" });
+  await main.waitFor();
+  await page.keyboard.press("Control+B");
+  await chat.waitFor();
+  await chatToggle.click();
+  await chat.waitFor({ state: "hidden" });
+  await eventually(page, () => chatToggle.getAttribute("aria-expanded"), (value) => value === "false", "the chat toggle says the panel is closed");
+
+  // The checks and code the same way; opening one panel puts the other away.
+  await sideToggle.click();
+  await side.waitFor();
+  await eventually(page, async () => (await side.boundingBox())?.width, (width) => width === 390, "the checks take the whole width");
+  assert.equal(await main.isVisible(), false, "the canvas steps aside for the checks");
+  assert.equal(await page.getByTestId("report-status").textContent(), "pass");
+  await noSidewaysScroll(page, "phone, checks open");
+  await shot(page, "phone-checks-light");
+  await page.getByRole("tab", { name: "Code" }).click();
+  await page.getByTestId("code-editor").waitFor();
+  await noSidewaysScroll(page, "phone, code open");
+  await page.keyboard.press("Control+B");
+  await chat.waitFor();
+  await side.waitFor({ state: "hidden" });
+  await page.keyboard.press("Control+Alt+B");
+  await side.waitFor();
+  await chat.waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: "Hide checks and code" }).click();
+  await side.waitFor({ state: "hidden" });
+  await main.waitFor();
+
+  // A view's tab brings the main view forward from under a panel, the tab already chosen included.
+  await chatToggle.click();
+  await chat.waitFor();
+  await page.getByRole("tab", { name: "Project" }).click();
+  await page.getByRole("heading", { name: "What a prototype can build with" }).waitFor();
+  assert.equal(await chat.isVisible(), false, "the Project tab puts the chat away");
+  await noSidewaysScroll(page, "phone, Project");
+  await sideToggle.click();
+  await side.waitFor();
+  await page.getByRole("tab", { name: "Project" }).click();
+  await side.waitFor({ state: "hidden" });
+  await page.getByRole("tab", { name: "Canvas" }).click();
+  assert.deepEqual(await storedPanels(page), { chat: { open: true, width: 360 }, side: { open: true, width: 400 } }, "what a phone shows leaves the stored panels alone");
+
+  // With a second project the header also holds the project picker, and still nothing overlaps.
+  await importTally(page);
+  await page.locator('.shell[data-width="phone"]').waitFor();
+  assert.equal(await page.getByRole("combobox", { name: "Project" }).isVisible(), true, "the project picker shows with the second project");
+  await headerIsLaidOut(page, "phone, two projects");
+  await noSidewaysScroll(page, "phone, two projects");
+  await shot(page, "phone-two-projects-light");
+  await shotDark(page, "phone-two-projects-dark");
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("the shell follows the window: every action in the header and both panels at 1600, one panel beside the canvas on a tablet, a menu on a laptop, and the desktop back as it was", async ({ browser, base }) => {
+  const { page, errors, context } = await openApp(browser, base);
+  await measured(page, 1);
+  const chat = page.getByRole("complementary", { name: "Agent chat" });
+  const side = page.getByRole("complementary", { name: "Checks and code" });
+  const main = page.getByRole("main");
+  const more = page.getByRole("button", { name: "More actions" });
+  const direct = ["New prototype", "New project", "Export", "Import", "Export code"];
+
+  /** What the tests before this one rely on at the runner's default size. */
+  const desktop = async (where) => {
+    await page.locator('.shell[data-width="desktop"]').waitFor();
+    assert.equal(await more.count(), 0, `${where}: no menu, every action is in the header`);
+    for (const name of [...direct, /^Canvas only/, /^Chat \(/, /^Checks and code \(/]) assert.equal(await page.locator(".shell-header").getByRole("button", { name, exact: typeof name === "string" }).isVisible(), true, `${where}: ${name} is a button in the header`);
+    assert.equal(await page.getByTestId("export-code").evaluate((element) => element.tagName), "BUTTON");
+    const parts = await headerIsLaidOut(page, where);
+    const middles = parts.map((part) => part.y + part.height / 2);
+    assert.ok(Math.max(...middles) - Math.min(...middles) <= 4, `${where}: the header is one row: ${JSON.stringify(parts)}`);
+    await eventually(page, async () => [await chat.boundingBox(), await main.boundingBox(), await side.boundingBox()], ([a, b, c]) => a !== null && b !== null && c !== null && a.width === 360 && c.width === 400 && a.x + a.width <= b.x && b.x + b.width <= c.x && c.x + c.width === 1600, `${where}: the chat, the canvas and the checks sit side by side at their widths`);
+    await noSidewaysScroll(page, where);
+  };
+  await desktop("1600 wide");
+
+  // A laptop keeps every pane and one header row, with the secondary actions in the menu.
+  await page.setViewportSize({ width: 1100, height: 800 });
+  await page.locator('.shell[data-width="laptop"]').waitFor();
+  assert.deepEqual([await chat.isVisible(), await main.isVisible(), await side.isVisible()], [true, true, true]);
+  const laptop = await headerIsLaidOut(page, "laptop");
+  const rows = laptop.map((part) => part.y + part.height / 2);
+  assert.ok(Math.max(...rows) - Math.min(...rows) <= 4, `a laptop's header is one row: ${JSON.stringify(laptop)}`);
+  assert.equal(await page.getByRole("button", { name: /^Canvas only/ }).isVisible(), true);
+  await more.click();
+  assert.deepEqual(await page.getByRole("menu").getByRole("menuitem").allTextContents(), direct);
+  await page.keyboard.press("Escape");
+  await noSidewaysScroll(page, "laptop");
+
+  // A tablet has room for the canvas and one panel: opening the other swaps them.
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await page.locator('.shell[data-width="tablet"]').waitFor();
+  await eventually(page, async () => [await chat.isVisible(), await main.isVisible(), await side.isVisible()], (shown) => shown.join() === "false,true,false", "a window narrowed to a tablet shows the canvas alone until a panel is asked for");
+  await headerIsLaidOut(page, "tablet");
+  await page.keyboard.press("Control+B");
+  await chat.waitFor();
+  assert.equal(await main.isVisible(), true, "the canvas stays beside the chat");
+  // Enter on the handle still closes and opens the panel.
+  const handle = page.getByRole("separator", { name: "Resize the chat" });
+  await handle.focus();
+  await page.keyboard.press("Enter");
+  await chat.waitFor({ state: "hidden" });
+  await page.keyboard.press("Enter");
+  await chat.waitFor();
+  await page.getByRole("button", { name: /^Checks and code \(/ }).click();
+  await side.waitFor();
+  await chat.waitFor({ state: "hidden" });
+  const [canvasBox, sideBox] = [await main.boundingBox(), await side.boundingBox()];
+  assert.ok(canvasBox.width >= 320 && canvasBox.x + canvasBox.width <= sideBox.x && sideBox.x + sideBox.width === 768, `the canvas and the checks share a tablet: ${JSON.stringify([canvasBox, sideBox])}`);
+  await headerIsLaidOut(page, "tablet, checks open");
+  await noSidewaysScroll(page, "tablet");
+  await shot(page, "tablet-checks-light");
+  await shotDark(page, "tablet-checks-dark");
+  // Canvas only is still a button here, and gets focus back.
+  const toggle = page.getByRole("button", { name: /^Canvas only/ });
+  await toggle.click();
+  await page.locator(".shell[data-canvas-only]").waitFor();
+  await page.keyboard.press("Escape");
+  await page.locator(".shell:not([data-canvas-only])").waitFor();
+  await becomesFocused(page, toggle, "focus goes back to the toggle");
+  await page.getByRole("button", { name: "Hide checks and code" }).click();
+  await side.waitFor({ state: "hidden" });
+
+  // Back at 1600 the stored panels show again, untouched by the narrower visits.
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await desktop("back at 1600");
+  assert.deepEqual(await storedPanels(page), { chat: { open: true, width: 360 }, side: { open: true, width: 400 } });
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 test("the checks lead with plain words: a summary, each thing to fix with core's message beside it, Show me, and the detail one step away", async ({ browser, base }) => {
   const { page, context } = await openApp(browser, base);
   await measured(page, 1);

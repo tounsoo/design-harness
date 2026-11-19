@@ -1,5 +1,5 @@
-import { Alert, Badge, Button, Field, Kbd, Link, Splitter, Stack, Tabs, Text, Toolbar, VisuallyHidden, useAnnouncer, useHotkey } from "@tounsoo/todae";
-import { CircleCheck, CodeXml, Download, Expand, FileCode2, FolderPlus, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Shapes, Shrink, Upload, X } from "lucide-react";
+import { Alert, Badge, Button, Field, Kbd, Link, Menu, Splitter, Stack, Tabs, Text, Toolbar, VisuallyHidden, useAnnouncer, useHotkey } from "@tounsoo/todae";
+import { CircleCheck, CodeXml, Download, Ellipsis, Expand, FileCode2, FolderPlus, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Shapes, Shrink, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { NO_VARIANTS, flowFacts, variantLabel, type Finding, type LayoutUse, type PickRecord, type ProjectConfig, type Prototype, type Variant, type VariantState } from "@design-harness/core";
 import { AgentController, type ChatRecord, type ChatStore } from "../agent/controller";
@@ -29,7 +29,8 @@ import { ProjectView } from "./ProjectView";
 import { PackagesNotice } from "./LibraryVersion";
 import { ProposalPage } from "./ProposalPage";
 import { ProposalsView } from "./ProposalsView";
-import { PANEL_SIZES, usePanels } from "./panels";
+import { PANEL_SIZES, usePanels, type PanelName } from "./panels";
+import { panesAt, useShellWidth } from "./shell-width";
 import { frameName } from "./words";
 import type { ProjectEntry } from "./projects";
 import { createSession } from "./runtime";
@@ -103,7 +104,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   const current = records.find((record) => record.id === currentId) ?? records[0];
   const [settings, setSettings] = useState<AgentSettings>(() => loadSettings());
   const settingsRef = useRef(settings);
-  const [center, setCenter] = useState<"canvas" | "project" | "proposals" | "variants">("canvas");
+  const [center, setCenterState] = useState<"canvas" | "project" | "proposals" | "variants">("canvas");
   /** A library version the canvas's packages notice picked, for the Project view to compare. */
   const [libraryTarget, setLibraryTarget] = useState<string | undefined>(undefined);
   // The version is for the visit the notice opened; the Project view opened later starts with nothing compared.
@@ -122,7 +123,47 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     return first ? { tone: first.tone, title: first.title, lines: [first.text] } : null;
   });
 
-  const { panels, resize, toggle } = usePanels();
+  const { panels, resize, toggle, setWidth } = usePanels();
+  /**
+   * The window's width decides how many panes sit side by side. With room for
+   * all three, each panel is open or closed as the viewer left it (`panels`).
+   * With less, at most one panel shows, `beside`: next to the canvas on a
+   * tablet, and in place of it on a phone, where the canvas shows when no
+   * panel does. `beside` lasts for the visit and leaves what is stored alone.
+   */
+  const width = useShellWidth();
+  const panes = panesAt(width);
+  const panesRef = useRef(panes);
+  panesRef.current = panes;
+  const [beside, setBeside] = useState<PanelName | null>(() => (panes !== 2 ? null : panels.chat.open ? "chat" : panels.side.open ? "side" : null));
+  const open = { chat: panes === 3 ? panels.chat.open : beside === "chat", side: panes === 3 ? panels.side.open : beside === "side" };
+  /** Shows or hides a panel: the one way a button, a shortcut or a link to the chat or the code does it, at any width. */
+  const showPanel = useCallback(
+    (name: PanelName, next?: boolean) => {
+      if (panesRef.current === 3) toggle(name, next);
+      else setBeside((current) => (next ?? current !== name ? name : current === name ? null : current));
+    },
+    [toggle],
+  );
+  /** A handle's drag or key. With fewer than three panes it keeps the width and leaves the stored open state alone. */
+  const resizePanel = (name: PanelName, value: number) => {
+    if (panes === 3) resize(name, value);
+    else if (panes === 2 && value > 0) {
+      setWidth(name, value);
+      setBeside(name);
+    } else if (panes === 2) setBeside((current) => (current === name ? null : current));
+  };
+  /** On a phone a panel covers the main view, so going to the main view puts the panel away. */
+  const revealMain = useCallback(() => {
+    if (panesRef.current === 1) setBeside(null);
+  }, []);
+  const setCenter = useCallback(
+    (next: "canvas" | "project" | "proposals" | "variants") => {
+      setCenterState(next);
+      revealMain();
+    },
+    [revealMain],
+  );
   const mainId = useId();
   const chatId = useId();
   const sideId = useId();
@@ -137,6 +178,10 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   const [canvasOnly, setCanvasOnly] = useState(false);
   const canvasToggle = useRef<HTMLButtonElement>(null);
   const exitButton = useRef<HTMLButtonElement>(null);
+  /** The More menu's button: where Canvas only lives on a phone, so where focus comes back to there. */
+  const moreTrigger = useRef<HTMLButtonElement>(null);
+  /** New prototype's dialog, when the menu opens it. */
+  const [naming, setNaming] = useState(false);
   const moveFocus = useRef<"exit" | "toggle" | null>(null);
   const enterCanvasOnly = useCallback(() => {
     setCenter("canvas");
@@ -150,7 +195,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     announce("Panels shown.");
   }, [announce]);
   useEffect(() => {
-    const target = moveFocus.current === "exit" ? exitButton.current : moveFocus.current === "toggle" ? canvasToggle.current : null;
+    const target = moveFocus.current === "exit" ? exitButton.current : moveFocus.current === "toggle" ? (canvasToggle.current ?? moreTrigger.current) : null;
     moveFocus.current = null;
     target?.focus();
   }, [canvasOnly]);
@@ -171,11 +216,11 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   useHotkey(SHORTCUTS.leave.keys, leaveCanvasOnly, { enabled: canvasOnly && !pinning && !boardHolds });
   useHotkey(SHORTCUTS.chat.keys, () => {
     if (canvasOnly) leaveCanvasOnly();
-    toggle("chat", canvasOnly ? true : undefined);
+    showPanel("chat", canvasOnly ? true : undefined);
   });
   useHotkey(SHORTCUTS.side.keys, () => {
     if (canvasOnly) leaveCanvasOnly();
-    toggle("side", canvasOnly ? true : undefined);
+    showPanel("side", canvasOnly ? true : undefined);
   });
 
   // A new revision for each settled edit; the first one at once. The agent's changes start theirs at once, so they are skipped here.
@@ -353,9 +398,9 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     setCode({ file: finding.file, ...(finding.line !== undefined ? { line: finding.line } : {}), ...(finding.column !== undefined ? { column: finding.column } : {}), ...instance });
     if (open) {
       setSide("code");
-      toggle("side", true);
+      showPanel("side", true);
     }
-  }, [toggle]);
+  }, [showPanel]);
 
   const board = useRef<BoardHandle>(null);
   /** Core's facts about the flow of the revision the board shows, for the flow map and its way to an artboard. */
@@ -417,8 +462,8 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     const text = `The check "${finding.rule}" says: ${finding.message}${place}\n\nIf the prototype needs this, draft a proposal that adds it to the inventory, with a rule that governs it and examples that pass and fail. If it does not, change the prototype to use what the inventory has.`;
     setPrefill((previous) => ({ text, nonce: (previous?.nonce ?? 0) + 1 }));
     setCanvasOnly(false);
-    toggle("chat", true);
-  }, [toggle]);
+    showPanel("chat", true);
+  }, [showPanel]);
   /** "Ask the agent to fix": a message for the person to edit and send, about any finding. */
   const fix = useCallback(
     (finding: Finding) => {
@@ -426,11 +471,11 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
       const text = `Please fix this so the prototype follows the project's rules.\n\nThe check "${finding.rule}" says: ${finding.message}${place}`;
       setPrefill((previous) => ({ text, nonce: (previous?.nonce ?? 0) + 1 }));
       setCanvasOnly(false);
-      toggle("chat", true);
+      showPanel("chat", true);
       // The loop counts asks per rule (agent/patterns.ts); a press tells the agent nothing by itself.
       void controller.record({ kind: "fix-asked", at: new Date().toISOString(), rule: finding.rule });
     },
-    [toggle, controller],
+    [showPanel, controller],
   );
   /** The person's pick: the recombined page as a new revision, recorded with where each slot came from. Nothing but this view's Apply calls it. */
   const applyPick = useCallback(
@@ -472,9 +517,9 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   const prefillChat = useCallback(
     (text: string) => {
       setPrefill((previous) => ({ text, nonce: (previous?.nonce ?? 0) + 1 }));
-      toggle("chat", true);
+      showPanel("chat", true);
     },
-    [toggle],
+    [showPanel],
   );
 
   // ---- Pinned notes: the person's feedback on the open prototype's frames. Never a check: nothing below reads or changes a report. ----
@@ -546,8 +591,8 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     const open = openPins(recordOf()?.pins ?? NO_PINS).length;
     setPrefill((previous) => ({ text: open === 1 ? "Please address my pinned note." : `Please address my ${open} pinned notes.`, nonce: (previous?.nonce ?? 0) + 1 }));
     setCanvasOnly(false);
-    toggle("chat", true);
-  }, [recordOf, toggle]);
+    showPanel("chat", true);
+  }, [recordOf, showPanel]);
 
   const proposable = useCallback(
     (finding: Finding) => {
@@ -617,7 +662,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   const prototypeName = current?.name ?? "No prototype";
 
   return (
-    <div className="shell" data-canvas-only={canvasOnly ? "" : undefined}>
+    <div className="shell" data-width={width} data-canvas-only={canvasOnly ? "" : undefined}>
       <Stack.Root as="header" direction="row" align="center" gap="condensed" className="shell-header">
         <VisuallyHidden.Root focusable>
           <Link.Root href={`#${mainId}`} onClick={(event) => {
@@ -627,8 +672,8 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
             Skip to the canvas
           </Link.Root>
         </VisuallyHidden.Root>
-        <Button.Root variant="ghost" aria-label={`Chat (${SHORTCUTS.chat.label})`} aria-keyshortcuts={ariaKeys(SHORTCUTS.chat)} aria-controls={chatId} aria-expanded={panels.chat.open} onClick={() => toggle("chat")} className="shell-toggle">
-          <Button.Icon>{panels.chat.open ? <PanelLeftClose /> : <PanelLeft />}</Button.Icon>
+        <Button.Root variant="ghost" aria-label={`Chat (${SHORTCUTS.chat.label})`} aria-keyshortcuts={ariaKeys(SHORTCUTS.chat)} aria-controls={chatId} aria-expanded={open.chat} onClick={() => showPanel("chat")} className="shell-toggle">
+          <Button.Icon>{open.chat ? <PanelLeftClose /> : <PanelLeft />}</Button.Icon>
         </Button.Root>
         <Stack.Root direction="row" align="center" gap="condensed" className="shell-title">
           <span className="shell-mark" aria-hidden="true">
@@ -671,7 +716,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
               </Field.Select>
             </Field.Root>
           ) : (
-            <Text.Root as="span" weight="medium">
+            <Text.Root as="span" weight="medium" className="shell-prototype-name">
               {prototypeName}
             </Text.Root>
           )}
@@ -689,7 +734,8 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
           }}
           className="shell-views"
         >
-          <Tabs.List aria-label="Main view">
+          {/* A press on the tab already chosen changes no value, and on a phone it still brings the main view forward. */}
+          <Tabs.List aria-label="Main view" onClick={revealMain}>
             <Tabs.Tab value="canvas">Canvas</Tabs.Tab>
             <Tabs.Tab value="variants">
               Variants
@@ -711,40 +757,73 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
           </Tabs.List>
         </Tabs.Root>
         <Toolbar.Root aria-label="Prototype actions" className="shell-actions">
-          <NewPrototype config={config} onCreate={createPrototype} />
-          <Button.Root variant="ghost" onClick={onNewProject}>
-            <Button.Icon>
-              <FolderPlus />
-            </Button.Icon>
-            New project
-          </Button.Root>
-          <Toolbar.Separator />
-          {/* The project file out and in, and the prototype as a runnable React project: icons, named in their tooltips. */}
-          <Button.Root variant="ghost" onClick={download} aria-label="Export">
-            <Button.Icon>
-              <Download />
-            </Button.Icon>
-          </Button.Root>
-          <Button.Root variant="ghost" onClick={() => fileInput.current?.click()} aria-label="Import">
-            <Button.Icon>
-              <Upload />
-            </Button.Icon>
-          </Button.Root>
-          <Button.Root variant="ghost" onClick={downloadCode} data-testid="export-code" aria-label="Export code">
-            <Button.Icon>
-              <FileCode2 />
-            </Button.Icon>
-          </Button.Root>
-          <Toolbar.Separator />
-          <Button.Root ref={canvasToggle} variant="ghost" aria-label={`Canvas only (${SHORTCUTS.canvasOnly.label})`} aria-keyshortcuts={ariaKeys(SHORTCUTS.canvasOnly)} pressed={canvasOnly} onPressedChange={(next) => (next ? enterCanvasOnly() : leaveCanvasOnly())}>
-            <Button.Icon>
-              <Expand />
-            </Button.Icon>
-          </Button.Root>
-          <Button.Root variant="ghost" aria-label={`Checks and code (${SHORTCUTS.side.label})`} aria-keyshortcuts={ariaKeys(SHORTCUTS.side)} aria-controls={sideId} aria-expanded={panels.side.open} onClick={() => toggle("side")}>
-            <Button.Icon>{panels.side.open ? <PanelRightClose /> : <PanelRight />}</Button.Icon>
+          {width === "desktop" ? (
+            <>
+              <NewPrototype config={config} onCreate={createPrototype} />
+              <Button.Root variant="ghost" onClick={onNewProject}>
+                <Button.Icon>
+                  <FolderPlus />
+                </Button.Icon>
+                New project
+              </Button.Root>
+              <Toolbar.Separator />
+              {/* The project file out and in, and the prototype as a runnable React project: icons, named in their tooltips. */}
+              <Button.Root variant="ghost" onClick={download} aria-label="Export">
+                <Button.Icon>
+                  <Download />
+                </Button.Icon>
+              </Button.Root>
+              <Button.Root variant="ghost" onClick={() => fileInput.current?.click()} aria-label="Import">
+                <Button.Icon>
+                  <Upload />
+                </Button.Icon>
+              </Button.Root>
+              <Button.Root variant="ghost" onClick={downloadCode} data-testid="export-code" aria-label="Export code">
+                <Button.Icon>
+                  <FileCode2 />
+                </Button.Icon>
+              </Button.Root>
+              <Toolbar.Separator />
+            </>
+          ) : (
+            <Menu.Root>
+              <Menu.Trigger ref={moreTrigger} variant="ghost" aria-label="More actions" data-testid="more-actions">
+                <Button.Icon>
+                  <Ellipsis />
+                </Button.Icon>
+              </Menu.Trigger>
+              <Menu.Content>
+                <Menu.Item onSelect={() => setNaming(true)}>New prototype</Menu.Item>
+                <Menu.Item onSelect={onNewProject}>New project</Menu.Item>
+                <Menu.Separator />
+                <Menu.Item onSelect={download}>Export</Menu.Item>
+                <Menu.Item onSelect={() => fileInput.current?.click()}>Import</Menu.Item>
+                <Menu.Item onSelect={() => void downloadCode()} data-testid="export-code">
+                  Export code
+                </Menu.Item>
+                {width === "phone" && (
+                  <>
+                    <Menu.Separator />
+                    <Menu.Item onSelect={enterCanvasOnly} aria-keyshortcuts={ariaKeys(SHORTCUTS.canvasOnly)} textValue="Canvas only" className="shell-menu-keys">
+                      Canvas only <Kbd.Root>{SHORTCUTS.canvasOnly.label}</Kbd.Root>
+                    </Menu.Item>
+                  </>
+                )}
+              </Menu.Content>
+            </Menu.Root>
+          )}
+          {width !== "phone" && (
+            <Button.Root ref={canvasToggle} variant="ghost" aria-label={`Canvas only (${SHORTCUTS.canvasOnly.label})`} aria-keyshortcuts={ariaKeys(SHORTCUTS.canvasOnly)} pressed={canvasOnly} onPressedChange={(next) => (next ? enterCanvasOnly() : leaveCanvasOnly())}>
+              <Button.Icon>
+                <Expand />
+              </Button.Icon>
+            </Button.Root>
+          )}
+          <Button.Root variant="ghost" aria-label={`Checks and code (${SHORTCUTS.side.label})`} aria-keyshortcuts={ariaKeys(SHORTCUTS.side)} aria-controls={sideId} aria-expanded={open.side} onClick={() => showPanel("side")}>
+            <Button.Icon>{open.side ? <PanelRightClose /> : <PanelRight />}</Button.Icon>
           </Button.Root>
         </Toolbar.Root>
+        {width !== "desktop" && <NewPrototype config={config} onCreate={createPrototype} dialog={{ open: naming, onOpenChange: setNaming }} />}
         <input
           ref={fileInput}
           type="file"
@@ -785,13 +864,13 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
         </div>
       )}
 
-      <Splitter.Root className="shell-body" show={canvasOnly ? "end" : "both"} value={panels.chat.open ? panels.chat.width : 0} onValueChange={(value) => resize("chat", value)} min={PANEL_SIZES.chat.min} max={PANEL_SIZES.chat.max} collapsible>
+      <Splitter.Root className="shell-body" show={canvasOnly ? "end" : panes === 1 ? (open.chat ? "start" : "end") : "both"} value={open.chat ? panels.chat.width : 0} onValueChange={(value) => resizePanel("chat", value)} min={PANEL_SIZES.chat.min} max={PANEL_SIZES.chat.max} collapsible>
         <Splitter.Panel id={chatId} className="shell-panel">
-          <ChatPanel controller={controller} vault={vault} settings={settings} onSettings={changeSettings} onOpenProposal={openProposal} onOpenVariants={() => setCenter("variants")} prefill={prefill} onClose={() => toggle("chat", false)} {...(offered ? { suggestion: { pattern: offered, onAccept: () => void answerSuggestion("accepted"), onDismiss: () => void answerSuggestion("dismissed") } } : {})} />
+          <ChatPanel controller={controller} vault={vault} settings={settings} onSettings={changeSettings} onOpenProposal={openProposal} onOpenVariants={() => setCenter("variants")} prefill={prefill} onClose={() => showPanel("chat", false)} {...(offered ? { suggestion: { pattern: offered, onAccept: () => void answerSuggestion("accepted"), onDismiss: () => void answerSuggestion("dismissed") } } : {})} />
         </Splitter.Panel>
         <Splitter.Handle aria-label="Resize the chat" className="shell-handle" data-side="start" />
         <Splitter.Panel className="shell-panel">
-          <Splitter.Root className="shell-inner" primary="end" show={canvasOnly ? "start" : "both"} value={panels.side.open ? panels.side.width : 0} onValueChange={(value) => resize("side", value)} min={PANEL_SIZES.side.min} max={PANEL_SIZES.side.max} collapsible>
+          <Splitter.Root className="shell-inner" primary="end" show={canvasOnly ? "start" : panes === 1 ? (open.side ? "end" : "start") : "both"} value={open.side ? panels.side.width : 0} onValueChange={(value) => resizePanel("side", value)} min={PANEL_SIZES.side.min} max={PANEL_SIZES.side.max} collapsible>
             <Splitter.Panel className="shell-panel">
               <main id={mainId} tabIndex={-1} className="app-main" aria-label={center === "canvas" ? "Canvas" : center === "project" ? "Project" : center === "variants" ? "Variants" : "Proposals"}>
                 {/* The board stays laid out under the project view, so frames keep their viewport and keep measuring; out of sight, they are parked once measured. */}
@@ -918,7 +997,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
                         Code
                       </Tabs.Tab>
                     </Tabs.List>
-                    <Button.Root variant="ghost" aria-label="Hide checks and code" onClick={() => toggle("side", false)} className="panel-close">
+                    <Button.Root variant="ghost" aria-label="Hide checks and code" onClick={() => showPanel("side", false)} className="panel-close">
                       <Button.Icon>
                         <X />
                       </Button.Icon>
