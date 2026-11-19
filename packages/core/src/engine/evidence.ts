@@ -17,6 +17,9 @@ import type { FlowRule, RenderedRule, RuleType } from "../rules/types";
 /** A measured control, the circle the spacing exception gives it, and the first other control that circle meets. */
 export type BoxWithNeighbourEvidence = {
   readonly kind: "box-with-neighbour";
+  /** The control's accessible name and role, as the message gives them. */
+  readonly name: string;
+  readonly role: string;
   /** The control's box, in page CSS px. */
   readonly box: Rect;
   /** The least width and height, which is also the circle's diameter. */
@@ -98,6 +101,8 @@ export type RouteVsBudgetEvidence = {
   readonly route: readonly { readonly from: string; readonly event: string; readonly to: string }[];
   readonly steps: number;
   readonly budget: number;
+  /** Every transition of the task's flow, sorted by from, event and to, so the other routes can be drawn beside the longest. */
+  readonly transitions: readonly { readonly from: string; readonly event: string; readonly to: string }[];
 };
 
 /** One flow state and how many scenarios show it, among all the flow's states. */

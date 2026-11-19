@@ -99,7 +99,7 @@ describe("evidence on rendered findings", () => {
   it("target size: the box, the minimum, and the first neighbour the circle meets", () => {
     const report = checkPrototype({ config: nook, prototype: legal, snapshots: renderedCase("small-targets-side-by-side") });
     const [help, map] = report.findings.filter((finding) => finding.rule === "target-size");
-    expect(help?.evidence).toEqual({ kind: "box-with-neighbour", box: { x: 280, y: 170, width: 12, height: 12 }, min: 24, neighbour: { element: expect.any(Number), name: "Map", role: "link", box: { x: 296, y: 170, width: 12, height: 12 }, meets: "in-circle" } });
+    expect(help?.evidence).toEqual({ kind: "box-with-neighbour", name: "Help", role: "link", box: { x: 280, y: 170, width: 12, height: 12 }, min: 24, neighbour: { element: expect.any(Number), name: "Map", role: "link", box: { x: 296, y: 170, width: 12, height: 12 }, meets: "in-circle" } });
     expect(map?.evidence).toMatchObject({ neighbour: { name: "Help" } });
     // The neighbour's index points at the neighbour in the same snapshot.
     const snapshot = renderedCase("small-targets-side-by-side").find((item) => item.scenario === help?.scenario && item.view === help?.view);
@@ -201,6 +201,8 @@ describe("evidence on structural and flow findings", () => {
     expect(evidence).toMatchObject({ kind: "route-vs-budget", task: "hold-room", success: "held", budget: 2 });
     if (evidence?.kind !== "route-vs-budget") throw new Error("no route evidence");
     expect(evidence.route.length).toBe(evidence.steps);
+    for (const step of evidence.route) expect(evidence.transitions).toContainEqual(step);
+    expect(evidence.transitions.length).toBeGreaterThan(evidence.route.length);
     expect(evidence.steps).toBeGreaterThan(evidence.budget);
     expect(evidence.route[0]?.from).toBe(evidence.start);
     expect(evidence.route.at(-1)?.to).toBe(evidence.success);

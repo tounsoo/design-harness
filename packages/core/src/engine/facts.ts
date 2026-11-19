@@ -3,7 +3,7 @@ import type { Prototype, Transition } from "../prototype/types";
 import type { Rect, RenderedSnapshot } from "../rendered/types";
 import { bound, textOf } from "./context";
 import { compareStrings } from "./report";
-import { routes } from "./rules/flow";
+import { routes, sortTransitions } from "./rules/flow";
 import { belowFirstView, sidewaysOverflow, targetVerdicts, type TargetVerdict } from "./rules/rendered";
 
 /**
@@ -108,7 +108,7 @@ export function flowFacts(config: ProjectConfig, prototype: Prototype): FlowFact
       const modeled = flow.tasks.filter((item) => item.task === task.id);
       const taskFlow = modeled[0];
       if (!taskFlow) return { ...base, status: "not-modeled", transitions: [] };
-      const transitions = [...taskFlow.transitions].sort((a, b) => compareStrings(a.from, b.from) || compareStrings(a.event, b.event) || compareStrings(a.to, b.to)).map(({ from, event, to }) => ({ from, event, to }));
+      const transitions = sortTransitions(taskFlow.transitions);
       const named = [taskFlow.start, task.successState, ...transitions.flatMap((transition) => [transition.from, transition.to])];
       if (modeled.length > 1 || named.some((state) => !known.has(state))) return { ...base, status: "not-modeled", start: taskFlow.start, transitions };
       const search = routes(taskFlow.start, task.successState, taskFlow.transitions);

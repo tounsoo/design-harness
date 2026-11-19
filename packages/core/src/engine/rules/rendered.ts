@@ -101,7 +101,7 @@ function measure(rule: RenderedRule, snapshot: RenderedSnapshot, view: View, ctx
           const element = snapshot.elements[verdict.element] as RenderedElement;
           return {
             element: verdict.element,
-            evidence: { kind: "box-with-neighbour", box: element.rect, min, ...(verdict.neighbour ? { neighbour: verdict.neighbour } : {}) },
+            evidence: { kind: "box-with-neighbour", name: element.name, role: element.role, box: element.rect, min, ...(verdict.neighbour ? { neighbour: verdict.neighbour } : {}) },
             message: `${label(element.name, element.role)} is ${Math.round(element.rect.width)}×${Math.round(element.rect.height)} CSS px, under ${min}, and fails the spacing exception.`,
           };
         });

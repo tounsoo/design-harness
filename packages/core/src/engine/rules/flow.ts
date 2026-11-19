@@ -31,6 +31,11 @@ function stateCoverage(rule: FlowRule, ctx: CheckContext): Finding[] {
   return findings;
 }
 
+/** A flow's transitions by from, event and to, each as those three fields alone. */
+export function sortTransitions(transitions: readonly Transition[]): Transition[] {
+  return [...transitions].sort((a, b) => compareStrings(a.from, b.from) || compareStrings(a.event, b.event) || compareStrings(a.to, b.to)).map(({ from, event, to }) => ({ from, event, to }));
+}
+
 /** Most routes, and most steps walked, before the search gives up and says so. */
 const ROUTE_LIMIT = 10_000;
 const STEP_LIMIT = 200_000;
@@ -44,7 +49,7 @@ type Search = { readonly kind: "done"; readonly routes: number; readonly longest
  * the flow lists them.
  */
 export function routes(start: string, success: string, transitions: readonly Transition[]): Search {
-  const sorted = [...transitions].sort((a, b) => compareStrings(a.from, b.from) || compareStrings(a.event, b.event) || compareStrings(a.to, b.to));
+  const sorted = sortTransitions(transitions);
   const out = new Map<string, Transition[]>();
   for (const transition of sorted) out.set(transition.from, [...(out.get(transition.from) ?? []), transition]);
   let count = 0;
@@ -112,7 +117,7 @@ function stepBudget(rule: FlowRule, ctx: CheckContext): Finding[] {
       findings.push({
         rule: rule.id,
         state: task.successState,
-        evidence: { kind: "route-vs-budget", task: task.id, start: taskFlow.start, success: task.successState, route: search.path ?? [], steps: search.longest.length, budget: task.maxSteps },
+        evidence: { kind: "route-vs-budget", task: task.id, start: taskFlow.start, success: task.successState, route: search.path ?? [], steps: search.longest.length, budget: task.maxSteps, transitions: sortTransitions(taskFlow.transitions) },
         kind: "violation",
         message: `The route ${search.longest.join(" → ")} takes ${search.longest.length} steps, which exceeds max steps ${task.maxSteps} for "${task.id}". Every route that finishes the task must fit, not only the shortest.`,
       });
