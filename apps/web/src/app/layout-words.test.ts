@@ -3,7 +3,7 @@ import type { RuleReport } from "@design-harness/core";
 import { nook } from "../../../../packages/core/examples/nook/project";
 import { checksSummary, fileWords, toolSummary } from "./chat-words";
 import { DEFAULT_PANELS, PANEL_SIZES, parsePanels } from "./panels";
-import { findingPlace, frameLabel, humanize, ruleLead } from "./words";
+import { artboardLabel, findingPlace, frameLabel, humanize, ruleLead, screenTitle } from "./words";
 
 describe("the panels a viewer keeps", () => {
   it("restores what was stored, and falls back to the default for anything missing or malformed", () => {
@@ -24,6 +24,9 @@ describe("plain words", () => {
   it("names scenarios and frames the way a designer would", () => {
     expect(humanize("lantern-held")).toBe("Lantern held");
     expect(frameLabel("lantern-held", "phone")).toBe("Lantern held — phone");
+    expect(screenTitle({ page: "booking", state: "held" })).toBe("Booking, held");
+    expect(artboardLabel({ page: "booking", state: "room-held" }, "Phone")).toBe("Booking, room held — phone");
+    expect(screenTitle({ page: "rooms", state: "rooms" })).toBe("Rooms");
     expect(findingPlace({ rule: "r", kind: "violation", message: "m", file: "pages/booking.tsx", line: 12 })).toBe("pages/booking.tsx, line 12");
   });
 

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { Finding } from "@design-harness/core";
 import { FRAME_SANDBOX } from "../runtime/frame-document";
 import { frameKey, type FrameSpec, type FrameState, type Session, type SessionState } from "../runtime/session";
-import { frameLabel, humanize, scenarioLabel, viewLabel } from "./words";
+import { artboardLabel, scenarioLabel, screenTitle, viewLabel } from "./words";
 
 /** Fit, or a fixed scale. The zoom buttons step through the fixed ones. */
 const ZOOMS = ["0.25", "0.5", "0.75", "1"] as const;
@@ -101,7 +101,7 @@ export function Board({
               Back to board
             </Button.Root>
             <Text.Root as="span" className="board-focus-label">
-              {frameLabel(focusedSpec.scenario.id, focusedSpec.view.name)}, full size
+              {artboardLabel(focusedSpec.scenario, focusedSpec.view.name)}, full size
             </Text.Root>
           </Stack.Root>
         ) : (
@@ -121,15 +121,16 @@ export function Board({
         {scenarios.map((row) => {
           const first = row[0];
           if (!first) return null;
-          const title = scenarioLabel(first.scenario.id);
+          const title = screenTitle(first.scenario);
+          const example = scenarioLabel(first.scenario.id);
           return (
-            <section key={first.scenario.id} className="board-row" aria-label={title}>
+            <section key={first.scenario.id} className="board-row" aria-label={`${title}: ${example}`}>
               <div className="board-row-head">
                 <Text.Root as="h2" className="board-row-title">
                   {title}
                 </Text.Root>
                 <Text.Root as="span" variant="label" className="board-row-meta">
-                  {humanize(first.scenario.page)} page · {humanize(first.scenario.state).toLowerCase()}
+                  {example}
                 </Text.Root>
               </div>
               <div className="board-frames">
@@ -221,7 +222,7 @@ export function FrameCard({ session, spec, revision, frameState, scale, focused,
           </Badge.Root>
         )}
         {!focused && onOpen && (
-          <Button.Root variant="ghost" onClick={onOpen} aria-label={`Open ${frameLabel(spec.scenario.id, spec.view.name)} at full size`} className="frame-open">
+          <Button.Root variant="ghost" onClick={onOpen} aria-label={`Open ${artboardLabel(spec.scenario, spec.view.name)} (${scenarioLabel(spec.scenario.id)}) at full size`} className="frame-open">
             <Button.Icon>
               <Maximize2 />
             </Button.Icon>

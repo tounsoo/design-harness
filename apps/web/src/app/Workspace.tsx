@@ -598,7 +598,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
         <Splitter.Panel id={chatId} className="shell-panel">
           <ChatPanel controller={controller} vault={vault} settings={settings} onSettings={changeSettings} onOpenProposal={openProposal} onOpenVariants={() => setCenter("variants")} prefill={prefill} onClose={() => toggle("chat", false)} />
         </Splitter.Panel>
-        <Splitter.Handle aria-label="Resize the chat" />
+        <Splitter.Handle aria-label="Resize the chat" className="shell-handle" data-side="start" />
         <Splitter.Panel className="shell-panel">
           <Splitter.Root className="shell-inner" primary="end" show={canvasOnly ? "start" : "both"} value={panels.side.open ? panels.side.width : 0} onValueChange={(value) => resize("side", value)} min={PANEL_SIZES.side.min} max={PANEL_SIZES.side.max} collapsible>
             <Splitter.Panel className="shell-panel">
@@ -676,7 +676,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
                 )}
               </main>
             </Splitter.Panel>
-            <Splitter.Handle aria-label="Resize checks and code" />
+            <Splitter.Handle aria-label="Resize checks and code" className="shell-handle" data-side="end" />
             <Splitter.Panel id={sideId} className="shell-panel">
               <aside className="app-side" aria-label="Checks and code">
                 <Tabs.Root value={side} onValueChange={(value) => setSide(value === "code" ? "code" : "checks")} className="app-side-tabs">

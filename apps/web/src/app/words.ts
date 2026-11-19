@@ -22,7 +22,23 @@ export function viewLabel(view: string): string {
   return humanize(view);
 }
 
-/** One frame's name for people: "Lantern held — phone". */
+/**
+ * An artboard row's title, the way a designer names a screen: its page and
+ * the state it shows, "Booking, room held". A state that says no more than
+ * the page ("Rooms, rooms") is left out.
+ */
+export function screenTitle(scenario: { readonly page: string; readonly state: string }): string {
+  const page = humanize(scenario.page);
+  const state = humanize(scenario.state).toLowerCase();
+  return state === page.toLowerCase() ? page : `${page}, ${state}`;
+}
+
+/** One artboard's name: "Booking, room held — phone". */
+export function artboardLabel(scenario: { readonly page: string; readonly state: string }, view: string): string {
+  return `${screenTitle(scenario)} — ${view.toLowerCase()}`;
+}
+
+/** One frame's name where only its scenario and view are known, as on a finding: "Lantern held — phone". */
 export function frameLabel(scenario: string, view: string): string {
   return `${scenarioLabel(scenario)} — ${view.toLowerCase()}`;
 }

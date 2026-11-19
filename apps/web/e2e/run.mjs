@@ -91,6 +91,16 @@ async function shot(page, name) {
   if (shots) await page.screenshot({ path: join(shots, `${name}.png`) });
 }
 
+/** The page as it is now in dark as well, only when screenshots are being saved. */
+async function shotDark(page, name) {
+  if (!shots) return;
+  await page.emulateMedia({ colorScheme: "dark" });
+  // Todae's colours ease from one scheme to the other.
+  await page.waitForTimeout(400);
+  await shot(page, name);
+  await page.emulateMedia({ colorScheme: "light" });
+}
+
 const SECOND_PRIMARY = (text) => text.replace('<Button.Root variant="secondary">Hold room</Button.Root>', '<Button.Root variant="primary">Hold room</Button.Root>');
 // Two 1-letter "buttons" side by side: each is under 24 CSS px wide and too close to the other for the spacing exception.
 const UNDERSIZED = (text) =>
@@ -315,7 +325,7 @@ test("the board opens a frame at full size and the project view reads the config
     const { page, context } = await openApp(browser, base, { colorScheme });
     await measured(page, 1);
     if (colorScheme === "dark") await shot(page, "board-dark");
-    await page.getByRole("button", { name: "Open Lantern open — desktop at full size" }).click();
+    await page.getByRole("button", { name: "Open Booking, room open — desktop (Lantern open) at full size" }).click();
     const viewport = await page.locator('.frame-card[data-frame-key="lantern-open@desktop"] .frame-viewport').boundingBox();
     assert.equal(Math.round(viewport.width), 1280);
     await shot(page, `full-size-${colorScheme}`);
@@ -779,6 +789,8 @@ test("a drafted proposal opens to its review page: examples side by side in fram
   assert.match(await page.getByTestId("proposal-reason").textContent(), /Toast is not in the inventory/);
   assert.match(await page.getByTestId("proposal-states").textContent(), /booked.*the toast says the room is booked/);
   assert.equal(await page.getByTestId("proposal-class").first().textContent(), "tightens");
+  await shot(page, "review-top-light");
+  await shotDark(page, "review-top-dark");
   // The inventory diff, before and after.
   assert.deepEqual(await page.locator('.diff-section[data-section="components"] [data-change]').evaluateAll((items) => items.map((item) => [item.dataset.change, item.textContent.trim()])), [["added", "+ Toast"]]);
   // The rule in words from its data, the raw rule one click away.
@@ -1603,6 +1615,7 @@ test("canvas only hides the header and both panels, and its button, shortcut and
   assert.ok(wider > before + 400, `the canvas takes the room: ${before} to ${wider}`);
   assert.deepEqual(await page.locator(".frame-card").evaluateAll((cards) => cards.map((card) => card.dataset.state)), Array(8).fill("measured"), "the frames stay rendered");
   await shot(page, "canvas-only-light");
+  await shotDark(page, "canvas-only-dark");
 
   await page.keyboard.press("Escape");
   await page.locator(".shell:not([data-canvas-only])").waitFor();
@@ -1637,6 +1650,7 @@ test("the chat and the checks panels collapse and come back, and keep their stat
   await side.waitFor({ state: "hidden" });
   assert.equal(await sideToggle.getAttribute("aria-expanded"), "false");
   await shot(page, "side-collapsed-light");
+  await shotDark(page, "side-collapsed-dark");
   await page.keyboard.press("Control+B");
   await chat.waitFor({ state: "hidden" });
   assert.equal(await chatToggle.getAttribute("aria-expanded"), "false");
@@ -1723,6 +1737,7 @@ test("the checks lead with plain words: a summary, each thing to fix with core's
   assert.equal(await target.getByTestId("fix-message").textContent(), shown.message, "the message is the one of the place shown");
   assert.equal(await target.getByRole("button", { name: "Show me" }).getAttribute("aria-pressed"), "true");
   await shot(page, "checks-plain-light");
+  await shotDark(page, "checks-plain-dark");
 
   await primary.getByRole("button", { name: "Ask the agent to fix" }).click();
   const box = page.getByRole("textbox", { name: "Message the agent" });
@@ -1816,6 +1831,7 @@ test("a scripted agent offers three variants: side by side in measured frames, e
   assert.equal(await pickRadio(page, "body", "Variant A").isDisabled(), false);
   assert.equal(await page.getByRole("button", { name: "Every slot from Variant C" }).isDisabled(), true);
   await shot(page, "variants-light");
+  await shotDark(page, "variants-dark");
 
   // Asked to fix it, the agent revises C; once it passes it can be picked.
   const fixed = copy(BOOKING_SPEC);
@@ -1865,6 +1881,7 @@ test("picking slots from two variants applies a new revision that passes every r
   assert.equal((await frame.locator("label").first().textContent()).trim(), "For how long?");
   assert.equal(await frame.locator("text=Second floor, 6 seats").count(), 1);
   await shot(page, "variants-pick-light");
+  await shotDark(page, "variants-pick-dark");
   await page.getByTestId("apply-pick").click();
   await measured(page, 3);
   const after = await report(page);

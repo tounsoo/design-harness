@@ -33,6 +33,7 @@ import { FindingButton } from "./ChecksPanel";
 import { lineRange } from "./CodePanel";
 import { ClassBadge, RuleWords, StatusBadge, classWords, classificationOf } from "./proposal-parts";
 import { measurementOf, useSessions, type Measured, type Measurement } from "./sessions";
+import { scenarioLabel, viewLabel } from "./words";
 
 type Props = {
   readonly config: ProjectConfig;
@@ -598,13 +599,6 @@ function Changes({ proposal, config }: { readonly proposal: Proposal; readonly c
           <ul className="review-rules" aria-label="Rules it adds">
             {proposal.rules.add.map((rule) => (
               <li key={rule.id}>
-                <Stack.Root direction="row" align="center" gap="condensed">
-                  <Badge.Root tone="success">adds</Badge.Root>
-                  <Code.Root>{rule.id}</Code.Root>
-                  <Text.Root as="span" tone="muted">
-                    {rule.type}
-                  </Text.Root>
-                </Stack.Root>
                 <RuleWords rule={rule} config={config} />
               </li>
             ))}
@@ -756,7 +750,7 @@ function Examples({ views, config, status, focus, onFocused }: { readonly views:
             <Field.Select value={scenario} onValueChange={setChosen}>
               {scenarios.map((id) => (
                 <option key={id} value={id}>
-                  {id}
+                  {scenarioLabel(id)}
                   {id === flaggedScenario ? " (flagged)" : ""}
                 </option>
               ))}
@@ -770,7 +764,7 @@ function Examples({ views, config, status, focus, onFocused }: { readonly views:
               <option value="all">Every view</option>
               {config.views.map((view) => (
                 <option key={view.name} value={view.name}>
-                  {view.name}
+                  {viewLabel(view.name)}
                 </option>
               ))}
             </Field.Select>
@@ -791,9 +785,9 @@ function useWidth(): [RefObject<HTMLDivElement | null>, number] {
   useEffect(() => {
     const element = ref.current;
     if (!element) return;
-    const observer = new ResizeObserver(() => setWidth(element.clientWidth));
+    // The content box: the frames sit inside the area's padding.
+    const observer = new ResizeObserver(([entry]) => entry && setWidth(entry.contentRect.width));
     observer.observe(element);
-    setWidth(element.clientWidth);
     return () => observer.disconnect();
   }, []);
   return [ref, width];

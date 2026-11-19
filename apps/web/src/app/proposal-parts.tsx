@@ -52,7 +52,7 @@ export function RuleWords({ rule, config }: { readonly rule: RuleSpec; readonly 
       )}
       <Disclosure.Root className="rule-words-raw">
         <Disclosure.Summary>
-          Rule data for <Code.Root>{rule.id}</Code.Root>
+          Rule data for <Code.Root>{rule.id}</Code.Root> ({rule.type})
         </Disclosure.Summary>
         <pre className="project-json" data-testid="rule-json">
           {JSON.stringify(rule, null, 2)}

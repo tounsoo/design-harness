@@ -36,6 +36,11 @@
   .shell-body { flex: 1; min-height: 0; background: var(--todae-harness-panel-bg); }
   .shell-inner { block-size: 100%; min-height: 0; }
   .shell-panel { min-height: 0; overflow: hidden; }
+  /* Todae's handle is its own hit area, with its line in the middle. Each half takes the colour of what it touches, so a panel meets the canvas at one hairline and the canvas is not inset. */
+  .shell-handle[data-side="start"] { background: linear-gradient(to right, var(--todae-harness-panel-bg) 50%, var(--todae-harness-canvas-bg) 50%); }
+  .shell-handle[data-side="end"] { background: linear-gradient(to left, var(--todae-harness-panel-bg) 50%, var(--todae-harness-canvas-bg) 50%); }
+  .shell-handle:dir(rtl)[data-side="start"] { background: linear-gradient(to left, var(--todae-harness-panel-bg) 50%, var(--todae-harness-canvas-bg) 50%); }
+  .shell-handle:dir(rtl)[data-side="end"] { background: linear-gradient(to right, var(--todae-harness-panel-bg) 50%, var(--todae-harness-canvas-bg) 50%); }
   .app-notices { display: grid; gap: var(--todae-space-2); padding: var(--todae-space-2) var(--todae-space-4); background: var(--todae-harness-panel-bg); border-block-end: var(--todae-border-width) solid var(--todae-color-border-subtle); }
   .shell[data-canvas-only] .shell-header, .shell[data-canvas-only] .app-notices { display: none; }
 
@@ -48,7 +53,7 @@
   .app-main-pane { position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0; }
   /* Kept laid out, not display: none, so its frames keep their viewports while the project view is on top. */
   .app-main-pane[data-inactive] { visibility: hidden; pointer-events: none; }
-  .app-main-scroll { overflow: auto; padding: var(--todae-space-8) var(--todae-space-8) var(--todae-space-12); background: var(--todae-color-bg-canvas); }
+  .app-main-scroll { overflow: auto; padding: var(--todae-space-8) var(--todae-space-8) var(--todae-space-12); background: var(--todae-harness-canvas-bg); }
   .app-preview { margin: var(--todae-space-3) var(--todae-space-6) 0; }
 
   /* ---- The right panel: checks first, code one tab away. ---- */
@@ -287,6 +292,9 @@
   .variant-frames { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--todae-space-2); min-width: 0; overflow: hidden; padding: var(--todae-space-3); border-radius: var(--todae-radius-md); background-color: var(--todae-harness-canvas-bg); }
   .variant-frames .frame-card { min-width: 0; }
   .variant-report, .variants-history { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--todae-space-2); }
+  .variant-issue { display: grid; gap: var(--todae-space-1); }
+  /* What another page already had, and the rule ids: one step away, and quiet. */
+  .variant-elsewhere, .variant-details { font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); color: var(--todae-color-fg-muted); }
   .variants-table td { vertical-align: middle; }
   .variants-pick[data-undone] { color: var(--todae-color-fg-muted); }
 }
