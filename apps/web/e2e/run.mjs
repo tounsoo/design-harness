@@ -226,7 +226,7 @@ test("a second primary action brings core's finding: selecting it outlines both 
       assert.equal(await page.locator(`.frame-card[data-frame-key="${scenario}@${view}"]`).getAttribute("data-selected"), "");
     }
   }
-  assert.equal(await page.getByTestId("finding-outline").textContent(), "Outlined in 6 frames (lantern-open, lantern-booked, lantern-held).");
+  assert.equal(await page.getByTestId("finding-outline").textContent(), "Outlined in 6 frames: Booking, room open (Lantern open); Booking, booked (Lantern booked); Booking, held (Lantern held).");
   await shot(page, "failing-source-outlined-light");
   await page.locator('.rule[data-rule="one-primary-per-page"]').getByRole("button", { name: "Show in code" }).first().click();
   await page.waitForSelector('[data-testid="code-line"]');
@@ -1070,7 +1070,7 @@ test("an adoption whose failing example does not fail is refused, and the page s
   await refusal.waitFor();
   assert.equal(await refusal.getAttribute("data-code"), "failing-example-passes");
   assert.equal(await page.getByTestId("review-refusal-message").textContent(), 'failing example "only-one" is not flagged as it must be: "one-toast-per-page" passed it');
-  assert.match(await refusal.textContent(), /Not adopted: core refused it.*Reason.*failing-example-passes.*Example.*Show only-one/);
+  assert.match(await refusal.textContent(), /Not adopted: core refused it.*Reason.*failing-example-passes.*Example.*Show Only one/);
   assert.equal(await reviewStatus(page), "approved", "a refused adoption changes nothing");
   assert.equal((await report(page)).rules.some((rule) => rule.rule === "one-toast-per-page"), false);
   await page.waitForTimeout(300);
@@ -1943,7 +1943,7 @@ test("the checks lead with plain words: a summary, each thing to fix with core's
   // Show me outlines both primary actions in every frame that draws them, and the card says where.
   await primary.getByRole("button", { name: "Show me" }).click();
   await page.frameLocator('iframe[title="lantern-open at desktop"]').locator("[data-design-harness-overlay]").first().waitFor({ state: "attached" });
-  await eventually(page, () => primary.getByTestId("fix-outline").textContent(), (text) => text === "Outlined in 6 frames (lantern-open, lantern-booked, lantern-held).", "the card says where both actions are outlined");
+  await eventually(page, () => primary.getByTestId("fix-outline").textContent(), (text) => text === "Outlined in 6 frames: Booking, room open (Lantern open); Booking, booked (Lantern booked); Booking, held (Lantern held).", "the card says where both actions are outlined");
   await eventually(page, () => page.locator(".frame-card[data-selected]").count(), (count) => count === 6, "the six frames that draw them are selected");
   // Show in code, one click away, marks the line.
   await primary.getByTestId("show-in-code").click();
@@ -2051,6 +2051,9 @@ test("a scripted agent offers three variants: side by side in measured frames, e
     assert.deepEqual(await frames.evaluateAll((cards) => cards.filter((card) => !card.hasAttribute("data-hidden")).map((card) => card.dataset.frameKey)), ["lantern-open@desktop", "lantern-open@phone"]);
     assert.equal(await page.locator(`.variant-card[data-variant="${id}"] .frame-card[data-state="measured"]`).count(), 8);
   }
+  // Every view of a source side by side, as the board lays a scenario out.
+  const [desktop, phone] = await Promise.all(VIEWS.map((view) => page.locator(`.variant-card[data-variant="a"] .frame-card[data-frame-key="lantern-open@${view}"]`).boundingBox()));
+  assert.ok(desktop.x + desktop.width <= phone.x && Math.abs(desktop.y - phone.y) < 2, `the phone view sits beside the desktop view: ${JSON.stringify([desktop, phone])}`);
   const askFrame = page.frameLocator('iframe[title="Variant A: lantern-open at desktop"]');
   assert.equal((await askFrame.locator("label").first().textContent()).trim(), "For how long?");
   assert.equal((await page.frameLocator('iframe[title="Current: lantern-open at desktop"]').locator("label").first().textContent()).trim(), "How long?");

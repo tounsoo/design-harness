@@ -8,10 +8,11 @@ import type { RuleSpec } from "./rules/types";
  * TARGET_MIN_PX) must be in the project's inputs.
  *
  * Every rule here is data. The ones whose type is a named check rather than a
- * selector rule are `page-structure`, `isolation`, the two `flow` checks, the six
- * `rendered` checks and the five membership subjects: each reads something a
- * selector cannot (the page kit's slots, the flow graph, a rendered snapshot,
- * the manifest and the import list, what the source reaches).
+ * selector rule are `page-structure`, `isolation`, `style-props`, the two
+ * `flow` checks, the six `rendered` checks and the five membership subjects:
+ * each reads something a selector cannot (the page kit's slots, the flow
+ * graph, a rendered snapshot, the manifest and the import list, what the
+ * source reaches, the config's excluded props).
  */
 export const BUILT_IN_RULES: readonly RuleSpec[] = [
   // lint:product-ui and check:inventories
@@ -21,7 +22,7 @@ export const BUILT_IN_RULES: readonly RuleSpec[] = [
   { type: "membership", id: "layouts-from-inventory", of: "layouts", description: "Every registered layout is inventoried." },
   { type: "membership", id: "flow-states-from-inventory", of: "flow-states", description: "The flow uses only inventoried states." },
   { type: "count", id: "no-raw-controls", scope: "source", select: { component: ["button", "input", "select", "textarea", "a"] }, max: 0, description: "Controls come from the library, never raw HTML." },
-  { type: "count", id: "no-inline-styles", scope: "source", select: { hasProp: "style" }, max: 0, description: "A style prop is a raw escape hatch; layout comes from library parts." },
+  { type: "style-props", id: "no-inline-styles", description: "A style prop is a raw escape hatch: style, and the props the project excludes. Styling comes from the library's variants and tokens." },
   // lint:slots and the page shells
   { type: "page-structure", id: "page-structure", description: "Pages fill only their page type's slots, each once, with nothing outside them." },
   { type: "slot", id: "primary-slot", slot: "$primary", holds: { role: "primary-action" }, min: 1, max: 1, only: { role: "primary-action" }, description: "An action page's primary slot holds exactly one primary action and nothing else." },

@@ -4,8 +4,9 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CURRENT, formatSpec, parseJson, pickScope, recombine, variantLabel, variantPrototype, type CheckReport, type Finding, type PickRecord, type PickScope, type ProjectConfig, type Prototype, type Recombination, type Variant } from "@design-harness/core";
 import type { PrototypeRecord } from "../store/project-file";
 import { FrameCard } from "./Board";
+import { MIN_SCALE, rowScale, type RowBox } from "./frame-row";
 import { useSessions, type Measured } from "./sessions";
-import { humanize, ruleLead, scenarioLabel, viewLabel } from "./words";
+import { humanize, ruleLead, scenarioName, viewLabel } from "./words";
 
 /**
  * Variants side by side, and the person's pick. For the page being
@@ -91,8 +92,46 @@ const canonical = (text: string | undefined): string => {
   return parsed.ok ? formatSpec(parsed.value) : text;
 };
 
-/** Frames wrap in a column, so the widest view sets the scale. */
-const FRAME_WIDTH = (config: ProjectConfig) => Math.max(1, ...config.views.map((view) => view.width));
+/**
+ * One source's frames: the chosen scenario's views side by side, scaled to
+ * the row's own width, which it measures with the gap and the artboard's
+ * least width its stylesheet gives; the frames not shown keep measuring out
+ * of sight. Its card names the source, so each artboard's head says only its
+ * view.
+ */
+function FrameRow({ item, label, scenario, viewName }: { readonly item: Measured; readonly label: string; readonly scenario: string | null; readonly viewName: string }) {
+  const row = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState<RowBox | null>(null);
+  useEffect(() => {
+    const element = row.current;
+    if (!element) return;
+    const measure = () => {
+      const style = getComputedStyle(element);
+      const card = element.querySelector(".frame-card");
+      const next = {
+        // A pixel of slack: clientWidth is rounded, and a row that is a fraction too wide wraps.
+        width: Math.floor(element.clientWidth - parseFloat(style.paddingInlineStart) - parseFloat(style.paddingInlineEnd)) - 1,
+        gap: parseFloat(style.columnGap) || 0,
+        least: card ? parseFloat(getComputedStyle(card).minWidth) || 0 : 0,
+      };
+      setBox((previous) => (previous && previous.width === next.width && previous.gap === next.gap && previous.least === next.least ? previous : next));
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    measure();
+    return () => observer.disconnect();
+  }, []);
+  const shown = item.state.frames.filter((spec) => spec.scenario.id === scenario && (viewName === "all" || spec.view.name === viewName));
+  // Until the row is measured, the least scale: nothing drawn wider than the row.
+  const scale = box ? rowScale(shown.map((spec) => spec.view.width), box) : MIN_SCALE;
+  return (
+    <div className="variant-frames" ref={row}>
+      {item.state.frames.map((spec) => (
+        <FrameCard key={spec.key} session={item.session} spec={spec} revision={item.state.revision} frameState={item.state.frameStates[spec.key] ?? { state: "waiting" }} scale={scale} focused={false} hidden={!shown.includes(spec)} selected={false} label={label} caption="" />
+      ))}
+    </div>
+  );
+}
 
 export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss, onSend, onPrefill }: Props) {
   const prototype = record?.prototype;
@@ -132,21 +171,6 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
   const items = useMemo(() => [...sources.map((source) => ({ id: source.id, config, prototype: source.prototype })), ...(combined ? [{ id: "combination", config, prototype: combined.prototype }] : [])], [sources, combined, config]);
   const measured = useSessions(items);
   const byId = new Map(measured.map((item) => [item.id, item]));
-
-  const grid = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(900);
-  useEffect(() => {
-    const element = grid.current;
-    if (!element) return;
-    const observer = new ResizeObserver(() => setWidth(element.clientWidth));
-    observer.observe(element);
-    setWidth(element.clientWidth);
-    return () => observer.disconnect();
-  }, [sources.length]);
-  const columns = Math.max(1, Math.min(sources.length, 4, Math.floor(width / 280)));
-  // What a column leaves a frame: its share of the grid, less the card's and the frame area's padding and borders.
-  const columnWidth = (width - 16 * (columns - 1)) / columns - 64;
-  const scale = Math.max(0.08, Math.min(0.5, columnWidth / (viewName === "all" ? FRAME_WIDTH(config) : (config.views.find((view) => view.name === viewName)?.width ?? FRAME_WIDTH(config)))));
 
   if (!record || !prototype) return null;
   if (prototype.format !== "spec") {
@@ -193,25 +217,7 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
   const picksHere = (state?.picks ?? []).map((pick, index) => ({ pick, index })).filter(({ pick }) => pick.page === page);
   const undoable = [...picksHere].reverse().find(({ pick }) => !pick.undone);
 
-  const frameRow = (item: Measured | undefined, label: string) =>
-    item ? (
-      <div className="variant-frames">
-        {item.state.frames.map((spec) => (
-          <FrameCard
-            key={spec.key}
-            session={item.session}
-            spec={spec}
-            revision={item.state.revision}
-            frameState={item.state.frameStates[spec.key] ?? { state: "waiting" }}
-            scale={scale}
-            focused={false}
-            hidden={spec.scenario.id !== scenario || (viewName !== "all" && spec.view.name !== viewName)}
-            selected={false}
-            label={label}
-          />
-        ))}
-      </div>
-    ) : null;
+  const frameRow = (item: Measured | undefined, label: string) => (item ? <FrameRow item={item} label={label} scenario={scenario} viewName={viewName} /> : null);
 
   return (
     <Stack.Root gap="normal" className="variants" data-testid="variants">
@@ -240,7 +246,7 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
               <Field.Select value={scenario ?? ""} onValueChange={(value) => setScenario(value)}>
                 {scenarios.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {scenarioLabel(item.id)}
+                    {scenarioName(item)}
                   </option>
                 ))}
               </Field.Select>
@@ -282,7 +288,7 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
           <Text.Root as="p" tone="muted" className="variants-small">
             The <strong>{humanize(page).toLowerCase()}</strong> page as it is, beside {sources.length - 1} {sources.length === 2 ? "variant" : "variants"}. Each is checked in every scenario and view. A pick answers for this page only: a variant with something to fix here cannot be picked until it is fixed, and a problem already on another page does not stand in the way.
           </Text.Root>
-          <div className="variants-grid" ref={grid} style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+          <div className="variants-grid" data-views={viewName === "all" && config.views.length > 1 ? "all" : "one"}>
             {sources.map((source) => (
               <SourceCard key={source.id} source={source} page={page} config={config} standing={standings.get(source.id) as Standing} frames={frameRow(byId.get(source.id), source.label)} agent={agent} onSend={onSend} onDismiss={onDismiss} />
             ))}

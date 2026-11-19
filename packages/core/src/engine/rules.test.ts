@@ -43,6 +43,48 @@ describe("count", () => {
   });
 });
 
+describe("style-props", () => {
+  const rule: RuleSpec = { type: "style-props", id: "no-inline-styles" };
+  const run = (files: Record<string, string>, excludedProps?: readonly string[]) => {
+    const { excludedProps: _nook, ...library } = configWith([]).library;
+    return checkPrototype({ config: configWith([rule], { library: { ...library, ...(excludedProps ? { excludedProps } : {}) } }), prototype: prototype(files) });
+  };
+
+  it("refuses an excluded prop on a library part or an HTML element, whatever its value, naming the prop and its pattern as a spec's refusal does", () => {
+    const report = run(home(slot("body", `<Text.Root className={tone} data-tone="x">Hi</Text.Root><div className="x" />`), "const tone = pick();"), ["className", "data-*"]);
+    expect(messages(report)).toEqual([
+      `violation: Text.Root "Hi" at pages/home.tsx:7:25 sets "className", a style prop the project excludes ("className" in library.excludedProps): a Text.Root's styling must come from the library's own variants and tokens, not from props that style it directly.`,
+      `violation: Text.Root "Hi" at pages/home.tsx:7:25 sets "data-tone", a style prop the project excludes ("data-*" in library.excludedProps): a Text.Root's styling must come from the library's own variants and tokens, not from props that style it directly.`,
+      `violation: <div> at pages/home.tsx:7:81 sets "className", a style prop the project excludes ("className" in library.excludedProps): a <div>'s styling must come from the library's own variants and tokens, not from props that style it directly.`,
+    ]);
+  });
+
+  it("refuses style on any element, excluded or not", () => {
+    const files = home(slot("body", `<Card style={{ padding: 4 }} />`), "const Card = (props: { style?: object }) => <Text.Root>Hi</Text.Root>;");
+    expect(messages(run(files, undefined))).toEqual([`violation: Card at pages/home.tsx:7:25 sets "style", a style prop: a Card's styling must come from the library's own variants and tokens, not from props that style it directly.`]);
+  });
+
+  it("leaves a prototype's own component its prop names, and reads what it passes on where a part receives it", () => {
+    const own = home(slot("body", `<Card className="x" />`), "const Card = ({ className }: { className: string }) => <Text.Root className={className}>Hi</Text.Root>;");
+    expect(messages(run(own, ["className"]))).toEqual([expect.stringContaining(`violation: Text.Root "Hi" at pages/home.tsx:3:56 sets "className"`)]);
+    const renamed = home(slot("body", `<Card tone="x" />`), "const Card = ({ tone }: { tone: string }) => <Text.Root>{tone}</Text.Root>;");
+    expect(messages(run(renamed, ["className"]))).toEqual([]);
+  });
+
+  it("reads a prop set through a spread it can see, and cannot check one it cannot", () => {
+    const seen = home(slot("body", `<Text.Root {...look}>Hi</Text.Root>`), `const look = { className: "x" };`);
+    expect(messages(run(seen, ["className"]))).toEqual([expect.stringContaining(`violation: Text.Root "Hi" at pages/home.tsx:7:25 sets "className"`)]);
+    const hidden = home(slot("body", `<Text.Root {...look}>Hi</Text.Root>`), "const look = pick();");
+    expect(messages(run(hidden, ["className"]))).toEqual([`unverifiable: Cannot tell whether Text.Root "Hi" at pages/home.tsx:7:25 sets a style prop: a spread at line 7 may set any prop.`]);
+    expect(run(hidden, ["className"]).status).toBe("fail");
+  });
+
+  it("cannot check an element it cannot resolve", () => {
+    const files = home(slot("body", `<Part />`), "const Part = pick();");
+    expect(messages(run(files, ["className"]))).toEqual([expect.stringMatching(/^unverifiable: Cannot tell whether <Part> at pages\/home\.tsx:7:25 sets a style prop: /)]);
+  });
+});
+
 describe("containment", () => {
   it("must not be inside, and must be inside", () => {
     const notInside: RuleSpec = { type: "containment", id: "no-hidden-primary", select: { role: "primary-action" }, must: "not-be-inside", of: { role: "disclosure" } };
