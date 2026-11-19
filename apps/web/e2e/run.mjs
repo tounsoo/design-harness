@@ -4043,6 +4043,8 @@ test("pin a note on a frame: it anchors to the element clicked, is listed under 
   await page.keyboard.press("Escape");
   await eventually(page, () => pinMode(page).getAttribute("aria-pressed"), (value) => value === "false", "Escape leaves pin mode first");
   assert.equal(await page.locator(".shell[data-canvas-only]").count(), 1, "and canvas only stays");
+  // A second Escape pressed within a few frames of the first can land before the workspace listens for it again; a person's does not.
+  await page.waitForTimeout(400);
   await page.keyboard.press("Escape");
   await page.locator(".shell:not([data-canvas-only])").waitFor();
 

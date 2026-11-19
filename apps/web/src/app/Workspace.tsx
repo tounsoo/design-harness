@@ -168,7 +168,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   );
   useHotkey(SHORTCUTS.pin.keys, () => setPinning(!pinning));
   // Escape leaves pin mode or closes a note's card first, and canvas only after that.
-  useHotkey(SHORTCUTS.leave.keys, leaveCanvasOnly, { enabled: canvasOnly && !boardHolds });
+  useHotkey(SHORTCUTS.leave.keys, leaveCanvasOnly, { enabled: canvasOnly && !pinning && !boardHolds });
   useHotkey(SHORTCUTS.chat.keys, () => {
     if (canvasOnly) leaveCanvasOnly();
     toggle("chat", canvasOnly ? true : undefined);
