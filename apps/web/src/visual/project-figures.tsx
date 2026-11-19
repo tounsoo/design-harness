@@ -6,7 +6,7 @@ import { humanize } from "../app/words";
 import { CLASS_STOPS, capMeter, pageTypeWords, proposalTrack, ruleGlyph, slotRows, type BudgetMeter } from "./project-model";
 
 /**
- * The Project and Proposals tabs' own figures, drawn from the config and
+ * The Project and Proposals views' own figures, drawn from the config and
  * from core's facts (`project-model.ts`): a page type as its slots, a
  * length cap as a square at its actual size, a rule's shape as a glyph, a
  * proposal's class on a scale and its status on a track. A count cap and a

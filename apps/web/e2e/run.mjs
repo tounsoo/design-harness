@@ -4589,7 +4589,7 @@ test("a person changes a limit the stricter way: classified tightens, proven on 
   await eventually(page, () => preview.getAttribute("data-class"), (value) => value === "tightens", "one less is stricter");
   assert.deepEqual([await preview.getByTestId("rule-move-before").textContent(), await preview.getByTestId("rule-move-after").textContent(), await preview.getByTestId("rule-move").getAttribute("data-direction")], ["at most 2", "at most 1", "stricter"]);
   await dialog.getByTestId("rule-impact-summary").waitFor({ timeout: 60000 });
-  assert.equal(await dialog.getByTestId("rule-impact-summary").textContent(), "0 of 2 prototypes have findings from this rule now; 1 would newly fail.");
+  assert.equal(await dialog.getByTestId("rule-impact-summary").textContent(), "None of the 2 prototypes has findings from this rule now; 1 would newly fail.");
   assert.match(await dialog.locator('.rule-impact > li[data-effect="fails"]').textContent(), /Early booking.*It would newly fail one-primary-per-page: Page "booking" has 2 primary actions, more than 1/s);
   // Core adopts a changed rule only on a failing example it flags alone: the project has one, and the flow names it.
   assert.match(await dialog.getByTestId("rule-examples").textContent(), /one the changed rule flags and no other rule does/);
@@ -5658,6 +5658,237 @@ test("a variant's note follows its pick: applying a pick that takes its slot mov
   assert.equal(await onBoard(1).count(), 0);
   assert.deepEqual(await report(page), before);
   assert.deepEqual(errors, []);
+});
+
+// ---- narrow widths: the views and dialogs beyond the canvas --------------------
+
+const TABLET = { width: 768, height: 1024 };
+const PHONE = { width: 390, height: 844 };
+
+/**
+ * The page as it is at tablet width and then at phone width, each in light and
+ * dark when screenshots are being saved. It leaves the window at phone width.
+ */
+async function shotNarrow(page, name, drawn = async () => {}) {
+  for (const [label, viewport] of [["tablet", TABLET], ["phone", PHONE]]) {
+    await page.setViewportSize(viewport);
+    // The wizard stands in place of the shell, so only a shell on the page is waited for.
+    if ((await page.locator(".shell").count()) > 0) await page.locator(`.shell[data-width="${label}"]`).waitFor();
+    await page.evaluate(() => new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))));
+    await drawn();
+    await shot(page, `narrow-${name}-${label}-light`);
+    await shotDark(page, `narrow-${name}-${label}-dark`);
+  }
+}
+
+/**
+ * Fails when the page, or the pane `scope` scrolls in, scrolls sideways, or
+ * when a control in `scope` that is shown is under 24 by 24 CSS px, is cut off
+ * by a box that hides what leaves it, or reaches past the window with nothing
+ * to scroll it back. A control in a small box that scrolls sideways by itself,
+ * such as a row of frames, is reachable there. A radio or a checkbox is judged
+ * by its label and a field's input by the field's box, which take the press.
+ * The sizes are read from the page, so they hold whatever font draws the text.
+ */
+async function narrowIsUsable(page, scope, where) {
+  await noSidewaysScroll(page, where);
+  const problems = await scope.evaluate((root) => {
+    const shown = (element) => {
+      const box = element.getBoundingClientRect();
+      return box.width > 0 && box.height > 0 && window.getComputedStyle(element).visibility !== "hidden" && element.closest("[inert], [aria-hidden='true'], [hidden]") === null;
+    };
+    const name = (element) => (element.getAttribute("aria-label") ?? element.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 60) || element.tagName.toLowerCase();
+    const found = [];
+    // A pane as wide as the window that scrolls down must not also scroll sideways: its text would be cut off.
+    for (let pane = root; pane && pane !== document.documentElement; pane = pane.parentElement) {
+      const style = window.getComputedStyle(pane);
+      if ((style.overflowY === "auto" || style.overflowY === "scroll") && pane.clientWidth >= window.innerWidth * 0.8 && pane.scrollWidth > pane.clientWidth + 1) found.push({ problem: "its pane scrolls sideways", name: String(pane.className), width: pane.clientWidth, content: pane.scrollWidth });
+    }
+    for (const control of root.querySelectorAll('button, select, textarea, summary, input:not([type="hidden"]), [role="tab"], [role="radio"], [role="checkbox"], [role="spinbutton"]')) {
+      const target = control.matches('input[type="radio"], input[type="checkbox"]') ? (control.closest("label") ?? control) : control.matches("input, textarea") ? (control.parentElement ?? control) : control;
+      if (!shown(target)) continue;
+      const box = target.getBoundingClientRect();
+      const at = { name: name(target), x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width * 10) / 10, height: Math.round(box.height * 10) / 10 };
+      if (box.width < 24 || box.height < 24) found.push({ problem: "under 24 by 24", ...at });
+      let scrolls = false;
+      for (let parent = target.parentElement; parent && parent !== document.documentElement; parent = parent.parentElement) {
+        const style = window.getComputedStyle(parent);
+        const around = parent.getBoundingClientRect();
+        if ((style.overflowX === "auto" || style.overflowX === "scroll") && parent.scrollWidth > parent.clientWidth) scrolls = true;
+        else if ((style.overflowX === "hidden" || style.overflowX === "clip") && !scrolls && (box.left < around.left - 0.5 || box.right > around.right + 0.5)) {
+          found.push({ problem: `cut off by .${parent.className}`, ...at });
+          break;
+        }
+      }
+      if (!scrolls && (box.left < -0.5 || box.right > window.innerWidth + 0.5)) found.push({ problem: "past the window", ...at });
+    }
+    return found;
+  });
+  assert.deepEqual(problems, [], `${where}: every control is whole, in reach and at least 24 by 24 CSS px`);
+}
+
+/** Scrolls a control into view and fails unless all of it is inside the window, where a press reaches it. */
+async function reachable(page, control, where) {
+  await control.scrollIntoViewIfNeeded();
+  const box = await control.boundingBox();
+  const size = page.viewportSize();
+  assert.ok(box && box.x >= 0 && box.y >= 0 && box.x + box.width <= size.width + 0.5 && box.y + box.height <= size.height + 0.5, `${where} is inside the window: ${JSON.stringify(box)}`);
+  // Nothing lies over its middle: the press would land on it.
+  const hit = await control.evaluate((element) => {
+    const at = element.getBoundingClientRect();
+    const top = document.elementFromPoint(at.x + at.width / 2, at.y + at.height / 2);
+    return top !== null && (element.contains(top) || top.contains(element));
+  });
+  assert.equal(hit, true, `${where} is not covered`);
+}
+
+test("the Variants view at phone width: nothing scrolls sideways, every control is whole, and a slot is picked and the pick applied", async ({ browser, base, api }) => {
+  const { page, errors } = await openSpec(browser, base);
+  await offerVariants(page, api);
+  await mainView(page, "Variants").click();
+  for (const id of ["current", "a", "b"]) await standing(page, id, "pass");
+  await standing(page, "c", "fail");
+  await shotNarrow(page, "variants");
+  const variants = page.getByTestId("variants");
+  await headerIsLaidOut(page, "the Variants view on a phone");
+  await narrowIsUsable(page, variants, "the Variants view on a phone");
+  // The pick: a slot from a variant, then Apply, both inside the window.
+  const radio = pickRadio(page, "body", "Variant A");
+  await radio.scrollIntoViewIfNeeded();
+  await shot(page, "narrow-variants-picks-phone-light");
+  await shotDark(page, "narrow-variants-picks-phone-dark");
+  await radio.check();
+  await page.waitForFunction(() => document.querySelector('[data-testid="variant-combination"]')?.getAttribute("data-standing") === "pass", null, { timeout: 90000 });
+  await narrowIsUsable(page, variants, "the Variants view on a phone, with a pick");
+  const apply = page.getByTestId("apply-pick");
+  await reachable(page, apply, "Apply");
+  await shot(page, "narrow-variants-apply-phone-light");
+  await apply.click();
+  await measured(page, 2);
+  assert.equal((await report(page)).status, "pass");
+  assert.deepEqual(errors, []);
+});
+
+test("the Proposals view and a review page at phone width: nothing scrolls sideways, every control is whole, a person's own proposal asks the agent to revise it, and Approve is in reach", async ({ browser, base, api }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  await importNook(page, [
+    { id: "booking-spec", name: "Booking", change: MORE_PRIMARIES(1) },
+    { id: "two-questions", name: "Two questions", change: SECOND_QUESTION },
+  ]);
+  // One proposal by the agent, and one by the person, from a rule's card.
+  await draftByAgent(page, api, toastDraft());
+  await mainView(page, "Project").click();
+  await ruleCard(page, "one-primary-per-page").getByRole("button", { name: /^Remove this rule…/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Remove this rule" });
+  await dialog.getByTestId("rule-examples").waitFor({ timeout: 60000 });
+  await dialog.getByRole("textbox", { name: "Why" }).fill("Booking early is a second primary action, and we want both.");
+  await shotNarrow(page, "rule-remove");
+  await narrowIsUsable(page, dialog, "the remove dialog on a phone");
+  const open = dialog.getByRole("button", { name: "Open the proposal" });
+  await reachable(page, open, "Open the proposal");
+  await open.click();
+  const own = page.locator('.review[data-proposal="remove-one-primary-per-page"]');
+  await own.waitFor();
+  // A removal carries no examples, so there is nothing to judge: the page settles once the project is measured.
+  await page.waitForSelector('[data-testid="review-measuring"][data-measured]', { timeout: 60000 });
+  await own.getByTestId("review-impact").locator('[data-prototype="two-questions"]').waitFor({ timeout: 60000 });
+  await shotNarrow(page, "review-own");
+  await headerIsLaidOut(page, "a review page on a phone");
+  await narrowIsUsable(page, own, "a person's own proposal on a phone");
+  // By the person, so nothing is "sent back": the agent is asked to revise it.
+  const actions = page.getByTestId("review-actions");
+  assert.equal(await actions.getByRole("button", { name: "Send back to the agent" }).count(), 0);
+  await reachable(page, actions.getByRole("button", { name: "Approve", exact: true }), "Approve");
+  await reachable(page, actions.getByRole("button", { name: "Decline", exact: true }), "Decline");
+  const revise = actions.getByRole("button", { name: "Ask the agent to revise it" });
+  await reachable(page, revise, "Ask the agent to revise it");
+  await revise.click();
+  await narrowIsUsable(page, own, "the note form on a phone");
+  await shot(page, "narrow-review-own-note-phone-light");
+  const note = "Keep the rule on the rooms page.";
+  api.script([textReply("I will look at it.")]);
+  await actions.getByLabel("What should the agent change?").fill(note);
+  const send = actions.getByRole("button", { name: "Send to the agent" });
+  await reachable(page, send, "Send to the agent");
+  await send.click();
+  assert.equal(await turnEnded(page), "done");
+  assert.match(lastMessage(api.requests.at(-1).body), new RegExp(`^I started proposal "remove-one-primary-per-page" \\(.*\\) myself, and I am asking you to revise it from its review page\\. Revise it with revise_proposal, keeping its id\\. My note:\\n\\n${note}$`));
+  // The list: both cards, the filters, and each card's way in. The chat took the screen for the turn; the view's button brings the list back.
+  await mainView(page, "Proposals").click();
+  const cards = page.locator(".proposal-cards > li");
+  assert.equal(await cards.count(), 2);
+  await shotNarrow(page, "proposals");
+  await headerIsLaidOut(page, "the Proposals view on a phone");
+  await narrowIsUsable(page, page.getByRole("main"), "the Proposals view on a phone");
+  const ownTitle = page.locator('.proposal-cards [data-proposal="remove-one-primary-per-page"]').getByRole("button", { name: /^Remove the rule/ });
+  await reachable(page, ownTitle, "a card's title");
+  await ownTitle.click();
+  await own.waitFor();
+  assert.match(await page.getByTestId("review-history").textContent(), new RegExp(`Drafted by you.*Revision asked by you.*${note}`, "s"));
+  await page.getByRole("button", { name: "← All proposals" }).click();
+  await page.locator('.proposal-cards [data-proposal="booking-toast"]').getByRole("button", { name: /^A toast that confirms/ }).click();
+  // The agent's proposal: sent back, as before.
+  const agents = page.locator('.review[data-proposal="booking-toast"]');
+  await agents.waitFor();
+  await judged(page);
+  await shotNarrow(page, "review-agent");
+  await narrowIsUsable(page, agents, "the agent's proposal on a phone");
+  await reachable(page, actions.getByRole("button", { name: "Approve", exact: true }), "Approve");
+  await reachable(page, actions.getByRole("button", { name: "Send back to the agent" }), "Send back to the agent");
+  assert.equal(await actions.getByRole("button", { name: "Ask the agent to revise it" }).count(), 0);
+  // The page scrolls to its end with the actions still in reach.
+  await agents.getByTestId("review-history").scrollIntoViewIfNeeded();
+  await shot(page, "narrow-review-agent-end-phone-light");
+  await reachable(page, actions.getByRole("button", { name: "Approve", exact: true }), "Approve, with the page scrolled");
+  assert.deepEqual(errors, []);
+});
+
+test("the New project wizard at phone width: every step fits the screen with its way on in reach, and the project is created", async ({ browser, base }) => {
+  const { page, errors, context } = await openApp(browser, base, { viewport: PHONE });
+  await measured(page, 1);
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "New project" }).click();
+  const wizard = page.getByTestId("project-wizard");
+  const next = page.getByRole("button", { name: "Next" });
+  const step = async (name, drawn) => {
+    await shotNarrow(page, `wizard-${name}`, drawn);
+    await narrowIsUsable(page, wizard, `the wizard's ${name} step on a phone`);
+  };
+  await page.getByLabel("Product name").fill("Ledger");
+  await step("name");
+  await reachable(page, next, "Next, on the name step");
+  await next.click();
+  await page.getByRole("radio", { name: /^Todae/ }).check();
+  await page.getByTestId("library-facts").waitFor();
+  await step("library");
+  await reachable(page, next, "Next, on the library step");
+  await next.click();
+  await page.locator(".role-grid").waitFor();
+  await step("roles", () => rolePreviewsDrawn(page));
+  await reachable(page, page.getByTestId("accept-all"), "Accept all");
+  await page.getByTestId("accept-all").click();
+  await reachable(page, next, "Next, on the roles step");
+  await next.click();
+  await page.getByTestId("excluded-props").waitFor();
+  await step("style-props");
+  await reachable(page, page.getByTestId("exclusion-accept"), "the exclusion's accept");
+  await page.getByTestId("exclusion-accept").click();
+  await next.click();
+  await page.getByLabel("Task 1", { exact: true }).fill("Pay an invoice");
+  await page.getByLabel("Most steps").fill("2");
+  await page.getByLabel("Rank 1, the primary action").fill("Pay now");
+  await step("inputs");
+  const review = page.getByRole("button", { name: "Review" });
+  await reachable(page, review, "Review");
+  await review.click();
+  await page.getByTestId("review-summary").waitFor();
+  await step("review");
+  await createFromReview(page);
+  assert.match((await page.getByTestId("notice").textContent()) ?? "", /Ledger was created/);
+  await noSidewaysScroll(page, "the new project's board on a phone");
+  assert.deepEqual(errors, []);
+  await context.close();
 });
 
 // ---- runner ----------------------------------------------------------------
