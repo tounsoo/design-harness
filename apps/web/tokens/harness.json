@@ -246,6 +246,155 @@
           "unit": "rem"
         }
       }
+    },
+    "annotation": {
+      "$description": "Ink for what the app draws over an artboard: guides, hit areas and marks. An artboard is the prototype's page in its view's own scheme, whatever the app's theme, so each colour is fixed for a light page and for a dark page and does not follow the app's appearance.",
+      "on-light": {
+        "ink": {
+          "$type": "color",
+          "$value": {
+            "$ref": "#/color/gray/800/$value"
+          }
+        },
+        "fail": {
+          "$type": "color",
+          "$value": {
+            "$ref": "#/color/red/600/$value"
+          }
+        },
+        "halo": {
+          "$type": "color",
+          "$value": {
+            "$ref": "#/color/gray/0/$value"
+          }
+        }
+      },
+      "on-dark": {
+        "ink": {
+          "$type": "color",
+          "$value": {
+            "$ref": "#/color/gray/100/$value"
+          }
+        },
+        "fail": {
+          "$type": "color",
+          "$value": {
+            "$ref": "#/color/red/300/$value"
+          }
+        },
+        "halo": {
+          "$type": "color",
+          "$value": {
+            "$ref": "#/color/gray/950/$value"
+          }
+        }
+      },
+      "stroke": {
+        "$type": "dimension",
+        "$value": {
+          "value": 1.5,
+          "unit": "px"
+        }
+      },
+      "stroke-strong": {
+        "$type": "dimension",
+        "$value": {
+          "value": 2.5,
+          "unit": "px"
+        }
+      },
+      "dash": {
+        "$type": "dimension",
+        "$value": {
+          "value": 4,
+          "unit": "px"
+        }
+      },
+      "hatch": {
+        "$description": "A hatch is what marks a failure without colour: stripes this wide, this far apart.",
+        "gap": {
+          "$type": "dimension",
+          "$value": {
+            "value": 6,
+            "unit": "px"
+          }
+        },
+        "line": {
+          "$type": "dimension",
+          "$value": {
+            "value": 1.5,
+            "unit": "px"
+          }
+        }
+      },
+      "label": {
+        "size": {
+          "$type": "dimension",
+          "$value": {
+            "value": 11,
+            "unit": "px"
+          }
+        },
+        "padding": {
+          "$type": "dimension",
+          "$value": {
+            "value": 4,
+            "unit": "px"
+          }
+        }
+      }
+    },
+    "figure": {
+      "$description": "A check card's evidence figure: its least height, and the sizes of the swatches, marks and rows drawn in it.",
+      "height": {
+        "$type": "dimension",
+        "$value": {
+          "value": 9,
+          "unit": "rem"
+        }
+      },
+      "swatch": {
+        "$type": "dimension",
+        "$value": {
+          "value": 1,
+          "unit": "rem"
+        }
+      },
+      "mark": {
+        "$type": "dimension",
+        "$value": {
+          "value": 0.75,
+          "unit": "rem"
+        }
+      },
+      "indent": {
+        "$type": "dimension",
+        "$value": {
+          "value": 1.125,
+          "unit": "rem"
+        }
+      },
+      "track": {
+        "$type": "dimension",
+        "$value": {
+          "value": 0.375,
+          "unit": "rem"
+        }
+      },
+      "pip": {
+        "$type": "dimension",
+        "$value": {
+          "value": 1.375,
+          "unit": "rem"
+        }
+      },
+      "node": {
+        "$type": "dimension",
+        "$value": {
+          "value": 5.5,
+          "unit": "rem"
+        }
+      }
     }
   }
 }

@@ -58,6 +58,7 @@ function countGroup(rule: CountRule, ctx: CheckContext, group: Group, each: stri
         ...base,
         ...locate(extra.node.at),
         ...at(definite),
+        evidence: { kind: "count-vs-cap", count: definite.length, cap: max, bound: "max", unit: what(2) },
         kind: "violation",
         message: `${group.subject} has ${definite.length} ${what(definite.length)}, more than ${boundLabel(rule.max, ctx)}: ${definite.map(({ node }) => `${named(node)} at ${where(node.at)}`).join(", ")}.`,
       });
@@ -79,7 +80,7 @@ function countGroup(rule: CountRule, ctx: CheckContext, group: Group, each: stri
       if (definite.length + maybe.length >= min) {
         findings.push(...undecided(base, maybe, `${group.label} may have fewer than ${boundLabel(rule.min, ctx)} ${what(bound(rule.min, ctx))}`, ctx, rule.select, env));
       } else {
-        findings.push({ ...base, kind: "violation", message: `${group.subject} has ${definite.length} ${what(definite.length)}, fewer than ${boundLabel(rule.min, ctx)}.` });
+        findings.push({ ...base, evidence: { kind: "count-vs-cap", count: definite.length, cap: min, bound: "min", unit: what(2) }, kind: "violation", message: `${group.subject} has ${definite.length} ${what(definite.length)}, fewer than ${boundLabel(rule.min, ctx)}.` });
       }
     }
   }

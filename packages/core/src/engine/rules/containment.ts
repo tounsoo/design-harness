@@ -26,7 +26,7 @@ export function evaluateContainment(rule: ContainmentRule, ctx: CheckContext): O
           if (result.v !== false) possible += 1;
         });
         if (selected.v === true && depth > max) {
-          findings.push({ ...base, kind: "violation", message: `${subject} nests ${what}s ${depth} deep, more than ${boundLabel(rule.depth, ctx)}.` });
+          findings.push({ ...base, evidence: { kind: "count-vs-cap", count: depth, cap: max, bound: "max", unit: `${what}s deep` }, kind: "violation", message: `${subject} nests ${what}s ${depth} deep, more than ${boundLabel(rule.depth, ctx)}.` });
         } else if (possible > max) {
           findings.push({ ...base, kind: "unverifiable", message: `${subject} may nest ${what}s ${possible} deep, more than ${boundLabel(rule.depth, ctx)}, but ${selected.why ?? "an element above it cannot be read statically"}.` });
         }

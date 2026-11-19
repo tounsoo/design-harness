@@ -5,6 +5,7 @@ import { legalSnapshots } from "../../../../packages/core/examples/nook/snapshot
 import { seedLegal, seedSpec } from "../../test/nook";
 import type { PackageSource } from "./package-source";
 import { PROTOCOL, type RenderRequest } from "./protocol";
+import { RenderSlots } from "./render-slots";
 import { Session, frameKey } from "./session";
 
 const legal = seedLegal();
@@ -19,7 +20,7 @@ function fakeSource(fail = false): PackageSource {
 }
 
 /** A window that records listeners, and iframes whose posted messages are recorded. */
-function harness(source = fakeSource(), options: { readonly tags?: boolean } = {}) {
+function harness(source = fakeSource(), options: { readonly tags?: boolean; readonly slots?: RenderSlots } = {}) {
   let listener: ((event: MessageEvent) => void) | null = null;
   const win = {
     addEventListener: (_type: string, fn: (event: MessageEvent) => void) => {
@@ -30,7 +31,8 @@ function harness(source = fakeSource(), options: { readonly tags?: boolean } = {
     },
   } as unknown as Window;
   let next = 0;
-  const session = new Session({ source, kit: "/* kit */", boot: "/* boot */", parentOrigin: "https://app.example", window: win, channel: () => `ch-${(next += 1)}`, timeoutMs: 1000, ...options });
+  // Slots of its own, so the frames of one test never wait on those of another.
+  const session = new Session({ source, kit: "/* kit */", boot: "/* boot */", parentOrigin: "https://app.example", window: win, channel: () => `ch-${(next += 1)}`, timeoutMs: 1000, slots: new RenderSlots(12), ...options });
   const frames = new Map<string, { channel: string; generation: number; window: { postMessage: ReturnType<typeof vi.fn> } }>();
   const mount = () => {
     for (const spec of session.getState().frames) {
@@ -108,6 +110,66 @@ describe("a session", () => {
     send(key, { type: "error", generation: 1, stage: "render", message: "late" });
     expect(session.getState().frameStates[key]).toMatchObject({ state: "measured" });
     expect(frames.size).toBe(8);
+  });
+
+  it("keeps where a measured frame is scrolled to, tells its listeners, and changes no state, snapshot or report by it", async () => {
+    const { session, mount, send } = harness();
+    session.update(nook, legal);
+    mount();
+    await flush();
+    const key = frameKey("rooms-list", "desktop");
+    send(key, { type: "ready" });
+    // Before its snapshot a frame has nowhere to be scrolled to.
+    send(key, { type: "scroll", generation: 1, x: 0, y: 40 });
+    expect(session.scrollOf(key)).toEqual({ x: 0, y: 0 });
+    send(key, { type: "snapshot", generation: 1, snapshot: snapshotOf("rooms-list", "desktop"), tags: [] });
+    const before = session.getState();
+    const heard = vi.fn();
+    const stateHeard = vi.fn();
+    session.subscribeScroll(heard);
+    session.subscribe(stateHeard);
+    send(key, { type: "scroll", generation: 1, x: 0, y: 240 });
+    send(key, { type: "scroll", generation: 1, x: 0, y: 240 });
+    send(key, { type: "scroll", generation: 2, x: 0, y: 900 });
+    send(key, { type: "scroll", generation: 1, x: 0, y: 300 }, { postMessage: vi.fn() });
+    expect(session.scrollOf(key)).toEqual({ x: 0, y: 240 });
+    expect(heard).toHaveBeenCalledTimes(1);
+    expect(stateHeard).not.toHaveBeenCalled();
+    expect(session.getState()).toBe(before);
+    // A new revision starts every frame at the top again.
+    session.update(nook, { ...legal });
+    expect(session.scrollOf(key)).toEqual({ x: 0, y: 0 });
+  });
+
+  it("asks only as many frames to render as there are slots, the next as each answers, and frees them all for a new revision", async () => {
+    const { session, frames, mount, send } = harness(fakeSource(), { slots: new RenderSlots(3) });
+    session.update(nook, legal);
+    mount();
+    await flush();
+    for (const key of frames.keys()) send(key, { type: "ready" });
+    const asked = () => [...frames].filter(([, frame]) => frame.window.postMessage.mock.calls.some(([message]) => (message as { type?: string }).type === "render")).map(([key]) => key);
+    const rendering = () => Object.values(session.getState().frameStates).filter((state) => state.state === "rendering").length;
+    const order = session.getState().frames.map((frame) => frame.key);
+    expect(asked()).toEqual(order.slice(0, 3));
+    expect(rendering()).toBe(3);
+    // One answers, with a snapshot or an error: the next in line is asked.
+    const [first, second] = order as [string, string];
+    send(first, { type: "snapshot", generation: 1, snapshot: snapshotOf("rooms-list", "desktop"), tags: [] });
+    expect(asked()).toEqual(order.slice(0, 4));
+    send(second, { type: "error", generation: 1, stage: "render", message: "boom" });
+    expect(asked()).toEqual(order.slice(0, 5));
+    // Every frame answers in the end, and the report has them all.
+    for (let round = 0; round < order.length; round += 1) for (const spec of session.getState().frames) send(spec.key, { type: "snapshot", generation: 1, snapshot: snapshotOf(spec.scenario.id, spec.view.name), tags: [] });
+    expect(session.getState().measured).toBe(true);
+    expect(Object.values(session.getState().frameStates).filter((state) => state.state === "measured")).toHaveLength(order.length - 1);
+    // A new revision does not wait for the last one's frames: three of its own render at once, twice over.
+    for (const _round of [2, 3]) {
+      session.update(nook, { ...legal });
+      mount();
+      await flush();
+      for (const key of frames.keys()) send(key, { type: "ready" });
+      expect(rendering()).toBe(3);
+    }
   });
 
   it("fails every frame when packages cannot load, and core then reports each scenario and view unmeasured", async () => {

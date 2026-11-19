@@ -19,4 +19,4 @@ const element = obj(
   { inline: bool, disabled: bool, headingLevel: int({ min: 1 }), text: obj({ px: num({ min: 0 }), weight: num({ min: 0 }), color: rgba, backgrounds: arr(rgba) }, { overImage: bool }) },
 );
 
-export const snapshotSchema: Check<RenderedSnapshot> = obj({ scenario: slug, view: slug, scrollWidth: num({ min: 0 }), canvas: rgba, elements: arr(element) }, { viewportWidth: num({ min: 0 }) });
+export const snapshotSchema: Check<RenderedSnapshot> = obj({ scenario: slug, view: slug, scrollWidth: num({ min: 0 }), canvas: rgba, elements: arr(element) }, { viewportWidth: num({ min: 0 }), scrollHeight: num({ min: 0 }) });

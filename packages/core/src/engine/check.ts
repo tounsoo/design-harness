@@ -35,6 +35,9 @@ const EVALUATORS: Evaluators = {
   rendered: evaluateRendered,
 };
 
+/** Every rule type in the vocabulary, sorted: one per evaluator, so the list cannot fall behind the types. */
+export const RULE_TYPES: readonly RuleType[] = (Object.keys(EVALUATORS) as RuleType[]).sort();
+
 function evaluate(rule: RuleSpec, ctx: CheckContext): Outcome {
   return (EVALUATORS[rule.type] as (rule: RuleSpec, ctx: CheckContext) => Outcome)(rule, ctx);
 }

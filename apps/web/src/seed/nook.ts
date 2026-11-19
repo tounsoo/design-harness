@@ -28,8 +28,15 @@ function prototypeFrom(root: string, texts: Record<string, string>): Prototype {
   return prototype.value;
 }
 
+/**
+ * The seed's views: core's two light ones, and the same two in the dark
+ * scheme, so "AA in light and dark" is something the board shows. Core's
+ * own example keeps two views: its hand-written snapshots are light.
+ */
+export const SEED_VIEWS: ProjectConfig["views"] = [...nook.views, ...nook.views.map((view) => ({ ...view, name: `${view.name}-dark`, scheme: "dark" as const }))];
+
 export function seedProject(): { readonly config: ProjectConfig; readonly prototype: Prototype; readonly spec: Prototype } {
-  const config = parseProjectConfig(JSON.parse(JSON.stringify(nook)));
+  const config = parseProjectConfig(JSON.parse(JSON.stringify({ ...nook, views: SEED_VIEWS })));
   if (!config.ok) throw new Error("the Nook seed does not validate");
   return { config: config.value, prototype: prototypeFrom(ROOT, raw), spec: prototypeFrom(SPEC_ROOT, specRaw) };
 }

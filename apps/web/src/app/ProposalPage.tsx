@@ -31,6 +31,7 @@ import { adoptProposal, approveProposal, declineProposal, sendBackProposal, type
 import { inventoryDiff, type DiffSection } from "../review/diff";
 import { REVIEWER, draftedBy, formatTime, proposalTimeline, timelineTitle, type TimelineEntry } from "../review/timeline";
 import { FrameCard } from "./Board";
+import { EvidenceFigure } from "../visual/figures";
 import { FindingButton } from "./ChecksPanel";
 import { lineRange } from "./CodePanel";
 import { ClassBadge, RequestBadge, RuleWords, StatusBadge, classWords, classificationOf } from "./proposal-parts";
@@ -1049,6 +1050,11 @@ function ExampleCard({ view, scenario, views, status }: { readonly view: Example
   const source = view.findings.find((finding) => finding.file !== undefined && finding.line !== undefined);
   const flaggedElsewhere = view.findings.length > 0 && !view.findings.some((finding) => finding.scenario === undefined || finding.scenario === scenario);
   const rule = view.expect === "fail" ? (view.example as FailingExample).flaggedBy : null;
+  // A failing example's figure: what its rule measured on the scenario shown, or on the first it flags.
+  const pictured = view.expect === "fail" && status !== "declined" ? (view.findings.find((finding) => finding.scenario === scenario) ?? view.findings[0]) : undefined;
+  const picturedFrame = pictured?.scenario !== undefined && pictured.view !== undefined ? frameKey(pictured.scenario, pictured.view) : undefined;
+  const picturedState = picturedFrame ? frames.state.frameStates[picturedFrame] : undefined;
+  const picturedView = picturedFrame ? frames.state.frames.find((spec) => spec.key === picturedFrame)?.view : undefined;
 
   return (
     <Card.Root className="example" data-example={view.name} data-expect={view.expect} data-verdict={view.verdict.state}>
@@ -1098,6 +1104,13 @@ function ExampleCard({ view, scenario, views, status }: { readonly view: Example
           <Text.Root as="p" className="pre review-small example-detail" data-testid="example-detail">
             {view.verdict.text}
           </Text.Root>
+          {pictured && (
+            <EvidenceFigure finding={pictured} findings={view.findings} {...(picturedState?.state === "measured" ? { snapshot: picturedState.snapshot } : {})} {...(picturedView ? { view: picturedView } : {})}>
+              <Text.Root as="p" className="fix-message" data-testid="example-figure-message">
+                {pictured.message}
+              </Text.Root>
+            </EvidenceFigure>
+          )}
           {view.findings.length > 0 && status !== "declined" && (
             <ul className="findings" aria-label={`What core found in ${exampleLabel(view.name)}`}>
               {view.findings.slice(0, 4).map((finding, index) => (

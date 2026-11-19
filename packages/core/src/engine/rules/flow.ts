@@ -14,9 +14,10 @@ function stateCoverage(rule: FlowRule, ctx: CheckContext): Finding[] {
   const states = new Set(flow.states);
   const pageIds = new Set(pages.map((page) => page.id));
   const findings: Finding[] = [];
+  const covered = [...states].filter((state) => scenarios.some((scenario) => scenario.state === state)).length;
   for (const state of [...states].sort(compareStrings)) {
     if (!scenarios.some((scenario) => scenario.state === state)) {
-      findings.push({ rule: rule.id, state, kind: "violation", message: `Flow state "${state}" has no scenario, so no one can open the page in that state. Add a scenario for it.` });
+      findings.push({ rule: rule.id, state, evidence: { kind: "coverage", state, scenarios: 0, covered, states: states.size }, kind: "violation", message: `Flow state "${state}" has no scenario, so no one can open the page in that state. Add a scenario for it.` });
     }
   }
   const seen = new Set<string>();
@@ -30,11 +31,16 @@ function stateCoverage(rule: FlowRule, ctx: CheckContext): Finding[] {
   return findings;
 }
 
+/** A flow's transitions by from, event and to, each as those three fields alone. */
+export function sortTransitions(transitions: readonly Transition[]): Transition[] {
+  return [...transitions].sort((a, b) => compareStrings(a.from, b.from) || compareStrings(a.event, b.event) || compareStrings(a.to, b.to)).map(({ from, event, to }) => ({ from, event, to }));
+}
+
 /** Most routes, and most steps walked, before the search gives up and says so. */
 const ROUTE_LIMIT = 10_000;
 const STEP_LIMIT = 200_000;
 
-type Search = { readonly kind: "done"; readonly routes: number; readonly longest: readonly string[] | null } | { readonly kind: "too-many" };
+type Search = { readonly kind: "done"; readonly routes: number; readonly longest: readonly string[] | null; /** The longest route's transitions, in order. */ readonly path: readonly Transition[] | null } | { readonly kind: "too-many" };
 
 /**
  * Every route from the start to the success state that never returns to a
@@ -43,11 +49,13 @@ type Search = { readonly kind: "done"; readonly routes: number; readonly longest
  * the flow lists them.
  */
 export function routes(start: string, success: string, transitions: readonly Transition[]): Search {
-  const sorted = [...transitions].sort((a, b) => compareStrings(a.from, b.from) || compareStrings(a.event, b.event) || compareStrings(a.to, b.to));
+  const sorted = sortTransitions(transitions);
   const out = new Map<string, Transition[]>();
   for (const transition of sorted) out.set(transition.from, [...(out.get(transition.from) ?? []), transition]);
   let count = 0;
   let longest: string[] | null = null;
+  let path: Transition[] | null = null;
+  const taken: Transition[] = [];
   let steps = 0;
   let tooMany = false;
   const walk = (state: string, passed: Set<string>, events: string[]) => {
@@ -57,20 +65,25 @@ export function routes(start: string, success: string, transitions: readonly Tra
     if (state === success) {
       count += 1;
       if (count > ROUTE_LIMIT) tooMany = true;
-      if (!longest || events.length > longest.length) longest = [...events];
+      if (!longest || events.length > longest.length) {
+        longest = [...events];
+        path = taken.map(({ from, event, to }) => ({ from, event, to }));
+      }
       return;
     }
     for (const transition of out.get(state) ?? []) {
       if (passed.has(transition.to)) continue;
       passed.add(transition.to);
       events.push(transition.event);
+      taken.push(transition);
       walk(transition.to, passed, events);
+      taken.pop();
       events.pop();
       passed.delete(transition.to);
     }
   };
   walk(start, new Set([start]), []);
-  return tooMany ? { kind: "too-many" } : { kind: "done", routes: count, longest };
+  return tooMany ? { kind: "too-many" } : { kind: "done", routes: count, longest, path };
 }
 
 /** Every route that finishes a task fits its max steps: the longest, not only the shortest. */
@@ -104,6 +117,7 @@ function stepBudget(rule: FlowRule, ctx: CheckContext): Finding[] {
       findings.push({
         rule: rule.id,
         state: task.successState,
+        evidence: { kind: "route-vs-budget", task: task.id, start: taskFlow.start, success: task.successState, route: search.path ?? [], steps: search.longest.length, budget: task.maxSteps, transitions: sortTransitions(taskFlow.transitions) },
         kind: "violation",
         message: `The route ${search.longest.join(" → ")} takes ${search.longest.length} steps, which exceeds max steps ${task.maxSteps} for "${task.id}". Every route that finishes the task must fit, not only the shortest.`,
       });

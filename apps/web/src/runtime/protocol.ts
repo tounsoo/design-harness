@@ -94,7 +94,17 @@ export type FrameStage = "load" | "render" | "measure";
 /** Frame → app: the page could not be loaded, rendered or measured. */
 export type ErrorMessage = { readonly protocol: typeof PROTOCOL; readonly type: "error"; readonly channel: string; readonly generation: number; readonly stage: FrameStage; readonly message: string };
 
-export type FrameMessage = ReadyMessage | SnapshotMessage | ErrorMessage;
+/**
+ * Frame → app: where the page is scrolled to, in CSS px, sent after its
+ * snapshot whenever that changes, so what the app draws over an artboard
+ * stays on the page under it. It is never measured and no rule reads it.
+ */
+export type ScrollMessage = { readonly protocol: typeof PROTOCOL; readonly type: "scroll"; readonly channel: string; readonly generation: number; readonly x: number; readonly y: number };
+
+export type FrameMessage = ReadyMessage | SnapshotMessage | ErrorMessage | ScrollMessage;
+
+/** A page is never scrolled further than this many CSS px: a larger offset is a malformed message. */
+export const MAX_SCROLL = 1_000_000;
 
 /** Error text longer than this is cut, so a frame cannot flood the app. */
 export const MAX_ERROR_LENGTH = 2000;
@@ -226,6 +236,12 @@ export function readFrameMessage(data: unknown, channel: string, expect: { reado
       const snapshot = parsed.ok ? parsed.value[0] : undefined;
       if (!snapshot || snapshot.scenario !== expect.scenario || snapshot.view !== expect.view) return null;
       return { protocol: PROTOCOL, type: "snapshot", channel, generation: data.generation, snapshot, tags: [...new Set(data.tags)].sort() };
+    }
+    case "scroll": {
+      if (!hasOnly(data, ["protocol", "type", "channel", "generation", "x", "y"]) || !isGeneration(data.generation)) return null;
+      const offset = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= MAX_SCROLL;
+      if (!offset(data.x) || !offset(data.y)) return null;
+      return { protocol: PROTOCOL, type: "scroll", channel, generation: data.generation, x: Math.round(data.x), y: Math.round(data.y) };
     }
     default:
       return null;

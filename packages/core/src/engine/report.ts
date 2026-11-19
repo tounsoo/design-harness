@@ -1,5 +1,6 @@
 import type { LayoutUse } from "../extract/model";
 import type { RuleType } from "../rules/types";
+import type { Evidence } from "./evidence";
 
 /**
  * One element a finding is about, as a frame can find it where it renders:
@@ -54,6 +55,13 @@ export type Finding = {
    * flow, an import or a rendered snapshot (which carries `element`).
    */
   readonly targets?: readonly FindingTarget[];
+  /**
+   * The numbers behind the finding, for a picture of it (`evidence.ts`):
+   * the neighbour a small control meets, a count and its cap, a route and
+   * its budget. Its kind follows from the rule's type. The message stays
+   * the finding; nothing reads evidence to decide anything.
+   */
+  readonly evidence?: Evidence;
 };
 
 /** `not-run`: the rule needs input the check was not given, such as rendered snapshots. */

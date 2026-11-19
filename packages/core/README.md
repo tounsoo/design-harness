@@ -291,9 +291,45 @@ A prop set through a spread the extractor can read (`{...look}` where `look` is 
 
 ## The report
 
-`CheckReport` ([`src/engine/report.ts`](src/engine/report.ts)) is `{ status, rules, findings }`. Each `RuleReport` is `{ rule, type, status, description?, note?, findings }` with status `pass`, `fail` or `not-run`. A `Finding` is `{ rule, kind, message, file?, line?, column?, page?, scenario?, state?, view?, element?, via?, targets? }`; the field names follow agent-design-loop's `Finding`, and `via` is set on a finding inside a spec layout instance (above). Rules are ordered with `extract` first and then by id, and findings by rule, file, line, column, page, scenario, view, element, via, targets, kind and message, using code-unit order, never the runtime's locale.
+`CheckReport` ([`src/engine/report.ts`](src/engine/report.ts)) is `{ status, rules, findings }`. Each `RuleReport` is `{ rule, type, status, description?, note?, findings }` with status `pass`, `fail` or `not-run`. A `Finding` is `{ rule, kind, message, file?, line?, column?, page?, scenario?, state?, view?, element?, via?, targets?, evidence? }`; the field names follow agent-design-loop's `Finding`, and `via` is set on a finding inside a spec layout instance (above). Rules are ordered with `extract` first and then by id, and findings by rule, file, line, column, page, scenario, view, element, via, targets, kind and message, using code-unit order, never the runtime's locale.
 
 `targets` lists every element a finding is about, so each can be pointed at wherever it renders: each `FindingTarget` is `{ file, line, column, via?, page?, key? }`, where it is written, the page it is on and, in a spec prototype, its key in the expanded page (the page model's `ElementNode.key`), which carries the layout instance's scope: `details/access` is element `access` of the instance keyed `details`, and a Page's slot is `<page root>/slots/<name>`. A TSX element is found by where it is written. Every element-level finding of the `count`, `slot`, `containment`, `requires`, `prop-values`, `reachable`, `page-structure` and component `membership` rules carries them: a finding about several elements lists them all in the order its message names them (two primary actions, or a slot filled twice); a local component or a layout instance stands for the outermost elements it renders; an element a rule read from the source as written (`scope: "source"`, `reachable`, `components-from-inventory`) is looked up by `origin` on every page that renders it, and keeps no `page` when none does. A finding about a whole page (a slot left empty, too few of something), a flow, an import, code that reaches the frame (`no-ambient-globals`), an extraction problem or an element the extractor cannot name has none; a rendered finding points at its snapshot element with `element`. The web app outlines targets in its frames (apps/web/README.md, Element tags).
+
+### Evidence
+
+A finding may carry `evidence`: the numbers behind it, so a picture of it can be drawn without anyone working the verdict out a second time ([`src/engine/evidence.ts`](src/engine/evidence.ts)). Core fills it in while it decides; an app only draws it. The `message` stays the finding, word for word, and nothing reads evidence to pass or fail. It is optional and added only: no message, status or order changed when it arrived.
+
+There are seven kinds, and the rule's **type** decides the kind, never the individual rule. A count rule a proposal adds for Toast carries `count-vs-cap` the day it is adopted, with no code of its own.
+
+| Kind | Carried by | What it holds |
+| --- | --- | --- |
+| `box-with-neighbour` | `rendered`, check `target-size` | the control's name, role and box, the minimum, and the first control, in document order, that breaks the spacing exception: its index, name, box, and whether the circle reaches its box (`in-circle`) or the two circles overlap (`circles-meet`) |
+| `colour-pair` | `rendered`, check `contrast` | the text, its flattened foreground and background as hex, the ratio and the ratio it needs, its size and weight, and the view's scheme |
+| `sequence-gap` | `rendered`, check `headings` | the page's heading outline, the problem (`skipped`, `second-first`, `before-first`, `no-first`), the heading it is about, the one it follows and the levels left out |
+| `count-vs-cap` | `count`, `slot`, `containment` (`nest-at-most`) | the count and the cap as numbers, whether the cap is a `max` or a `min`, and what is counted in the message's words |
+| `region-line` | `rendered`, checks `first-view` and `no-sideways-scroll` | a line across the page (`y`: the end of the first view; `x`: the view's edge), what lies past it, the element's box, the view's size and the page's height when it was measured |
+| `route-vs-budget` | `flow`, check `step-budget` | the task, its longest route step by step, the steps and the budget, and every transition of its flow |
+| `coverage` | `flow`, check `state-coverage` | the state with no scenario, and how many of the flow's states have one |
+
+`RULE_EVIDENCE` declares every rule type's kind, or says in words why its findings are text only (membership, `prop-values`, `requires`, `reachable`, `page-structure`, `isolation`, `style-props`, and the rendered check `accessible-names`: each is about a name or a line of code, with nothing to measure). The `flow` and `rendered` types are families of named checks, so each check declares its own. A finding of a type whose kind does not apply to it, such as a containment rule that is not about depth, carries none.
+
+**To give a new rule type its picture:**
+
+1. Add the type to the vocabulary as usual (`rules/types.ts`, `rules/schema.ts`, an evaluator in `engine/check.ts`).
+2. Declare it in `RULE_EVIDENCE`: an existing kind, or `{ textOnly: "why" }`. The build fails until you do, because the table's type lists every rule type and every flow and rendered check.
+3. If it has a kind, set `evidence` on its findings in its evaluator, from the values the verdict was decided with. [`test/evidence.test.ts`](test/evidence.test.ts) fails a declared kind that no fixture finding of that type carries, and a finding that carries a kind its type did not declare.
+4. Only when no kind fits, add one: a type in `evidence.ts` and its name in `EVIDENCE_KINDS`. The app then fails its own build and test until it registers a figure for it (`apps/web`, [Visual checks](../../apps/web/README.md#visual-checks)).
+
+A snapshot may also carry the page's `scrollHeight`. No rule reads it: it is evidence, so a picture can show how far a page runs past its first view.
+
+### Facts for a whole page or flow
+
+A finding's evidence is about what failed. To draw every control, or every route, passing ones included, an app asks core for the same verdicts ([`src/engine/facts.ts`](src/engine/facts.ts)):
+
+- `viewFacts(config, view, snapshot)`: every visible control against the target size (`meets`, `inline`, `spaced` or `fails`, with its neighbour), where the first view ends, the named action's controls and whether each is below it, what was measured below it, and the view's edge with how far the page runs past it and what crosses it.
+- `flowFacts(config, prototype)`: each task's transitions, how many routes reach its success state, its longest route and whether it `fits` its budget, and each flow state's scenarios.
+
+Both are worked out by the functions the rules call (`targetVerdicts`, `belowFirstView`, `sidewaysOverflow`, `routes`), and the tests hold them to the report on every Nook fixture: the controls that fail are exactly the target-size findings, the tasks that are over are exactly the step-budget findings. Neither is a check: `checkPrototype` alone says pass or fail.
 
 ## Proposals
 

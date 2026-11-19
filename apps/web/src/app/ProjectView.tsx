@@ -1,8 +1,9 @@
 import { Badge, Button, Code, DataList, Disclosure, Stack, Table, Text } from "@tounsoo/todae";
 import { useState } from "react";
-import { ROLE_NAMES, describeRule, rerunExamples, type ConfirmedRole, type ExampleRun, type ProjectConfig, type Proposal, type RoleMapping } from "@design-harness/core";
+import { ROLE_NAMES, describeRule, flowFacts, rerunExamples, type ConfirmedRole, type ExampleRun, type ProjectConfig, type Proposal, type RoleMapping } from "@design-harness/core";
 import { formatTime } from "../review/timeline";
 import type { PrototypeRecord } from "../store/project-file";
+import { TaskMaps } from "./ChecksPanel";
 import { LayoutsView } from "./LayoutsView";
 
 /**
@@ -12,7 +13,9 @@ import { LayoutsView } from "./LayoutsView";
  * mapping, the views and the raw rules sit one step away under their
  * details. Every adopted proposal's examples re-run on demand.
  */
-export function ProjectView({ config, onOpenProposal, prototype }: { readonly config: ProjectConfig; readonly onOpenProposal: (id: string) => void; readonly prototype?: PrototypeRecord | undefined }) {
+export function ProjectView({ config, onOpenProposal, prototype, onGoToState }: { readonly config: ProjectConfig; readonly onOpenProposal: (id: string) => void; readonly prototype?: PrototypeRecord | undefined; /** Goes to a flow state's artboard on the canvas, from a flow map. */ readonly onGoToState?: ((state: string) => void) | undefined }) {
+  // Core's facts about the open prototype's flow: each task's routes against its budget.
+  const flow = prototype ? flowFacts(config, prototype.prototype) : null;
   const { library, inventories, inputs } = config;
   const open = config.proposals.filter((proposal) => proposal.status === "open").length;
   return (
@@ -111,6 +114,17 @@ export function ProjectView({ config, onOpenProposal, prototype }: { readonly co
             ))}
           </Table.Body>
         </Table.Root>
+        {flow && prototype && flow.tasks.length > 0 && (
+          <div className="project-flow" data-testid="project-flow">
+            <Text.Root as="h3" className="project-flow-title">
+              Routes in {prototype.name}
+            </Text.Root>
+            <Text.Root as="p" tone="muted">
+              Each task&apos;s routes through the open prototype&apos;s flow. The longest is numbered against the task&apos;s max steps; a dashed state has no scenario yet.
+            </Text.Root>
+            <TaskMaps flow={flow} onGoToState={onGoToState} />
+          </div>
+        )}
         <DataList.Root orientation="horizontal" className="project-facts">
           <Fact term="Ranking" value={[...inputs.ranking].sort((a, b) => a.rank - b.rank).map((item) => `${item.rank}. ${item.action} (${item.level})`).join("; ") || "none"} />
           <Fact term="Disclosed sections" value={inputs.disclosedSections.join(", ") || "none"} />

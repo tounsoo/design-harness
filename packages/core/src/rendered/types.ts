@@ -56,6 +56,12 @@ export type RenderedSnapshot = {
    * it. Without it, the view's width is assumed.
    */
   readonly viewportWidth?: number;
+  /**
+   * The height of the page's content, which is more than the view's height
+   * when the page scrolls down. No rule decides anything by it: it is
+   * evidence, so a picture can show how far a page runs past its first view.
+   */
+  readonly scrollHeight?: number;
   /** The canvas colour under every background. */
   readonly canvas: Rgba;
   /** Elements in document order. */
