@@ -2,6 +2,23 @@ import type { LayoutUse } from "../extract/model";
 import type { RuleType } from "../rules/types";
 
 /**
+ * One element a finding is about, as a frame can find it where it renders:
+ * where it is written (`file`, `line`, `column`, and `via` inside a spec
+ * layout instance), the page it is on, and on a spec element its key in the
+ * expanded page, which carries the layout instance's scope
+ * (`details/summary`). A TSX element is found by where it is written.
+ * Without `page` the element was read from the source and no page renders it.
+ */
+export type FindingTarget = {
+  readonly file: string;
+  readonly line: number;
+  readonly column: number;
+  readonly via?: readonly LayoutUse[];
+  readonly page?: string;
+  readonly key?: string;
+};
+
+/**
  * A finding. `violation`: the prototype breaks the rule. `unverifiable`: the
  * rule depends on something the extractor cannot read statically, so it
  * cannot say the prototype passes. Both fail the rule.
@@ -29,6 +46,14 @@ export type Finding = {
    * a page passed into a layout's slot, where the layout places it.
    */
   readonly via?: readonly LayoutUse[];
+  /**
+   * On a finding about elements a page renders: every element it is about,
+   * so each can be pointed at in every frame that draws it. A finding about
+   * several elements, such as two primary actions, lists them all, in the
+   * order its message names them. Absent on a finding about a whole page, a
+   * flow, an import or a rendered snapshot (which carries `element`).
+   */
+  readonly targets?: readonly FindingTarget[];
 };
 
 /** `not-run`: the rule needs input the check was not given, such as rendered snapshots. */
@@ -74,6 +99,7 @@ function compareFindings(a: Finding, b: Finding): number {
     compareStrings(a.view ?? "", b.view ?? "") ||
     (a.element ?? -1) - (b.element ?? -1) ||
     compareStrings(JSON.stringify(a.via ?? []), JSON.stringify(b.via ?? [])) ||
+    compareStrings(JSON.stringify(a.targets ?? []), JSON.stringify(b.targets ?? [])) ||
     compareStrings(a.kind, b.kind) ||
     compareStrings(a.message, b.message)
   );
@@ -84,7 +110,7 @@ export function sortFindings(findings: readonly Finding[]): Finding[] {
   const seen = new Set<string>();
   const out: Finding[] = [];
   for (const finding of [...findings].sort(compareFindings)) {
-    const key = JSON.stringify([finding.rule, finding.kind, finding.message, finding.file, finding.line, finding.column, finding.page, finding.scenario, finding.view, finding.element, finding.via ?? []]);
+    const key = JSON.stringify([finding.rule, finding.kind, finding.message, finding.file, finding.line, finding.column, finding.page, finding.scenario, finding.view, finding.element, finding.via ?? [], finding.targets ?? []]);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(finding);

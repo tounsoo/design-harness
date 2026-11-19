@@ -1,6 +1,7 @@
 import { Badge, Button, Disclosure, Stack, Text } from "@tounsoo/todae";
 import { describeRule, type Finding, type ProjectConfig, type RuleReport } from "@design-harness/core";
 import type { SessionState } from "../runtime/session";
+import { describeOutline, planOutline } from "../runtime/tags";
 
 /**
  * Core's report, as core wrote it: every rule in force in core's order, its
@@ -13,6 +14,7 @@ export function ChecksPanel({
   measuredCount,
   selected,
   onSelect,
+  onShowCode,
   onAsk,
   proposable,
   config,
@@ -23,6 +25,8 @@ export function ChecksPanel({
   readonly measuredCount: number;
   readonly selected: Finding | null;
   readonly onSelect: (finding: Finding | null) => void;
+  /** Opens a finding's file at its line in the code view. */
+  readonly onShowCode?: (finding: Finding) => void;
   /** Puts a message about the finding into the chat, for the person to edit and send; absent when there is no key. */
   readonly onAsk?: (finding: Finding) => void;
   /** Whether a finding is about something outside the inventories, which a proposal could add. */
@@ -61,7 +65,7 @@ export function ChecksPanel({
       </div>
       <ol className="checks-rules" aria-label="Rules in force">
         {report.rules.map((rule) => (
-          <RuleItem key={rule.rule} rule={rule} selected={selected} onSelect={onSelect} {...(onAsk && proposable ? { onAsk, proposable } : {})} words={wordsFor(rule, config)} />
+          <RuleItem key={rule.rule} rule={rule} selected={selected} onSelect={onSelect} {...(onShowCode ? { onShowCode } : {})} outline={outlineOf(selected, state)} {...(onAsk && proposable ? { onAsk, proposable } : {})} words={wordsFor(rule, config)} />
         ))}
       </ol>
       <Disclosure.Root className="checks-json">
@@ -81,6 +85,12 @@ function countAnswered(state: SessionState): number {
   }).length;
 }
 
+/** Where the selected finding's elements are outlined, in words; null when it has no elements to outline. */
+function outlineOf(selected: Finding | null, state: SessionState): string | null {
+  const plan = selected ? planOutline(selected, state.frames, state.frameStates) : null;
+  return plan ? describeOutline(plan, state.frames) : null;
+}
+
 function statusTone(status: RuleReport["status"]): "success" | "critical" | "neutral" {
   return status === "pass" ? "success" : status === "fail" ? "critical" : "neutral";
 }
@@ -96,6 +106,8 @@ function RuleItem({
   rule,
   selected,
   onSelect,
+  onShowCode,
+  outline,
   onAsk,
   proposable,
   words,
@@ -104,6 +116,9 @@ function RuleItem({
   readonly words?: string | undefined;
   readonly selected: Finding | null;
   readonly onSelect: (finding: Finding | null) => void;
+  readonly onShowCode?: (finding: Finding) => void;
+  /** Where the selected finding is outlined, in words. */
+  readonly outline: string | null;
   readonly onAsk?: (finding: Finding) => void;
   readonly proposable?: (finding: Finding) => boolean;
 }) {
@@ -140,6 +155,16 @@ function RuleItem({
             {rule.findings.map((finding, index) => (
               <li key={index}>
                 <FindingButton finding={finding} selected={same(finding, selected)} onSelect={onSelect} />
+                {same(finding, selected) && outline !== null && (
+                  <Text.Root as="p" tone="muted" className="finding-outline" data-testid="finding-outline" aria-live="polite">
+                    {outline}
+                  </Text.Root>
+                )}
+                {onShowCode && finding.file !== undefined && (finding.targets?.length ?? 0) > 0 && (
+                  <Button.Root type="button" variant="ghost" className="finding-code" onClick={() => onShowCode(finding)}>
+                    Show in code
+                  </Button.Root>
+                )}
                 {onAsk && proposable?.(finding) && (
                   <Button.Root type="button" variant="ghost" className="finding-ask" onClick={() => onAsk(finding)}>
                     Ask the agent to propose this

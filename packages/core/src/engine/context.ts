@@ -3,7 +3,7 @@ import type { ElementNode, PageModel, PrototypeModel, SourceLocation } from "../
 import type { Prototype } from "../prototype/types";
 import type { RenderedSnapshot } from "../rendered/types";
 import type { Bound, PageFilter, TextMatch } from "../rules/types";
-import type { Finding } from "./report";
+import type { Finding, FindingTarget } from "./report";
 
 /** Everything a rule reads: the config, the prototype, its extracted model and any rendered snapshots. */
 export type CheckContext = {
@@ -60,6 +60,63 @@ export function viaText(via: SourceLocation["via"]): string {
 
 export function locate(at: SourceLocation): Pick<Finding, "file" | "line" | "column" | "via"> {
   return { file: at.file, line: at.line, column: at.column, ...(at.via && at.via.length > 0 ? { via: at.via } : {}) };
+}
+
+/** Elements of a page model by origin, with the page each is on: where an element read from the source renders. */
+const RENDERED = new WeakMap<PrototypeModel, ReadonlyMap<string, readonly { readonly node: ElementNode; readonly page: string }[]>>();
+
+function renderedByOrigin(model: PrototypeModel): ReadonlyMap<string, readonly { readonly node: ElementNode; readonly page: string }[]> {
+  const known = RENDERED.get(model);
+  if (known) return known;
+  const index = new Map<string, { node: ElementNode; page: string }[]>();
+  for (const page of model.pages) {
+    for (const { node } of descendants(page.root)) index.set(node.origin, [...(index.get(node.origin) ?? []), { node, page: page.id }]);
+  }
+  RENDERED.set(model, index);
+  return index;
+}
+
+/** The elements a frame can find for one node: itself, or for a local component or a layout instance, the outermost elements it renders. */
+function drawn(node: ElementNode): ElementNode[] {
+  if (node.kind === "library" || node.kind === "kit" || node.kind === "intrinsic") return [node];
+  // An element the extractor cannot name has no tag in a frame; its finding points at the code alone.
+  if (node.kind === "unresolved") return [];
+  return node.children.flatMap(drawn);
+}
+
+function targetOf(node: ElementNode, page: string | undefined): FindingTarget {
+  const { file, line, column, via } = node.at;
+  return { file, line, column, ...(via && via.length > 0 ? { via } : {}), ...(page !== undefined ? { page } : {}), ...(node.key !== undefined ? { key: node.key } : {}) };
+}
+
+/**
+ * Where a finding's elements render, for `Finding.targets`: one target per
+ * element a frame can find, in the order given. `page` is the page the nodes
+ * were read on; without it the nodes are the source as written, and each is
+ * looked up on every page that renders it (by `origin`), or kept with no page
+ * when none does. A local component or a layout instance stands for the
+ * outermost elements it renders. Empty for a node that renders nothing a
+ * frame can find, so the finding carries no `targets`.
+ */
+export function pointAt(ctx: Pick<CheckContext, "model">, nodes: readonly ElementNode[], page?: string): Pick<Finding, "targets"> {
+  const out: FindingTarget[] = [];
+  const seen = new Set<string>();
+  const add = (target: FindingTarget) => {
+    const id = JSON.stringify(target);
+    if (seen.has(id)) return;
+    seen.add(id);
+    out.push(target);
+  };
+  for (const node of nodes) {
+    if (page !== undefined) {
+      for (const one of drawn(node)) add(targetOf(one, page));
+      continue;
+    }
+    const rendered = renderedByOrigin(ctx.model).get(node.origin) ?? [];
+    if (rendered.length === 0) for (const one of drawn(node)) add(targetOf(one, undefined));
+    for (const item of rendered) for (const one of drawn(item.node)) add(targetOf(one, item.page));
+  }
+  return out.length > 0 ? { targets: out } : {};
 }
 
 /** How a message names an element: `Button.Root "Book room"`, or `<button>`. */
