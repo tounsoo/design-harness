@@ -135,6 +135,16 @@ export type PageStructureRule = Base<"page-structure">;
  */
 export type IsolationRule = Base<"isolation">;
 
+/**
+ * No element written in the source sets a style prop: `style`, on any
+ * element, or a prop the project excludes (`library.excludedProps`), on a
+ * library part or an HTML element, whatever value it takes. A named
+ * built-in: it reads the config's excluded props, and names the prop and the
+ * pattern that excludes it as a spec's refusal does. A prop a spread the
+ * extractor cannot see through may set cannot be checked.
+ */
+export type StylePropsRule = Base<"style-props">;
+
 export type FlowCheck = "state-coverage" | "step-budget";
 /**
  * `state-coverage`: every flow state has a scenario, and every scenario shows a modeled state on a known page.
@@ -162,6 +172,7 @@ export type RuleSpec =
   | ReachableRule
   | PageStructureRule
   | IsolationRule
+  | StylePropsRule
   | FlowRule
   | RenderedRule;
 

@@ -52,6 +52,7 @@ export const THEME_OVERRIDE_TYPES = {
   'harness.size.picker': 'dimension',
   'harness.size.picker-wide': 'dimension',
   'harness.size.sticky-clearance': 'dimension',
+  'harness.size.views-row': 'dimension',
   'harness.size.zoom': 'dimension',
   'button.base.font.size': 'dimension',
   'card.shadow': 'shadow',

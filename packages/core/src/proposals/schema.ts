@@ -43,10 +43,22 @@ const content = {
   }),
 } as const;
 
+const ruleTypeExample = obj({ name: slug, description: str() }, { snippet: str() });
+
+/** A request for a new rule type: what it checks, why the vocabulary cannot say it, and at least one example each way. */
+const ruleTypeRequest = obj({
+  checks: str(),
+  whyNot: str(),
+  pass: arr(ruleTypeExample, { min: 1 }),
+  fail: arr(ruleTypeExample, { min: 1 }),
+});
+
+const contentExtra = { needsRuleType: ruleTypeRequest } as const;
+
 const changeClass = oneOf(["adds", "tightens", "loosens-or-removes"] as const);
 
 const proposalEvent = tagged("kind", {
-  revised: obj({ kind: oneOf(["revised"] as const), at: str(), previous: obj(content) }, { by: str(), note: str() }),
+  revised: obj({ kind: oneOf(["revised"] as const), at: str(), previous: obj(content, contentExtra) }, { by: str(), note: str() }),
   "sent-back": obj({ kind: oneOf(["sent-back"] as const), at: str(), note: str() }, { by: str() }),
 });
 
@@ -58,18 +70,27 @@ const proposalShape = obj(
     history: arr(obj({ status: oneOf(PROPOSAL_STATUSES), at: str() }, { by: str(), note: str() }), { min: 1 }),
   },
   {
+    ...contentExtra,
     events: arr(proposalEvent),
     classification: obj({ class: changeClass, changes: arr(obj({ change: str(), class: changeClass, reason: str() })) }),
   },
 );
 
-/** A proposal, and the one rule its shape alone can break: its status is the last one in its history. */
+/**
+ * A proposal, and the rules its shape alone can break: its status is the last
+ * one in its history, and a request for a new rule type is never approved or
+ * adopted, so no stored or imported proposal can carry one into force.
+ */
 export const proposalSchema: Check<Proposal> = (value, path, issues) => {
   const out = proposalShape(value, path, issues);
   if (out === INVALID) return INVALID;
   const last = out.history[out.history.length - 1];
   if (last && last.status !== out.status) {
     issues.push({ path: `${path}.status`, message: `is "${out.status}", but the last history entry is "${last.status}"` });
+    return INVALID;
+  }
+  if (out.needsRuleType && out.history.some((entry) => entry.status === "approved" || entry.status === "adopted")) {
+    issues.push({ path: `${path}.status`, message: "a request for a new rule type is never approved or adopted: a new rule type is a code change to core" });
     return INVALID;
   }
   return out;

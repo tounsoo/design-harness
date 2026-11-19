@@ -4,11 +4,11 @@ import { useContext, useMemo } from "react";
 import { describeRule, type Finding, type FlowFacts, type ProjectConfig, type RenderedSnapshot, type RuleReport, type View } from "@design-harness/core";
 import type { SessionState } from "../runtime/session";
 import { frameKey } from "../runtime/session";
-import { describeOutline, planOutline } from "../runtime/tags";
+import { planOutline } from "../runtime/tags";
 import { EvidenceFigure } from "../visual/figures";
 import { FlowMap } from "../visual/FlowMap";
 import { VisualContext } from "../visual/parts";
-import { findingPlace, ruleLead, scenarioLabel, viewLabel } from "./words";
+import { describeOutline, findingPlace, ruleLead, scenarioLabel, viewLabel } from "./words";
 
 type Props = {
   readonly state: SessionState;

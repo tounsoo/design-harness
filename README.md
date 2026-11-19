@@ -9,6 +9,8 @@ Two things hold everywhere:
 - **Checks are deterministic.** A check is a pure function of the project's configuration and the prototype. No model decides whether a prototype passes.
 - **A proposal becomes a check.** A proposal carries the inventory change, the rule that governs it as data, and examples that must pass and fail. It is adopted only when the rule passes and fails its own examples, and from then on the rule runs on every prototype in the project.
 
+New checks come only through that loop. There is no rule builder: the app notices what keeps coming up (a rule the agent fixed in two turns, a fix asked for twice, notes that repeat) and offers, quietly, to ask the agent to propose a rule; the agent drafts it with examples that prove it; you adopt it or not. When a rule cannot be said in core's rule vocabulary, the agent files a request for a new rule type instead, which core never adopts: it is a code change, and its review page copies the request to file.
+
 The ideas come from [agent-design-loop](https://github.com/tounsoo/agent-design-loop).
 
 ## What is here

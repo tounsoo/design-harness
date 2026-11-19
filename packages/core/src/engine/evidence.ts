@@ -148,6 +148,7 @@ export const RULE_EVIDENCE: Declared = {
   reachable: { textOnly: "It is about code no page renders, so there is nothing on a page to draw." },
   "page-structure": { textOnly: "It is about which slot an element is written in; the element is outlined where it renders." },
   isolation: { textOnly: "It is about a name the code reaches for; its place is a line of code." },
+  "style-props": { textOnly: "It is about a prop written in the source; its place is a line of code, and the element is outlined where it renders." },
   flow: {
     "state-coverage": { kind: "coverage" },
     "step-budget": { kind: "route-vs-budget" },

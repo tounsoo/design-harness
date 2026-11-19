@@ -88,6 +88,7 @@
   --todae-harness-size-picker: var(--_todae-harness-size-picker, 10rem);
   --todae-harness-size-picker-wide: var(--_todae-harness-size-picker-wide, 12rem);
   --todae-harness-size-sticky-clearance: var(--_todae-harness-size-sticky-clearance, 10rem);
+  --todae-harness-size-views-row: var(--_todae-harness-size-views-row, 34rem);
   --todae-harness-size-zoom: var(--_todae-harness-size-zoom, 7.5rem);
   --todae-button-base-font-size: var(--_todae-button-base-font-size, var(--todae-font-size-2));
   --todae-card-shadow: var(--_todae-card-shadow, var(--todae-harness-shadow-raised));

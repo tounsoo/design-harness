@@ -15,6 +15,15 @@ export function StatusBadge({ status }: { readonly status: ProposalStatus }) {
   );
 }
 
+/** Marks a request for a new rule type wherever proposals are listed. */
+export function RequestBadge() {
+  return (
+    <Badge.Root tone="critical" data-testid="proposal-request">
+      needs a new rule type
+    </Badge.Root>
+  );
+}
+
 const CLASS_WORDS: Readonly<Record<ChangeClass, string>> = { adds: "only adds", tightens: "tightens", "loosens-or-removes": "loosens or removes" };
 
 export function classWords(value: ChangeClass): string {

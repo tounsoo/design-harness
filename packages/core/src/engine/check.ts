@@ -14,6 +14,7 @@ import { evaluateIsolation } from "./rules/isolation";
 import { evaluateMembership } from "./rules/membership";
 import type { Outcome } from "./rules/outcome";
 import { evaluateRendered } from "./rules/rendered";
+import { evaluateStyleProps } from "./rules/style-props";
 import { evaluatePageStructure, evaluateReachable, evaluateSlot } from "./rules/slots";
 
 type Evaluators = { readonly [T in RuleType]: (rule: Extract<RuleSpec, { type: T }>, ctx: CheckContext) => Outcome };
@@ -29,6 +30,7 @@ const EVALUATORS: Evaluators = {
   reachable: evaluateReachable,
   "page-structure": evaluatePageStructure,
   isolation: evaluateIsolation,
+  "style-props": evaluateStyleProps,
   flow: evaluateFlow,
   rendered: evaluateRendered,
 };

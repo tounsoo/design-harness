@@ -230,7 +230,7 @@ test("a second primary action brings core's finding: selecting it outlines both 
       assert.equal(await page.locator(`.frame-card[data-frame-key="${scenario}@${view}"]`).getAttribute("data-selected"), "");
     }
   }
-  assert.equal(await page.getByTestId("finding-outline").textContent(), `Outlined in ${3 * VIEWS.length} frames (lantern-open, lantern-booked, lantern-held).`);
+  assert.equal(await page.getByTestId("finding-outline").textContent(), `Outlined in ${3 * VIEWS.length} frames: Booking, room open (Lantern open); Booking, booked (Lantern booked); Booking, held (Lantern held).`);
   await shot(page, "failing-source-outlined-light");
   await page.locator('.rule[data-rule="one-primary-per-page"]').getByRole("button", { name: "Show in code" }).first().click();
   await page.waitForSelector('[data-testid="code-line"]');
@@ -1077,7 +1077,7 @@ test("an adoption whose failing example does not fail is refused, and the page s
   await refusal.waitFor();
   assert.equal(await refusal.getAttribute("data-code"), "failing-example-passes");
   assert.equal(await page.getByTestId("review-refusal-message").textContent(), 'failing example "only-one" is not flagged as it must be: "one-toast-per-page" passed it');
-  assert.match(await refusal.textContent(), /Not adopted: core refused it.*Reason.*failing-example-passes.*Example.*Show only-one/);
+  assert.match(await refusal.textContent(), /Not adopted: core refused it.*Reason.*failing-example-passes.*Example.*Show Only one/);
   assert.equal(await reviewStatus(page), "approved", "a refused adoption changes nothing");
   assert.equal((await report(page)).rules.some((rule) => rule.rule === "one-toast-per-page"), false);
   await page.waitForTimeout(300);
@@ -1950,7 +1950,7 @@ test("the checks lead with plain words: a summary, each thing to fix with core's
   // Show me outlines both primary actions in every frame that draws them, and the card says where.
   await primary.getByRole("button", { name: "Show me" }).click();
   await page.frameLocator('iframe[title="lantern-open at desktop"]').locator("[data-design-harness-overlay]").first().waitFor({ state: "attached" });
-  await eventually(page, () => primary.getByTestId("fix-outline").textContent(), (text) => text === "Outlined in 6 frames (lantern-open, lantern-booked, lantern-held).", "the card says where both actions are outlined");
+  await eventually(page, () => primary.getByTestId("fix-outline").textContent(), (text) => text === `Outlined in ${3 * VIEWS.length} frames: Booking, room open (Lantern open); Booking, booked (Lantern booked); Booking, held (Lantern held).`, "the card says where both actions are outlined");
   await eventually(page, () => page.locator(".frame-card[data-selected]").count(), (count) => count === 6, "the six frames that draw them are selected");
   // Show in code, one click away, marks the line.
   await primary.getByTestId("show-in-code").click();
@@ -2058,6 +2058,9 @@ test("a scripted agent offers three variants: side by side in measured frames, e
     assert.deepEqual(await frames.evaluateAll((cards) => cards.filter((card) => !card.hasAttribute("data-hidden")).map((card) => card.dataset.frameKey)), ["lantern-open@desktop", "lantern-open@phone"]);
     assert.equal(await page.locator(`.variant-card[data-variant="${id}"] .frame-card[data-state="measured"]`).count(), FRAMES);
   }
+  // Every view of a source side by side, as the board lays a scenario out.
+  const [desktop, phone] = await Promise.all(VIEWS.map((view) => page.locator(`.variant-card[data-variant="a"] .frame-card[data-frame-key="lantern-open@${view}"]`).boundingBox()));
+  assert.ok(desktop.x + desktop.width <= phone.x && Math.abs(desktop.y - phone.y) < 2, `the phone view sits beside the desktop view: ${JSON.stringify([desktop, phone])}`);
   const askFrame = page.frameLocator('iframe[title="Variant A: lantern-open at desktop"]');
   assert.equal((await askFrame.locator("label").first().textContent()).trim(), "For how long?");
   assert.equal((await page.frameLocator('iframe[title="Current: lantern-open at desktop"]').locator("label").first().textContent()).trim(), "How long?");
@@ -2828,6 +2831,141 @@ test("lenses change nothing a rule measures: Nook's reports are identical with t
     assert.deepEqual(await report(page), before);
     assert.equal(await page.locator(".checks").getAttribute("data-revision"), "1");
   }
+});
+
+// ---- the loop proposes rules ---------------------------------------------------
+
+/** One turn in which the scripted agent makes Hold room primary, gets one-primary-per-page back, and fixes it. */
+const breakAndFix = (id) => [
+  toolReply(`${id}-break`, "edit_file", { path: "pages/booking.tsx", old_text: HOLD_SECONDARY, new_text: HOLD_PRIMARY }),
+  (body) => {
+    assert.match(lastMessage(body), /- one-primary-per-page \(count\)/, "the failing check reaches the agent");
+    return toolReply(`${id}-fix`, "edit_file", { path: "pages/booking.tsx", old_text: HOLD_PRIMARY, new_text: HOLD_SECONDARY });
+  },
+  textReply("Hold room stays secondary: a page holds one primary action."),
+];
+
+const HOLD_RULE_DRAFT = {
+  id: "hold-room-secondary",
+  title: "Hold room is always a secondary action",
+  reason: "The agent made Hold room primary twice and had to fix it each time.",
+  rules: { add: [{ type: "requires", id: "hold-room-secondary", select: { text: "Hold room" }, must: { role: "secondary-action" } }] },
+  examples: { pass: [{ name: "as-is" }], fail: [{ name: "hold-primary", files: { "pages/booking.tsx": BOOKING.replace(HOLD_SECONDARY, HOLD_PRIMARY) }, flagged_by: { rule: "hold-room-secondary" } }] },
+};
+
+test("the loop notices a rule the agent fixed in two turns: the suggestion appears, accepting sends the evidence, and the agent drafts a proposal", async ({ browser, base, api }) => {
+  const { page } = await openApp(browser, base);
+  await measured(page, 1);
+  await enterKey(page, { remember: true });
+  api.script(breakAndFix("one"));
+  await ask(page, "Make Hold room stand out");
+  assert.equal(await turnEnded(page), "done");
+  assert.equal(await page.getByTestId("loop-suggestion").count(), 0, "one fix is not a pattern");
+  api.script(breakAndFix("two"));
+  await ask(page, "Try Hold room as a primary button again");
+  assert.equal(await turnEnded(page), "done");
+  const suggestion = page.getByTestId("loop-suggestion");
+  await suggestion.waitFor();
+  // A second primary breaks three rules at once, fixed in the same two turns: one pattern, not three.
+  assert.equal(await suggestion.getAttribute("data-pattern"), "rule:one-primary-per-page+primary-is-rank-1+rank-2-secondary");
+  assert.match(await suggestion.textContent(), /^This keeps coming up\. Ask the agent to propose a rule\?/);
+  assert.equal(await suggestion.getByTestId("loop-summary").textContent(), 'The agent fixed "one-primary-per-page", "primary-is-rank-1" and "rank-2-secondary" in 2 separate turns.');
+  await suggestion.getByText("The evidence").click();
+  assert.equal(await suggestion.getByTestId("loop-evidence").locator("li").count(), 2);
+  assert.equal(api.left(), 0, "the suggestion sends nothing by itself");
+  await shot(page, "loop-suggestion-light");
+  await shotDark(page, "loop-suggestion-dark");
+  api.script([
+    (body) => {
+      const text = lastMessage(body);
+      assert.match(text, /^This keeps coming up with the rules "one-primary-per-page", "primary-is-rank-1" and "rank-2-secondary"\. "one-primary-per-page" says: Each page holds at most 1 primary action\./);
+      assert.match(text, /turn "Make Hold room stand out": "one-primary-per-page", "primary-is-rank-1" and "rank-2-secondary" failed, and all passed by the turn's end\./);
+      assert.match(text, /turn "Try Hold room as a primary button again": .* failed, and all passed by the turn's end\./);
+      assert.match(text, /Draft a proposal with draft_proposal .* passing and failing examples that prove it/);
+      return toolReply("draft", "draft_proposal", HOLD_RULE_DRAFT, "Hold room keeps drifting to primary; a rule can say it stays secondary.");
+    },
+    textReply("I drafted hold-room-secondary for you to review."),
+  ]);
+  await suggestion.getByRole("button", { name: "Ask the agent to propose a rule" }).click();
+  await page.waitForFunction(() => document.querySelectorAll(".chat-reply").length === 3);
+  assert.equal(await turnEnded(page), "done");
+  assert.equal(api.left(), 0);
+  await page.locator('.chat-proposal[data-proposal="hold-room-secondary"]').waitFor();
+  assert.equal(await page.getByTestId("loop-suggestion").count(), 0, "answered, the suggestion stays quiet");
+  // What the loop read is kept with the chat: after a reload the proposal is open and the answered pattern stays quiet.
+  await page.reload();
+  await measured(page, 1);
+  await page.locator('.chat-proposal[data-proposal="hold-room-secondary"]').waitFor();
+  assert.equal(await page.getByTestId("loop-suggestion").count(), 0);
+  await page.getByRole("tab", { name: /Proposals/ }).click();
+  assert.equal(await page.locator('.proposals-table [data-proposal="hold-room-secondary"]').getAttribute("data-status"), "open");
+});
+
+test("the loop's suggestion never appears after a single fix, nor after turns that fix nothing", async ({ browser, base, api }) => {
+  const { page } = await openApp(browser, base);
+  await measured(page, 1);
+  await enterKey(page, { remember: true });
+  api.script(breakAndFix("only"));
+  await ask(page, "Make Hold room stand out");
+  assert.equal(await turnEnded(page), "done");
+  api.script([textReply("Book room is the page's one primary action.")]);
+  await ask(page, "Which action is primary?");
+  assert.equal(await turnEnded(page), "done");
+  assert.equal(await page.getByTestId("loop-suggestion").count(), 0);
+  await page.reload();
+  await measured(page, 1);
+  await page.locator(".chat-reply").nth(1).waitFor();
+  assert.equal(await page.getByTestId("loop-suggestion").count(), 0, "nor after a reload");
+});
+
+const REQUEST_DRAFT = {
+  id: "date-before-rooms",
+  title: "The date question comes before the room cards",
+  reason: "Two variants were rejected for asking the date after the rooms.",
+  needs_rule_type: {
+    checks: "On a booking page, the date question is drawn above the first room card.",
+    why_not: "No rule type compares the order of two elements on a page: count, containment and slot read what is there and where it nests, not which comes first.",
+    pass: [{ name: "date-first", description: "The date question, then the room cards." }],
+    fail: [{ name: "rooms-first", description: "The room cards, then the date question.", snippet: "<RoomCards />\n<DateQuestion />" }],
+  },
+};
+
+test("a request for a new rule type shows plainly as a code change, cannot be approved or adopted, and copies its request", async ({ browser, base, api }) => {
+  const { page, context } = await openApp(browser, base);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(base).origin });
+  await measured(page, 1);
+  await draftByAgent(page, api, REQUEST_DRAFT);
+  const card = page.locator('.chat-proposal[data-proposal="date-before-rooms"]').last();
+  assert.match(await card.textContent(), /^Request for a new rule type draftedThe date question comes before the room cardsNeeds a new rule type: this is a code change\./);
+  assert.match(lastMessage(api.requests.at(-1).body), /^Saved request "date-before-rooms" for a new rule type as open\./);
+  await card.getByRole("button", { name: "Review the request" }).click();
+  await page.locator('.review[data-proposal="date-before-rooms"][data-request]').waitFor();
+  const banner = page.getByTestId("rule-type-request");
+  assert.match(await banner.textContent(), /^Needs a new rule type: this is a code change/);
+  assert.equal(await page.getByTestId("request-refusal").getAttribute("data-code"), "needs-rule-type", "core's own refusal is shown");
+  assert.equal(await page.getByRole("button", { name: "Approve", exact: true }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Adopt", exact: true }).count(), 0);
+  assert.equal(await page.getByTestId("request-checks").textContent(), REQUEST_DRAFT.needs_rule_type.checks);
+  assert.equal(await page.getByTestId("request-why-not").textContent(), REQUEST_DRAFT.needs_rule_type.why_not);
+  assert.equal(await page.locator('[data-example="rooms-first"][data-expect="fail"]').count(), 1);
+  await banner.getByRole("button", { name: "Copy the request to file" }).click();
+  await page.locator('[data-testid="request-copied"][data-state="copied"]').waitFor();
+  const copied = await page.evaluate(() => window.navigator.clipboard.readText());
+  assert.equal(copied, await page.getByTestId("request-text").inputValue(), "what is copied is what the page shows");
+  assert.match(copied, /^# New rule type: The date question comes before the room cards\n\n/);
+  for (const part of ["## What the rule should check", "## Why the vocabulary cannot express it", "## Must pass\n\n- **date-first**: The date question, then the room cards.", "## Must fail\n\n- **rooms-first**", "<RoomCards />", "Proposal `date-before-rooms`, drafted by agent"]) assert.ok(copied.includes(part), `the request has ${part}`);
+  await shot(page, "rule-type-request-light");
+  await shotDark(page, "rule-type-request-dark");
+  await page.getByRole("button", { name: "← All proposals" }).click();
+  const row = page.locator('.proposals-table [data-proposal="date-before-rooms"]');
+  assert.equal(await row.getAttribute("data-status"), "open");
+  assert.equal(await row.getByTestId("proposal-request").textContent(), "needs a new rule type");
+  // Declined once filed, like any proposal, with a note.
+  await row.getByRole("button", { name: REQUEST_DRAFT.title }).click();
+  await page.getByRole("button", { name: "Decline", exact: true }).click();
+  await page.getByLabel("Why decline it?").fill("Filed as an issue against core.");
+  await page.getByRole("button", { name: "Decline proposal" }).click();
+  await page.locator('.review[data-proposal="date-before-rooms"][data-status="declined"]').waitFor();
 });
 
 // ---- runner ----------------------------------------------------------------

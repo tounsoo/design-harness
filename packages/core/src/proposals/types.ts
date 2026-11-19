@@ -41,6 +41,25 @@ export type StatusChange = { readonly status: ProposalStatus; readonly at: strin
 /** A note on one state the change shows: ordinary states and edge cases (empty, loading, error, long content, permissions, over time). */
 export type StateNote = { readonly state: string; readonly note: string };
 
+/** One example of a rule that does not exist yet, in words: what a prototype is like, and optionally a snippet of it. */
+export type RuleTypeExample = { readonly name: string; readonly description: string; readonly snippet?: string };
+
+/**
+ * A request for a rule type core's vocabulary does not have: what the rule
+ * should check, why no rule type in the vocabulary can say it, and examples
+ * in words of prototypes it must pass and fail. A proposal that carries one
+ * is only a request: it changes nothing, so it carries no inventory change,
+ * rule or example prototype, and it can never be approved or adopted. A new
+ * rule type is a code change to core, made by a person; the request is what
+ * they file.
+ */
+export type RuleTypeRequest = {
+  readonly checks: string;
+  readonly whyNot: string;
+  readonly pass: readonly RuleTypeExample[];
+  readonly fail: readonly RuleTypeExample[];
+};
+
 /** What a proposal says: everything a revision can replace. */
 export type ProposalContent = {
   readonly title: string;
@@ -49,6 +68,8 @@ export type ProposalContent = {
   readonly inventory: readonly InventoryOp[];
   readonly rules: { readonly add: readonly RuleSpec[]; readonly remove: readonly string[] };
   readonly examples: { readonly pass: readonly PassingExample[]; readonly fail: readonly FailingExample[] };
+  /** Set when what the proposal needs is a new rule type: the proposal is then a request for a code change, never a check. */
+  readonly needsRuleType?: RuleTypeRequest;
 };
 
 /**

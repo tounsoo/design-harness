@@ -10,7 +10,7 @@ import { coverage } from "../visual/coverage";
 import { CoverageGrid } from "../visual/CoverageGrid";
 import { LENSES, lensDrawing, placeLens, type LensId } from "../visual/lens";
 import { LensLayer, LensWords } from "../visual/LensLayer";
-import { artboardLabel, scenarioLabel, screenTitle, viewLabel } from "./words";
+import { artboardLabel, frameName, scenarioLabel, screenTitle, viewLabel } from "./words";
 
 /** Fit, or a fixed scale. The zoom buttons step through the fixed ones. */
 const ZOOMS = ["0.25", "0.5", "0.75", "1"] as const;
@@ -107,7 +107,7 @@ export function Board({
     opened.current = null;
     setFocused(null);
     setPointed(key);
-    setSaid(`Showing ${artboardLabel(spec.scenario, spec.view.name)} (${scenarioLabel(spec.scenario.id)}).`);
+    setSaid(`Showing ${frameName(spec.scenario, spec.view.name)}.`);
     bringIntoView(key, true);
   };
   useImperativeHandle(ref, () => ({ goTo }));
@@ -136,7 +136,7 @@ export function Board({
     }
     const spec = state.frames.find((frame) => frame.key === target);
     if (!spec) return;
-    const name = `${artboardLabel(spec.scenario, spec.view.name)} (${scenarioLabel(spec.scenario.id)})`;
+    const name = frameName(spec.scenario, spec.view.name);
     if (cameraMove(targetRect, scale) === "open") {
       opened.current = target;
       setFocused(target);
@@ -350,6 +350,8 @@ export type CardProps = {
   readonly onOpen?: () => void;
   /** Names the frame when the same scenario is shown more than once, as a proposal's examples are: "two-toasts: lantern-open at desktop". */
   readonly label?: string;
+  /** The label as the artboard's head shows it, when the label is an id ("Two toasts" for "two-toasts"); empty where what holds the artboard already names it. */
+  readonly caption?: string;
   /** The coverage grid or the flow map just went to this artboard. */
   readonly pointed?: boolean;
   /** The lens drawn over the artboard once it is measured, and the config its facts are read with. */
@@ -362,7 +364,7 @@ export type CardProps = {
  * view and size above it, quiet unless it is still measuring or failed. The
  * review page shows examples with it too.
  */
-export function FrameCard({ session, spec, revision, frameState, scale, focused, hidden, selected, onOpen, label, pointed, lens, config }: CardProps) {
+export function FrameCard({ session, spec, revision, frameState, scale, focused, hidden, selected, onOpen, label, caption, pointed, lens, config }: CardProps) {
   const name = `${label ? `${label}: ` : ""}${spec.scenario.id} at ${spec.view.name}`;
   // A fresh document, on a fresh channel, for every revision.
   const doc = useMemo(() => (spec.blocked ? null : session.documentFor(spec.key)), [session, spec.key, spec.blocked, revision]);
@@ -397,7 +399,7 @@ export function FrameCard({ session, spec, revision, frameState, scale, focused,
     >
       <figcaption className="frame-head">
         <Text.Root as="span" weight="medium" className="frame-view">
-          {label ? `${label} · ` : ""}
+          {(caption ?? label) ? `${caption ?? label} · ` : ""}
           {viewLabel(spec.view.name)}
         </Text.Root>
         <Text.Root as="span" tone="muted" className="frame-size">
@@ -411,7 +413,7 @@ export function FrameCard({ session, spec, revision, frameState, scale, focused,
           </Badge.Root>
         )}
         {!focused && onOpen && (
-          <Button.Root variant="ghost" onClick={onOpen} aria-label={`Open ${artboardLabel(spec.scenario, spec.view.name)} (${scenarioLabel(spec.scenario.id)}) at full size`} className="frame-open">
+          <Button.Root variant="ghost" onClick={onOpen} aria-label={`Open ${frameName(spec.scenario, spec.view.name)} at full size`} className="frame-open">
             <Button.Icon>
               <Maximize2 />
             </Button.Icon>

@@ -1,6 +1,6 @@
 import { Button, Table, Text } from "@tounsoo/todae";
 import { CircleAlert, CircleCheck, Minus } from "lucide-react";
-import { humanize, scenarioLabel, screenTitle, viewLabel } from "../app/words";
+import { frameName, humanize, scenarioLabel, screenTitle, viewLabel } from "../app/words";
 import type { FrameKey } from "../runtime/session";
 import type { Coverage, CoverageCell } from "./coverage";
 
@@ -56,7 +56,7 @@ export function CoverageGrid({ coverage, onGo }: { readonly coverage: Coverage; 
                 </Table.HeaderCell>
                 {row.cells.map((cell, index) => (
                   <Table.Cell key={cell.key}>
-                    <Button.Root variant="ghost" className="coverage-cell" data-kind={cell.kind} data-testid="coverage-cell" data-frame={cell.key} onClick={() => onGo(cell.key)} aria-label={`${cellWords(cell)}: show ${scenarioLabel(row.scenario)}, ${viewLabel(coverage.views[index] ?? "").toLowerCase()}`}>
+                    <Button.Root variant="ghost" className="coverage-cell" data-kind={cell.kind} data-testid="coverage-cell" data-frame={cell.key} onClick={() => onGo(cell.key)} aria-label={`${cellWords(cell)}: show ${frameName({ id: row.scenario, page: row.page || row.state, state: row.state }, coverage.views[index] ?? "")}`}>
                       <span className="coverage-icon" aria-hidden="true">
                         {cell.kind === "passes" ? <CircleCheck /> : cell.kind === "measuring" ? <Minus /> : <CircleAlert />}
                       </span>
