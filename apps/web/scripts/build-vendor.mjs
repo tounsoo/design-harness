@@ -6,40 +6,47 @@
  * prototype. CommonJS packages (React, React DOM) get their named exports
  * listed from the module itself, as a CDN such as esm.sh does.
  *
- * The component libraries it serves are the ones apps/web/package.json lists
- * under `designHarness.libraries`, each with the stylesheets (paths inside the
- * package) a project's config may name. Each is served by name and the exact
- * version installed, so the app can serve any project whose library is one of
- * them; any other library loads from the esm.sh source.
+ * The component libraries it serves are the versions apps/web/package.json
+ * lists under `designHarness.libraries` (`vendor-libraries.mjs` reads them),
+ * each with the stylesheets (paths inside the package) a project's config
+ * may name. A package can be served at several versions: one is installed
+ * under its own name, each other under an npm alias. Every version is built
+ * from where it is installed and filed under the package's real name and
+ * exact version, so a frame imports `@tounsoo/todae` and gets the version
+ * its project names; any other library loads from the esm.sh source. Each
+ * library version must accept the one React served, by its peer range.
  *
  * Output: public/vendor/manifest.json, which names, for each package and
  * version, the file for each module specifier and the package files
  * (stylesheets) copied as they are.
  */
 import { build } from "esbuild";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { fileInManifest, satisfies, unservedDescriptions, vendorFileName as fileName, vendoredLibraries } from "./vendor-libraries.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const app = join(here, "..");
 const out = join(app, "public", "vendor");
 const require = createRequire(join(app, "package.json"));
 
-/** The component libraries to serve, and the stylesheets of each, from the app's package.json. */
-const LIBRARIES = Object.entries(JSON.parse(readFileSync(join(app, "package.json"), "utf8")).designHarness?.libraries ?? {});
+/** The component library versions to serve, where each is installed, and the stylesheets of each, from the app's package.json. */
+const LIBRARIES = vendoredLibraries(JSON.parse(readFileSync(join(app, "package.json"), "utf8")));
 const REACT_EXTERNALS = ["react", "react/jsx-runtime", "react-dom"];
-/** A file name for a package's module or file: its name and version, safe in a URL path. */
-const fileName = (name, version, suffix) => `${name.replace(/^@/, "").replace(/[^\w.-]/g, "-")}@${version}${suffix}`;
 
-/** Each module a frame imports: specifier, file name, and which specifiers stay external. */
+/**
+ * Each module a frame imports: the specifier the frame imports it by, the
+ * package and version it is filed under, where it is installed, its file
+ * name, and which specifiers stay external.
+ */
 const MODULES = [
   { specifier: "react", file: "react.js", external: [] },
   { specifier: "react/jsx-runtime", file: "react-jsx-runtime.js", external: ["react"] },
   { specifier: "react-dom", file: "react-dom.js", external: ["react"] },
   { specifier: "react-dom/client", file: "react-dom-client.js", external: ["react", "react-dom"] },
-  ...LIBRARIES.map(([name]) => ({ specifier: name, file: null, external: REACT_EXTERNALS })),
+  ...LIBRARIES.map((library) => ({ specifier: library.package, install: library.install, version: library.version, file: null, external: REACT_EXTERNALS })),
   // A spec prototype's frames draw specs with json-render's React renderer, which bundles its core and zod.
   { specifier: "@json-render/react", file: "json-render-react.js", external: ["react", "react/jsx-runtime", "react-dom"] },
 ];
@@ -48,10 +55,16 @@ function packageOf(specifier) {
   return specifier.startsWith("@") ? specifier.split("/").slice(0, 2).join("/") : specifier.split("/")[0];
 }
 
-/** The package's own package.json, found from where its main entry resolves (its exports may not list package.json). */
+/**
+ * The package's own package.json, found from where its main entry resolves
+ * (its exports may not list package.json). `name` is the name it is
+ * installed under: an alias's folder is named for the alias, its
+ * package.json for the package.
+ */
 function packageJson(name) {
   let dir = dirname(fileURLToPath(import.meta.resolve(name)));
-  while (!existsSync(join(dir, "package.json")) || JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).name !== name) {
+  const folder = join("node_modules", name);
+  while (!existsSync(join(dir, "package.json")) || !(dir.endsWith(folder) || JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).name === name)) {
     const up = dirname(dir);
     if (up === dir) throw new Error(`vendor: cannot find the package.json of ${name}`);
     dir = up;
@@ -101,11 +114,23 @@ rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 
 const manifest = { packages: {} };
+const react = versionOf("react");
+for (const library of LIBRARIES) {
+  const { json } = packageJson(library.install);
+  if (json.name !== library.package || json.version !== library.version) throw new Error(`vendor: ${library.install} holds ${json.name} ${json.version}, not ${library.package} ${library.version}; run npm ci`);
+  for (const peer of ["react", "react-dom"]) {
+    const range = json.peerDependencies?.[peer];
+    if (range && !satisfies(react, range)) throw new Error(`vendor: ${library.package} ${library.version} needs ${peer} ${range}, but frames get ${react}; it cannot share the one React a frame loads`);
+  }
+}
 for (const module of MODULES) {
   const name = packageOf(module.specifier);
-  const version = versionOf(name);
+  // A library version is built from where it is installed (its own name, or its alias), and filed under its real name.
+  const install = module.install ?? name;
+  const version = module.version ?? versionOf(name);
   const file = module.file ?? fileName(name, version, ".js");
-  const entry = isCommonJs(module.specifier) ? cjsEntry(module.specifier) : `export * from ${JSON.stringify(module.specifier)};\n`;
+  const from = install + module.specifier.slice(name.length);
+  const entry = isCommonJs(from) ? cjsEntry(from) : `export * from ${JSON.stringify(from)};\n`;
   await build({
     stdin: { contents: entry, resolveDir: app, loader: "js" },
     bundle: true,
@@ -119,16 +144,23 @@ for (const module of MODULES) {
     outfile: join(out, file),
     logLevel: "error",
   });
-  const versions = (manifest.packages[name] ??= { versions: {} }).versions;
-  (versions[version] ??= { modules: {}, files: {} }).modules[module.specifier] = file;
+  fileInManifest(manifest, { package: name, version, kind: "modules", key: module.specifier, file });
 }
-for (const [name, stylesheets] of LIBRARIES) {
-  const { dir, json } = packageJson(name);
-  for (const path of stylesheets) {
-    const file = fileName(name, json.version, `-${path.replace(/[^\w.-]/g, "-")}`);
+for (const library of LIBRARIES) {
+  const { dir } = packageJson(library.install);
+  for (const path of library.stylesheets) {
+    const file = fileName(library.package, library.version, `-${path.replace(/[^\w.-]/g, "-")}`);
     copyFileSync(join(dir, path), join(out, file));
-    manifest.packages[name].versions[json.version].files[path] = file;
+    fileInManifest(manifest, { package: library.package, version: library.version, kind: "files", key: path, file });
   }
 }
+// Every library description core ships is one the app can be asked to render (the registry, the stored-project migration), so each must be served.
+const described = join(app, "..", "..", "packages", "core", "libraries");
+const descriptions = readdirSync(described).filter((file) => file.endsWith(".json")).sort().map((file) => {
+  const { package: name, version } = JSON.parse(readFileSync(join(described, file), "utf8"));
+  return { package: name, version };
+});
+const unserved = unservedDescriptions(manifest, descriptions);
+if (unserved.length > 0) throw new Error(`vendor: packages/core/libraries describes ${unserved.join(", ")}, which this build does not serve: add each to designHarness.libraries in apps/web/package.json, with its dependency (an npm alias for a second version)`);
 writeFileSync(join(out, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 console.log(`vendor: ${Object.entries(manifest.packages).flatMap(([name, entry]) => Object.keys(entry.versions).map((version) => `${name}@${version}`)).join(", ")} -> public/vendor`);

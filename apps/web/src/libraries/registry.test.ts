@@ -5,11 +5,11 @@ import { buildProject, confirmationFrom, defaultStarterRules, draftRoles, parseL
 import { FRAME_REACT, SHIPPED_LIBRARIES } from "./registry";
 
 const web = join(import.meta.dirname, "..", "..");
-const packageJson = JSON.parse(readFileSync(join(web, "package.json"), "utf8")) as { dependencies: Record<string, string>; designHarness: { libraries: Record<string, string[]> } };
+const packageJson = JSON.parse(readFileSync(join(web, "package.json"), "utf8")) as { dependencies: Record<string, string>; designHarness: { libraries: Record<string, Record<string, string[]>> } };
 
 describe("the libraries this deployment ships", () => {
-  it("are exactly the ones the vendor build serves, with the stylesheets it copies", () => {
-    expect(Object.fromEntries(SHIPPED_LIBRARIES.map((library) => [library.package, library.setup.stylesheets]))).toEqual(packageJson.designHarness.libraries);
+  it("are each served by the vendor build at their version, with the stylesheets it copies", () => {
+    for (const library of SHIPPED_LIBRARIES) expect([library.package, packageJson.designHarness.libraries[library.package]?.[library.version]]).toEqual([library.package, library.setup.stylesheets]);
   });
 
   for (const library of SHIPPED_LIBRARIES) {

@@ -460,11 +460,13 @@ test("the board opens a frame at full size and the project view reads the config
  * source (import map entries that are URLs, a stylesheet link, the CSP's
  * origin allowance) without the network.
  */
-async function fakeCdn() {
+async function fakeCdn({ stand } = {}) {
   const manifest = JSON.parse(readFileSync(join(root, "dist", "vendor", "manifest.json"), "utf8"));
   const routes = new Map();
   for (const [name, { versions }] of Object.entries(manifest.packages)) {
-    for (const [version, entry] of Object.entries(versions)) {
+    // `stand`: a version this build does not vendor, served by the CDN with a vendored version's files standing in for it.
+    const extra = stand && stand.package === name ? [[stand.version, versions[stand.as]]] : [];
+    for (const [version, entry] of [...Object.entries(versions), ...extra]) {
       for (const [specifier, file] of Object.entries(entry.modules)) routes.set(`/${name}@${version}${specifier.slice(name.length)}`, { file, type: "text/javascript" });
       for (const [path, file] of Object.entries(entry.files)) routes.set(`/${name}@${version}/${path}`, { file, type: "text/css" });
     }
@@ -1853,6 +1855,183 @@ test("a stored project without a library description gets the bundled one on loa
   await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
   await measured(page, 2);
   assert.equal((await report(page)).status, "pass", "the spec prototype is checked with the description the app added");
+});
+
+// ---- library versions: every version the app describes is served; one it does not serve says so ----
+
+/** Changes the stored Nook project's library in IndexedDB, as an older app would have left it; the page reloads to read it. */
+async function storeLibrary(page, change) {
+  await page.evaluate(
+    ({ set, remove }) =>
+      new Promise((resolve, reject) => {
+        const apply = (library) => {
+          Object.assign(library, set);
+          for (const key of remove) delete library[key];
+        };
+        const open = indexedDB.open("design-harness");
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const tx = open.result.transaction("projects", "readwrite");
+          const store = tx.objectStore("projects");
+          const get = store.get("nook");
+          get.onsuccess = () => {
+            const row = get.result;
+            apply(row.config.library);
+            store.put(row);
+          };
+          tx.oncomplete = () => resolve(undefined);
+          tx.onerror = () => reject(tx.error);
+        };
+      }),
+    { set: change.set ?? {}, remove: change.remove ?? [] },
+  );
+}
+
+/** The stored Nook project's library, as IndexedDB holds it now. */
+async function storedLibrary(page) {
+  return page.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const open = indexedDB.open("design-harness");
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const get = open.result.transaction("projects").objectStore("projects").get("nook");
+          get.onsuccess = () => resolve({ ...get.result.config.library, parts: Object.keys(get.result.config.library.parts ?? {}).length });
+          get.onerror = () => reject(get.error);
+        };
+      }),
+  );
+}
+
+/** Nook as Ben's deployed app holds it: stored before the Todae 0.11.3 upgrade, on 0.10.1, and before spec prototypes, with no parts. */
+const ON_TODAE_0101 = { set: { version: "0.10.1" }, remove: ["parts"] };
+
+/** Opens Nook stored on Todae 0.10.1, recording which vendor files the app reads. */
+async function openOnTodae0101(browser, base, options = {}) {
+  const opened = await openApp(browser, base, options);
+  await measured(opened.page, 1);
+  await storeLibrary(opened.page, ON_TODAE_0101);
+  const vendor = [];
+  opened.page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.includes("/vendor/")) vendor.push(path.slice(path.indexOf("/vendor/") + "/vendor/".length));
+  });
+  await opened.page.reload();
+  await measured(opened.page, 1);
+  return { ...opened, vendor };
+}
+
+test("a stored Nook project on Todae 0.10.1 renders with 0.10.1, and passes every rule", async ({ browser, base }) => {
+  const { page, context, errors, vendor } = await openOnTodae0101(browser, base);
+  assert.match(await page.getByTestId("notice").textContent(), /added the one it ships for @tounsoo\/todae 0\.10\.1 \(203 parts\)/);
+  const value = await report(page);
+  assert.equal(value.status, "pass", `every rule passes on Todae 0.10.1: ${failing(value)}`);
+  assert.equal(await page.locator(".frame-failure").count(), 0, "every frame renders");
+  assert.equal(await page.getByTestId("packages-notice").count(), 0, "nothing to say about packages");
+  assert.ok(vendor.includes("tounsoo-todae@0.10.1.js") && vendor.includes("tounsoo-todae@0.10.1-dist-todae.css"), `the frames get Todae 0.10.1 and its stylesheet: ${vendor.join(", ")}`);
+  assert.ok(!vendor.includes("tounsoo-todae@0.11.3.js"), "and not the app's own 0.11.3");
+  // The spec prototype is checked against the 0.10.1 description the app added, and renders with 0.10.1 too.
+  await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
+  await measured(page, 2);
+  assert.equal((await report(page)).status, "pass", "the spec prototype passes on 0.10.1");
+  await page.getByRole("tab", { name: "Project" }).click();
+  assert.equal(await page.getByTestId("library-version-current").textContent(), "Todae 0.10.1");
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("moving a project from Todae 0.10.1 to 0.11.3 shows the diff first, and moves only on confirm", async ({ browser, base }) => {
+  for (const colorScheme of ["light", "dark"]) {
+    const { page, context, errors } = await openOnTodae0101(browser, base, { colorScheme });
+    await page.getByRole("tab", { name: "Project" }).click();
+    const section = page.getByTestId("library-version");
+    assert.equal(await section.getByRole("combobox", { name: "Move to" }).inputValue(), "0.11.3");
+    await section.getByRole("button", { name: "See what changes in 0.11.3" }).click();
+    const plan = page.getByTestId("library-move-plan");
+    await plan.waitFor();
+    assert.equal(await plan.getAttribute("data-to"), "0.11.3");
+    assert.equal(await page.getByTestId("library-move-parts").textContent(), "Parts: 1 changed, 202 the same.");
+    assert.match(await plan.locator('tr[data-part="Slider.Root"]').textContent(), /adds .*disabled.*max.*min/);
+    assert.match(await page.getByTestId("library-move-roles").textContent(), /^Every role still holds/);
+    assert.match(await page.getByTestId("library-move-reports").textContent(), /^No prototype's report changes: core checks all 2 the same on 0\.11\.3\./);
+    assert.equal(await plan.locator("tr[data-prototype]").count(), 2);
+    await shot(page, `library-move-plan-${colorScheme}`);
+    // Nothing has moved yet.
+    assert.equal((await storedLibrary(page)).version, "0.10.1", "the dry run changes nothing");
+    if (colorScheme === "dark") {
+      assert.deepEqual(errors, []);
+      await context.close();
+      continue;
+    }
+    await page.getByTestId("library-move-confirm").click();
+    await page.getByTestId("library-moved").waitFor();
+    assert.equal(await page.getByTestId("library-version-current").textContent(), "Todae 0.11.3");
+    assert.match(await page.getByTestId("library-history").textContent(), /Moved from 0\.10\.1 to 0\.11\.3 by you/);
+    await shot(page, "library-moved-light");
+    const stored = await eventually(page, () => storedLibrary(page), (library) => library.version === "0.11.3", "the move is saved");
+    assert.deepEqual(stored.history.map((entry) => [entry.kind, entry.from, entry.to, entry.by]), [["moved", "0.10.1", "0.11.3", "you"]]);
+    assert.equal(stored.parts, 203);
+    await page.getByRole("tab", { name: "Canvas" }).click();
+    await measured(page, 2);
+    assert.equal((await report(page)).status, "pass", "the moved project passes every rule on 0.11.3");
+    await page.reload();
+    await measured(page, 1);
+    assert.equal((await storedLibrary(page)).version, "0.11.3", "and stays moved after a reload");
+    assert.deepEqual(errors, []);
+    await context.close();
+  }
+});
+
+test("a version this app does not serve: the canvas says what is missing and offers a move or esm.sh, which loads it by URL", async ({ browser, base }) => {
+  // A CDN-shaped origin that has Todae 0.9.0, which this build does not vendor (0.10.1's files stand in for it).
+  const cdn = await fakeCdn({ stand: { package: "@tounsoo/todae", version: "0.9.0", as: "0.10.1" } });
+  try {
+    const { page, context, errors } = await openApp(browser, `${base}?packages-origin=${encodeURIComponent(cdn.origin)}`);
+    await measured(page, 1);
+    await storeLibrary(page, { set: { version: "0.9.0" } });
+    await page.reload();
+    await measured(page, 1);
+    const notice = page.getByTestId("packages-notice");
+    await eventually(page, () => notice.getAttribute("data-state"), (value) => value === "unserved", "the notice says the version is not served");
+    assert.ok((await notice.textContent()).includes("This app does not serve Todae 0.9.0"));
+    assert.equal(await page.getByTestId("packages-missing").textContent(), "The project is on @tounsoo/todae 0.9.0. This app serves 0.10.1, 0.11.3 of it, so no frame can render until the project loads 0.9.0 from somewhere, or moves.");
+    for (const name of ["Move the project to 0.11.3", "Move the project to 0.10.1", "Load 0.9.0 from esm.sh"]) assert.equal(await notice.getByRole("button", { name }).count(), 1, `the notice offers ${name}`);
+    assert.equal(await page.locator(".frame-failure").count(), FRAMES, "every frame says it did not render");
+    assert.equal(await page.getByTestId("frame-packages-hint").count(), FRAMES, "and points at the notice");
+    assert.equal(cdn.served.length, 0, "nothing loads from esm.sh before a person chooses it");
+    await shot(page, "packages-unserved-light");
+    await shotDark(page, "packages-unserved-dark");
+    // Moving starts with the dry run, in the Project view.
+    await notice.getByRole("button", { name: "Move the project to 0.11.3" }).click();
+    await page.getByTestId("library-move-plan").waitFor();
+    assert.equal(await page.getByTestId("library-move-plan").getAttribute("data-to"), "0.11.3");
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await page.getByRole("tab", { name: "Canvas" }).click();
+    // esm.sh, for this project only, chosen by the person, and shown while it lasts.
+    await notice.getByRole("button", { name: "Load 0.9.0 from esm.sh" }).click();
+    await measured(page, 2);
+    assert.equal((await report(page)).status, "pass", "the project renders from the CDN and passes every rule");
+    assert.ok(cdn.served.includes("/@tounsoo/todae@0.9.0?external=react,react-dom") && cdn.served.includes("/@tounsoo/todae@0.9.0/dist/todae.css"), `the frames load 0.9.0 by URL: ${cdn.served.join(", ")}`);
+    await eventually(page, () => notice.getAttribute("data-state"), (value) => value === "esm", "the notice says the project loads from esm.sh");
+    assert.match(await notice.textContent(), /Todae 0\.9\.0 loads from esm\.sh for this project/);
+    const stored = await storedLibrary(page);
+    assert.equal(stored.source, "esm.sh");
+    assert.deepEqual(stored.history.map((entry) => [entry.kind, entry.source, entry.version]), [["source", "esm.sh", "0.9.0"]]);
+    await shot(page, "packages-esm-light");
+    await shotDark(page, "packages-esm-dark");
+    // It is kept with the project, and undone as plainly.
+    await page.reload();
+    await measured(page, 1);
+    assert.equal(await notice.getAttribute("data-state"), "esm");
+    await notice.getByRole("button", { name: "Stop loading from esm.sh" }).click();
+    await measured(page, 2);
+    await eventually(page, () => notice.getAttribute("data-state"), (value) => value === "unserved", "back to the version not being served");
+    assert.equal((await storedLibrary(page)).source, undefined);
+    assert.deepEqual(errors, []);
+    await context.close();
+  } finally {
+    await cdn.close();
+  }
 });
 
 // ---- the workspace's layout: canvas only, panels, the checks in plain words ----

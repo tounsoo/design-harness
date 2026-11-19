@@ -21,7 +21,7 @@ function fakeSource(fail = false): PackageSource {
 }
 
 /** A window that records listeners, and iframes whose posted messages are recorded. */
-function harness(source = fakeSource(), options: { readonly tags?: boolean; readonly slots?: RenderSlots } = {}) {
+function harness(source = fakeSource(), options: { readonly tags?: boolean; readonly slots?: RenderSlots; readonly esm?: PackageSource | null } = {}) {
   let listener: ((event: MessageEvent) => void) | null = null;
   const win = {
     addEventListener: (_type: string, fn: (event: MessageEvent) => void) => {
@@ -187,6 +187,27 @@ describe("a session", () => {
     expect(state.measured).toBe(true);
     expect(state.report?.status).toBe("fail");
     expect(state.report?.findings.filter((finding) => finding.rule === "target-size").map((finding) => finding.message)).toContain('No snapshot of scenario "rooms-list" at view "desktop", so it was not measured.');
+  });
+
+  it("loads a project's library from esm.sh only when the project chose it and the deployment allows it, and only its frames may reach esm.sh", async () => {
+    const asked: string[] = [];
+    const cdn: PackageSource = { name: "esm.sh", origins: ["https://cdn.example"], module: (specifier, request) => (asked.push(`${specifier}@${request.version}`), Promise.resolve({ url: `https://cdn.example/${specifier}` })), stylesheet: () => Promise.resolve({ url: "https://cdn.example/s.css" }) };
+    const onCdn = { ...nook, library: { ...nook.library, version: "0.10.1", source: "esm.sh" as const } };
+    const allowed = harness(fakeSource(), { esm: cdn });
+    allowed.session.update(nook, legal);
+    await flush();
+    expect(allowed.session.getState().packages).toEqual({ state: "ready", source: "fake" });
+    expect(allowed.session.documentFor(frameKey("rooms-list", "desktop"))?.html).not.toContain("cdn.example");
+    allowed.session.update(onCdn, legal);
+    await flush();
+    expect(allowed.session.getState().packages).toEqual({ state: "ready", source: "esm.sh" });
+    expect(asked).toContain("@tounsoo/todae@0.10.1");
+    expect(allowed.session.documentFor(frameKey("rooms-list", "desktop"))?.html).toContain("https://cdn.example");
+    // A deployment without esm.sh keeps the project on its own source, which then says what it lacks.
+    const refused = harness(fakeSource(true), { esm: null });
+    refused.session.update(onCdn, legal);
+    await flush();
+    expect(refused.session.getState().packages).toMatchObject({ state: "failed", message: "Packages could not load from the fake source: offline" });
   });
 
   it("does not render a scenario whose page is missing, and says why", () => {

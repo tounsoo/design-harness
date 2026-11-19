@@ -71,6 +71,21 @@ export type ConfirmedExclusion =
   | { readonly decision: "corrected"; readonly props: readonly string[]; readonly drafted: readonly string[]; readonly why: string }
   | { readonly decision: "none"; readonly props: readonly [] };
 
+/**
+ * Something a person did to the project's library after it was onboarded,
+ * with when (the caller's time: core reads no clock) and by whom. `moved`:
+ * the project was moved from one exact version to another, after a dry run
+ * (`planLibraryMove`). `source`: frames were set to load this version from
+ * esm.sh, because the deployment does not serve it itself, or set back to
+ * the deployment's own packages.
+ */
+export type LibraryEvent =
+  | { readonly kind: "moved"; readonly from: string; readonly to: string; readonly at: string; readonly by?: string; readonly note?: string }
+  | { readonly kind: "source"; readonly source: LibrarySource | "deployment"; readonly version: string; readonly at: string; readonly by?: string };
+
+/** A package source a person can choose for one project, when the deployment's own does not serve its library version. */
+export type LibrarySource = "esm.sh";
+
 export type ComponentLibrary = {
   /** The npm package prototypes import components from, such as `@tounsoo/todae`. */
   readonly package: string;
@@ -103,6 +118,15 @@ export type ComponentLibrary = {
    * correction with its reason. It is a record for people; no check reads it.
    */
   readonly confirmed?: { readonly roles: readonly ConfirmedRole[]; readonly exclusion: ConfirmedExclusion };
+  /**
+   * Where frames load the library from, when a person chose a source of
+   * their own for this project: `esm.sh`, for a version the deployment does
+   * not serve. Absent, frames load what the deployment serves. No check
+   * reads it; it decides only where the same exact version comes from.
+   */
+  readonly source?: LibrarySource;
+  /** Version moves and source choices, oldest first (`LibraryEvent`). A record for people; no check reads it. */
+  readonly history?: readonly LibraryEvent[];
   /**
    * Every part of the library, described for spec prototypes (`Button.Root`
    * and the like). A spec prototype can use the parts of the inventoried

@@ -55,6 +55,13 @@
   .app-main-pane[data-inactive] { visibility: hidden; pointer-events: none; }
   .app-main-scroll { overflow: auto; padding: var(--todae-space-8) var(--todae-space-8) var(--todae-space-12); background: var(--todae-harness-canvas-bg); }
   .app-preview { margin: var(--todae-space-3) var(--todae-space-6) 0; }
+  /* What to do when the project's library version cannot load, above the canvas; it scrolls rather than push the board away. */
+  .packages-notice { margin: var(--todae-space-3) var(--todae-space-6) 0; max-block-size: 50%; overflow: auto; flex-shrink: 0; }
+  .packages-options { display: grid; gap: var(--todae-space-3); margin: 0; padding-inline-start: var(--todae-space-5); }
+  .packages-options p { margin: 0; }
+  /* A library move's dry run, set apart from the facts around it until it is confirmed. */
+  .library-move-plan { padding: var(--todae-space-4); border-radius: var(--todae-radius-lg); background: var(--todae-color-bg-subtle); }
+  .library-move-plan h3, .library-move-plan p { margin: 0; }
 
   /* ---- The right panel: checks first, code one tab away. ---- */
   .app-side { display: flex; flex-direction: column; block-size: 100%; min-height: 0; background: var(--todae-harness-panel-bg); }

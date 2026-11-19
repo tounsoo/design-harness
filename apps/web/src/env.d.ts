@@ -12,4 +12,6 @@ declare module "virtual:frame-runtime" {
 interface ImportMetaEnv {
   /** `local` (default) or `esm.sh`: where frames load React and the library from. */
   readonly VITE_PACKAGE_SOURCE?: string;
+  /** `off` stops a person from loading one project's library version from esm.sh when the page's source does not serve it. */
+  readonly VITE_ESM_FALLBACK?: string;
 }

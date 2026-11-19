@@ -350,19 +350,7 @@ export function confirmRoles(description: LibraryDescription, confirmation: Role
     const { mapping, why } = correction as { mapping: RoleMapping; why: string };
     if (why.trim() === "") issues.push({ path: `${path}.why`, message: `the correction of "${role}" gives no reason` });
     if (guess && sameMapping(guess.mapping, mapping)) issues.push({ path, message: `the correction of "${role}" is the draft itself: accept it instead` });
-    for (const component of mapping.components) {
-      if (!(component in description.parts)) issues.push({ path: `${path}.mapping.components`, message: `names ${component}, which ${description.package} ${description.version} has no part of` });
-    }
-    if (mapping.prop) {
-      for (const component of mapping.components) {
-        const schema = description.parts[component]?.props[mapping.prop.name];
-        if (!(component in description.parts)) continue;
-        if (!schema) issues.push({ path: `${path}.mapping.prop`, message: `names prop "${mapping.prop.name}", which ${component} does not declare` });
-        else if (schema.type === "enum") {
-          for (const value of mapping.prop.values) if (!schema.values.includes(String(value))) issues.push({ path: `${path}.mapping.prop.values`, message: `names ${JSON.stringify(value)}, which ${component}'s ${mapping.prop.name} does not hold (${quote(schema.values)})` });
-        }
-      }
-    }
+    for (const problem of mappingProblems(description, mapping)) issues.push({ path: `${path}.mapping.${problem.at}`, message: problem.message });
     roles[role] = mapping;
     record.push({ role, decision: "corrected", mapping, drafted: guess?.mapping ?? null, why });
   }
@@ -383,6 +371,30 @@ export function confirmRoles(description: LibraryDescription, confirmation: Role
   }
   if (issues.length > 0) return { ok: false, error: issues };
   return { ok: true, value: { roles: roles as Record<RoleName, RoleMapping>, excludedProps: exclusion.props, record, exclusion } };
+}
+
+/**
+ * What a role mapping names that a library does not have: a part it lacks,
+ * a prop a part does not declare, or a prop value its enum does not hold.
+ * `at` is where in the mapping, for an issue path. Empty when the library
+ * has everything the mapping names.
+ */
+export function mappingProblems(description: LibraryDescription, mapping: RoleMapping): { readonly at: "components" | "prop" | "prop.values"; readonly message: string }[] {
+  const problems: { at: "components" | "prop" | "prop.values"; message: string }[] = [];
+  for (const component of mapping.components) {
+    if (!(component in description.parts)) problems.push({ at: "components", message: `names ${component}, which ${description.package} ${description.version} has no part of` });
+  }
+  if (mapping.prop) {
+    for (const component of mapping.components) {
+      const schema = description.parts[component]?.props[mapping.prop.name];
+      if (!(component in description.parts)) continue;
+      if (!schema) problems.push({ at: "prop", message: `names prop "${mapping.prop.name}", which ${component} does not declare` });
+      else if (schema.type === "enum") {
+        for (const value of mapping.prop.values) if (!schema.values.includes(String(value))) problems.push({ at: "prop.values", message: `names ${JSON.stringify(value)}, which ${component}'s ${mapping.prop.name} does not hold (${quote(schema.values)})` });
+      }
+    }
+  }
+  return problems;
 }
 
 /** A mapping in words: "Button with variant \"filled\" (or no variant)". */
