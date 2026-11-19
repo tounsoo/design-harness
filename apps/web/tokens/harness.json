@@ -83,6 +83,30 @@
         }
       }
     },
+    "shell": {
+      "$description": "The least window width of each of the shell's layouts, read by src/app/shell-width.ts. Narrower than tablet is a phone: one pane at a time, and a header of two rows. A tablet has the canvas and one panel. A laptop has every pane, in a header of one row with its secondary actions in a menu. A desktop has every action in the header.",
+      "tablet": {
+        "$type": "dimension",
+        "$value": {
+          "value": 40,
+          "unit": "rem"
+        }
+      },
+      "laptop": {
+        "$type": "dimension",
+        "$value": {
+          "value": 64,
+          "unit": "rem"
+        }
+      },
+      "desktop": {
+        "$type": "dimension",
+        "$value": {
+          "value": 80,
+          "unit": "rem"
+        }
+      }
+    },
     "edge": {
       "$description": "Edges that mark a row's tone, and the rule beside a quoted message.",
       "status": {
@@ -132,7 +156,7 @@
       }
     },
     "size": {
-      "$description": "The few fixed sizes the layout needs: the least width of a picker, a column and a label, the most a name or a log may take, the code editor's least height, the room a sticky bar keeps clear, and the New project wizard's rail, its reading column, its wide steps, its role cards and its option columns.",
+      "$description": "The few fixed sizes the layout needs: the least width of a picker (and of one in the phone's header, picker-compact), a column and a label, the most a name or a log may take, the code editor's least height, the room a sticky bar keeps clear, and the New project wizard's rail, its reading column, its wide steps, its role cards and its option columns.",
       "picker": {
         "$type": "dimension",
         "$value": {
@@ -144,6 +168,13 @@
         "$type": "dimension",
         "$value": {
           "value": 12,
+          "unit": "rem"
+        }
+      },
+      "picker-compact": {
+        "$type": "dimension",
+        "$value": {
+          "value": 5,
           "unit": "rem"
         }
       },

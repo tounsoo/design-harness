@@ -103,6 +103,9 @@
   --todae-harness-pin-ring: var(--_todae-harness-pin-ring, 2px);
   --todae-harness-pin-size: var(--_todae-harness-pin-size, 1.5rem);
   --todae-harness-pin-size-quiet: var(--_todae-harness-pin-size-quiet, 1rem);
+  --todae-harness-shell-desktop: var(--_todae-harness-shell-desktop, 80rem);
+  --todae-harness-shell-laptop: var(--_todae-harness-shell-laptop, 64rem);
+  --todae-harness-shell-tablet: var(--_todae-harness-shell-tablet, 40rem);
   --todae-harness-size-artboard-label: var(--_todae-harness-size-artboard-label, 10.5rem);
   --todae-harness-size-column: var(--_todae-harness-size-column, 20rem);
   --todae-harness-size-diagram: var(--_todae-harness-size-diagram, 12rem);
@@ -112,6 +115,7 @@
   --todae-harness-size-name: var(--_todae-harness-size-name, 16rem);
   --todae-harness-size-option: var(--_todae-harness-size-option, 11rem);
   --todae-harness-size-picker: var(--_todae-harness-size-picker, 10rem);
+  --todae-harness-size-picker-compact: var(--_todae-harness-size-picker-compact, 5rem);
   --todae-harness-size-picker-wide: var(--_todae-harness-size-picker-wide, 12rem);
   --todae-harness-size-preview: var(--_todae-harness-size-preview, 9rem);
   --todae-harness-size-proposal-card: var(--_todae-harness-size-proposal-card, 19rem);
