@@ -69,6 +69,8 @@ describe("a spec prototype exported as a React project", () => {
     expect(exported.files["README.md"]).toContain("Core's checks at export: pass: every rule passes.");
     expect(exported.files["vite.config.ts"]).toContain('"@design-harness/page": fileURLToPath(new URL("./src/page-kit.tsx", import.meta.url))');
     expect(exported.files["src/main.tsx"]).toContain('import "@tounsoo/todae/dist/todae.css";');
+    // TypeScript 6 checks side-effect imports, so the project's tsconfig names the types that declare a stylesheet.
+    expect((JSON.parse(exported.files["tsconfig.json"] as string) as { compilerOptions: { types: string[] } }).compilerOptions.types).toEqual(["vite/client"]);
     expect(exported.files["src/main.tsx"]).toContain('document.documentElement.setAttribute("data-appearance", "light");');
     expect(exported.files["src/scenarios.ts"]).toContain('import BookingPage from "./prototype/pages/booking";');
   });

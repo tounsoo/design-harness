@@ -318,6 +318,8 @@ export default defineConfig({
       noEmit: true,
       isolatedModules: true,
       allowImportingTsExtensions: false,
+      // Vite's client types declare the stylesheets main.tsx imports, which TypeScript 6 checks.
+      types: ["vite/client"],
       paths: { [PAGE_KIT]: ["./src/page-kit.tsx"] },
     },
     include: ["src"],
