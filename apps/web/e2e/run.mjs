@@ -66,6 +66,25 @@ async function report(page) {
 
 const failing = (value) => value.rules.filter((rule) => rule.status === "fail").map((rule) => rule.rule);
 
+/**
+ * Reads `read()` until `accept` takes its value, and returns it: for what the
+ * app sets a tick after a click or a key, which a read straight away can
+ * miss. It fails with `message` and the last value after 100 tries, 50 ms apart.
+ */
+async function eventually(page, read, accept, message) {
+  for (let tries = 0; ; tries += 1) {
+    const value = await read();
+    if (accept(value)) return value;
+    assert.ok(tries < 100, `${message}; last read ${JSON.stringify(value)}`);
+    await page.waitForTimeout(50);
+  }
+}
+
+/** Waits until the element a locator finds is focused. */
+async function becomesFocused(page, locator, message) {
+  await eventually(page, () => focused(locator), (value) => value === true, message);
+}
+
 /** Opens the Checks tab and its details, where every rule in force is listed with its findings. */
 async function showAllRules(page) {
   await page.getByRole("tab", { name: /Checks/ }).click();
@@ -515,7 +534,7 @@ test("a project on another library, Mantine, renders on the board with every rul
   const place = fix.getByRole("button", { name: "Show Lunch open — desktop" });
   await place.click();
   await page.locator('.frame-card[data-frame-key="lunch-open@desktop"][data-selected]').waitFor({ state: "attached" });
-  assert.equal(await place.getAttribute("aria-pressed"), "true");
+  await eventually(page, () => place.getAttribute("aria-pressed"), (value) => value === "true", "the place shown is pressed");
   assert.equal(await page.frameLocator('iframe[title="lunch-open at desktop"]').locator("[data-design-harness-overlay]").count(), 0);
   await showAllRules(page);
   assert.equal(await page.getByTestId("report-status").textContent(), "fail");
@@ -1808,13 +1827,12 @@ test("canvas only hides the header and both panels, and its button, shortcut and
   await page.locator(".shell[data-canvas-only]").waitFor();
   for (const hidden of [page.locator(".shell-header"), page.getByRole("complementary", { name: "Agent chat" }), page.getByRole("complementary", { name: "Checks and code" })]) assert.equal(await hidden.isVisible(), false, "the header and both panels step aside");
   const exit = page.getByRole("button", { name: "Show panels" });
-  assert.ok(await focused(exit), "focus moves to the way back");
+  await becomesFocused(page, exit, "focus moves to the way back");
   assert.equal(await exit.getAttribute("aria-keyshortcuts"), "Escape");
   const bar = page.getByRole("toolbar", { name: "Canvas" });
   assert.match(await bar.textContent(), /^Booking.*Fit \(\d+%\).*Follows the rules.*Show panels/);
   assert.equal(await page.getByRole("combobox", { name: "Zoom" }).isVisible(), true, "zoom stays");
-  const wider = await page.locator(".board-area").evaluate((element) => element.clientWidth);
-  assert.ok(wider > before + 400, `the canvas takes the room: ${before} to ${wider}`);
+  await eventually(page, () => page.locator(".board-area").evaluate((element) => element.clientWidth), (wider) => wider > before + 400, `the canvas takes the room from ${before}`);
   assert.deepEqual(await page.locator(".frame-card").evaluateAll((cards) => cards.map((card) => card.dataset.state)), Array(8).fill("measured"), "the frames stay rendered");
   await shot(page, "canvas-only-light");
   await shotDark(page, "canvas-only-dark");
@@ -1822,18 +1840,18 @@ test("canvas only hides the header and both panels, and its button, shortcut and
   await page.keyboard.press("Escape");
   await page.locator(".shell:not([data-canvas-only])").waitFor();
   assert.equal(await page.locator(".shell-header").isVisible(), true);
-  assert.ok(await focused(toggle), "focus goes back to the toggle");
-  assert.equal(await toggle.getAttribute("aria-pressed"), "false");
+  await becomesFocused(page, toggle, "focus goes back to the toggle");
+  await eventually(page, () => toggle.getAttribute("aria-pressed"), (value) => value === "false", "the toggle is no longer pressed");
 
   await page.keyboard.press("Control+.");
   await page.locator(".shell[data-canvas-only]").waitFor();
-  assert.ok(await focused(exit));
+  await becomesFocused(page, exit, "the shortcut moves focus to the way back");
   await page.keyboard.press("Control+.");
   await page.locator(".shell:not([data-canvas-only])").waitFor();
   await page.keyboard.press("Control+.");
   await exit.click();
   await page.locator(".shell:not([data-canvas-only])").waitFor();
-  assert.ok(await focused(toggle));
+  await becomesFocused(page, toggle, "Show panels moves focus back to the toggle");
   assert.deepEqual(errors, []);
   await context.close();
 });
@@ -1850,14 +1868,13 @@ test("the chat and the checks panels collapse and come back, and keep their stat
 
   await sideToggle.click();
   await side.waitFor({ state: "hidden" });
-  assert.equal(await sideToggle.getAttribute("aria-expanded"), "false");
+  await eventually(page, () => sideToggle.getAttribute("aria-expanded"), (value) => value === "false", "the checks toggle says the panel is closed");
   await shot(page, "side-collapsed-light");
   await shotDark(page, "side-collapsed-dark");
   await page.keyboard.press("Control+B");
   await chat.waitFor({ state: "hidden" });
-  assert.equal(await chatToggle.getAttribute("aria-expanded"), "false");
-  const stored = JSON.parse(await page.evaluate(() => localStorage.getItem("design-harness.panels")));
-  assert.deepEqual([stored.chat.open, stored.side.open], [false, false]);
+  await eventually(page, () => chatToggle.getAttribute("aria-expanded"), (value) => value === "false", "the chat toggle says the panel is closed");
+  await eventually(page, async () => JSON.parse(await page.evaluate(() => localStorage.getItem("design-harness.panels"))), (stored) => stored?.chat.open === false && stored?.side.open === false, "both panels are stored as closed");
 
   await page.reload();
   await measured(page, 1);
@@ -1875,7 +1892,7 @@ test("the chat and the checks panels collapse and come back, and keep their stat
   await handle.focus();
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("ArrowRight");
-  assert.equal(Number(await handle.getAttribute("aria-valuenow")), width + 32);
+  await eventually(page, async () => Number(await handle.getAttribute("aria-valuenow")), (value) => value === width + 32, `the chat widens from ${width} by 32 px`);
   await page.getByRole("button", { name: "Hide checks and code" }).click();
   await side.waitFor({ state: "hidden" });
   await page.reload();
@@ -1926,13 +1943,13 @@ test("the checks lead with plain words: a summary, each thing to fix with core's
   // Show me outlines both primary actions in every frame that draws them, and the card says where.
   await primary.getByRole("button", { name: "Show me" }).click();
   await page.frameLocator('iframe[title="lantern-open at desktop"]').locator("[data-design-harness-overlay]").first().waitFor({ state: "attached" });
-  assert.equal(await primary.getByTestId("fix-outline").textContent(), "Outlined in 6 frames (lantern-open, lantern-booked, lantern-held).");
-  assert.equal(await page.locator('.frame-card[data-selected]').count(), 6);
+  await eventually(page, () => primary.getByTestId("fix-outline").textContent(), (text) => text === "Outlined in 6 frames (lantern-open, lantern-booked, lantern-held).", "the card says where both actions are outlined");
+  await eventually(page, () => page.locator(".frame-card[data-selected]").count(), (count) => count === 6, "the six frames that draw them are selected");
   // Show in code, one click away, marks the line.
   await primary.getByTestId("show-in-code").click();
   await page.waitForSelector('[data-testid="code-line"]');
-  assert.equal(await page.locator('[data-testid="code-line"]').textContent(), `line ${finding.line}, column ${finding.column}`);
-  assert.equal((await page.locator('.code-field [data-kind="finding"]').textContent()) ?? "", edited.split("\n")[finding.line - 1], "Show in code marks the line");
+  await eventually(page, () => page.locator('[data-testid="code-line"]').textContent(), (text) => text === `line ${finding.line}, column ${finding.column}`, "the code view names the finding's line");
+  await eventually(page, async () => (await page.locator('.code-field [data-kind="finding"]').textContent()) ?? "", (text) => text === edited.split("\n")[finding.line - 1], "Show in code marks the line");
 
   await page.getByRole("tab", { name: /Checks/ }).click();
   const target = page.locator('.fix[data-rule="target-size"]');
@@ -1945,17 +1962,19 @@ test("the checks lead with plain words: a summary, each thing to fix with core's
     assert.ok(tries < 100, `the frame should end with one outline, not ${await overlays.count()}`);
     await page.waitForTimeout(50);
   }
-  assert.equal(await page.locator('.frame-card[data-frame-key="lantern-open@desktop"]').getAttribute("data-selected"), "");
+  await eventually(page, () => page.locator('.frame-card[data-frame-key="lantern-open@desktop"]').getAttribute("data-selected"), (value) => value === "", "the frame shown is selected");
   const shown = value.findings.find((item) => item.rule === "target-size" && item.scenario === "lantern-open" && item.view === "desktop");
-  assert.equal(await target.getByTestId("fix-message").textContent(), shown.message, "the message is the one of the place shown");
-  assert.equal(await target.getByRole("button", { name: "Show me" }).getAttribute("aria-pressed"), "true");
+  await eventually(page, () => target.getByTestId("fix-message").textContent(), (text) => text === shown.message, "the message is the one of the place shown");
+  await eventually(page, () => target.getByRole("button", { name: "Show me" }).getAttribute("aria-pressed"), (value) => value === "true", "Show me is pressed while its finding is shown");
   await shot(page, "checks-plain-light");
   await shotDark(page, "checks-plain-dark");
 
   await primary.getByRole("button", { name: "Ask the agent to fix" }).click();
   const box = page.getByRole("textbox", { name: "Message the agent" });
-  assert.match(await box.inputValue(), /^Please fix this so the prototype follows the project's rules\.\n\nThe check "one-primary-per-page" says: Page "booking" has 2 primary actions/);
-  assert.ok(await focused(page.getByLabel("Your Anthropic API key")), "without a key, the key comes first");
+  // The chat box is filled a tick after the press.
+  const asked = await eventually(page, () => box.inputValue(), (text) => text !== "", "the chat box is filled with a message asking for the fix");
+  assert.match(asked, /^Please fix this so the prototype follows the project's rules\.\n\nThe check "one-primary-per-page" says: Page "booking" has 2 primary actions/);
+  await becomesFocused(page, page.getByLabel("Your Anthropic API key"), "without a key, the key comes first");
 
   await showAllRules(page);
   assert.equal(await page.getByTestId("report-status").textContent(), "fail");
@@ -2102,8 +2121,8 @@ test("picking slots from two variants applies a new revision that passes every r
   assert.deepEqual(after.findings, []);
   await page.getByRole("tab", { name: "Canvas" }).click();
   const board = page.frameLocator('iframe[title="lantern-open at desktop"]');
-  assert.equal((await board.locator("label").first().textContent()).trim(), "For how long?", "the board draws the pick");
-  assert.equal(await board.locator("text=Second floor, 6 seats").count(), 1);
+  await eventually(page, async () => (await board.locator("label").first().textContent()).trim(), (text) => text === "For how long?", "the board draws the pick");
+  await eventually(page, () => board.locator("text=Second floor, 6 seats").count(), (count) => count === 1, "the board draws B's facts");
   await showCode(page, "pages/booking.json");
   const picked = await page.locator('[data-testid="code-editor"]').inputValue();
   assert.notEqual(picked, original);
@@ -2169,14 +2188,14 @@ test("a pick answers for its own page: with the rooms page already failing, a pa
   await shot(page, "variants-scoped-light");
   await page.getByTestId("apply-pick").click();
   await measured(page, 4);
-  assert.match(await page.getByTestId("notice").textContent(), /Pick applied/);
+  await eventually(page, () => page.getByTestId("notice").textContent(), (text) => /Pick applied/.test(text ?? ""), "the notice says the pick was applied");
   // The pick is the new revision: the booking page changed, and the rooms page fails exactly as it did.
   const after = await report(page);
   assert.deepEqual(after.findings, before.findings, "the same findings as before the pick, all on the rooms page");
   await page.getByRole("tab", { name: "Canvas" }).click();
   const board = page.frameLocator('iframe[title="lantern-open at desktop"]');
-  assert.equal((await board.locator("label").first().textContent()).trim(), "For how long?", "the board draws the pick");
-  assert.equal(await board.locator("text=Second floor, 6 seats").count(), 1);
+  await eventually(page, async () => (await board.locator("label").first().textContent()).trim(), (text) => text === "For how long?", "the board draws the pick");
+  await eventually(page, () => board.locator("text=Second floor, 6 seats").count(), (count) => count === 1, "the board draws B's facts");
 });
 
 test("more like this reaches the agent, naming the variant, and its new variants say whose they are like", async ({ browser, base, api }) => {
