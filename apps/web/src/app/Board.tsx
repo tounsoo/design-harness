@@ -205,7 +205,7 @@ export function FrameCard({ session, spec, revision, frameState, scale, focused,
   const status = statusOf(frameState);
   const { width, height } = spec.view;
   return (
-    <figure className="frame-card" style={{ width: Math.max(width * scale, 168) }} data-frame-key={spec.key} data-state={frameState.state} data-selected={selected ? "" : undefined} data-focused={focused ? "" : undefined} data-hidden={hidden ? "" : undefined} aria-hidden={hidden || undefined}>
+    <figure className="frame-card" style={{ width: width * scale }} data-frame-key={spec.key} data-state={frameState.state} data-selected={selected ? "" : undefined} data-focused={focused ? "" : undefined} data-hidden={hidden ? "" : undefined} aria-hidden={hidden || undefined}>
       <figcaption className="frame-head">
         <Text.Root as="span" weight="medium" className="frame-view">
           {label ? `${label} · ` : ""}
