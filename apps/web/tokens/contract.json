@@ -1,0 +1,62 @@
+{
+  "card": {
+    "shadow": {
+      "$type": "shadow",
+      "$value": {
+        "$ref": "#/harness/shadow/raised/$value"
+      }
+    }
+  },
+  "text": {
+    "$description": "A tool's type scale: body text at 14px, and headings a step smaller than a document's, so panels hold more without crowding.",
+    "font": {
+      "size": {
+        "$type": "dimension",
+        "$value": {
+          "$ref": "#/font/size/2/$value"
+        }
+      }
+    },
+    "h1": {
+      "font": {
+        "size": {
+          "$type": "dimension",
+          "$value": {
+            "$ref": "#/font/size/5/$value"
+          }
+        }
+      }
+    },
+    "h2": {
+      "font": {
+        "size": {
+          "$type": "dimension",
+          "$value": {
+            "$ref": "#/font/size/4/$value"
+          }
+        }
+      }
+    },
+    "h3": {
+      "font": {
+        "size": {
+          "$type": "dimension",
+          "$value": {
+            "$ref": "#/font/size/3/$value"
+          }
+        }
+      }
+    }
+  },
+  "field": {
+    "$description": "Fields read the tool's body size, so a control's text matches the text around it.",
+    "font": {
+      "size": {
+        "$type": "dimension",
+        "$value": {
+          "$ref": "#/text/font/size/$value"
+        }
+      }
+    }
+  }
+}

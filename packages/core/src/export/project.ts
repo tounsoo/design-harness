@@ -14,7 +14,7 @@ import { specToTsx } from "./tsx";
  */
 
 /** Development tools the project builds with, pinned exactly: the versions this repository builds and tests the export with. */
-export const EXPORT_TOOLING = { vite: "7.3.8", typescript: "5.9.3", "@types/react": "19.3.0", "@types/react-dom": "19.3.0" } as const;
+export const EXPORT_TOOLING = { vite: "7.3.8", typescript: "6.0.3", "@types/react": "19.3.0", "@types/react-dom": "19.3.0" } as const;
 
 /** Where the prototype's own files go in the project, beside the entry and the page kit. */
 export const EXPORT_PROTOTYPE_DIR = "src/prototype";
@@ -323,6 +323,8 @@ export default defineConfig({
       noEmit: true,
       isolatedModules: true,
       allowImportingTsExtensions: false,
+      // Vite's client types declare the stylesheets main.tsx imports, which TypeScript 6 checks.
+      types: ["vite/client"],
       paths: { [PAGE_KIT]: ["./src/page-kit.tsx"] },
     },
     include: ["src"],

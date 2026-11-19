@@ -1,22 +1,28 @@
-import { Alert, Badge, Button, Card, EmptyState, Field, Label, RadioGroup, Stack, Table, Text } from "@tounsoo/todae";
+import { Alert, Badge, Button, Card, Code, Disclosure, EmptyState, Field, Label, RadioGroup, Stack, Table, Text } from "@tounsoo/todae";
+import { Layers, RotateCcw, Sparkles, Wand2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { CURRENT, formatSpec, parseJson, recombine, variantLabel, variantPrototype, type CheckReport, type PickRecord, type ProjectConfig, type Prototype, type Recombination, type Variant } from "@design-harness/core";
+import { CURRENT, formatSpec, parseJson, pickScope, recombine, variantLabel, variantPrototype, type CheckReport, type Finding, type PickRecord, type PickScope, type ProjectConfig, type Prototype, type Recombination, type Variant } from "@design-harness/core";
 import type { PrototypeRecord } from "../store/project-file";
 import { FrameCard } from "./Board";
 import { useSessions, type Measured } from "./sessions";
+import { humanize, ruleLead, scenarioLabel, viewLabel } from "./words";
 
 /**
  * Variants side by side, and the person's pick. For the page being
  * compared, the page as it is and each variant the agent offered render in
  * measured frames of their own, every scenario and view (one scenario
  * shown at a time, the rest measured hidden), with core's whole report
- * under each. A variant that fails a rule says so in core's words; it can
- * be inspected and sent to the agent to fix, but not picked until it
- * passes. The person picks each slot of the page type from any passing
- * source; core recombines them (`recombine`), the combination is measured
- * and checked like any page, and Apply makes it a new revision, recorded
- * with where each slot came from and undoable. Only the person applies a
- * pick: nothing the agent sends reaches this view's actions.
+ * under each. A pick answers for the page it changes, not for the whole
+ * prototype: core's `pickScope` sorts each report into what is about this
+ * page, what the change brings or changes elsewhere, and what another page
+ * already had, and only the first two block. A variant with something to
+ * fix on the page says so in core's words; it can be inspected and sent to
+ * the agent to fix, but not picked until the page is clean. The person
+ * picks each slot of the page type from any source that is; core recombines
+ * them (`recombine`), the combination is measured and judged the same way,
+ * and Apply makes it a new revision, recorded with where each slot came
+ * from and undoable. Only the person applies a pick: nothing the agent
+ * sends reaches this view's actions.
  */
 
 export type ApplyPick = { readonly page: string; readonly slots: Readonly<Record<string, string>>; readonly notes: Readonly<Record<string, string>>; readonly before: string; readonly after: string; readonly prototype: Prototype };
@@ -37,16 +43,46 @@ type Props = {
 
 type Source = { readonly id: string; readonly label: string; readonly note: string; readonly like?: string; readonly prototype: Prototype; readonly variant?: Variant };
 
-/** Where a source stands: still measuring, failing (with core's failing rules), or passing every rule. */
-type Standing = { readonly state: "measuring"; readonly text: string } | { readonly state: "fail" | "incomplete"; readonly report: CheckReport } | { readonly state: "pass"; readonly report: CheckReport };
+/**
+ * Where a source stands for a pick on the page: still measuring, or measured,
+ * with core's report sorted by `pickScope` against the prototype as it is.
+ * `pass` means nothing blocks a pick of it: the page has no finding and the
+ * change brings none elsewhere. A failure another page already had is in
+ * `scope.existing` and blocks nothing.
+ */
+type Standing = { readonly state: "measuring"; readonly text: string } | { readonly state: "pass" | "fail"; readonly report: CheckReport; readonly scope: PickScope };
 
-function standingOf(item: Measured | undefined): Standing {
-  if (!item) return { state: "measuring", text: "not measured" };
-  if (item.measurement.state === "measuring") return { state: "measuring", text: `measuring ${item.measurement.answered} of ${item.measurement.total}` };
-  const report = item.state.report;
-  if (!report) return { state: "measuring", text: "checking" };
-  return report.status === "pass" ? { state: "pass", report } : { state: report.status, report };
+function reportOf(item: Measured | undefined): CheckReport | { readonly measuring: string } {
+  if (!item) return { measuring: "not measured" };
+  if (item.measurement.state === "measuring") return { measuring: `measuring ${item.measurement.answered} of ${item.measurement.total}` };
+  return item.state.report ?? { measuring: "checking" };
 }
+
+/** `before` is core's report on the prototype as it is, or null while that is still being measured. */
+function standingOf(item: Measured | undefined, before: CheckReport | null, page: string): Standing {
+  const report = reportOf(item);
+  if ("measuring" in report) return { state: "measuring", text: report.measuring };
+  if (!before || !item) return { state: "measuring", text: "waiting for the page as it is" };
+  const scope = pickScope(before, report, item.prototype, page);
+  return { state: scope.clear ? "pass" : "fail", report, scope };
+}
+
+/** The findings that block a pick, by rule, in core's order: the page's own, then what the change brings elsewhere. */
+function blocking(standing: Standing): { readonly rule: string; readonly findings: readonly Finding[]; readonly elsewhere: boolean }[] {
+  if (standing.state === "measuring") return [];
+  const groups = new Map<string, { rule: string; findings: Finding[]; elsewhere: boolean }>();
+  const add = (finding: Finding, elsewhere: boolean) => {
+    const key = `${elsewhere ? "1" : "0"}${finding.rule}`;
+    const group = groups.get(key) ?? { rule: finding.rule, findings: [], elsewhere };
+    group.findings.push(finding);
+    groups.set(key, group);
+  };
+  for (const finding of standing.scope.page) add(finding, false);
+  for (const finding of standing.scope.introduced) add(finding, true);
+  return [...groups.values()];
+}
+
+const things = (count: number) => `${count} ${count === 1 ? "thing" : "things"} to fix`;
 
 const canonical = (text: string | undefined): string => {
   if (text === undefined) return "";
@@ -69,6 +105,9 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
   const scenarios = prototype?.scenarios.filter((scenario) => scenario.page === page) ?? [];
   const [scenarioChoice, setScenario] = useState<string | null>(null);
   const scenario = scenarios.find((item) => item.id === scenarioChoice)?.id ?? scenarios[0]?.id ?? null;
+  /** One view at a time, or every view of the scenario; the views not shown keep measuring out of sight. */
+  const [viewChoice, setView] = useState("all");
+  const viewName = config.views.some((view) => view.name === viewChoice) ? viewChoice : "all";
   const [picks, setPicks] = useState<Readonly<Record<string, string>>>({});
   useEffect(() => setPicks({}), [page]);
 
@@ -104,8 +143,9 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
     return () => observer.disconnect();
   }, [sources.length]);
   const columns = Math.max(1, Math.min(sources.length, 4, Math.floor(width / 280)));
-  const columnWidth = (width - 16 * (columns - 1)) / columns - 34;
-  const scale = Math.max(0.08, Math.min(0.5, columnWidth / FRAME_WIDTH(config)));
+  // What a column leaves a frame: its share of the grid, less the card's and the frame area's padding and borders.
+  const columnWidth = (width - 16 * (columns - 1)) / columns - 64;
+  const scale = Math.max(0.08, Math.min(0.5, columnWidth / (viewName === "all" ? FRAME_WIDTH(config) : (config.views.find((view) => view.name === viewName)?.width ?? FRAME_WIDTH(config)))));
 
   if (!record || !prototype) return null;
   if (prototype.format !== "spec") {
@@ -124,12 +164,30 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
     );
   }
 
-  const standings = new Map(sources.map((source) => [source.id, standingOf(byId.get(source.id))]));
+  // Core's report on the prototype as it is: what every source and the combination are compared with.
+  const currentReport = reportOf(byId.get(CURRENT));
+  const before = "measuring" in currentReport ? null : currentReport;
+  const standings = new Map(sources.map((source) => [source.id, page ? standingOf(byId.get(source.id), before, page) : ({ state: "measuring", text: "not measured" } as Standing)]));
   const pickable = (id: string) => standings.get(id)?.state === "pass";
-  const comboStanding = combined ? standingOf(byId.get("combination")) : null;
+  const comboStanding = combined && page ? standingOf(byId.get("combination"), before, page) : null;
   const blocked = Object.values(chosen).filter((id) => id !== CURRENT && !pickable(id));
-  const applyWhy =
-    !combination ? "Pick at least one slot from a variant." : !combination.ok ? combination.error : !combined ? "These picks give the page as it is." : blocked.length > 0 ? `${[...new Set(blocked)].map(variantLabel).join(", ")} does not pass every rule yet.` : comboStanding?.state === "measuring" ? `The combination is ${comboStanding.text}.` : comboStanding?.state !== "pass" ? "The combination does not pass every rule; pick differently." : null;
+  const comboBlocks = comboStanding ? blocking(comboStanding) : [];
+  const applyWhy = !combination
+    ? "Pick at least one slot from a variant."
+    : !combination.ok
+      ? combination.error
+      : !combined
+        ? "These picks give the page as it is."
+        : blocked.length > 0
+          ? `${[...new Set(blocked)].map(variantLabel).join(", ")} still has something to fix on this page.`
+          : comboStanding?.state === "measuring"
+            ? `The combination is ${comboStanding.text}.`
+            : comboStanding?.state !== "pass"
+              ? comboBlocks.some((group) => !group.elsewhere)
+                ? "The combination has something to fix on this page; pick differently."
+                : "The combination changes a check outside this page; pick differently."
+              : null;
+  const elsewhere = comboStanding && comboStanding.state !== "measuring" ? comboStanding.scope.existing.length : 0;
   const usedNotes = Object.fromEntries([...new Set(Object.values(chosen))].filter((id) => id !== CURRENT).map((id) => [id, sources.find((source) => source.id === id)?.note ?? ""]));
   const picksHere = (state?.picks ?? []).map((pick, index) => ({ pick, index })).filter(({ pick }) => pick.page === page);
   const undoable = [...picksHere].reverse().find(({ pick }) => !pick.undone);
@@ -146,7 +204,7 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
             frameState={item.state.frameStates[spec.key] ?? { state: "waiting" }}
             scale={scale}
             focused={false}
-            hidden={spec.scenario.id !== scenario}
+            hidden={spec.scenario.id !== scenario || (viewName !== "all" && spec.view.name !== viewName)}
             selected={false}
             label={label}
           />
@@ -167,7 +225,7 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
               <Field.Select value={page ?? ""} onValueChange={(value) => setPage(value)}>
                 {pages.map((item) => (
                   <option key={item} value={item}>
-                    {item}
+                    {humanize(item)}
                   </option>
                 ))}
               </Field.Select>
@@ -181,7 +239,22 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
               <Field.Select value={scenario ?? ""} onValueChange={(value) => setScenario(value)}>
                 {scenarios.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.id}
+                    {scenarioLabel(item.id)}
+                  </option>
+                ))}
+              </Field.Select>
+            </Field.Root>
+          </Stack.Root>
+        )}
+        {config.views.length > 1 && page && (
+          <Stack.Root direction="row" align="center" gap="condensed">
+            <Label.Root htmlFor="variants-view">View</Label.Root>
+            <Field.Root id="variants-view" className="variants-picker">
+              <Field.Select value={viewName} onValueChange={setView}>
+                <option value="all">Every view</option>
+                {config.views.map((view) => (
+                  <option key={view.name} value={view.name}>
+                    {viewLabel(view.name)}
                   </option>
                 ))}
               </Field.Select>
@@ -196,6 +269,9 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
           <EmptyState.Description>Ask the agent for two to four variants of a page. Each is a whole page built from the inventories and layouts, shown here side by side with core&apos;s checks; you pick each slot from the one you like.</EmptyState.Description>
           <EmptyState.Actions>
             <Button.Root variant="secondary" onClick={() => onPrefill(`Give me 3 variants of the ${prototype.pages[0]?.id ?? ""} page, each different in one way, so I can compare them.`)}>
+              <Button.Icon>
+                <Layers />
+              </Button.Icon>
               Ask the agent for variants
             </Button.Root>
           </EmptyState.Actions>
@@ -203,11 +279,11 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
       ) : (
         <>
           <Text.Root as="p" tone="muted" className="variants-small">
-            Page <strong>{page}</strong> ({pageType?.id ?? entry?.pageType}): the page as it is and {sources.length - 1} {sources.length === 2 ? "variant" : "variants"}, each measured in every scenario and view. A variant that fails a rule cannot be picked until it passes.
+            The <strong>{humanize(page).toLowerCase()}</strong> page as it is, beside {sources.length - 1} {sources.length === 2 ? "variant" : "variants"}. Each is checked in every scenario and view. A pick answers for this page only: a variant with something to fix here cannot be picked until it is fixed, and a problem already on another page does not stand in the way.
           </Text.Root>
           <div className="variants-grid" ref={grid} style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
             {sources.map((source) => (
-              <SourceCard key={source.id} source={source} page={page} standing={standings.get(source.id) as Standing} frames={frameRow(byId.get(source.id), source.label)} agent={agent} onSend={onSend} onDismiss={onDismiss} />
+              <SourceCard key={source.id} source={source} page={page} config={config} standing={standings.get(source.id) as Standing} frames={frameRow(byId.get(source.id), source.label)} agent={agent} onSend={onSend} onDismiss={onDismiss} />
             ))}
           </div>
 
@@ -252,6 +328,9 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
                   </Button.Root>
                 ))}
               <Button.Root variant="ghost" onClick={() => setPicks({})}>
+                <Button.Icon>
+                  <RotateCcw />
+                </Button.Icon>
                 Reset to the page as it is
               </Button.Root>
             </Stack.Root>
@@ -272,7 +351,7 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
                 <Card.Body>
                   <Stack.Root gap="condensed">
                     {frameRow(byId.get("combination"), "The combination")}
-                    <ReportList standing={comboStanding as Standing} />
+                    <ReportList standing={comboStanding as Standing} config={config} />
                   </Stack.Root>
                 </Card.Body>
               </Card.Root>
@@ -295,10 +374,16 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
               >
                 Apply this pick
               </Button.Root>
-              {applyWhy && (
+              {applyWhy ? (
                 <Text.Root as="span" tone="muted" className="variants-small" data-testid="apply-why">
                   {applyWhy}
                 </Text.Root>
+              ) : (
+                elsewhere > 0 && (
+                  <Text.Root as="span" tone="muted" className="variants-small" data-testid="apply-note">
+                    {`This page follows the rules. ${things(elsewhere)} on another page ${elsewhere === 1 ? "stays" : "stay"} as ${elsewhere === 1 ? "it is" : "they are"}.`}
+                  </Text.Root>
+                )
               )}
             </Stack.Root>
           </section>
@@ -323,50 +408,98 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
 
 function StandingBadge({ standing }: { readonly standing: Standing }) {
   if (standing.state === "measuring") return <Badge.Root tone="info">{standing.text}</Badge.Root>;
-  if (standing.state === "pass") return <Badge.Root tone="success">passes every rule</Badge.Root>;
-  const failing = standing.report.rules.filter((rule) => rule.status === "fail").length;
-  return <Badge.Root tone={standing.state === "fail" ? "critical" : "neutral"}>{standing.state === "fail" ? `fails ${failing} ${failing === 1 ? "rule" : "rules"}` : "incomplete"}</Badge.Root>;
+  if (standing.state === "pass") return <Badge.Root tone="success">{standing.report.status === "pass" ? "passes every rule" : "this page follows the rules"}</Badge.Root>;
+  const count = blocking(standing).length + standing.scope.stopped.length;
+  return <Badge.Root tone="critical">{things(count)}</Badge.Root>;
 }
 
-/** Core's report under a source: every failing rule with its findings, word for word. */
-function ReportList({ standing }: { readonly standing: Standing }) {
+/**
+ * Core's report under a source, for a pick on this page: what blocks it,
+ * each rule in plain words with core's messages word for word, then what
+ * another page already had, which blocks nothing, and the rule ids one step
+ * away.
+ */
+function ReportList({ standing, config }: { readonly standing: Standing; readonly config: ProjectConfig }) {
   if (standing.state === "measuring") return null;
-  const failing = standing.report.rules.filter((rule) => rule.status !== "pass");
-  if (failing.length === 0) {
-    return (
-      <Text.Root as="p" tone="muted" className="variants-small" data-testid="variant-report">
-        Every rule passes: {standing.report.rules.length} rules, the rendered ones measured.
-      </Text.Root>
-    );
-  }
+  const { report, scope } = standing;
+  const groups = blocking(standing);
+  const lead = (id: string) => {
+    const rule = report.rules.find((item) => item.rule === id);
+    return rule ? ruleLead(rule, config) : humanize(id);
+  };
+  const existingRules = [...new Set(scope.existing.map((finding) => finding.rule))];
   return (
-    <ul className="variant-report" data-testid="variant-report" aria-label="What core found">
-      {failing.map((rule) => (
-        <li key={rule.rule} data-rule={rule.rule}>
-          <Text.Root as="span" className="rule-id">
-            {rule.rule}
-          </Text.Root>{" "}
-          <Badge.Root tone={rule.status === "fail" ? "critical" : "neutral"}>{rule.status}</Badge.Root>
-          {rule.findings.slice(0, 3).map((finding, index) => (
-            <Text.Root as="p" key={index} className="variants-small finding-message" data-testid="variant-finding">
-              {finding.message}
-            </Text.Root>
+    <Stack.Root gap="condensed" data-testid="variant-report">
+      {groups.length === 0 && scope.stopped.length === 0 ? (
+        <Text.Root as="p" tone="muted" className="variants-small">
+          {report.status === "pass" ? `Every rule passes: ${report.rules.length} rules, the rendered ones measured.` : "Nothing to fix on this page."}
+        </Text.Root>
+      ) : (
+        <ul className="variant-report" aria-label="What to fix before this can be picked">
+          {groups.map((group) => (
+            <li key={`${group.elsewhere ? "elsewhere" : "page"}-${group.rule}`} data-rule={group.rule} data-scope={group.elsewhere ? "introduced" : "page"} className="variant-issue">
+              <Text.Root as="p" weight="medium" className="variants-small">
+                {group.elsewhere ? `Outside this page, changed by it: ${lead(group.rule)}` : lead(group.rule)}
+              </Text.Root>
+              {group.findings.slice(0, 3).map((finding, index) => (
+                <Text.Root as="p" key={index} className="variants-small fix-message" data-testid="variant-finding">
+                  {finding.message}
+                </Text.Root>
+              ))}
+              {group.findings.length > 3 && (
+                <Text.Root as="p" tone="muted" className="variants-small">
+                  and {group.findings.length - 3} more
+                </Text.Root>
+              )}
+            </li>
           ))}
-          {rule.findings.length > 3 && (
-            <Text.Root as="p" tone="muted" className="variants-small">
-              and {rule.findings.length - 3} more
-            </Text.Root>
-          )}
-        </li>
-      ))}
-    </ul>
+          {scope.stopped.map((rule) => (
+            <li key={`stopped-${rule}`} data-rule={rule} data-scope="stopped" className="variant-issue">
+              <Text.Root as="p" weight="medium" className="variants-small">
+                {`Could not be checked any more: ${lead(rule)}`}
+              </Text.Root>
+            </li>
+          ))}
+        </ul>
+      )}
+      {scope.existing.length > 0 && (
+        <Disclosure.Root className="variant-elsewhere" data-testid="variant-elsewhere">
+          <Disclosure.Summary>{`Already on another page: ${things(scope.existing.length)}, not part of this pick`}</Disclosure.Summary>
+          <ul className="variant-report">
+            {scope.existing.map((finding, index) => (
+              <li key={index} data-rule={finding.rule}>
+                <Text.Root as="p" tone="muted" className="variants-small fix-message">
+                  {finding.message}
+                </Text.Root>
+              </li>
+            ))}
+          </ul>
+        </Disclosure.Root>
+      )}
+      {(groups.length > 0 || existingRules.length > 0 || scope.stopped.length > 0) && (
+        <Disclosure.Root className="variant-details">
+          <Disclosure.Summary>Details</Disclosure.Summary>
+          <Text.Root as="p" tone="muted" className="variants-small">
+            Core&apos;s verdict on the whole prototype: {report.status}. Rules:{" "}
+            {[...new Set([...groups.map((group) => group.rule), ...scope.stopped, ...existingRules])].map((rule, index) => (
+              <span key={rule}>
+                {index > 0 ? ", " : ""}
+                <Code.Root>{rule}</Code.Root>
+              </span>
+            ))}
+            .
+          </Text.Root>
+        </Disclosure.Root>
+      )}
+    </Stack.Root>
   );
 }
 
-function SourceCard({ source, page, standing, frames, agent, onSend, onDismiss }: { readonly source: Source; readonly page: string; readonly standing: Standing; readonly frames: ReactNode; readonly agent: Props["agent"]; readonly onSend: (message: string) => void; readonly onDismiss: (id: string) => void }) {
+function SourceCard({ source, page, config, standing, frames, agent, onSend, onDismiss }: { readonly source: Source; readonly page: string; readonly config: ProjectConfig; readonly standing: Standing; readonly frames: ReactNode; readonly agent: Props["agent"]; readonly onSend: (message: string) => void; readonly onDismiss: (id: string) => void }) {
   const [more, setMore] = useState(false);
   const [note, setNote] = useState("");
-  const failing = standing.state === "fail" || standing.state === "incomplete" ? standing.report.rules.filter((rule) => rule.status === "fail") : [];
+  // What the agent is asked to fix: what blocks a pick of this variant, never another page's failure.
+  const failing = standing.state === "fail" ? blocking(standing) : [];
   const fix = () =>
     onSend(
       `${source.label} of page "${page}" fails core's checks:\n${failing
@@ -392,18 +525,27 @@ function SourceCard({ source, page, standing, frames, agent, onSend, onDismiss }
       <Card.Body>
         <Stack.Root gap="condensed">
           {frames}
-          <ReportList standing={standing} />
+          <ReportList standing={standing} config={config} />
           {source.variant && (
             <Stack.Root direction="row" gap="condensed" wrap>
               {failing.length > 0 && (
                 <Button.Root variant="secondary" disabled={!agent.ready} onClick={fix}>
+                  <Button.Icon>
+                    <Sparkles />
+                  </Button.Icon>
                   Ask the agent to fix it
                 </Button.Root>
               )}
               <Button.Root variant="ghost" aria-expanded={more} onClick={() => setMore(!more)}>
+                <Button.Icon>
+                  <Wand2 />
+                </Button.Icon>
                 More like this
               </Button.Root>
               <Button.Root variant="ghost" onClick={() => onDismiss(source.id)}>
+                <Button.Icon>
+                  <X />
+                </Button.Icon>
                 Dismiss
               </Button.Root>
             </Stack.Root>

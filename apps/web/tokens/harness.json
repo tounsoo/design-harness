@@ -1,0 +1,208 @@
+{
+  "harness": {
+    "$description": "design-harness's own tokens, read by the app's layout CSS.",
+    "canvas": {
+      "dot-gap": {
+        "$type": "dimension",
+        "$value": {
+          "value": 20,
+          "unit": "px"
+        }
+      },
+      "padding": {
+        "$type": "dimension",
+        "$value": {
+          "$ref": "#/space/8/$value"
+        }
+      },
+      "row-gap": {
+        "$type": "dimension",
+        "$value": {
+          "$ref": "#/space/10/$value"
+        }
+      },
+      "frame-gap": {
+        "$type": "dimension",
+        "$value": {
+          "$ref": "#/space/8/$value"
+        }
+      }
+    },
+    "artboard": {
+      "radius": {
+        "$type": "dimension",
+        "$value": {
+          "$ref": "#/radius/md/$value"
+        }
+      },
+      "label-gap": {
+        "$type": "dimension",
+        "$value": {
+          "$ref": "#/space/2/$value"
+        }
+      },
+      "selected": {
+        "$type": "color",
+        "$value": {
+          "$ref": "#/color/status/critical/border/$value"
+        }
+      }
+    },
+    "floating": {
+      "radius": {
+        "$type": "dimension",
+        "$value": {
+          "$ref": "#/radius/lg/$value"
+        }
+      },
+      "bg": {
+        "$type": "color",
+        "$value": {
+          "$ref": "#/color/bg/elevated/$value"
+        }
+      }
+    },
+    "panel": {
+      "bg": {
+        "$type": "color",
+        "$value": {
+          "$ref": "#/color/bg/surface/$value"
+        }
+      },
+      "padding": {
+        "$type": "dimension",
+        "$value": {
+          "$ref": "#/space/4/$value"
+        }
+      },
+      "header-height": {
+        "$type": "dimension",
+        "$value": {
+          "value": 3,
+          "unit": "rem"
+        }
+      }
+    },
+    "edge": {
+      "$description": "Edges that mark a row's tone, and the rule beside a quoted message.",
+      "status": {
+        "$type": "dimension",
+        "$value": {
+          "value": 3,
+          "unit": "px"
+        }
+      },
+      "quote": {
+        "$type": "dimension",
+        "$value": {
+          "value": 2,
+          "unit": "px"
+        }
+      }
+    },
+    "measure": {
+      "$description": "How wide a page of reading grows before it stops: a page, a proposal's review, the variants side by side, a note.",
+      "page": {
+        "$type": "dimension",
+        "$value": {
+          "value": 64,
+          "unit": "rem"
+        }
+      },
+      "review": {
+        "$type": "dimension",
+        "$value": {
+          "value": 96,
+          "unit": "rem"
+        }
+      },
+      "wide": {
+        "$type": "dimension",
+        "$value": {
+          "value": 120,
+          "unit": "rem"
+        }
+      },
+      "note": {
+        "$type": "dimension",
+        "$value": {
+          "value": 40,
+          "unit": "rem"
+        }
+      }
+    },
+    "size": {
+      "$description": "The few fixed sizes the layout needs: the least width of a picker, a column and a label, the most a name or a log may take, the code editor's least height, and the room a sticky bar keeps clear.",
+      "picker": {
+        "$type": "dimension",
+        "$value": {
+          "value": 10,
+          "unit": "rem"
+        }
+      },
+      "picker-wide": {
+        "$type": "dimension",
+        "$value": {
+          "value": 12,
+          "unit": "rem"
+        }
+      },
+      "zoom": {
+        "$type": "dimension",
+        "$value": {
+          "value": 7.5,
+          "unit": "rem"
+        }
+      },
+      "column": {
+        "$type": "dimension",
+        "$value": {
+          "value": 20,
+          "unit": "rem"
+        }
+      },
+      "label": {
+        "$type": "dimension",
+        "$value": {
+          "value": 6,
+          "unit": "rem"
+        }
+      },
+      "name": {
+        "$type": "dimension",
+        "$value": {
+          "value": 16,
+          "unit": "rem"
+        }
+      },
+      "log": {
+        "$type": "dimension",
+        "$value": {
+          "value": 16,
+          "unit": "rem"
+        }
+      },
+      "editor": {
+        "$type": "dimension",
+        "$value": {
+          "value": 30,
+          "unit": "rem"
+        }
+      },
+      "sticky-clearance": {
+        "$type": "dimension",
+        "$value": {
+          "value": 10,
+          "unit": "rem"
+        }
+      },
+      "artboard-label": {
+        "$type": "dimension",
+        "$value": {
+          "value": 10.5,
+          "unit": "rem"
+        }
+      }
+    }
+  }
+}

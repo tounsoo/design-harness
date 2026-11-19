@@ -1,5 +1,6 @@
-import { Alert, Badge, Button, Field, Stack, Tabs, Text } from "@tounsoo/todae";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Alert, Badge, Button, Field, Kbd, Link, Splitter, Stack, Tabs, Text, Toolbar, VisuallyHidden, useAnnouncer, useHotkey } from "@tounsoo/todae";
+import { CircleCheck, CodeXml, Download, Expand, FileCode2, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Shapes, Shrink, Upload, X } from "lucide-react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { NO_VARIANTS, variantLabel, type Finding, type LayoutUse, type PickRecord, type ProjectConfig, type Prototype, type Variant, type VariantState } from "@design-harness/core";
 import { AgentController, type ChatRecord, type ChatStore } from "../agent/controller";
 import { SpecStreamPreview } from "../agent/spec-stream";
@@ -8,7 +9,7 @@ import { waitForMeasured } from "../agent/measure";
 import type { AgentSettings } from "../agent/models";
 import { loadSettings, saveSettings } from "../agent/settings";
 import type { AgentHost } from "../agent/tools";
-import { frameKey } from "../runtime/session";
+import { frameKey, type SessionState } from "../runtime/session";
 import { planOutline } from "../runtime/tags";
 import type { Store } from "../store/db";
 import type { LoadNote } from "../store/migrate";
@@ -22,7 +23,9 @@ import { blankPrototype, prototypeId, type PrototypeFormat } from "./new-prototy
 import { ProjectView } from "./ProjectView";
 import { ProposalPage } from "./ProposalPage";
 import { ProposalsView } from "./ProposalsView";
+import { PANEL_SIZES, usePanels } from "./panels";
 import { createSession } from "./runtime";
+import { SHORTCUTS, ariaKeys } from "./shortcuts";
 import { codeZip } from "../export/code-zip";
 import { VariantsView, type ApplyPick } from "./VariantsView";
 
@@ -98,6 +101,49 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   const [notice, setNotice] = useState<{ tone: "success" | "critical" | "info" | "warning"; title: string; lines: readonly string[] } | null>(() => {
     const [first] = loadNotes;
     return first ? { tone: first.tone, title: first.title, lines: [first.text] } : null;
+  });
+
+  const { panels, resize, toggle } = usePanels();
+  const mainId = useId();
+  const chatId = useId();
+  const sideId = useId();
+  const announce = useAnnouncer();
+
+  /**
+   * Canvas only: the header and both panels step aside and a floating bar
+   * keeps the prototype's name, zoom, a quiet verdict and the way back.
+   * Focus goes to that way back on entering, and back to the toggle on
+   * leaving, so it never falls to the page.
+   */
+  const [canvasOnly, setCanvasOnly] = useState(false);
+  const canvasToggle = useRef<HTMLButtonElement>(null);
+  const exitButton = useRef<HTMLButtonElement>(null);
+  const moveFocus = useRef<"exit" | "toggle" | null>(null);
+  const enterCanvasOnly = useCallback(() => {
+    setCenter("canvas");
+    setCanvasOnly(true);
+    moveFocus.current = "exit";
+    announce("Canvas only. Press Escape to show the panels.");
+  }, [announce]);
+  const leaveCanvasOnly = useCallback(() => {
+    setCanvasOnly(false);
+    moveFocus.current = "toggle";
+    announce("Panels shown.");
+  }, [announce]);
+  useEffect(() => {
+    const target = moveFocus.current === "exit" ? exitButton.current : moveFocus.current === "toggle" ? canvasToggle.current : null;
+    moveFocus.current = null;
+    target?.focus();
+  }, [canvasOnly]);
+  useHotkey(SHORTCUTS.canvasOnly.keys, () => (canvasOnly ? leaveCanvasOnly() : enterCanvasOnly()));
+  useHotkey(SHORTCUTS.leave.keys, leaveCanvasOnly, { enabled: canvasOnly });
+  useHotkey(SHORTCUTS.chat.keys, () => {
+    if (canvasOnly) leaveCanvasOnly();
+    toggle("chat", canvasOnly ? true : undefined);
+  });
+  useHotkey(SHORTCUTS.side.keys, () => {
+    if (canvasOnly) leaveCanvasOnly();
+    toggle("side", canvasOnly ? true : undefined);
   });
 
   // A new revision for each settled edit; the first one at once. The agent's changes start theirs at once, so they are skipped here.
@@ -240,8 +286,11 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     if (finding.file === undefined) return;
     const instance = finding.via && finding.via.length > 0 && finding.line !== undefined ? { instance: { at: { file: finding.file, line: finding.line, column: finding.column ?? 1 }, via: finding.via } } : {};
     setCode({ file: finding.file, ...(finding.line !== undefined ? { line: finding.line } : {}), ...(finding.column !== undefined ? { column: finding.column } : {}), ...instance });
-    if (open) setSide("code");
-  }, []);
+    if (open) {
+      setSide("code");
+      toggle("side", true);
+    }
+  }, [toggle]);
 
   const select = useCallback(
     (finding: Finding | null) => {
@@ -284,7 +333,20 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     const place = finding.file !== undefined ? ` (${finding.file}${finding.line !== undefined ? `:${finding.line}` : ""})` : finding.page !== undefined ? ` (page ${finding.page})` : "";
     const text = `The check "${finding.rule}" says: ${finding.message}${place}\n\nIf the prototype needs this, draft a proposal that adds it to the inventory, with a rule that governs it and examples that pass and fail. If it does not, change the prototype to use what the inventory has.`;
     setPrefill((previous) => ({ text, nonce: (previous?.nonce ?? 0) + 1 }));
-  }, []);
+    setCanvasOnly(false);
+    toggle("chat", true);
+  }, [toggle]);
+  /** "Ask the agent to fix": a message for the person to edit and send, about any finding. */
+  const fix = useCallback(
+    (finding: Finding) => {
+      const place = finding.file !== undefined ? ` (${finding.file}${finding.line !== undefined ? `:${finding.line}` : ""})` : finding.scenario !== undefined ? ` (scenario ${finding.scenario}${finding.view !== undefined ? `, ${finding.view}` : ""})` : finding.page !== undefined ? ` (page ${finding.page})` : "";
+      const text = `Please fix this so the prototype follows the project's rules.\n\nThe check "${finding.rule}" says: ${finding.message}${place}`;
+      setPrefill((previous) => ({ text, nonce: (previous?.nonce ?? 0) + 1 }));
+      setCanvasOnly(false);
+      toggle("chat", true);
+    },
+    [toggle],
+  );
   /** The person's pick: the recombined page as a new revision, recorded with where each slot came from. Nothing but this view's Apply calls it. */
   const applyPick = useCallback(
     (pick: ApplyPick) => {
@@ -314,7 +376,13 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     [recordOf, updateVariants, session, checked, controller],
   );
   const dismissVariant = useCallback((id: string) => updateVariants((state) => ({ ...state, variants: state.variants.filter((variant) => variant.id !== id) })), [updateVariants]);
-  const prefillChat = useCallback((text: string) => setPrefill((previous) => ({ text, nonce: (previous?.nonce ?? 0) + 1 })), []);
+  const prefillChat = useCallback(
+    (text: string) => {
+      setPrefill((previous) => ({ text, nonce: (previous?.nonce ?? 0) + 1 }));
+      toggle("chat", true);
+    },
+    [toggle],
+  );
 
   const proposable = useCallback(
     (finding: Finding) => {
@@ -379,19 +447,36 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   };
 
   const measuredCount = state.frames.filter((frame) => state.frameStates[frame.key]?.state === "measured").length;
+  const verdict = verdictOf(state);
+  const formatName = current?.prototype.format === "spec" ? "Spec" : "TSX";
+  const prototypeName = current?.name ?? "No prototype";
 
   return (
-    <div className="app">
-      <header className="app-header">
-        <Stack.Root direction="row" align="center" gap="normal" className="app-header-start">
-          <Text.Root as="span" weight="bold">
-            design-harness
+    <div className="shell" data-canvas-only={canvasOnly ? "" : undefined}>
+      <Stack.Root as="header" direction="row" align="center" gap="condensed" className="shell-header">
+        <VisuallyHidden.Root focusable>
+          <Link.Root href={`#${mainId}`} onClick={(event) => {
+              event.preventDefault();
+              document.getElementById(mainId)?.focus();
+            }}>
+            Skip to the canvas
+          </Link.Root>
+        </VisuallyHidden.Root>
+        <Button.Root variant="ghost" aria-label={`Chat (${SHORTCUTS.chat.label})`} aria-keyshortcuts={ariaKeys(SHORTCUTS.chat)} aria-controls={chatId} aria-expanded={panels.chat.open} onClick={() => toggle("chat")} className="shell-toggle">
+          <Button.Icon>{panels.chat.open ? <PanelLeftClose /> : <PanelLeft />}</Button.Icon>
+        </Button.Root>
+        <Stack.Root direction="row" align="center" gap="condensed" className="shell-title">
+          <span className="shell-mark" aria-hidden="true">
+            <Shapes />
+          </span>
+          <Text.Root as="span" weight="bold" className="shell-project">
+            {config.name}
           </Text.Root>
-          <Text.Root as="span" tone="muted">
-            {config.name} /
-          </Text.Root>
+          <span className="shell-slash" aria-hidden="true">
+            /
+          </span>
           {records.length > 1 ? (
-            <Field.Root aria-label="Prototype" className="app-prototype">
+            <Field.Root aria-label="Prototype" className="shell-prototype">
               <Field.Select
                 value={current?.id ?? ""}
                 onValueChange={(id) => {
@@ -409,16 +494,13 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
               </Field.Select>
             </Field.Root>
           ) : (
-            <Text.Root as="span" tone="muted">
-              {current?.name ?? "no prototype"}
+            <Text.Root as="span" weight="medium">
+              {prototypeName}
             </Text.Root>
           )}
-          <Badge.Root tone="neutral">
-            {config.library.package} {config.library.version}
-          </Badge.Root>
           {current && (
-            <Badge.Root tone={current.prototype.format === "spec" ? "info" : "neutral"} data-testid="prototype-format">
-              {current.prototype.format === "spec" ? "json-render spec" : "TSX"}
+            <Badge.Root tone="neutral" data-testid="prototype-format" title={current.prototype.format === "spec" ? "A json-render spec prototype: pages and layouts as data" : "A TSX prototype: pages and layouts as React code"}>
+              {formatName}
             </Badge.Root>
           )}
         </Stack.Root>
@@ -428,14 +510,14 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
             if (value === "proposals" && center === "proposals") setReviewing(null);
             setCenter(value === "project" ? "project" : value === "proposals" ? "proposals" : value === "variants" ? "variants" : "canvas");
           }}
-          className="app-center-tabs"
+          className="shell-views"
         >
           <Tabs.List aria-label="Main view">
             <Tabs.Tab value="canvas">Canvas</Tabs.Tab>
             <Tabs.Tab value="variants">
               Variants
               {variantCount > 0 && (
-                <Badge.Root tone="info" className="app-tab-count" data-testid="variant-count" aria-label={`${variantCount} variants`}>
+                <Badge.Root tone="neutral" className="shell-tab-count" data-testid="variant-count" aria-label={`${variantCount} variants`}>
                   {variantCount}
                 </Badge.Root>
               )}
@@ -444,38 +526,55 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
             <Tabs.Tab value="proposals" onClick={() => center === "proposals" && setReviewing(null)}>
               Proposals
               {openCount > 0 && (
-                <Badge.Root tone="info" className="app-tab-count" data-testid="open-proposals" aria-label={`${openCount} open`}>
+                <Badge.Root tone="warning" className="shell-tab-count" data-testid="open-proposals" aria-label={`${openCount} open`}>
                   {openCount}
                 </Badge.Root>
               )}
             </Tabs.Tab>
           </Tabs.List>
         </Tabs.Root>
-        <Stack.Root direction="row" align="center" gap="condensed" className="app-header-end">
+        <Toolbar.Root aria-label="Prototype actions" className="shell-actions">
           <NewPrototype config={config} onCreate={createPrototype} />
-          <Button.Root variant="ghost" onClick={download}>
-            Export
+          <Toolbar.Separator />
+          {/* The project file out and in, and the prototype as a runnable React project: icons, named in their tooltips. */}
+          <Button.Root variant="ghost" onClick={download} aria-label="Export">
+            <Button.Icon>
+              <Download />
+            </Button.Icon>
           </Button.Root>
-          <Button.Root variant="ghost" onClick={downloadCode} data-testid="export-code">
-            Export code
+          <Button.Root variant="ghost" onClick={() => fileInput.current?.click()} aria-label="Import">
+            <Button.Icon>
+              <Upload />
+            </Button.Icon>
           </Button.Root>
-          <Button.Root variant="ghost" onClick={() => fileInput.current?.click()}>
-            Import
+          <Button.Root variant="ghost" onClick={downloadCode} data-testid="export-code" aria-label="Export code">
+            <Button.Icon>
+              <FileCode2 />
+            </Button.Icon>
           </Button.Root>
-          <input
-            ref={fileInput}
-            type="file"
-            accept="application/json,.json"
-            hidden
-            data-testid="import-file"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              event.target.value = "";
-              if (file) void upload(file);
-            }}
-          />
-        </Stack.Root>
-      </header>
+          <Toolbar.Separator />
+          <Button.Root ref={canvasToggle} variant="ghost" aria-label={`Canvas only (${SHORTCUTS.canvasOnly.label})`} aria-keyshortcuts={ariaKeys(SHORTCUTS.canvasOnly)} pressed={canvasOnly} onPressedChange={(next) => (next ? enterCanvasOnly() : leaveCanvasOnly())}>
+            <Button.Icon>
+              <Expand />
+            </Button.Icon>
+          </Button.Root>
+          <Button.Root variant="ghost" aria-label={`Checks and code (${SHORTCUTS.side.label})`} aria-keyshortcuts={ariaKeys(SHORTCUTS.side)} aria-controls={sideId} aria-expanded={panels.side.open} onClick={() => toggle("side")}>
+            <Button.Icon>{panels.side.open ? <PanelRightClose /> : <PanelRight />}</Button.Icon>
+          </Button.Root>
+        </Toolbar.Root>
+        <input
+          ref={fileInput}
+          type="file"
+          accept="application/json,.json"
+          hidden
+          data-testid="import-file"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (file) void upload(file);
+          }}
+        />
+      </Stack.Root>
 
       {(problems.length > 0 || notice) && (
         <div className="app-notices">
@@ -503,74 +602,145 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
         </div>
       )}
 
-      <div className="app-body">
-        <ChatPanel controller={controller} vault={vault} settings={settings} onSettings={changeSettings} onOpenProposal={openProposal} onOpenVariants={() => setCenter("variants")} prefill={prefill} />
-        <main className="app-main" aria-label={center === "canvas" ? "Canvas" : center === "project" ? "Project" : center === "variants" ? "Variants" : "Proposals"}>
-          {/* The board stays laid out under the project view, so frames keep their viewport and keep measuring. */}
-          <div className="app-main-pane" data-inactive={center === "canvas" ? undefined : ""} aria-hidden={center === "canvas" ? undefined : true}>
-            {previewing && (
-              <Alert.Root tone="info" className="app-preview" data-testid="spec-preview">
-                <Alert.Title>Drawing the agent&apos;s patch as it streams</Alert.Title>
-                <Alert.Description>A draft from json-render&apos;s stream compiler, not saved. The checks judge the patch once it arrives whole.</Alert.Description>
-              </Alert.Root>
-            )}
-            <Board session={session} state={state} selected={selected} />
-          </div>
-          {center === "variants" && (
-            <div className="app-main-pane app-main-scroll" data-testid="variants-pane">
-              <VariantsView key={current?.id ?? ""} config={checked(config)} record={current} agent={agent} onApply={applyPick} onUndo={undoPick} onDismiss={dismissVariant} onSend={(message) => void controller.send(message)} onPrefill={prefillChat} />
-            </div>
-          )}
-          {center === "project" && (
-            <div className="app-main-pane app-main-scroll">
-              <ProjectView config={config} onOpenProposal={openProposal} prototype={current} />
-            </div>
-          )}
-          {center === "proposals" && (
-            <div className="app-main-pane app-main-scroll" data-testid="proposals-pane">
-              {reviewing === null ? (
-                <ProposalsView config={config} onOpen={openProposal} />
-              ) : (
-                <ProposalPage
-                  key={reviewing}
-                  config={config}
-                  id={reviewing}
-                  prototypes={records}
-                  openPrototypeId={current?.id ?? ""}
-                  board={{ session, state }}
-                  agent={agent}
-                  onBack={() => setReviewing(null)}
-                  onSave={saveConfig}
-                  onSendBack={(message) => void controller.send(message)}
-                  onOpenPrototype={openPrototype}
-                  onOpenProposal={openProposal}
-                />
-              )}
-            </div>
-          )}
-        </main>
-        <aside className="app-side" aria-label="Checks and code">
-          <Tabs.Root value={side} onValueChange={(value) => setSide(value === "code" ? "code" : "checks")} className="app-side-tabs">
-            <Tabs.List aria-label="Side panel">
-              <Tabs.Tab value="checks">
-                Checks{" "}
-                {state.report && (
-                  <Badge.Root tone={state.report.status === "pass" ? "success" : state.report.status === "fail" ? "critical" : "neutral"}>{state.report.status}</Badge.Root>
+      <Splitter.Root className="shell-body" show={canvasOnly ? "end" : "both"} value={panels.chat.open ? panels.chat.width : 0} onValueChange={(value) => resize("chat", value)} min={PANEL_SIZES.chat.min} max={PANEL_SIZES.chat.max} collapsible>
+        <Splitter.Panel id={chatId} className="shell-panel">
+          <ChatPanel controller={controller} vault={vault} settings={settings} onSettings={changeSettings} onOpenProposal={openProposal} onOpenVariants={() => setCenter("variants")} prefill={prefill} onClose={() => toggle("chat", false)} />
+        </Splitter.Panel>
+        <Splitter.Handle aria-label="Resize the chat" className="shell-handle" data-side="start" />
+        <Splitter.Panel className="shell-panel">
+          <Splitter.Root className="shell-inner" primary="end" show={canvasOnly ? "start" : "both"} value={panels.side.open ? panels.side.width : 0} onValueChange={(value) => resize("side", value)} min={PANEL_SIZES.side.min} max={PANEL_SIZES.side.max} collapsible>
+            <Splitter.Panel className="shell-panel">
+              <main id={mainId} tabIndex={-1} className="app-main" aria-label={center === "canvas" ? "Canvas" : center === "project" ? "Project" : center === "variants" ? "Variants" : "Proposals"}>
+                {/* The board stays laid out under the project view, so frames keep their viewport and keep measuring. */}
+                <div className="app-main-pane" data-inactive={center === "canvas" ? undefined : ""} aria-hidden={center === "canvas" ? undefined : true}>
+                  {previewing && (
+                    <Alert.Root tone="info" className="app-preview" data-testid="spec-preview">
+                      <Alert.Title>Drawing the agent&apos;s change as it arrives</Alert.Title>
+                      <Alert.Description>A draft, not saved yet. The checks judge it once it arrives whole.</Alert.Description>
+                    </Alert.Root>
+                  )}
+                  <Board
+                    session={session}
+                    state={state}
+                    selected={selected}
+                    floating={
+                      canvasOnly
+                        ? {
+                            start: (
+                              <Text.Root as="span" weight="medium" className="floating-name">
+                                {prototypeName}
+                              </Text.Root>
+                            ),
+                            end: (
+                              <>
+                                <span className="floating-status" data-tone={verdict.tone} role="status" data-testid="canvas-status">
+                                  <span className="floating-dot" aria-hidden="true" />
+                                  {verdict.short}
+                                </span>
+                                <Button.Root ref={exitButton} variant="secondary" aria-label="Show panels" aria-keyshortcuts="Escape" onClick={leaveCanvasOnly}>
+                                  <Button.Icon>
+                                    <Shrink />
+                                  </Button.Icon>
+                                  Show panels <Kbd.Root>{SHORTCUTS.leave.label}</Kbd.Root>
+                                </Button.Root>
+                              </>
+                            ),
+                          }
+                        : undefined
+                    }
+                  />
+                </div>
+                {center === "variants" && (
+                  <div className="app-main-pane app-main-scroll" data-testid="variants-pane">
+                    <VariantsView key={current?.id ?? ""} config={checked(config)} record={current} agent={agent} onApply={applyPick} onUndo={undoPick} onDismiss={dismissVariant} onSend={(message) => void controller.send(message)} onPrefill={prefillChat} />
+                  </div>
                 )}
-              </Tabs.Tab>
-              <Tabs.Tab value="code">Code</Tabs.Tab>
-            </Tabs.List>
-            <Tabs.Panel value="checks" keepMounted className="app-side-panel">
-              <ChecksPanel state={state} measuredCount={measuredCount} selected={selected} onSelect={select} onShowCode={(finding) => showCode(finding, true)} {...(key.present ? { onAsk: ask } : {})} proposable={proposable} config={config} />
-            </Tabs.Panel>
-            <Tabs.Panel value="code" keepMounted className="app-side-panel">
-              {current && <CodePanel prototype={current.prototype} target={code} onTarget={setCode} onEdit={edit} problems={state.compileProblems} />}
-            </Tabs.Panel>
-          </Tabs.Root>
-        </aside>
-      </div>
+                {center === "project" && (
+                  <div className="app-main-pane app-main-scroll">
+                    <ProjectView config={config} onOpenProposal={openProposal} prototype={current} />
+                  </div>
+                )}
+                {center === "proposals" && (
+                  <div className="app-main-pane app-main-scroll" data-testid="proposals-pane">
+                    {reviewing === null ? (
+                      <ProposalsView config={config} onOpen={openProposal} />
+                    ) : (
+                      <ProposalPage
+                        key={reviewing}
+                        config={config}
+                        id={reviewing}
+                        prototypes={records}
+                        openPrototypeId={current?.id ?? ""}
+                        board={{ session, state }}
+                        agent={agent}
+                        onBack={() => setReviewing(null)}
+                        onSave={saveConfig}
+                        onSendBack={(message) => void controller.send(message)}
+                        onOpenPrototype={openPrototype}
+                        onOpenProposal={openProposal}
+                      />
+                    )}
+                  </div>
+                )}
+              </main>
+            </Splitter.Panel>
+            <Splitter.Handle aria-label="Resize checks and code" className="shell-handle" data-side="end" />
+            <Splitter.Panel id={sideId} className="shell-panel">
+              <aside className="app-side" aria-label="Checks and code">
+                <Tabs.Root value={side} onValueChange={(value) => setSide(value === "code" ? "code" : "checks")} className="app-side-tabs">
+                  <div className="panel-head side-head">
+                    <Tabs.List aria-label="Side panel">
+                      <Tabs.Tab value="checks">
+                        Checks
+                        {verdict.count > 0 ? (
+                          <Badge.Root tone={verdict.tone === "critical" ? "critical" : "warning"} className="side-count">
+                            {verdict.count}
+                          </Badge.Root>
+                        ) : verdict.tone === "success" ? (
+                          <span className="side-ok" aria-hidden="true">
+                            <CircleCheck />
+                          </span>
+                        ) : null}
+                      </Tabs.Tab>
+                      <Tabs.Tab value="code">
+                        <span className="side-code-icon" aria-hidden="true">
+                          <CodeXml />
+                        </span>
+                        Code
+                      </Tabs.Tab>
+                    </Tabs.List>
+                    <Button.Root variant="ghost" aria-label="Hide checks and code" onClick={() => toggle("side", false)} className="panel-close">
+                      <Button.Icon>
+                        <X />
+                      </Button.Icon>
+                    </Button.Root>
+                  </div>
+                  <Tabs.Panel value="checks" keepMounted className="app-side-panel">
+                    <ChecksPanel state={state} measuredCount={measuredCount} selected={selected} onSelect={select} onShowCode={(finding) => showCode(finding, true)} onFix={fix} {...(key.present ? { onAsk: ask } : {})} proposable={proposable} config={config} />
+                  </Tabs.Panel>
+                  <Tabs.Panel value="code" keepMounted className="app-side-panel">
+                    {current && <CodePanel prototype={current.prototype} target={code} onTarget={setCode} onEdit={edit} problems={state.compileProblems} />}
+                  </Tabs.Panel>
+                </Tabs.Root>
+              </aside>
+            </Splitter.Panel>
+          </Splitter.Root>
+        </Splitter.Panel>
+      </Splitter.Root>
     </div>
   );
+}
+
+/** The prototype's state in a few words, for the Checks tab and the canvas-only bar: core's report, counted. */
+function verdictOf(state: SessionState): { readonly tone: "success" | "critical" | "warning" | "neutral"; readonly short: string; readonly count: number } {
+  const report = state.report;
+  if (!report) return { tone: "neutral", short: "Checking", count: 0 };
+  const failing = report.rules.filter((rule) => rule.status === "fail" && rule.findings.length > 0);
+  const toFix = failing.filter((rule) => rule.findings.some((finding) => finding.kind === "violation")).length;
+  if (toFix > 0) return { tone: "critical", short: `${toFix} to fix`, count: toFix };
+  if (failing.length > 0) return { tone: "warning", short: `${failing.length} not checked`, count: failing.length };
+  if (report.status === "pass") return { tone: "success", short: "Follows the rules", count: 0 };
+  return { tone: "neutral", short: "Checking", count: 0 };
 }
 
 /** Everything in a config a check reads: all of it but the proposals. */

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://www.designtokens.org/schemas/2025.10/resolver.json",
+  "name": "design-harness",
+  "version": "2025.10",
+  "description": "design-harness on Todae: a calm canvas the prototype's frames sit on as artboards, soft elevation for cards and floating bars, and the few sizes the app's layout reads. Every colour refers to Todae's own scales.",
+  "sets": {
+    "harness": {
+      "sources": [
+        {
+          "$ref": "./harness.json"
+        }
+      ],
+      "$extensions": {
+        "dev.todae": {
+          "layer": "contract"
+        }
+      }
+    },
+    "button": {
+      "sources": [
+        {
+          "$ref": "./button.json"
+        }
+      ],
+      "$extensions": {
+        "dev.todae": {
+          "layer": "contract"
+        }
+      }
+    },
+    "contract": {
+      "sources": [
+        {
+          "$ref": "./contract.json"
+        }
+      ],
+      "$extensions": {
+        "dev.todae": {
+          "layer": "contract"
+        }
+      }
+    }
+  },
+  "modifiers": {
+    "appearance": {
+      "contexts": {
+        "light": [
+          {
+            "$ref": "./appearance/light.json"
+          }
+        ],
+        "dark": [
+          {
+            "$ref": "./appearance/dark.json"
+          }
+        ]
+      },
+      "$extensions": {
+        "dev.todae": {
+          "layer": "appearance",
+          "attribute": "data-appearance",
+          "root": true,
+          "colorScheme": true
+        }
+      }
+    }
+  },
+  "resolutionOrder": [
+    {
+      "$ref": "#/modifiers/appearance"
+    },
+    {
+      "$ref": "#/sets/harness"
+    },
+    {
+      "$ref": "#/sets/button"
+    },
+    {
+      "$ref": "#/sets/contract"
+    }
+  ]
+}

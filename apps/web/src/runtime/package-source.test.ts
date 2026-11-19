@@ -37,8 +37,8 @@ describe("the local package source", () => {
     const source = localPackageSource("https://app.example/vendor", fetchText);
     const packages = await resolvePackages(nook.library, source);
     expect(Object.keys(packages.modules)).toEqual(["react", "react/jsx-runtime", "react-dom", "react-dom/client", "@tounsoo/todae"]);
-    expect(packages.modules["@tounsoo/todae"]).toEqual({ code: "/* tounsoo-todae@0.10.1.js */" });
-    expect(packages.styles).toEqual([{ css: "/* tounsoo-todae@0.10.1-dist-todae.css */" }]);
+    expect(packages.modules["@tounsoo/todae"]).toEqual({ code: "/* tounsoo-todae@0.11.3.js */" });
+    expect(packages.styles).toEqual([{ css: "/* tounsoo-todae@0.11.3-dist-todae.css */" }]);
     await resolvePackages(nook.library, source);
     expect(asked.filter((url) => url.endsWith("manifest.json"))).toHaveLength(1);
     expect(source.origins).toEqual([]);
@@ -49,8 +49,8 @@ describe("the local package source", () => {
     const other = await resolvePackages(acme, source);
     expect(other.modules["@acme/ui"]).toEqual({ code: "/* acme-ui@2.0.0.js */" });
     expect(other.styles).toEqual([{ css: "/* acme-ui@2.0.0-styles.css */" }]);
-    const newer = await resolvePackages({ ...nook.library, version: "0.11.3" }, source);
-    expect(newer.modules["@tounsoo/todae"]).toEqual({ code: "/* tounsoo-todae@0.11.3.js */" });
+    const older = await resolvePackages({ ...nook.library, version: "0.10.1" }, source);
+    expect(older.modules["@tounsoo/todae"]).toEqual({ code: "/* tounsoo-todae@0.10.1.js */" });
     await expect(resolvePackages({ ...acme, stylesheets: ["dist/other.css"] }, source)).rejects.toThrow("has no dist/other.css in @acme/ui");
   });
 
@@ -58,9 +58,9 @@ describe("the local package source", () => {
     const source = localPackageSource("https://app.example/vendor/", fakeFetch().fetchText);
     await expect(resolvePackages({ ...nook.library, version: "0.12.0" }, source)).rejects.toThrow("the local package source has @tounsoo/todae 0.10.1, 0.11.3, but the project asks for 0.12.0");
     await expect(resolvePackages({ ...nook.library, react: "18.3.1" }, source)).rejects.toThrow("has react 19.3.1, but the project asks for 18.3.1");
-    await expect(resolvePackages({ ...nook.library, package: "@acme/ui" }, source)).rejects.toThrow("has @acme/ui 2.0.0, but the project asks for 0.10.1");
+    await expect(resolvePackages({ ...nook.library, package: "@acme/ui" }, source)).rejects.toThrow("has @acme/ui 2.0.0, but the project asks for 0.11.3");
     await expect(resolvePackages({ ...nook.library, package: "@other/ui" }, source)).rejects.toThrow("has no @other/ui");
-    await expect(source.module("@tounsoo/todae/stack", { package: "@tounsoo/todae", version: "0.10.1" })).rejects.toThrow("serves only @tounsoo/todae of @tounsoo/todae");
+    await expect(source.module("@tounsoo/todae/stack", { package: "@tounsoo/todae", version: "0.11.3" })).rejects.toThrow("serves only @tounsoo/todae of @tounsoo/todae");
   });
 });
 
@@ -73,9 +73,9 @@ describe("the esm.sh package source", () => {
       "react/jsx-runtime": { url: "https://esm.sh/react@19.3.1/jsx-runtime" },
       "react-dom": { url: "https://esm.sh/react-dom@19.3.1?external=react,react-dom" },
       "react-dom/client": { url: "https://esm.sh/react-dom@19.3.1/client?external=react,react-dom" },
-      "@tounsoo/todae": { url: "https://esm.sh/@tounsoo/todae@0.10.1?external=react,react-dom" },
+      "@tounsoo/todae": { url: "https://esm.sh/@tounsoo/todae@0.11.3?external=react,react-dom" },
     });
-    expect(packages.styles).toEqual([{ url: "https://esm.sh/@tounsoo/todae@0.10.1/dist/todae.css" }]);
+    expect(packages.styles).toEqual([{ url: "https://esm.sh/@tounsoo/todae@0.11.3/dist/todae.css" }]);
     expect(source.origins).toEqual(["https://esm.sh"]);
   });
 

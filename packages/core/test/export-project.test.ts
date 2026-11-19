@@ -46,7 +46,7 @@ describe("a spec prototype exported as a React project", () => {
 
   it("pins the exact library and React versions of the project config, and the tools this repository builds with", () => {
     const manifest = JSON.parse(exported.files["package.json"] as string) as { dependencies: Record<string, string>; devDependencies: Record<string, string> };
-    expect(manifest.dependencies).toEqual({ "@tounsoo/todae": "0.10.1", react: "19.3.1", "react-dom": "19.3.1" });
+    expect(manifest.dependencies).toEqual({ "@tounsoo/todae": "0.11.3", react: "19.3.1", "react-dom": "19.3.1" });
     for (const [name, version] of Object.entries(EXPORT_TOOLING)) {
       expect(manifest.devDependencies[name]).toBe(version);
       const installed = JSON.parse(readFileSync(join(root, "node_modules", name, "package.json"), "utf8")) as { version: string };
@@ -65,10 +65,12 @@ describe("a spec prototype exported as a React project", () => {
   });
 
   it("says where it came from, and wires the page kit and the library's stylesheet", () => {
-    expect(exported.files["README.md"]).toMatch(/^# Booking \(spec\)\n\nExported from design-harness on 2026-11-18T12:00:00\.000Z: prototype "Booking \(spec\)" of project "Nook" \(`nook`\), on @tounsoo\/todae 0\.10\.1 and React 19\.3\.1\./);
+    expect(exported.files["README.md"]).toMatch(/^# Booking \(spec\)\n\nExported from design-harness on 2026-11-18T12:00:00\.000Z: prototype "Booking \(spec\)" of project "Nook" \(`nook`\), on @tounsoo\/todae 0\.11\.3 and React 19\.3\.1\./);
     expect(exported.files["README.md"]).toContain("Core's checks at export: pass: every rule passes.");
     expect(exported.files["vite.config.ts"]).toContain('"@design-harness/page": fileURLToPath(new URL("./src/page-kit.tsx", import.meta.url))');
     expect(exported.files["src/main.tsx"]).toContain('import "@tounsoo/todae/dist/todae.css";');
+    // TypeScript 6 checks side-effect imports, so the project's tsconfig names the types that declare a stylesheet.
+    expect((JSON.parse(exported.files["tsconfig.json"] as string) as { compilerOptions: { types: string[] } }).compilerOptions.types).toEqual(["vite/client"]);
     expect(exported.files["src/main.tsx"]).toContain('document.documentElement.setAttribute("data-appearance", "light");');
     expect(exported.files["src/scenarios.ts"]).toContain('import BookingPage from "./prototype/pages/booking";');
   });

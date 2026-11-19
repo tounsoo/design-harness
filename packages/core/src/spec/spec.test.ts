@@ -129,8 +129,8 @@ describe("the catalog generated from the config", () => {
 describe("the library description", () => {
   it("is what describe-library writes from Todae's declarations", () => {
     const root = join(import.meta.dirname, "..", "..", "..", "..");
-    const written = execFileSync("node", [join(root, "packages/core/scripts/describe-library.mjs"), "@tounsoo/todae", "0.10.1"], { cwd: root, encoding: "utf8" });
-    expect(written).toBe(readFileSync(join(root, "packages/core/libraries/todae-0.10.1.json"), "utf8"));
+    const written = execFileSync("node", [join(root, "packages/core/scripts/describe-library.mjs"), "@tounsoo/todae", "0.11.3"], { cwd: root, encoding: "utf8" });
+    expect(written).toBe(readFileSync(join(root, "packages/core/libraries/todae-0.11.3.json"), "utf8"));
   }, 30_000);
 });
 

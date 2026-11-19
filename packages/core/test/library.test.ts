@@ -16,7 +16,7 @@ import { parseProjectConfig } from "../src/parse";
 const LIBRARIES = join(import.meta.dirname, "..", "libraries");
 const FIXTURE = join(import.meta.dirname, "library-fixture", "fixture-ui");
 const read = (file: string) => JSON.parse(readFileSync(join(LIBRARIES, file), "utf8")) as LibraryDescription;
-const todae = read("todae-0.10.1.json");
+const todae = read("todae-0.11.3.json");
 const mantine = read("mantine-core-9.7.4.json");
 
 describe("describing a library from its declarations", () => {
@@ -82,10 +82,10 @@ describe("describing a library from its declarations", () => {
     expect(descriptionText(describeLibrary(FIXTURE))).toBe(descriptionText(fixture));
   });
 
-  it("writes Todae 0.10.1's description byte for byte as committed, from the copy in node_modules", { timeout: 300_000 }, () => {
-    const dir = installedDir("@tounsoo/todae", "0.10.1");
+  it("writes Todae 0.11.3's description byte for byte as committed, from the copy in node_modules", { timeout: 300_000 }, () => {
+    const dir = installedDir("@tounsoo/todae", "0.11.3");
     expect(dir).not.toBeNull();
-    expect(descriptionText(describeLibrary(dir as string))).toBe(readFileSync(join(LIBRARIES, "todae-0.10.1.json"), "utf8"));
+    expect(descriptionText(describeLibrary(dir as string))).toBe(readFileSync(join(LIBRARIES, "todae-0.11.3.json"), "utf8"));
   });
 
   it("carries the description Nook uses, at its library's exact version", () => {

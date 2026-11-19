@@ -24,7 +24,7 @@ export function ProposalsView({ config, onOpen }: { readonly config: ProjectConf
       <Stack.Root gap="condensed">
         <Text.Root as="h1">Proposals</Text.Root>
         <Text.Root as="p" tone="muted">
-          What the agent asks to change in the project&apos;s inventories and rules. Each carries the rule that would govern the change and examples that must pass and fail. Only you can approve, decline or adopt one; once adopted, its rules run on every prototype.
+          Changes the agent asks to make to the project, such as a new component or layout. Each comes with the rule that would govern it and examples that show it working. Only you can approve, decline or adopt one; once adopted, its rules run on every prototype.
         </Text.Root>
       </Stack.Root>
       <ToggleGroup.Root aria-label="Show proposals" value={filter} onValueChange={(value) => setFilter((value ?? "all") as Filter)} className="proposals-filter">
@@ -66,7 +66,7 @@ export function ProposalsView({ config, onOpen }: { readonly config: ProjectConf
                       <Button.Root variant="ghost" onClick={() => onOpen(proposal.id)} className="proposals-title">
                         {proposal.title}
                       </Button.Root>
-                      <Code.Root>{proposal.id}</Code.Root>
+                      <Code.Root className="proposals-id">{proposal.id}</Code.Root>
                     </Stack.Root>
                   </Table.Cell>
                   <Table.Cell>

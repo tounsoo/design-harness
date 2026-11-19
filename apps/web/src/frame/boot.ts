@@ -235,9 +235,10 @@ function outline(target: Element): void {
     top: `${box.top + window.scrollY - 3}px`,
     width: `${box.width + 6}px`,
     height: `${box.height + 6}px`,
-    outline: "3px solid #e5484d",
-    background: "rgba(229, 72, 77, 0.12)",
-    borderRadius: "4px",
+    // The app's critical tone, Todae's red 500, written out: a frame holds the project's library, not the app's tokens.
+    outline: "3px solid oklch(0.55 0.18 25)",
+    background: "oklch(0.55 0.18 25 / 0.1)",
+    borderRadius: "6px",
     pointerEvents: "none",
     zIndex: "2147483647",
     boxSizing: "border-box",
