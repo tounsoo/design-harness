@@ -194,17 +194,6 @@ export type CardProps = {
  */
 export function FrameCard({ session, spec, revision, frameState, scale, focused, hidden, selected, onOpen, label }: CardProps) {
   const name = `${label ? `${label}: ` : ""}${spec.scenario.id} at ${spec.view.name}`;
-  // A fresh document, on a fresh channel, for every revision.
-  const doc = useMemo(() => (spec.blocked ? null : session.documentFor(spec.key)), [session, spec.key, spec.blocked, revision]);
-  // One stable ref per document: a new callback on each render would detach and re-attach the frame.
-  const attach = useCallback(
-    (element: HTMLIFrameElement | null) => {
-      if (!doc) return;
-      session.attach(spec.key, element, doc.generation, doc.channel);
-      return () => session.attach(spec.key, null, doc.generation, doc.channel);
-    },
-    [session, spec.key, doc],
-  );
   const status = statusOf(frameState);
   const { width, height } = spec.view;
   return (
@@ -232,33 +221,60 @@ export function FrameCard({ session, spec, revision, frameState, scale, focused,
           </Button.Root>
         )}
       </figcaption>
-      <div className="frame-viewport" style={{ width: width * scale, height: height * scale, background: spec.view.scheme === "dark" ? "#121212" : "#ffffff" }}>
-        {doc && (
-          <iframe
-            key={doc.channel}
-            ref={attach}
-            title={name}
-            sandbox={FRAME_SANDBOX}
-            referrerPolicy="no-referrer"
-            srcDoc={doc.html}
-            width={width}
-            height={height}
-            className="frame-iframe"
-            style={{ transform: `scale(${scale})`, colorScheme: spec.view.scheme }}
-            tabIndex={hidden ? -1 : undefined}
-          />
-        )}
-        {frameState.state === "failed" && (
-          <div className="frame-failure" role="status">
-            <Text.Root as="p" weight="medium">
-              {frameState.stage === "setup" ? "Not rendered" : frameState.stage === "timeout" ? "No answer" : `The page failed to ${frameState.stage}`}
-            </Text.Root>
-            <Text.Root as="p" className="pre">
-              {frameState.message}
-            </Text.Root>
-          </div>
-        )}
-      </div>
+      <FrameViewport session={session} spec={spec} revision={revision} frameState={frameState} scale={scale} hidden={hidden} name={name} />
     </figure>
+  );
+}
+
+/**
+ * One frame's live iframe, scaled, with its failure over it when it has one:
+ * the artboard without its label, for where the frame is a picture inside
+ * something else, as a role's preview is.
+ */
+export function FrameViewport({ session, spec, revision, frameState, scale, hidden, name, fit }: Pick<CardProps, "session" | "spec" | "revision" | "frameState" | "scale" | "hidden"> & { readonly name: string; /** Show only as much of the view as the page fills, once it is measured. */ readonly fit?: boolean }) {
+  // A fresh document, on a fresh channel, for every revision.
+  const doc = useMemo(() => (spec.blocked ? null : session.documentFor(spec.key)), [session, spec.key, spec.blocked, revision]);
+  // One stable ref per document: a new callback on each render would detach and re-attach the frame.
+  const attach = useCallback(
+    (element: HTMLIFrameElement | null) => {
+      if (!doc) return;
+      session.attach(spec.key, element, doc.generation, doc.channel);
+      return () => session.attach(spec.key, null, doc.generation, doc.channel);
+    },
+    [session, spec.key, doc],
+  );
+  const { width } = spec.view;
+  // The lowest thing the page painted, with the room the shell leaves above the first.
+  const filled = fit && frameState.state === "measured" ? frameState.snapshot.elements.filter((element) => element.visible).reduce((bottom, element) => Math.max(bottom, element.rect.y + element.rect.height), 0) : 0;
+  const top = fit && frameState.state === "measured" ? frameState.snapshot.elements.filter((element) => element.visible).reduce((least, element) => Math.min(least, element.rect.y), Number.POSITIVE_INFINITY) : 0;
+  const height = filled > 0 && Number.isFinite(top) ? Math.min(spec.view.height, Math.ceil(filled + Math.max(top, 0))) : spec.view.height;
+  return (
+    <div className="frame-viewport" style={{ width: width * scale, height: height * scale, background: spec.view.scheme === "dark" ? "#121212" : "#ffffff" }}>
+      {doc && (
+        <iframe
+          key={doc.channel}
+          ref={attach}
+          title={name}
+          sandbox={FRAME_SANDBOX}
+          referrerPolicy="no-referrer"
+          srcDoc={doc.html}
+          width={width}
+          height={spec.view.height}
+          className="frame-iframe"
+          style={{ transform: `scale(${scale})`, colorScheme: spec.view.scheme }}
+          tabIndex={hidden ? -1 : undefined}
+        />
+      )}
+      {frameState.state === "failed" && (
+        <div className="frame-failure" role="status">
+          <Text.Root as="p" weight="medium">
+            {frameState.stage === "setup" ? "Not rendered" : frameState.stage === "timeout" ? "No answer" : `The page failed to ${frameState.stage}`}
+          </Text.Root>
+          <Text.Root as="p" className="pre">
+            {frameState.message}
+          </Text.Root>
+        </div>
+      )}
+    </div>
   );
 }
