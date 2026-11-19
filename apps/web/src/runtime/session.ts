@@ -84,7 +84,7 @@ export type SessionOptions = {
   readonly boot: string;
   readonly parentOrigin: string;
   readonly window: Pick<Window, "addEventListener" | "removeEventListener">;
-  /** How long a frame may take to answer once asked to render, and to load once given its turn. */
+  /** How long a frame may take to answer once asked to render; it may take three times as long to load once given its turn. */
   readonly timeoutMs?: number;
   readonly settleMs?: number;
   /** A random channel id; injectable for tests. */
@@ -610,7 +610,8 @@ export class Session {
         if (purpose === "measure") this.budget.measure(this.holdOf(key));
         this.goLive(key);
         // A frame given its turn must load and say it listens in time, or it fails rather than holding its slot for ever.
-        turn.timer = setTimeout(() => this.timedOut(key, turn), this.options.timeoutMs ?? 20000);
+        // Loading gets three times the time to answer: before frames went live on their turn, a document loaded with no clock on it at all.
+        turn.timer = setTimeout(() => this.timedOut(key, turn), 3 * (this.options.timeoutMs ?? 20000));
         this.sendIfReady(key);
         return true;
       },
@@ -697,7 +698,7 @@ export class Session {
     if (turn.purpose === "show") return;
     const seconds = Math.round((this.options.timeoutMs ?? 20000) / 1000);
     const state = this.state.frameStates[key]?.state;
-    if (turn.channel === null && state === "waiting") this.setFrame(key, { state: "failed", stage: "timeout", message: `The frame did not load within ${seconds} s.` });
+    if (turn.channel === null && state === "waiting") this.setFrame(key, { state: "failed", stage: "timeout", message: `The frame did not load within ${3 * seconds} s.` });
     else if (state === "rendering") this.setFrame(key, { state: "failed", stage: "timeout", message: `The frame did not answer within ${seconds} s.` });
     else return;
     this.park(key);

@@ -203,8 +203,10 @@ describe("a session measured lazily", () => {
       draw(() => true);
       await vi.advanceTimersByTimeAsync(0);
       sync();
-      await vi.advanceTimersByTimeAsync(1001);
-      expect(session.getState().frameStates[frameKey("rooms-list", "phone")]).toEqual({ state: "failed", stage: "timeout", message: "The frame did not load within 1 s." });
+      await vi.advanceTimersByTimeAsync(2001);
+      expect(session.getState().frameStates[frameKey("rooms-list", "phone")]).toEqual({ state: "waiting" });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(session.getState().frameStates[frameKey("rooms-list", "phone")]).toEqual({ state: "failed", stage: "timeout", message: "The frame did not load within 3 s." });
       expect(session.getState().measured).toBe(true);
     } finally {
       vi.useRealTimers();

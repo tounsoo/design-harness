@@ -1583,7 +1583,7 @@ test("a spec Toast proposal: refused while its failing example does not fail", a
   await judged(page);
   assert.equal(await example(page, "one-toast").getAttribute("data-verdict"), "ok");
   assert.equal(await example(page, "only-one").getByTestId("example-detail").textContent(), 'failing example "only-one" is not flagged as it must be: "one-toast-per-page" passed it');
-  const toast = example(page, "one-toast").frameLocator('iframe[title$="lantern-open at desktop"]').locator("text=Booked").first();
+  const toast = (await liveFrame(page, "one-toast: lantern-open at desktop")).locator("text=Booked").first();
   await toast.waitFor({ state: "attached" });
   await page.getByRole("button", { name: "Approve", exact: true }).click();
   await page.waitForFunction(() => document.querySelector(".review")?.getAttribute("data-status") === "approved");
