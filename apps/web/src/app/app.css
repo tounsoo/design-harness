@@ -272,4 +272,21 @@
   /* The Project view's layouts: parameters, then a preview frame under them. */
   .layout-card-body { display: grid; gap: var(--todae-space-3); }
   .layout-card-preview { display: grid; gap: var(--todae-space-1); justify-items: start; max-width: 100%; overflow-x: auto; padding: var(--todae-space-3); border-radius: var(--todae-radius-md); background-color: var(--todae-harness-canvas-bg); }
+
+  /* Variants side by side: Todae's Card, Table, RadioGroup, Badge, Alert and EmptyState. This sheet places them, and adds what Todae has no part for: a grid of columns that hold scaled frames on the canvas colour, with the scenarios not shown kept measuring out of sight. */
+  .variants { max-width: 120rem; margin-inline: auto; }
+  .variants-title, .variants-subtitle, .variant-name { margin: 0; }
+  .variants-subtitle { --todae-text-h3-font-size: var(--todae-font-size-3); }
+  .variant-name { --todae-text-h3-font-size: var(--todae-font-size-2); --todae-text-h4-font-size: var(--todae-font-size-2); }
+  .variants-small { font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); margin: 0; overflow-wrap: anywhere; }
+  .variants-picker { min-inline-size: 10rem; }
+  .variants-grid { display: grid; gap: var(--todae-space-4); align-items: start; }
+  .variants-section { display: grid; gap: var(--todae-space-3); }
+  .variant-card { min-width: 0; }
+  .variant-card[data-standing="fail"] { box-shadow: 0 0 0 var(--todae-focus-ring-width) var(--todae-color-status-critical-border); }
+  .variant-frames { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--todae-space-2); min-width: 0; overflow: hidden; padding: var(--todae-space-3); border-radius: var(--todae-radius-md); background-color: var(--todae-harness-canvas-bg); }
+  .variant-frames .frame-card { min-width: 0; }
+  .variant-report, .variants-history { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--todae-space-2); }
+  .variants-table td { vertical-align: middle; }
+  .variants-pick[data-undone] { color: var(--todae-color-fg-muted); }
 }

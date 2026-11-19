@@ -57,4 +57,17 @@ describe("the browser store", () => {
     expect(loaded.problems[0]).toBe(`Stored prototype "old" no longer validates and was not loaded:\n$: is missing "pages"\n$: is missing "layouts"\n$: is missing "scenarios"\n$: is missing "flow"`);
     reopened.close();
   });
+
+  it("keeps a prototype's variants beside it, across a reopen", async () => {
+    const name = `test-${(count += 1)}`;
+    const store = await Store.open(indexedDB, name);
+    const variants = { variants: [{ id: "a", page: "booking", note: "Book first", spec: "{}" }], picks: [] };
+    await store.replaceProject(nook, [{ projectId: "nook", id: "booking", name: "Booking", prototype: seedLegal(), variants }]);
+    await store.putPrototype({ projectId: "nook", id: "draft", name: "Draft", prototype: seedLegal() });
+    store.close();
+    const reopened = await Store.open(indexedDB, name);
+    const loaded = await reopened.prototypes("nook");
+    expect(loaded.items.map((item) => [item.id, item.variants ?? null])).toEqual([["booking", variants], ["draft", null]]);
+    reopened.close();
+  });
 });

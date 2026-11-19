@@ -1,5 +1,5 @@
 import { Alert, Badge, Button, Checkbox, Code, CodeBlock, Conversation, DataList, Disclosure, ErrorMessage, Field, Label, Loader, Message, Stack, Text } from "@tounsoo/todae";
-import { ArrowUp, Check, CircleAlert, CircleCheck, KeyRound, Pencil, Sparkles, Square, TriangleAlert, X } from "lucide-react";
+import { ArrowUp, Check, CircleAlert, CircleCheck, Columns2, KeyRound, Pencil, Sparkles, Square, TriangleAlert, X } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
 import type { AgentController, Turn, TurnItem } from "../agent/controller";
 import { KEY_DB, keyProblem, type KeyVault } from "../agent/key-vault";
@@ -25,6 +25,7 @@ export function ChatPanel({
   settings,
   onSettings,
   onOpenProposal,
+  onOpenVariants,
   prefill,
   onClose,
 }: {
@@ -33,6 +34,8 @@ export function ChatPanel({
   readonly settings: AgentSettings;
   readonly onSettings: (next: AgentSettings) => void;
   readonly onOpenProposal: (id: string) => void;
+  /** Opens the Variants view, where the person compares and picks. */
+  readonly onOpenVariants: () => void;
   /** A message put into the box for the person to edit and send, never sent on its own. */
   readonly prefill: { readonly text: string; readonly nonce: number } | null;
   /** Hides the chat panel. */
@@ -129,6 +132,7 @@ export function ChatPanel({
                 key={turn.id}
                 turn={turn}
                 onOpenProposal={onOpenProposal}
+                onOpenVariants={onOpenVariants}
                 running={state.running && index === state.turns.length - 1}
                 canUndo={undoable?.id === turn.id}
                 onUndo={() => void controller.undo(turn.id)}
@@ -282,7 +286,7 @@ function usageText(turn: Turn): string {
   return `${input.toLocaleString()} in${cached} · ${usage.output.toLocaleString()} out · about ${formatCost(turn.cost)}`;
 }
 
-function TurnView({ turn, running, canUndo, onUndo, onRetry, onOpenProposal }: { readonly turn: Turn; readonly running: boolean; readonly canUndo: boolean; readonly onUndo: () => void; readonly onRetry: () => void; readonly onOpenProposal: (id: string) => void }) {
+function TurnView({ turn, running, canUndo, onUndo, onRetry, onOpenProposal, onOpenVariants }: { readonly turn: Turn; readonly running: boolean; readonly canUndo: boolean; readonly onUndo: () => void; readonly onRetry: () => void; readonly onOpenProposal: (id: string) => void; readonly onOpenVariants: () => void }) {
   const thinking = turn.items.filter((item): item is Extract<TurnItem, { kind: "thinking" }> => item.kind === "thinking" && item.text !== "");
   return (
     <>
@@ -295,7 +299,7 @@ function TurnView({ turn, running, canUndo, onUndo, onRetry, onOpenProposal }: {
       </Message.Root>
       <Message.Root streaming={running} data-turn={turn.id} data-end={turn.end.status} className="chat-reply" aria-label="Agent">
         {turn.items.map((item, index) => (
-          <Item key={index} item={item} onOpenProposal={onOpenProposal} />
+          <Item key={index} item={item} onOpenProposal={onOpenProposal} onOpenVariants={onOpenVariants} />
         ))}
         {running && turn.items.every((item) => item.kind === "thinking") && (
           <Stack.Root direction="row" align="center" gap="condensed" className="chat-thinking-now">
@@ -415,7 +419,7 @@ function Step({ className, icon, summary, children, ...data }: { readonly classN
   );
 }
 
-function Item({ item, onOpenProposal }: { readonly item: TurnItem; readonly onOpenProposal: (id: string) => void }) {
+function Item({ item, onOpenProposal, onOpenVariants }: { readonly item: TurnItem; readonly onOpenProposal: (id: string) => void; readonly onOpenVariants: () => void }) {
   switch (item.kind) {
     case "text":
       return item.text ? (
@@ -496,6 +500,32 @@ function Item({ item, onOpenProposal }: { readonly item: TurnItem; readonly onOp
                   <CircleCheck />
                 </Button.Icon>
                 Review the proposal
+              </Button.Root>
+            </div>
+          </Stack.Root>
+        </div>
+      );
+    case "variants":
+      return (
+        <div className="chat-proposal chat-variants" data-variants={item.ids.join(" ")} data-tone="info">
+          <Stack.Root gap="condensed">
+            <Stack.Root direction="row" align="center" gap="condensed" wrap>
+              <span className="chat-step-icon" aria-hidden="true">
+                <Columns2 />
+              </span>
+              <Text.Root as="span" variant="label">
+                {item.action === "revised" ? "Variant revised" : `${item.ids.length} variants offered`}
+              </Text.Root>
+            </Stack.Root>
+            <Text.Root as="p" weight="medium" className="chat-proposal-title">
+              {`For the ${item.page} page: ${item.ids.map((id) => id.toUpperCase()).join(", ")}`}
+            </Text.Root>
+            <Text.Root as="p" tone="muted" className="chat-small">
+              Kept beside the prototype, which is unchanged. Compare them with their checks and pick slot by slot; only you can apply a pick.
+            </Text.Root>
+            <div>
+              <Button.Root type="button" variant="secondary" onClick={onOpenVariants}>
+                Compare variants
               </Button.Root>
             </div>
           </Stack.Root>
