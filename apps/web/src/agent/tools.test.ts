@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { Prototype, RuleSpec } from "@design-harness/core";
+import { nook } from "../../../../packages/core/examples/nook/project";
+import { proposeByPerson, removalDraft } from "../review/rule-change";
 import { fakeHost } from "../../test/agent-host";
+import { withPrimaries, withTwoQuestions } from "../../test/rule-change";
+import { SYSTEM_PROMPT } from "./request";
 import { seedLegal, seedSpec } from "../../test/nook";
 import { drafted, specToastDraft, withSpecToasts } from "../../test/proposals";
 import { MANIFEST, TOOL_DEFINITIONS, runTool } from "./tools";
@@ -87,6 +92,64 @@ describe("the agent's tools", () => {
     expect(checks.title).toBe("Checks fail: 3 rules");
     expect(checks.content).toMatch(/^Checks for revision 2, with every frame measured: fail\./);
     expect(checks.content).toContain('- one-primary-per-page (count): A page holds at most one primary action.\n  violation: Page "booking" has 2 primary actions, more than 1');
+  });
+
+  it("draft_proposal drafts a removal and a change of a rule in force, each open, and neither tool nor prompt lets the agent decide one", async () => {
+    const { host, saved } = fakeHost(withPrimaries(1));
+    const page = (prototype: Prototype) => prototype.files["pages/booking.json"] ?? "";
+    const removal = await runTool(
+      call("draft_proposal", {
+        id: "drop-one-primary",
+        title: "Let a page hold more than one primary action",
+        reason: "Booking early is a second primary action.",
+        rules: { remove: ["one-primary-per-page"] },
+        examples: { pass: [{ name: "book-early" }], fail: [{ name: "two-questions", files: { "pages/booking.json": page(withTwoQuestions()) }, flagged_by: { rule: "visible-questions" } }] },
+      }),
+      host,
+      signal,
+    );
+    expect(removal.proposal).toMatchObject({ id: "drop-one-primary", adoptable: true, action: "drafted" });
+    expect(removal.content).toContain('classified loosens-or-removes. remove rule "one-primary-per-page": loosens-or-removes (a rule leaves force)');
+    const change = await runTool(
+      call("draft_proposal", {
+        id: "two-primaries",
+        title: "Allow two primary actions",
+        reason: "Booking early is a second primary action.",
+        rules: { remove: ["one-primary-per-page"], add: [{ type: "count", id: "one-primary-per-page", scope: "page", select: { role: "primary-action" }, max: 2 }] },
+        examples: { pass: [{ name: "book-early" }], fail: [{ name: "three-ways", files: { "pages/booking.json": page(withPrimaries(2)) }, flagged_by: { rule: "one-primary-per-page" } }] },
+      }),
+      host,
+      signal,
+    );
+    expect(change.proposal).toMatchObject({ id: "two-primaries", adoptable: true });
+    expect(change.content).toContain('classified loosens-or-removes. change rule "one-primary-per-page": loosens-or-removes (moves max from 1 to 2, the looser way)');
+    // Both are open, by the agent, and the rule is in force as it was: only a person approves and adopts.
+    const config = saved.at(-1);
+    expect(config?.proposals.map((proposal) => [proposal.id, proposal.status, proposal.history[0]?.by])).toEqual([
+      ["drop-one-primary", "open", "agent"],
+      ["two-primaries", "open", "agent"],
+    ]);
+    expect(config?.rules).toEqual(nook.rules);
+    expect(TOOL_DEFINITIONS.some((tool) => /approve|adopt|decline/.test(tool.name))).toBe(false);
+    expect(SYSTEM_PROMPT).toContain("To remove a rule in force, draft a proposal with its id in rules.remove. To change one, give its id in rules.remove and the changed rule, under that id, in rules.add");
+    expect(SYSTEM_PROMPT).toContain("Only the person can approve, decline or adopt it");
+  });
+
+  it("revise_proposal adds examples to a proposal the person opened, leaving what it changes as they wrote it", async () => {
+    const opened = proposeByPerson(nook, removalDraft(nook, nook.rules.find((rule) => rule.id === "one-primary-per-page") as RuleSpec, "Booking early is a second primary action."), { pass: [], fail: [] }, "2026-11-19T10:00:00.000Z");
+    if (!opened.ok) throw new Error(opened.error.message);
+    const { host, saved } = fakeHost(withPrimaries(1), opened.value);
+    const page = (prototype: Prototype) => prototype.files["pages/booking.json"] ?? "";
+    const revised = await runTool(
+      call("revise_proposal", { id: "remove-one-primary-per-page", note: "Added the examples it needs.", examples: { pass: [{ name: "book-early" }], fail: [{ name: "two-questions", files: { "pages/booking.json": page(withTwoQuestions()) }, flagged_by: { rule: "visible-questions" } }] } }),
+      host,
+      signal,
+    );
+    expect(revised.proposal).toMatchObject({ id: "remove-one-primary-per-page", adoptable: true, action: "revised" });
+    const proposal = saved.at(-1)?.proposals[0];
+    expect(proposal).toMatchObject({ status: "open", title: "Remove the rule “A page holds at most one primary action”", reason: "Booking early is a second primary action.", rules: { add: [], remove: ["one-primary-per-page"] } });
+    expect(proposal?.history).toEqual([{ status: "open", at: "2026-11-19T10:00:00.000Z", by: "you" }]);
+    expect(proposal?.events?.map((event) => [event.kind, event.by])).toEqual([["revised", "agent"]]);
   });
 
   it("draft_proposal saves an open proposal and returns core's adoption dry run, refusal included", async () => {

@@ -981,6 +981,15 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
                       prototypes={records}
                       onSave={(next) => void saveConfig(next)}
                       libraryTarget={libraryTarget}
+                      board={{ session, state }}
+                      agent={agent}
+                      onStartProposal={(next, id, message) => {
+                        void saveConfig(next).then(() => {
+                          openProposal(id);
+                          if (message !== undefined) prefillChat(message);
+                        });
+                      }}
+                      onAskAgent={prefillChat}
                     />
                   </div>
                 )}
