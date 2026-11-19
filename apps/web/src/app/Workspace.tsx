@@ -18,6 +18,7 @@ import { exportFileName, exportProject, importProject, isSpecRecord, specOf, typ
 import { fingerprint, reanchor, type FrameMeasure } from "../pins/anchor";
 import { NO_PINS, addPin, closePin, editPin, openPins, reopenPin, type Pin, type PinResult, type PinState } from "../pins/model";
 import { PinNotes, type NoteFrame } from "../pins/PinNotes";
+import { carriedWords, carryWithPick, returnFromPick, returnedWords, type CarriedNote } from "../pins/pick";
 import type { PinActions } from "../pins/PinLayer";
 import { Board, FramesShown, type BoardHandle, type BoardPins } from "./Board";
 import { ChatPanel } from "./ChatPanel";
@@ -519,12 +520,23 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
       const record: PickRecord = { at, page: pick.page, slots: pick.slots, notes: pick.notes, before: pick.before, after: pick.after };
       setSelected(null);
       updateVariants((state) => ({ ...state, picks: [...state.picks, record] }), pick.prototype);
+      // The notes pinned on what the pick took from a variant are the prototype's now. Only their place changes: no report reads them.
+      const scenarios = pick.prototype.scenarios.filter((scenario) => scenario.page === pick.page).map((scenario) => scenario.id);
+      let moved: readonly CarriedNote[] = [];
+      updatePins((pins) => {
+        const carried = carryWithPick(pins, { scenarios, slots: pick.slots, keyOf: pick.keyOf }, at);
+        moved = carried.moved;
+        return carried.state;
+      });
       session.update(checked(configRef.current), pick.prototype);
       const from = Object.entries(pick.slots).map(([slot, source]) => `${slot} from ${variantLabel(source)}`).join(", ");
-      void controller.note(`The person applied a pick to page "${pick.page}": ${from}. The page's file is that combination now; read it again before you change it.`);
-      setNotice({ tone: "success", title: "Pick applied", lines: [`Page ${pick.page}: ${from}. It is a new revision; Undo is under Picks applied.`] });
+      const cameAlong = carriedWords(moved);
+      void controller.note(
+        `The person applied a pick to page "${pick.page}": ${from}. The page's file is that combination now; read it again before you change it.${moved.length > 0 ? ` Their ${moved.length === 1 ? "note" : "notes"} ${moved.map((item) => item.note).join(", ")} on what was picked ${moved.length === 1 ? "is" : "are"} on the prototype's page now, not on a variant.` : ""}`,
+      );
+      setNotice({ tone: "success", title: "Pick applied", lines: [`Page ${pick.page}: ${from}. It is a new revision; Undo is under Picks applied.`, ...(cameAlong ? [cameAlong] : [])] });
     },
-    [updateVariants, session, checked, controller],
+    [updateVariants, updatePins, session, checked, controller],
   );
   const undoPick = useCallback(
     (index: number) => {
@@ -535,10 +547,21 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
       const restored: Prototype = { ...record.prototype, files: { ...record.prototype.files, [page.component.file]: pick.before } };
       setSelected(null);
       updateVariants((state) => ({ ...state, picks: state.picks.map((item, at) => (at === index ? { ...item, undone: true } : item)) }), restored);
+      // The notes that came with the pick go back to their variants, as one step with the page.
+      let returned: readonly CarriedNote[] = [];
+      updatePins((pins) => {
+        const back = returnFromPick(pins, pick.at, new Date().toISOString());
+        returned = back.returned;
+        return back.state;
+      });
       session.update(checked(configRef.current), restored);
-      void controller.note(`The person undid their pick on page "${pick.page}": the page is back to what it was before it.`);
+      const wentBack = returnedWords(returned);
+      void controller.note(
+        `The person undid their pick on page "${pick.page}": the page is back to what it was before it.${returned.length > 0 ? ` Their ${returned.length === 1 ? "note" : "notes"} ${returned.map((item) => item.note).join(", ")} that came with it ${returned.length === 1 ? "is" : "are"} back on ${returned.length === 1 ? "its variant" : "their variants"}.` : ""}`,
+      );
+      if (wentBack) setNotice({ tone: "info", title: "Pick undone", lines: [`Page ${pick.page} is as it was before the pick.`, wentBack] });
     },
-    [recordOf, updateVariants, session, checked, controller],
+    [recordOf, updateVariants, updatePins, session, checked, controller],
   );
   /** Dismisses a variant; a note on why is kept for the loop, which notices notes that repeat. */
   const dismissVariant = useCallback(

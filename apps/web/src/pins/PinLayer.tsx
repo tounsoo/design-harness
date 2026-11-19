@@ -1,6 +1,7 @@
 import { Badge, Button, Disclosure, Field, Menu, Popover, Stack, Text, useHotkey, usePopover } from "@tounsoo/todae";
 import { Check, CircleHelp, Layers, MessageSquareText } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent, type ReactNode, type RefObject } from "react";
+import { variantLabel } from "@design-harness/core";
 import type { FrameKey, FrameSpec, Session } from "../runtime/session";
 import { SHORTCUTS } from "../app/shortcuts";
 import { anchorAt, anchorOn, elementChoices, intoView, onSurface, spots, toOverlay, toPage, type FrameMeasure } from "./anchor";
@@ -506,6 +507,10 @@ function eventWords(event: PinEvent): string {
       return "You reopened it";
     case "undone":
       return "You undid the agent's turn: the note is open again, without that reply";
+    case "picked":
+      return `You applied a pick from ${variantLabel(event.variant)}: the note came with it, onto the prototype`;
+    case "unpicked":
+      return `You undid that pick: the note is back on ${variantLabel(event.variant)}, where it was`;
   }
 }
 
