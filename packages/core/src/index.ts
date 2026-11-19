@@ -36,7 +36,7 @@ export type { FailingExample, InventoryOp, PassingExample, Proposal, ProposalCon
 export { PROPOSAL_STATUSES } from "./proposals/types";
 
 export type { Issue, Result } from "./validate";
-export { formatIssues, parseProjectConfig, parsePrototype, parseSnapshots } from "./parse";
+export { formatIssues, parseLibraryDescription, parseProjectConfig, parsePrototype, parseSnapshots } from "./parse";
 
 export type { AmbientUse, ElementKind, ElementNode, ExtractionProblem, LayoutUse, ModuleLoad, PageModel, PropValue, PrototypeModel, SourceLocation } from "./extract/model";
 export { PAGE_KIT, extractPrototype } from "./extract";
@@ -90,4 +90,4 @@ export { EXPORT_PROTOTYPE_DIR, EXPORT_TOOLING, exportReactProject } from "./expo
 export type { ConfirmedRoles, ExclusionGuess, LibraryDescription, MissingRole, MissingRoleEffect, RoleConfirmation, RoleDraft, RoleGuess } from "./library/roles";
 export { confirmRoles, describeMapping, draftRoles, missingRoleEffects, sameMapping } from "./library/roles";
 export type { BuiltProject, ExclusionChoice, LibrarySetup, ProjectAnswers, RoleChoice, RoleOptions, RolePreview, StarterCap, StarterRules, StarterTask, TextParts } from "./library/project";
-export { STARTER_CAPS, STARTER_CAP_NOTES, STARTER_LAYOUT, STARTER_PAGE_TYPES, STARTER_STATE, STARTER_VIEWS, buildProject, confirmationFrom, defaultStarterRules, isExcluded, projectId, roleComponents, roleOptions, rolePreview, slugOf, starterInventory, starterPrototype, textParts } from "./library/project";
+export { STARTER_CAPS, STARTER_CAP_NOTES, STARTER_LAYOUT, STARTER_PAGE_TYPES, STARTER_STATE, STARTER_VIEWS, buildProject, confirmationFrom, defaultStarterRules, isExcluded, projectId, projectNameIssues, roleComponents, roleOptions, rolePreview, slugOf, starterInventory, starterPrototype, textParts } from "./library/project";

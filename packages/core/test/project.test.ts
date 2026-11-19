@@ -19,7 +19,7 @@ import {
   type RoleChoice,
 } from "../src/library/project";
 import { draftRoles, type LibraryDescription } from "../src/library/roles";
-import { parseProjectConfig, parsePrototype } from "../src/parse";
+import { parseLibraryDescription, parseProjectConfig, parsePrototype } from "../src/parse";
 import { ROLE_NAMES, type RoleName } from "../src/rules/types";
 import { readSpecs } from "../src/spec/read";
 
@@ -174,6 +174,18 @@ describe("the choices a person makes", () => {
     ]);
     expect(elements("disclosure").map((element) => element.type)).toEqual(["Accordion.Panel", "Accordion.Control", "Accordion.Item", "Accordion", "Page"]);
     expect(rolePreview(mantine, MANTINE, "question", { question: { components: [] } })).toEqual({ ok: false, why: "No part is mapped, so there is nothing to draw." });
+  });
+});
+
+describe("a description file a person imports", () => {
+  it("is read when it is what the describer writes, and refused by name when it is not", () => {
+    const parsed = parseLibraryDescription(JSON.parse(JSON.stringify(todae)));
+    expect(parsed.ok && parsed.value.package).toBe("@tounsoo/todae");
+    expect(parseLibraryDescription(JSON.parse(JSON.stringify(mantine))).ok).toBe(true);
+    const refused = parseLibraryDescription({ package: "Todae", version: "^1.0.0", parts: { button: { props: {}, content: "text" } }, extra: 1 });
+    expect(refused.ok ? [] : refused.error.map((issue) => issue.path)).toEqual(expect.arrayContaining(["$.package", "$.version"]));
+    expect(refused.ok).toBe(false);
+    expect(parseLibraryDescription([]).ok).toBe(false);
   });
 });
 

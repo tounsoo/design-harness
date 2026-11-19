@@ -49,6 +49,11 @@ export function slugOf(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
+/** What is wrong with a product's name, if anything: it must give an id. */
+export function projectNameIssues(name: string): Issue[] {
+  return slugOf(name) === "" ? [{ path: "$.name", message: "the product needs a name with a letter or a digit" }] : [];
+}
+
 /** A project id from its name, unique among `taken`: "Tally" is "tally", then "tally-2". */
 export function projectId(name: string, taken: readonly string[]): string {
   const base = slugOf(name) || "project";
@@ -258,7 +263,7 @@ export function rolePreview(description: LibraryDescription, setup: LibrarySetup
       }
     } else if (role === "disclosure" || role === "disclosure-summary") {
       // The summary to draw: the chosen one of this family, else the first the family has.
-      const disclosure = role === "disclosure" ? component : (roles.disclosure?.components.find((name) => familyOf(name) === family) ?? rootOf(description, family) ?? component);
+      const disclosure = role === "disclosure" ? component : (roles.disclosure?.components.find((name) => familyOf(name) === family) ?? [`${family}.Item`].find((name) => name in description.parts) ?? rootOf(description, family) ?? component);
       const summary = role === "disclosure-summary" ? component : (roles["disclosure-summary"]?.components.find((name) => familyOf(name) === family) ?? SUMMARY_MEMBERS.map((member) => `${family}.${member}`).find((name) => name in description.parts) ?? null);
       const panelPart = PANEL_MEMBERS.map((member) => `${family}.${member}`).find((name) => name in description.parts && name !== summary);
       const body = "What this section holds stays here until it is opened.";
@@ -286,16 +291,19 @@ export function rolePreview(description: LibraryDescription, setup: LibrarySetup
     }
   }
   if (top.length === 0) return { ok: false, why: "Nothing could be drawn for this mapping." };
-  elements.page = { type: "Page", props: {}, children: [], slots: { body: top } };
+  // One slot per sample, so the shell lays each on a row of its own.
+  const slots = top.map((_, index) => `sample-${index + 1}`);
+  elements.page = { type: "Page", props: {}, children: [], slots: Object.fromEntries(top.map((key, index) => [slots[index] as string, [key]])) };
   const components = unique([...used].map(familyOf)).sort(compare);
   const config: ProjectConfig = {
     schemaVersion: CONFIG_SCHEMA_VERSION,
     id: "role-preview",
     name: "Role preview",
     library: libraryOf(description, setup, NO_ROLES, [], components),
-    inventories: { components, layouts: [], pageTypes: [{ id: PREVIEW_PAGE_TYPE, kind: "content", slots: ["body"], chrome: [] }], flowStates: [PREVIEW_PAGE_TYPE] },
+    inventories: { components, layouts: [], pageTypes: [{ id: PREVIEW_PAGE_TYPE, kind: "content", slots, chrome: [] }], flowStates: [PREVIEW_PAGE_TYPE] },
     inputs: { tasks: [], ranking: [], disclosedSections: [], caps: {} },
-    views: [{ name: "preview", width: 360, height: 200, scheme }],
+    // Tall enough for what it draws: an app shows as much of it as the page fills.
+    views: [{ name: "preview", width: 320, height: Math.min(720, 120 + 72 * top.length + (role === "disclosure" || role === "disclosure-summary" ? 120 : 0)), scheme }],
     rules: [],
     proposals: [],
   };
@@ -462,7 +470,7 @@ export function buildProject(answers: ProjectAnswers): Result<BuiltProject> {
   const issues: Issue[] = [];
   const { description, setup } = answers;
   const name = answers.name.trim();
-  if (slugOf(name) === "") issues.push({ path: "$.name", message: "the product needs a name with a letter or a digit" });
+  issues.push(...projectNameIssues(name));
   const confirmed = confirmRoles(description, answers.confirmation);
   if (!confirmed.ok) issues.push(...confirmed.error.map((issue) => ({ path: `$.confirmation${issue.path.slice(1)}`, message: issue.message })));
 
