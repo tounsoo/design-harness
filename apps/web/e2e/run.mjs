@@ -2200,7 +2200,7 @@ test("a finding about a whole page outlines nothing, and opens its code at once"
   assert.ok(finding, `primary-slot fails: ${failing(value)}`);
   assert.match(finding.message, /^Page "booking" does not fill its slot "action"/);
   assert.equal(finding.targets, undefined, "a finding about a whole page has no elements to outline");
-  await page.getByRole("tab", { name: /Checks/ }).click();
+  await showAllRules(page);
   await page.locator('.rule[data-rule="primary-slot"] .finding').first().click();
   await page.waitForSelector('[data-testid="code-line"]');
   assert.equal(await page.getByTestId("finding-outline").count(), 0);
