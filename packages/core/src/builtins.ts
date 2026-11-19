@@ -8,21 +8,20 @@ import type { RuleSpec } from "./rules/types";
  * TARGET_MIN_PX) must be in the project's inputs.
  *
  * Every rule here is data. The ones whose type is a named check rather than a
- * selector rule are `page-structure`, `isolation`, `style-props`, the two
- * `flow` checks, the six `rendered` checks and the five membership subjects:
- * each reads something a selector cannot (the page kit's slots, the flow
- * graph, a rendered snapshot, the manifest and the import list, what the
- * source reaches, the config's excluded props).
+ * selector rule are `page-structure`, the two `flow` checks, the six
+ * `rendered` checks and the four membership subjects: each reads something a
+ * selector cannot (a page's slots, the flow graph, a rendered snapshot, the
+ * manifest). A style prop needs no rule: the spec catalog leaves out every
+ * prop the config excludes (`library.excludedProps`), so a spec that sets
+ * one is refused, as the always-on `extract` rule reports.
  */
 export const BUILT_IN_RULES: readonly RuleSpec[] = [
   // lint:product-ui and check:inventories
   { type: "membership", id: "components-from-inventory", of: "components", description: "Render only the library parts the inventory lists." },
-  { type: "membership", id: "imports-from-library", of: "imports", description: "Import only the project's library, React, the page kit and the prototype's own files, by static imports." },
   { type: "membership", id: "page-types-from-inventory", of: "page-types", description: "Every page is of an inventoried page type." },
   { type: "membership", id: "layouts-from-inventory", of: "layouts", description: "Every registered layout is inventoried." },
   { type: "membership", id: "flow-states-from-inventory", of: "flow-states", description: "The flow uses only inventoried states." },
   { type: "count", id: "no-raw-controls", scope: "source", select: { component: ["button", "input", "select", "textarea", "a"] }, max: 0, description: "Controls come from the library, never raw HTML." },
-  { type: "style-props", id: "no-inline-styles", description: "A style prop is a raw escape hatch: style, and the props the project excludes. Styling comes from the library's variants and tokens." },
   // lint:slots and the page shells
   { type: "page-structure", id: "page-structure", description: "Pages fill only their page type's slots, each once, with nothing outside them." },
   { type: "slot", id: "primary-slot", slot: "$primary", holds: { role: "primary-action" }, min: 1, max: 1, only: { role: "primary-action" }, description: "An action page's primary slot holds exactly one primary action and nothing else." },
@@ -41,8 +40,6 @@ export const BUILT_IN_RULES: readonly RuleSpec[] = [
   { type: "count", id: "no-page-inside-a-page", scope: "page", select: { page: true }, max: 0, description: "One page does one job: it never renders another page." },
   { type: "count", id: "no-primary-on-collection-or-content", scope: "page", pages: { kinds: ["collection", "content"] }, select: { role: "primary-action" }, max: 0, description: "A collection or content page holds no primary action." },
   { type: "count", id: "visible-questions", scope: "page", select: { role: "question", notInside: { role: "disclosure" } }, max: { cap: "MAX_VISIBLE_QUESTIONS" }, description: "A page asks at most MAX_VISIBLE_QUESTIONS questions outside a disclosure." },
-  // A prototype runs in the frame that measures it: it reaches only its imports and plain built-ins.
-  { type: "isolation", id: "no-ambient-globals", description: "Prototype code reaches only its imports and plain language built-ins: no browser globals, frame plumbing, DOM handles or computed property reads." },
   // The fail-closed net under every per-page count: what no page reaches cannot be counted.
   { type: "reachable", id: "counted-parts-reached", select: { anyOf: [{ role: "action" }, { role: "disclosure" }, { role: "question" }] }, description: "Every action, disclosure and question is rendered from a page, so the per-page rules count it." },
   // check:state-coverage and check:step-budget

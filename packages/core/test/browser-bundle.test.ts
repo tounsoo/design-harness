@@ -37,12 +37,9 @@ describe("the browser bundle", () => {
     runInContext(code, realm);
     expect(runInContext("[typeof process, typeof require, typeof window, typeof document, typeof console, typeof fetch].join()", realm)).toBe("undefined,undefined,undefined,undefined,undefined,undefined");
 
-    const legal = loadPrototype(join(EXAMPLES, "legal", "booking"));
     const spec = loadPrototype(join(EXAMPLES, "spec", "legal", "booking"));
     const inputs = [
-      { config: nook, prototype: legal, snapshots: legalSnapshots() },
-      ...loadCases(legal, join(EXAMPLES, "illegal")).map((item) => ({ config: nook, prototype: item.prototype })),
-      // Spec prototypes: read with core's own JSON parser, so a file that does not parse reads the same in every engine.
+      // Read with core's own JSON parser, so a file that does not parse reads the same in every engine.
       { config: nook, prototype: spec, snapshots: legalSnapshots() },
       ...["illegal", "refused"].flatMap((kind) => loadCases(spec, join(EXAMPLES, "spec", kind)).map((item) => ({ config: nook, prototype: item.prototype }))),
     ];

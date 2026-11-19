@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { nook } from "../../../../packages/core/examples/nook/project";
-import { seedLegal } from "../../test/nook";
+import { seedSpec } from "../../test/nook";
 import { frameSpecs } from "../runtime/session";
 import { describeOutline, exampleLabel, frameName, frameNameOf, pendingWords, scenarioName, scenarioNameOf } from "./words";
 
@@ -20,7 +20,7 @@ describe("a scenario's name outside the board", () => {
   });
 
   it("names a scenario or a frame known by id from the ones in hand, and falls back to the id in words or the key", () => {
-    const frames = frameSpecs(nook, seedLegal());
+    const frames = frameSpecs(nook, seedSpec());
     expect(scenarioNameOf("lantern-held", [held])).toBe("Booking, held (Lantern held)");
     expect(scenarioNameOf("harbor-open", [held])).toBe("Harbor open");
     expect(frameNameOf("lantern-open@phone", frames)).toBe("Booking, room open — phone (Lantern open)");
@@ -32,14 +32,14 @@ describe("a scenario's name outside the board", () => {
   });
 
   it("says where an outline is not measured by frame name", () => {
-    const frames = frameSpecs(nook, seedLegal());
+    const frames = frameSpecs(nook, seedSpec());
     expect(describeOutline({ frames: [], missing: [], unmeasured: ["lantern-open@desktop"] }, frames)).toBe("Not measured in Booking, room open — desktop (Lantern open).");
     expect(describeOutline({ frames: [], missing: [], unmeasured: [] }, frames)).toBe("Not drawn in any scenario.");
   });
 });
 
 describe("what is still pending", () => {
-  const frames = frameSpecs(nook, seedLegal());
+  const frames = frameSpecs(nook, seedSpec());
   const state = (states: readonly ("waiting" | "rendering" | "measured")[]) => ({
     revision: 1,
     frames,

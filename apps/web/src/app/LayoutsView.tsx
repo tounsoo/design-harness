@@ -1,7 +1,7 @@
 import { Badge, Card, Code, Disclosure, Stack, Table, Text } from "@tounsoo/todae";
 import { useMemo } from "react";
 import { layoutPreview, specLayouts, type LayoutSummary, type ProjectConfig } from "@design-harness/core";
-import type { PrototypeRecord } from "../store/project-file";
+import type { SpecRecord } from "../store/project-file";
 import { FrameCard } from "./Board";
 import { useSessions, type Measured } from "./sessions";
 import { humanize } from "./words";
@@ -19,7 +19,7 @@ function shown(value: unknown): string {
  * the layout alone, drawn with its examples in a frame of its own at the
  * project's first view, as core's `layoutPreview` writes it.
  */
-export function LayoutsView({ config, record }: { readonly config: ProjectConfig; readonly record: PrototypeRecord }) {
+export function LayoutsView({ config, record }: { readonly config: ProjectConfig; readonly record: SpecRecord }) {
   const layouts = useMemo(() => specLayouts(record.prototype, config), [record.prototype, config]);
   // One view, cut short, is enough to see a layout alone; the preview is a picture, and its checks are not shown.
   const previewConfig = useMemo(() => ({ ...config, views: config.views.slice(0, 1).map((view) => ({ ...view, height: Math.min(view.height, 480) })) }), [config]);

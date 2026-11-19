@@ -1,14 +1,18 @@
 /**
  * Names for exported code: identifiers a person would choose, from spec
- * keys, ids and paths, kept clear of JavaScript's reserved words and of the
- * names core's no-ambient-globals rule refuses, so the export checks as the
- * spec did.
+ * keys, ids and paths, kept clear of JavaScript's reserved words, of the
+ * browser's globals and event fields, and of the built-ins a component reads,
+ * so no name in the export shadows one a reader would take for the
+ * platform's.
  */
+
+/** The module the exported pages import `Slot` and `PageProps` from: the page kit the export writes beside them. */
+export const PAGE_KIT = "@design-harness/page";
 
 const RESERVED = new Set([
   // JavaScript and TypeScript
   "break", "case", "catch", "class", "const", "continue", "debugger", "default", "delete", "do", "else", "enum", "export", "extends", "false", "finally", "for", "function", "if", "import", "in", "instanceof", "new", "null", "return", "super", "switch", "this", "throw", "true", "try", "typeof", "var", "void", "while", "with", "yield", "let", "static", "implements", "interface", "package", "private", "protected", "public", "await", "async", "of", "type", "as", "undefined", "NaN", "Infinity", "arguments", "eval",
-  // Names the isolation rule refuses as a property or a global, and the built-ins a component reads
+  // The browser's globals, an event's DOM fields, and the built-ins a component reads
   "window", "self", "globalThis", "parent", "top", "frames", "opener", "document", "view", "target", "currentTarget", "srcElement", "relatedTarget", "nativeEvent", "location", "constructor", "prototype", "caller", "callee", "fetch", "event",
   "Math", "JSON", "Number", "String", "Boolean", "Array", "Object", "Map", "Set", "Symbol", "Date", "Promise", "Error", "React", "Fragment",
 ]);

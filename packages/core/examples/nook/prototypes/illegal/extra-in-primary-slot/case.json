@@ -1,1 +1,0 @@
-{ "what": "A line of text beside Book room in the primary slot", "expect": [{ "rule": "primary-slot", "message": "holds Text.Root \"Ready to book\" at pages/booking.tsx" }] }

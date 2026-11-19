@@ -1,11 +1,10 @@
 import type { ProjectConfig, SettablePropSchema as PropSchema } from "../config/types";
-import { PAGE_KIT } from "../extract/evaluator";
-import type { Prototype } from "../prototype/types";
+import type { Prototype, TsxPrototype } from "../prototype/types";
 import { LAYOUT_TYPE, SCENARIO_STATE, TEXT_PROP, type CatalogComponent, type SpecCatalog } from "../spec/catalog";
 import { isRecord, type JsonValue } from "../spec/json";
 import { LAYOUT_ID_PROP, TEMPLATE_PARAM, type LayoutParam, type LayoutParams, type ListItem } from "../spec/params";
 import { isExpression, keysOf, readSpecs, type ChildRef, type SpecDoc, type SpecElement } from "../spec/read";
-import { camel, fresh, isIdentifier, pascal, singular } from "./names";
+import { PAGE_KIT, camel, fresh, isIdentifier, pascal, singular } from "./names";
 
 /**
  * A spec prototype as React: the TSX a person would write for the same
@@ -32,8 +31,8 @@ import { camel, fresh, isIdentifier, pascal, singular } from "./names";
  */
 
 export type TsxExport = {
-  /** The TSX prototype: the same manifest, each spec file as a `.tsx` file. */
-  readonly prototype: Prototype;
+  /** The TSX prototype: the same manifest, each spec file as a `.tsx` file. Core does not read it back. */
+  readonly prototype: TsxPrototype;
   /** What the export could not carry over, in words, for the project's README. */
   readonly notes: readonly string[];
 };
@@ -848,11 +847,10 @@ export function relative(from: string, to: string): string {
 /**
  * A spec prototype written as React: one TSX file per page and per layout
  * at the spec file's path with `.tsx`, and the manifest unchanged but for
- * those paths. Refused for a TSX prototype, which needs no writing, and
- * when the project has no catalog to read the specs with.
+ * those paths. Refused when the project has no catalog to read the specs
+ * with.
  */
 export function specToTsx(prototype: Prototype, config: ProjectConfig): { ok: true; value: TsxExport } | { ok: false; error: string } {
-  if (prototype.format !== "spec") return { ok: false, error: "This prototype is already TSX." };
   const read = readSpecs(prototype, config);
   if (!read.catalog) return { ok: false, error: "The project's library has no part descriptions, so its specs cannot be read." };
   const names = new Map<string, string>();
@@ -884,7 +882,7 @@ export function specToTsx(prototype: Prototype, config: ProjectConfig): { ok: tr
   }
   if (read.issues.length > 0) writer.notes.push(`Core refused ${read.issues.length} part${read.issues.length === 1 ? "" : "s"} of the specs (its extract rule's findings); what it refused is not in the export.`);
   const swap = (file: string) => writer.outputFile(file);
-  const tsx: Prototype = {
+  const tsx: TsxPrototype = {
     format: "tsx",
     files,
     pages: prototype.pages.map((page) => ({ ...page, component: { file: swap(page.component.file), export: "default" } })),

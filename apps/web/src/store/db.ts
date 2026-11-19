@@ -1,12 +1,15 @@
-import { formatIssues, parseProjectConfig, parsePrototype, parseVariantState, type ProjectConfig } from "@design-harness/core";
+import { formatIssues, parseProjectConfig, parseVariantState, type ProjectConfig } from "@design-harness/core";
 import { parsePinState } from "../pins/model";
-import type { PrototypeRecord } from "./project-file";
+import { withoutTsxRules } from "./migrate";
+import { readStoredPrototype, type PrototypeRecord } from "./project-file";
 
 /**
  * Projects and their prototypes, kept in the browser's IndexedDB. Nothing
  * leaves the browser. What is read back is validated with core again, since
  * stored data may come from an older version of the app: a record that no
- * longer validates is reported, not loaded.
+ * longer validates is reported, not loaded. A TSX prototype loads as it was
+ * stored, for its files alone, and a config's rules only TSX had are taken
+ * out before it is read (`migrate.ts`).
  */
 
 export const DB_NAME = "design-harness";
@@ -20,6 +23,9 @@ type ProjectRow = { readonly id: string; readonly config: unknown };
 type PrototypeRow = { readonly projectId: string; readonly id: string; readonly name: string; readonly prototype: unknown; readonly variants?: unknown; readonly pins?: unknown };
 
 export type Loaded<T> = { readonly items: readonly T[]; readonly problems: readonly string[] };
+
+/** The stored projects, and for each whose rules only TSX had were taken out on load, by id, what went. */
+export type LoadedProjects = Loaded<ProjectConfig> & { readonly removed: Readonly<Record<string, readonly string[]>> };
 
 function request<T>(req: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -56,16 +62,20 @@ export class Store {
     this.db.close();
   }
 
-  async projects(): Promise<Loaded<ProjectConfig>> {
+  async projects(): Promise<LoadedProjects> {
     const rows = (await request(this.db.transaction(PROJECTS).objectStore(PROJECTS).getAll())) as ProjectRow[];
     const items: ProjectConfig[] = [];
     const problems: string[] = [];
+    const removed: Record<string, readonly string[]> = {};
     for (const row of rows) {
-      const parsed = parseProjectConfig(row.config);
-      if (parsed.ok) items.push(parsed.value);
-      else problems.push(`Stored project "${row.id}" no longer validates and was not loaded:\n${formatIssues(parsed.error)}`);
+      const migrated = withoutTsxRules(row.config);
+      const parsed = parseProjectConfig(migrated.json);
+      if (parsed.ok) {
+        items.push(parsed.value);
+        if (migrated.removed.length > 0) removed[parsed.value.id] = migrated.removed;
+      } else problems.push(`Stored project "${row.id}" no longer validates and was not loaded:\n${formatIssues(parsed.error)}`);
     }
-    return { items: items.sort(byId), problems };
+    return { items: items.sort(byId), problems, removed };
   }
 
   async prototypes(projectId: string): Promise<Loaded<PrototypeRecord>> {
@@ -74,7 +84,7 @@ export class Store {
     const items: PrototypeRecord[] = [];
     const problems: string[] = [];
     for (const row of rows) {
-      const parsed = parsePrototype(row.prototype);
+      const parsed = readStoredPrototype(row.prototype);
       // Variants are kept apart from the prototype: ones that no longer validate are reported and left out, and the prototype still loads.
       const variants = row.variants === undefined ? null : parseVariantState(row.variants);
       if (variants && !variants.ok) problems.push(`The variants stored with prototype "${row.id}" no longer validate and were not loaded:\n${formatIssues(variants.error)}`);
@@ -82,7 +92,7 @@ export class Store {
       const pins = row.pins === undefined ? null : parsePinState(row.pins);
       if (pins && !pins.ok) problems.push(`The pinned notes stored with prototype "${row.id}" could not be read and were not loaded:\n${pins.error.join("\n")}`);
       if (parsed.ok) items.push({ projectId: row.projectId, id: row.id, name: row.name, prototype: parsed.value, ...(variants?.ok ? { variants: variants.value } : {}), ...(pins?.ok ? { pins: pins.value } : {}) });
-      else problems.push(`Stored prototype "${row.id}" no longer validates and was not loaded:\n${formatIssues(parsed.error)}`);
+      else problems.push(`Stored prototype "${row.id}" no longer validates and was not loaded:\n${parsed.error}`);
     }
     return { items: items.sort(byId), problems };
   }

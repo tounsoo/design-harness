@@ -41,14 +41,12 @@ export function ruleGroup(rule: RuleSpec): RuleGroupId {
     case "rendered":
       return "rendered";
     case "membership":
-      return rule.of === "imports" ? "code" : "inventory";
+      return "inventory";
     case "prop-values":
       return "inventory";
     case "flow":
       return "flow";
     case "reachable":
-    case "isolation":
-    case "style-props":
       return "code";
   }
 }

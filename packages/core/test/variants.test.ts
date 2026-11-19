@@ -82,12 +82,10 @@ describe("a variant", () => {
     expect(checked.error.join("\n")).toMatch(/^pages\/booking\.json:\d+:\d+: pages\/booking\.json: element "free" is a Badge\.Root, which is not in the catalog/);
   });
 
-  it("is refused when it does not parse, names no page of the manifest, or the prototype is TSX", () => {
+  it("is refused when it does not parse or names no page of the manifest", () => {
     expect(checkVariant(legal, nook, "booking", "{ nope").ok).toBe(false);
     const unknown = checkVariant(legal, nook, "checkout", legal.files[BOOKING] as string);
     expect(!unknown.ok && unknown.error[0]).toMatch(/There is no page "checkout"/);
-    const tsx = checkVariant({ ...legal, format: "tsx" }, nook, "booking", legal.files[BOOKING] as string);
-    expect(!tsx.ok && tsx.error[0]).toMatch(/spec prototypes/);
   });
 
   it("is refused for a layout instance with a parameter the layout does not take", () => {

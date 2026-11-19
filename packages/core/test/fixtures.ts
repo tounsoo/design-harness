@@ -3,8 +3,8 @@ import { join, relative, sep } from "node:path";
 import type { Prototype } from "../src/prototype/types";
 
 /**
- * Reads prototypes written as folders, so the fixtures are real TSX files a
- * person can open: every file but `manifest.json` and `case.json` is a source
+ * Reads prototypes written as folders, so the fixtures are real spec files a
+ * person can open: every file but `manifest.json` and `case.json` is a spec
  * file, keyed by its path inside the folder.
  */
 

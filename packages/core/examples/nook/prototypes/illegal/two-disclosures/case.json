@@ -1,1 +1,0 @@
-{ "what": "A second disclosure beside room details", "expect": [{ "rule": "disclosures-per-page", "message": "Page \"booking\" has 2 disclosures, more than 1 (MAX_DISCLOSURES_PER_PAGE)" }] }

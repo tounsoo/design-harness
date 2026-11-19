@@ -22,21 +22,16 @@ export type PinBox = { readonly rect: Rect; readonly within: Point };
  * What was under the click.
  *
  * `source` is the part the page drew there, by its element tag
- * (`runtime/tags.ts`): where a TSX element is written, `file:line:column`,
- * or a spec element's key in the expanded page. `nth` tells its boxes apart
- * when the part drew several. `label` is the measured element there, as the
+ * (`runtime/tags.ts`): a spec element's key in the expanded page, which
+ * names its element whatever is around it. `nth` tells its boxes apart when
+ * the part drew several. `label` is the measured element there, as the
  * snapshot names it: its role, accessible name and HTML tag.
  *
- * A TSX tag is a place in a file, which another element can come to hold
- * after an edit, so a `source` of that kind also keeps `elsewhere`: a short
- * print (`anchor.ts`) of every named element the frame drew under another
- * tag when the pin was last found. It is what tells an element renamed where
- * it stands from a neighbour that moved into its place, and it is kept with
- * the pin so the answer is the same after a reload or an import. A spec's
- * key names its element whatever is around it, so a `key` source has none.
- * Absent on a pin stored before this was kept.
+ * A pin stored on a TSX prototype was anchored to a place in a file
+ * (`kind: "source"`), which nothing draws any more: `parsePinState` keeps
+ * such a pin, without that place, and marks it lost.
  */
-export type PinSource = PinBox & { readonly tag: string; readonly nth: number } & ({ readonly kind: "key" } | { readonly kind: "source"; readonly elsewhere?: readonly string[] });
+export type PinSource = PinBox & { readonly tag: string; readonly nth: number; readonly kind: "key" };
 
 export type PinElement = {
   readonly source?: PinSource;
@@ -200,17 +195,20 @@ const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const slug = (value: unknown): value is string => typeof value === "string" && value.length <= 200 && SLUG.test(value);
 /** A variant's id, as core gives them. */
 const VARIANT = /^[a-z]{1,3}$/;
-/** One print of `elsewhere` (`anchor.ts`), and how many a pin keeps at most. */
+/** One print of a TSX pin's `elsewhere`, and how many one kept at most: read only to load such a pin, which drops them. */
 const PRINT = /^[0-9a-f]{8}$/;
-export const MAX_ELSEWHERE = 256;
+const MAX_ELSEWHERE = 256;
+
+/** The kind of a stored pin's source anchored to a place in a TSX file, which nothing draws any more. */
+const TSX_SOURCE = "source";
 
 function elementOk(value: unknown): boolean {
   if (!isObject(value) || !only(value, ["source", "label"])) return false;
   const { source, label } = value;
   if (source !== undefined) {
-    if (!isObject(source) || !(source.kind === "source" || source.kind === "key")) return false;
-    // Only a place in a TSX file keeps what was drawn elsewhere.
-    if (!only(source, source.kind === "source" ? ["tag", "kind", "nth", "rect", "within", "elsewhere"] : ["tag", "kind", "nth", "rect", "within"])) return false;
+    if (!isObject(source) || !(source.kind === TSX_SOURCE || source.kind === "key")) return false;
+    // Only a place in a TSX file kept what was drawn elsewhere.
+    if (!only(source, source.kind === TSX_SOURCE ? ["tag", "kind", "nth", "rect", "within", "elsewhere"] : ["tag", "kind", "nth", "rect", "within"])) return false;
     if (!(text(source.tag, 1024) && Number.isSafeInteger(source.nth) && (source.nth as number) >= 0 && rect(source.rect) && point(source.within))) return false;
     const elsewhere = source.elsewhere;
     if (elsewhere !== undefined && !(Array.isArray(elsewhere) && elsewhere.length <= MAX_ELSEWHERE && elsewhere.every((item) => typeof item === "string" && PRINT.test(item)))) return false;
@@ -281,5 +279,21 @@ export function parsePinState(value: unknown): { readonly ok: true; readonly val
   });
   if (!Number.isSafeInteger(value.next) || (value.next as number) <= highest) errors.push("$.next: expected a number above every pin's");
   if (errors.length > 0) return { ok: false, error: errors };
-  return { ok: true, value: value as unknown as PinState };
+  return { ok: true, value: { ...(value as unknown as PinState), pins: (value.pins as Json[]).map(withoutTsxPlace) as unknown as PinState["pins"] } };
+}
+
+/**
+ * A stored pin anchored to a place in a TSX file, as it is kept now: that
+ * place is gone, since no frame draws TSX, so the pin keeps its note, point,
+ * label and history, loses the place, and is marked lost. Any other pin is
+ * returned as it was.
+ */
+function withoutTsxPlace(pin: Json): Json {
+  const anchor = pin.anchor as Json;
+  const element = anchor.element as Json | undefined;
+  const source = element?.source as Json | undefined;
+  if (!element || source?.kind !== TSX_SOURCE) return pin;
+  const { source: _place, ...rest } = element;
+  const { element: _element, ...bare } = anchor;
+  return { ...pin, anchor: { ...bare, ...(Object.keys(rest).length > 0 ? { element: rest } : {}), lost: true } };
 }

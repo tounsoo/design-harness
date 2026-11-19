@@ -28,7 +28,7 @@ import {
   type View,
 } from "@design-harness/core";
 import { frameKey, type Session, type SessionState } from "../runtime/session";
-import type { PrototypeRecord } from "../store/project-file";
+import { isSpecRecord, type PrototypeRecord, type SpecRecord } from "../store/project-file";
 import { adoptProposal, approveProposal, declineProposal, sendBackProposal, type ExampleMeasurement } from "../review/actions";
 import { inventoryDiff, type DiffSection } from "../review/diff";
 import { REVIEWER, draftedBy, formatTime, proposalTimeline, timelineTitle, type TimelineEntry } from "../review/timeline";
@@ -337,17 +337,17 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
   const exampleItems = useMemo(() => all.map(({ example }) => ({ id: example.name, config: renderConfig, prototype: example.prototype })), [all, renderConfig]);
   const exampleFrames = useSessions(exampleItems);
 
-  // Every prototype in the project, measured, for the impact. The open one is the board's.
-  const others = useMemo(() => (live ? prototypes.filter((record) => record.id !== openPrototypeId) : []), [live, prototypes, openPrototypeId]);
+  // Every spec prototype in the project, measured, for the impact; a stored TSX one is checked by nothing. The open one is the board's.
+  const others = useMemo(() => (live ? prototypes.filter(isSpecRecord).filter((record) => record.id !== openPrototypeId) : []), [live, prototypes, openPrototypeId]);
   const otherItems = useMemo(() => others.map((record) => ({ id: `prototype-${record.id}`, config, prototype: record.prototype })), [others, config]);
   const otherFrames = useSessions(otherItems);
-  const openRecord = prototypes.find((record) => record.id === openPrototypeId);
+  const openRecord = prototypes.filter(isSpecRecord).find((record) => record.id === openPrototypeId);
   const boardCurrent = board.session.current();
   const openMeasurement: Measurement | null = !live || !openRecord ? null : boardCurrent?.prototype === openRecord.prototype && board.state.revision === boardCurrent.revision ? measurementOf(board.state) : { state: "measuring", answered: 0, total: board.state.frames.length };
   const existing: readonly ExistingPrototype[] | null = useMemo(() => {
     if (!live) return null;
     const out: ExistingPrototype[] = [];
-    const add = (record: PrototypeRecord, measurement: Measurement) => out.push({ name: record.name, prototype: record.prototype, snapshots: measurement.state === "measured" ? measurement.snapshots : [] });
+    const add = (record: SpecRecord, measurement: Measurement) => out.push({ name: record.name, prototype: record.prototype, snapshots: measurement.state === "measured" ? measurement.snapshots : [] });
     if (openRecord && openMeasurement) {
       if (openMeasurement.state === "measuring") return null;
       add(openRecord, openMeasurement);

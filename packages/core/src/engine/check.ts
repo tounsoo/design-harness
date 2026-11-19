@@ -1,6 +1,5 @@
 import type { ProjectConfig } from "../config/types";
-import { extractPrototype } from "../extract";
-import type { PrototypeModel } from "../extract/model";
+import type { PrototypeModel } from "../prototype/model";
 import type { Prototype } from "../prototype/types";
 import type { RenderedSnapshot } from "../rendered/types";
 import type { RuleSpec, RuleType } from "../rules/types";
@@ -10,11 +9,9 @@ import { EXTRACT_RULE, buildReport, sortFindings, type CheckReport, type Finding
 import { evaluateContainment, evaluatePropValues, evaluateRequires } from "./rules/containment";
 import { evaluateCount } from "./rules/count";
 import { evaluateFlow } from "./rules/flow";
-import { evaluateIsolation } from "./rules/isolation";
 import { evaluateMembership } from "./rules/membership";
 import type { Outcome } from "./rules/outcome";
 import { evaluateRendered } from "./rules/rendered";
-import { evaluateStyleProps } from "./rules/style-props";
 import { evaluatePageStructure, evaluateReachable, evaluateSlot } from "./rules/slots";
 
 type Evaluators = { readonly [T in RuleType]: (rule: Extract<RuleSpec, { type: T }>, ctx: CheckContext) => Outcome };
@@ -29,8 +26,6 @@ const EVALUATORS: Evaluators = {
   slot: evaluateSlot,
   reachable: evaluateReachable,
   "page-structure": evaluatePageStructure,
-  isolation: evaluateIsolation,
-  "style-props": evaluateStyleProps,
   flow: evaluateFlow,
   rendered: evaluateRendered,
 };
@@ -47,7 +42,7 @@ export type CheckInput = {
   readonly prototype: Prototype;
   /** Rendered snapshots, one per scenario and view. Without them, rendered rules report `not-run`. */
   readonly snapshots?: readonly RenderedSnapshot[];
-  /** A model already extracted from this prototype with this config's library, to skip extracting again. */
+  /** A model already read from this prototype with this config, to skip reading it again. */
   readonly model?: PrototypeModel;
 };
 
@@ -59,8 +54,8 @@ export type CheckInput = {
  */
 export function checkPrototype(input: CheckInput): CheckReport {
   const { config, prototype } = input;
-  // A spec prototype has no code to extract: its model is read from its specs, and the same rules run on it.
-  const model = input.model ?? (prototype.format === "spec" ? specModel(prototype, config) : extractPrototype(prototype, config.library.package));
+  // The page model is read from the specs; no prototype code exists to run or parse.
+  const model = input.model ?? specModel(prototype, config);
   const ctx: CheckContext = {
     config,
     prototype,

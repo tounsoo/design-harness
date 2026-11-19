@@ -1,6 +1,0 @@
-{ "what": "The room cards registered as a \"room-list\" layout, which the inventory does not list", "expect": [{ "rule": "layouts-from-inventory", "message": "Layout \"room-list\" is not an inventoried layout" }],
-  "manifest": { "layouts": [
-    { "id": "room-list", "component": { "file": "layouts/room-cards.tsx", "export": "RoomCards" } },
-    { "id": "room-details", "component": { "file": "layouts/room-details.tsx", "export": "RoomDetails" } },
-    { "id": "select-question", "component": { "file": "layouts/select-question.tsx", "export": "default" } }
-  ] } }
