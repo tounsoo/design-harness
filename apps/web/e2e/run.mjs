@@ -1092,7 +1092,7 @@ test("a drafted proposal opens to its review page: examples side by side in fram
   assert.match(await page.getByTestId("review-verdict").textContent(), /^Core's adoption dry run: it would be adopted, classified tightens, and no prototype would newly fail\./);
   // The rule and its proof in one look: a passing and a failing example under it, each in a frame of its own, with core's verdict and message.
   const proof = page.locator('[data-rule-proof="one-toast-per-page"]');
-  assert.equal(await proof.locator(".rule-glyph").getAttribute("data-glyph"), "count");
+  assert.equal(await proof.locator(".rule-glyph").count(), 0, "a count reads whole in its words: no picture beside it");
   assert.deepEqual(await proof.locator(".proof-example").evaluateAll((items) => items.map((item) => [item.dataset.proof, item.dataset.expect])), [["one-toast", "pass"], ["two-toasts", "fail"]]);
   assert.deepEqual(await proof.getByTestId("proof-verdict").allTextContents(), ["passes", "fails for one-toast-per-page alone"]);
   assert.equal(await proof.locator('.proof-example[data-proof="two-toasts"]').getByTestId("proof-message").textContent(), finding, "core's message, word for word");
@@ -3826,9 +3826,8 @@ test("the Project tab draws page types as slot diagrams, caps as meters, budgets
   const rules = page.getByTestId("project-rules");
   assert.equal(await rules.locator(".rule-card").count(), 32);
   assert.deepEqual(await rules.locator(".rule-group").evaluateAll((items) => items.map((item) => [item.dataset.group, item.querySelectorAll(".rule-card").length])), [["count", 10], ["where", 4], ["rendered", 6], ["inventory", 5], ["flow", 2], ["code", 5]]);
-  assert.equal(await rules.locator('.rule-card[data-rule="one-primary-per-page"] .rule-glyph').getAttribute("data-glyph"), "count");
+  assert.deepEqual(await rules.locator(".rule-glyph").evaluateAll((items) => items.map((item) => item.dataset.glyph)), ["target-size", "headings", "contrast", "first-view", "sideways"], "only a rule about how a rendered page looks has a picture");
   assert.match(await rules.locator('.rule-card[data-rule="one-primary-per-page"]').textContent(), /A page holds at most one primary action\..*Each page holds at most 1 primary action\./s);
-  assert.equal(await rules.locator('.rule-card[data-rule="no-ambient-globals"] .rule-glyph').getAttribute("data-glyph"), "code", "a rule about code gets the plain plate, never a picture");
   assert.equal(await rules.locator('.rule-card[data-rule="target-size"] .rule-glyph').getAttribute("data-glyph"), "target-size");
   await rules.evaluate((element) => element.scrollIntoView({ block: "start" }));
   await shot(page, "project-rules-light");
@@ -3869,7 +3868,7 @@ test("Tally's palette is drawn by Mantine: its buttons by variant with the ranke
   await context.close();
 });
 
-test("the proposals list is cards that lead with the change: a cap before and after with its direction, and a rule's glyph", async ({ browser, base, api }) => {
+test("the proposals list is cards that lead with the change: a cap before and after with its direction, and a rule in its words", async ({ browser, base, api }) => {
   const { page, errors, context } = await openApp(browser, base);
   await measured(page, 1);
   await draftByAgent(page, api, {
@@ -3904,7 +3903,7 @@ test("the proposals list is cards that lead with the change: a cap before and af
   const rule = page.locator('.proposal-cards [data-proposal="book-without-hold"]');
   assert.equal(await rule.getByTestId("proposal-preview").getAttribute("data-preview"), "rule");
   assert.match(await rule.getByTestId("proposal-preview").textContent(), /^\+ rule/);
-  assert.equal(await rule.locator(".rule-glyph").getAttribute("data-glyph"), "count");
+  assert.equal(await rule.locator(".rule-glyph").count(), 0, "a count rule has no picture, only its words");
   assert.equal(await rule.getByTestId("class-scale").getAttribute("data-class"), "tightens");
   await shot(page, "proposals-cards-light");
   await shotDark(page, "proposals-cards-dark");

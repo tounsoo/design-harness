@@ -886,7 +886,7 @@ function Changes({ proposal, config, renderConfig, views, onShowExample }: { rea
               {proposal.rules.add.length === 1 ? "The rule it adds, and its proof" : `The ${proposal.rules.add.length} rules it adds, and their proof`}
             </Text.Root>
             <Text.Root as="p" tone="muted">
-              Each rule in core&apos;s words, with a picture of the kind of thing it checks and two of the proposal&apos;s examples: one it must pass and one it must flag. They are examples, not a before and after.
+              Each rule in core&apos;s words, with a picture when it is about how the page looks, and two of the proposal&apos;s examples: one it must pass and one it must flag. They are examples, not a before and after.
             </Text.Root>
           </div>
           <ul className="review-rules" aria-label="Rules it adds">
