@@ -1546,7 +1546,7 @@ test("a spec Toast proposal: refused while its failing example does not fail", a
   await judged(page);
   assert.equal(await example(page, "one-toast").getAttribute("data-verdict"), "ok");
   assert.equal(await example(page, "only-one").getByTestId("example-detail").textContent(), 'failing example "only-one" is not flagged as it must be: "one-toast-per-page" passed it');
-  const toast = example(page, "one-toast").frameLocator('iframe[title*="lantern-open at desktop"]').locator("text=Booked").first();
+  const toast = example(page, "one-toast").frameLocator('iframe[title$="lantern-open at desktop"]').locator("text=Booked").first();
   await toast.waitFor({ state: "attached" });
   await page.getByRole("button", { name: "Approve", exact: true }).click();
   await page.waitForFunction(() => document.querySelector(".review")?.getAttribute("data-status") === "approved");
@@ -1951,7 +1951,7 @@ test("the checks lead with plain words: a summary, each thing to fix with core's
   await primary.getByRole("button", { name: "Show me" }).click();
   await page.frameLocator('iframe[title="lantern-open at desktop"]').locator("[data-design-harness-overlay]").first().waitFor({ state: "attached" });
   await eventually(page, () => primary.getByTestId("fix-outline").textContent(), (text) => text === `Outlined in ${3 * VIEWS.length} frames: Booking, room open (Lantern open); Booking, booked (Lantern booked); Booking, held (Lantern held).`, "the card says where both actions are outlined");
-  await eventually(page, () => page.locator(".frame-card[data-selected]").count(), (count) => count === 6, "the six frames that draw them are selected");
+  await eventually(page, () => page.locator(".frame-card[data-selected]").count(), (count) => count === 3 * VIEWS.length, "the frames that draw them are selected");
   // Show in code, one click away, marks the line.
   await primary.getByTestId("show-in-code").click();
   await page.waitForSelector('[data-testid="code-line"]');
@@ -1961,7 +1961,7 @@ test("the checks lead with plain words: a summary, each thing to fix with core's
   await page.getByRole("tab", { name: /Checks/ }).click();
   const target = page.locator('.fix[data-rule="target-size"]');
   assert.equal(await target.getByTestId("fix-lead").textContent(), "Every control meets 24 px or the WCAG 2.5.8 spacing exception.", "a cap reads as its value");
-  await target.getByRole("button", { name: "Show Lantern open — desktop" }).click();
+  await target.getByRole("button", { name: "Show Lantern open — desktop", exact: true }).click();
   const frame = page.frameLocator('iframe[title="lantern-open at desktop"]');
   // The two outlines Show me drew for the primary actions give way to this one finding's outline.
   const overlays = frame.locator("[data-design-harness-overlay]");
@@ -2032,7 +2032,13 @@ async function offerVariants(page, api) {
 /** Waits until a variant's card has core's verdict on its measured frames, and returns it. */
 async function standing(page, id, expected) {
   const card = page.locator(`.variant-card[data-variant="${id}"]`);
-  await page.waitForFunction(([selector, wanted]) => document.querySelector(selector)?.getAttribute("data-standing") === wanted, [`.variant-card[data-variant="${id}"]`, expected], { timeout: 90000 });
+  try {
+    await page.waitForFunction(([selector, wanted]) => document.querySelector(selector)?.getAttribute("data-standing") === wanted, [`.variant-card[data-variant="${id}"]`, expected], { timeout: 90000 });
+  } catch {
+    // Say what the card held instead: its standing, its frames' states and its words.
+    const held = await card.evaluate((element) => ({ standing: element.getAttribute("data-standing"), frames: [...element.querySelectorAll(".frame-card")].map((frame) => `${frame.dataset.frameKey}=${frame.dataset.state}`), text: element.textContent.slice(0, 600) })).catch(() => null);
+    assert.fail(`variant ${id} never stood as ${expected}: ${JSON.stringify(held)}`);
+  }
   return card;
 }
 
@@ -2055,7 +2061,7 @@ test("a scripted agent offers three variants: side by side in measured frames, e
   for (const id of ["a", "b", "c"]) {
     const frames = page.locator(`.variant-card[data-variant="${id}"] .frame-card`);
     assert.equal(await frames.count(), FRAMES, `${id}: 4 scenarios × 4 views, measured`);
-    assert.deepEqual(await frames.evaluateAll((cards) => cards.filter((card) => !card.hasAttribute("data-hidden")).map((card) => card.dataset.frameKey)), ["lantern-open@desktop", "lantern-open@phone"]);
+    assert.deepEqual(await frames.evaluateAll((cards) => cards.filter((card) => !card.hasAttribute("data-hidden")).map((card) => card.dataset.frameKey)), VIEWS.map((view) => `lantern-open@${view}`));
     assert.equal(await page.locator(`.variant-card[data-variant="${id}"] .frame-card[data-state="measured"]`).count(), FRAMES);
   }
   // Every view of a source side by side, as the board lays a scenario out.

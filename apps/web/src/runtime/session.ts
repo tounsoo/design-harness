@@ -1,6 +1,7 @@
 import { checkPrototype, extractPrototype, specModel, type CheckReport, type ComponentLibrary, type PageType, type ProjectConfig, type Prototype, type PrototypeModel, type RenderedSnapshot, type Scenario, type View } from "@design-harness/core";
 import { frameDocument } from "./frame-document";
 import { resolvePackages, type PackageSource, type RuntimePackages } from "./package-source";
+import { RENDER_SLOTS, type RenderSlots } from "./render-slots";
 import { PROTOCOL, readFrameMessage, type FrameMessage, type FrameStage, type ModuleSource, type PageRef, type RenderRequest, type RootRef } from "./protocol";
 import { SPEC_RENDERER, specParts, specPayload } from "./spec-payload";
 import { tagSites } from "./tags";
@@ -83,6 +84,8 @@ export type SessionOptions = {
    * which the end-to-end tests use to show tags change no measurement.
    */
   readonly tags?: boolean;
+  /** How many frames render at once (`render-slots.ts`); the app's shared slots unless a test gives its own. */
+  readonly slots?: RenderSlots;
 };
 
 /** Element tags are on unless the app was opened with `frame-tags=off`. */
@@ -113,11 +116,15 @@ export class Session {
   /** Where each measured frame's page is scrolled to, and who is listening. Kept out of the state: a scroll re-renders one overlay, not the board. */
   private readonly scrolls = new Map<FrameKey, { readonly x: number; readonly y: number }>();
   private readonly scrollListeners = new Set<() => void>();
+  /** The render slot each frame of the current revision waits for or holds. */
+  private readonly slots: RenderSlots;
+  private readonly rendering = new Map<FrameKey, symbol>();
   /** A draft was drawn into the current revision's frames by `redraw`. */
   private redrawn = false;
 
   constructor(private readonly options: SessionOptions) {
     this.tags = options.tags ?? tagsByDefault();
+    this.slots = options.slots ?? RENDER_SLOTS;
     options.window.addEventListener("message", this.onMessage);
   }
 
@@ -125,6 +132,7 @@ export class Session {
     this.options.window.removeEventListener("message", this.onMessage);
     for (const attached of this.attached.values()) clearTimeout(attached.timer);
     this.attached.clear();
+    this.freeSlots();
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -168,6 +176,8 @@ export class Session {
     const frameStates: Record<FrameKey, FrameState> = {};
     for (const frame of frames) frameStates[frame.key] = frame.blocked ? { state: "failed", stage: "setup", message: frame.blocked } : { state: "waiting" };
     for (const attached of this.attached.values()) clearTimeout(attached.timer);
+    // No frame of the last revision renders any more: its slots go to this one's.
+    this.freeSlots();
     this.redrawn = false;
     this.scrolls.clear();
     this.set({ revision, frames, frameStates, compileProblems: compiled.problems, report: checkPrototype({ config, prototype, model }), measured: false });
@@ -223,12 +233,14 @@ export class Session {
       // A late detach of an older iframe must not drop the one that replaced it.
       if (previous?.channel !== channel) return;
       clearTimeout(previous.timer);
+      this.freeSlot(key);
       this.attached.delete(key);
       this.channels.delete(channel);
       return;
     }
     if (previous) {
       clearTimeout(previous.timer);
+      if (previous.channel !== channel) this.freeSlot(key);
       if (previous.channel !== channel) this.channels.delete(previous.channel);
     }
     this.attached.set(key, { frame, generation, channel, ready: false });
@@ -320,16 +332,47 @@ export class Session {
     // A frame answers once, for the generation it was rendered at; anything else is stale or a second word.
     if (message.generation !== attached.generation || this.state.frameStates[key]?.state !== "rendering") return;
     clearTimeout(attached.timer);
+    this.freeSlot(key);
     if (message.type === "snapshot") this.setFrame(key, { state: "measured", snapshot: message.snapshot, tags: message.tags });
     else this.setFrame(key, { state: "failed", stage: message.stage, message: message.message });
     this.finishIfDone();
   }
 
+  private freeSlot(key: FrameKey): void {
+    const token = this.rendering.get(key);
+    if (token === undefined) return;
+    this.rendering.delete(key);
+    this.slots.release(token);
+  }
+
+  private freeSlots(): void {
+    for (const key of [...this.rendering.keys()]) this.freeSlot(key);
+  }
+
+  /** Asks a frame to render once it listens, the packages are resolved and a render slot is free. */
   private sendIfReady(key: FrameKey): void {
     const attached = this.attached.get(key);
     const spec = this.state.frames.find((frame) => frame.key === key);
+    if (!attached?.ready || !spec || !this.resolved || !spec.page || !spec.pageType || this.state.frameStates[key]?.state !== "waiting" || this.rendering.has(key)) return;
+    const { channel, generation } = attached;
+    const token = Symbol(key);
+    this.rendering.set(key, token);
+    this.slots.request(token, () => {
+      // By the time a slot is free, the frame may be gone or a newer revision may have started.
+      const now = this.attached.get(key);
+      const live = this.rendering.get(key) === token && now?.channel === channel && generation === this.state.revision && this.state.frameStates[key]?.state === "waiting";
+      if (!live || !now) {
+        if (this.rendering.get(key) === token) this.rendering.delete(key);
+        return false;
+      }
+      this.send(key, now, spec);
+      return true;
+    });
+  }
+
+  private send(key: FrameKey, attached: Attached, spec: FrameSpec): void {
     const packages = this.resolved;
-    if (!attached?.ready || !spec || !packages || !spec.page || !spec.pageType || this.state.frameStates[key]?.state !== "waiting") return;
+    if (!packages || !spec.page || !spec.pageType) return;
     const request: RenderRequest = {
       protocol: PROTOCOL,
       type: "render",
@@ -348,6 +391,7 @@ export class Session {
     this.setFrame(key, { state: "rendering" });
     attached.timer = setTimeout(() => {
       if (attached.generation !== this.state.revision || this.state.frameStates[key]?.state !== "rendering") return;
+      this.freeSlot(key);
       this.setFrame(key, { state: "failed", stage: "timeout", message: `The frame did not answer within ${Math.round((this.options.timeoutMs ?? 20000) / 1000)} s.` });
       this.finishIfDone();
     }, this.options.timeoutMs ?? 20000);
@@ -361,6 +405,7 @@ export class Session {
   private failAll(message: string): void {
     const frameStates: Record<FrameKey, FrameState> = { ...this.state.frameStates };
     for (const frame of this.state.frames) if (frameStates[frame.key]?.state !== "failed") frameStates[frame.key] = { state: "failed", stage: "setup", message };
+    this.freeSlots();
     this.set({ frameStates });
     this.finishIfDone();
   }
