@@ -164,7 +164,20 @@ A board of frames is many documents: the seed's 16, and the Variants view of a p
 
 **Checks in a worker.** Core's engine for a session runs in one module worker for the page (`check-worker.ts`): the model, the first check, a TSX prototype's compile with its element tags, a spec prototype's resolved pages, and the check with snapshots on the model kept for that revision. `runEngine` is the one function both the worker and the main thread run, and a report crosses back by structured clone, so it is the same, byte for byte as JSON; `?checks=main` runs it on the main thread, and so does the app when a worker cannot start or fails (each call still waiting is run there). A revision's report is null until the engine answers, a tick later.
 
-What was measured, on this repository's shared machine (heavily loaded, so treat the numbers as rough; `e2e/board-performance.mjs` measures a build, `--dist` another build to compare): see the pull request.
+What was measured with `e2e/board-performance.mjs` (it measures a build; `--dist` measures another, such as one from before a change), before and after, on a shared and often heavily loaded machine, so the times are rough:
+
+| | Before | After |
+| --- | --- | --- |
+| Nook board, live iframes once measured (1600 × 1000 window) | 16 | 6 |
+| Variants view, 4 sources and the board under it: live iframes | 96 | 6 |
+| Variants view: Chromium renderers' memory | 1,103 to 1,233 MB | 751 to 799 MB |
+| Nook board: Chromium renderers' memory | 248 to 297 MB | 264 to 328 MB (the worker holds a copy of core) |
+| App's JS heap, board / Variants | 11 / 15.3 MB | 9.5 / 14.6 MB |
+| First full report, Nook board | 2.5 to 3.0 s | 2.5 to 3.1 s |
+| Every Variants card measured (80 frames) | 13.5 to 14.5 s | 14.4 to 14.6 s |
+| Typing five words in a TSX file (five revisions): main-thread long tasks, total | 535 to 678 ms | 353 to 657 ms |
+
+Chromium runs these opaque-origin frames out of the app's process, so a frame's document weighs on the renderers, not the app's heap, and its rendering never blocks the app's main thread; what blocked it on each edit was core (about 7 ms to read Nook's source, 1 ms to check it and 11 ms to compile it, or 12 ms to resolve the spec's pages, in Node), which the worker now does. The long tasks left while typing are the app's own rendering. Doing a frame's document load inside its render slot makes measuring 80 frames a little slower; the time to the first full report did not change measurably.
 
 The end-to-end test "lazy measuring changes nothing a rule measures" records every snapshot the frames send in a tall window and a short one (which parks frames out of sight), scrolls to the last artboard and back so parked frames are drawn again, and finds every render of a frame measured the same and the report the same byte for byte; "core's checks run in a module worker" compares the worker's report with the main thread's for Nook's TSX and spec prototypes and for Tally; the Variants test finds at most 24 live documents with 80 frames measured.
 
