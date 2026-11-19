@@ -499,6 +499,14 @@
   .wizard-notes { color: var(--todae-color-fg-muted); font-size: var(--todae-font-size-1); }
   .wizard-note > :not(summary) { margin-block-start: var(--todae-space-2); }
   .wizard-import p { margin: 0; }
+  /* Asking for a library the deployment does not ship. */
+  .library-request p, .library-request h3 { margin: 0; }
+  .library-request-title { --todae-text-h3-font-size: var(--todae-font-size-3); }
+  .library-request-fields { display: grid; gap: var(--todae-space-4); max-inline-size: var(--todae-harness-size-column); }
+  .library-request-hint { font-size: var(--todae-font-size-1); }
+  .pending-request-head { flex-wrap: wrap; }
+  .pending-request-forget { margin-inline-start: auto; }
+  .pending-request-links { flex-wrap: wrap; }
   .library-list { gap: var(--todae-space-2); }
   .library-option-text { display: grid; gap: calc(var(--todae-space-1) / 2); }
   .chip-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--todae-space-1); }

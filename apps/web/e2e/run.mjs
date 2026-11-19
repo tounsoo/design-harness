@@ -3613,6 +3613,87 @@ test("the Tally example is added from New project, and the projects switch", asy
   await context.close();
 });
 
+test("a library that is not listed is requested on GitHub: the form is checked here, opens the issue form filled in, and stays pending in this browser", async ({ browser, base }) => {
+  const { page, context, errors } = await openApp(browser, base);
+  // Nothing reaches GitHub: the issue form's tab gets a page of our own.
+  const opened = [];
+  await context.route("https://github.com/**", (route) => {
+    opened.push(route.request().url());
+    return route.fulfill({ status: 200, contentType: "text/html", body: "<title>Issue form</title>" });
+  });
+  await measured(page, 1);
+  await page.getByRole("button", { name: "New project" }).click();
+  await page.getByLabel("Product name").fill("Requested");
+  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByText("Use a library that is not listed").click();
+  const form = page.getByTestId("library-request");
+  const send = form.getByTestId("request-library");
+  // Nothing typed: each field says what it needs, and nothing opens.
+  await send.click();
+  assert.match((await form.getByTestId("request-error-package").textContent()) ?? "", /Give the package's name on npm/);
+  assert.match((await form.getByTestId("request-error-version").textContent()) ?? "", /Give the exact version/);
+  assert.equal(await form.getByTestId("request-error-stylesheets").count(), 0, "stylesheets may be left empty");
+  assert.equal(await form.getByLabel("Package").getAttribute("aria-invalid"), "true");
+  // Hostile and loose input, refused in plain words as it is typed.
+  await form.getByLabel("Package").fill("foo; rm -rf /");
+  await form.getByLabel("Exact version").fill("^1.2.0");
+  await form.getByLabel("CSS files").fill("../../etc/passwd.css");
+  assert.match((await form.getByTestId("request-error-package").textContent()) ?? "", /is not a package name this form takes/);
+  assert.match((await form.getByTestId("request-error-version").textContent()) ?? "", /is a range, which can mean a different version tomorrow/);
+  assert.match((await form.getByTestId("request-error-stylesheets").textContent()) ?? "", /is not a path inside the package/);
+  await form.getByLabel("Exact version").fill("latest");
+  assert.match((await form.getByTestId("request-error-version").textContent()) ?? "", /is a tag, which moves/);
+  // A library the deployment already lists is picked above, not requested.
+  await form.getByLabel("Package").fill("@tounsoo/todae");
+  await form.getByLabel("Exact version").fill("0.11.3");
+  await form.getByLabel("CSS files").fill("dist/todae.css");
+  assert.match((await form.getByTestId("request-error-version").textContent()) ?? "", /already in the list above/);
+  await shot(page, "wizard-request-errors");
+  assert.equal(opened.length, 0, "nothing opens while the request is refused");
+  // A good request: Enter in a field sends it (not the step), and GitHub's issue form opens in a new tab, filled in.
+  await form.getByLabel("Package").fill("@acme/ui");
+  await form.getByLabel("Exact version").fill("2.4.1");
+  await form.getByLabel("CSS files").fill("dist/ui.css\ndist/theme.css");
+  const [popup] = await Promise.all([page.waitForEvent("popup"), form.getByLabel("Exact version").press("Enter")]);
+  await popup.waitForLoadState();
+  const url = new URL(popup.url());
+  assert.equal(`${url.origin}${url.pathname}`, "https://github.com/tounsoo/design-harness/issues/new");
+  assert.deepEqual(Object.fromEntries(url.searchParams), { template: "library-request.yml", title: "Library request: @acme/ui 2.4.1", package: "@acme/ui", version: "2.4.1", stylesheets: "dist/ui.css\ndist/theme.css" });
+  await popup.close();
+  assert.equal(await page.getByTestId("library-problem").count(), 0, "Enter sent the request, not the step");
+  assert.equal(await form.getByLabel("Package").inputValue(), "", "the fields clear for the next request");
+  // Pending, with where its issue and pull request will be, since the app cannot ask GitHub.
+  const pending = form.getByTestId("pending-request");
+  assert.equal(await pending.count(), 1);
+  assert.match((await pending.textContent()) ?? "", /Pending.*@acme\/ui.*2\.4\.1/s);
+  assert.equal(decodeURIComponent((await pending.getByTestId("pending-issue").getAttribute("href")) ?? ""), 'https://github.com/tounsoo/design-harness/issues?q=is:issue label:library-request in:title "@acme/ui 2.4.1"');
+  assert.equal(decodeURIComponent((await pending.getByTestId("pending-pull").getAttribute("href")) ?? ""), "https://github.com/tounsoo/design-harness/pulls?q=is:pr head:library-request/@acme/ui-2.4.1");
+  assert.equal(await pending.getByTestId("pending-form").getAttribute("href"), url.toString());
+  assert.equal(await pending.getByTestId("pending-issue").getAttribute("target"), "_blank");
+  await form.scrollIntoViewIfNeeded();
+  await pending.scrollIntoViewIfNeeded();
+  await shot(page, "wizard-request-pending");
+  await shotDark(page, "wizard-request-pending-dark");
+  // Kept in this browser across a reload; a stored entry that is not a valid request is not shown.
+  await page.evaluate(() => {
+    const list = JSON.parse(localStorage.getItem("design-harness.library-requests") ?? "[]");
+    list.push({ package: "$(id)", version: "1.0.0", stylesheets: [], at: "2026-11-19T00:00:00.000Z" });
+    localStorage.setItem("design-harness.library-requests", JSON.stringify(list));
+  });
+  await page.reload();
+  await measured(page, 1);
+  await page.getByRole("button", { name: "New project" }).click();
+  await page.getByLabel("Product name").fill("Requested");
+  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByText("Use a library that is not listed").click();
+  assert.deepEqual(await page.getByTestId("pending-request").evaluateAll((cards) => cards.map((card) => `${card.dataset.package} ${card.dataset.version}`)), ["@acme/ui 2.4.1"]);
+  await page.getByRole("button", { name: "Forget the request for @acme/ui 2.4.1" }).click();
+  assert.equal(await page.getByTestId("pending-requests").count(), 0);
+  assert.equal(await page.evaluate(() => localStorage.getItem("design-harness.library-requests")), "[]");
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 // ---- the Project and Proposals tabs as pictures --------------------------------
 
 /** A palette tile, and its frame once the library has drawn it. */
@@ -3681,6 +3762,31 @@ test("the Project tab draws the palette live: each component in a sandboxed fram
   assert.deepEqual(errors, []);
   await context.close();
 });
+
+// The library request workflow runs this on the library it adds, by its name in New project's list
+// (E2E_LIBRARY, such as "@acme/ui 2.4.1"); it is not part of a run without one.
+if (process.env.E2E_LIBRARY) {
+  test(`a requested library: New project offers ${process.env.E2E_LIBRARY}, draws every role, and its starter passes every rule`, async ({ browser, base }) => {
+    const label = process.env.E2E_LIBRARY;
+    const { page, context, errors } = await openApp(browser, base);
+    await measured(page, 1);
+    await wizardToRoles(page, "Requested", label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const states = await page.locator('[data-testid="role-preview"]').evaluateAll((previews) => previews.map((element) => element.dataset.state));
+    assert.deepEqual(states, ["measured", "measured", "measured", "measured", "measured", "measured"], "every role's parts render in a frame");
+    await page.getByTestId("accept-all").click();
+    await page.getByRole("button", { name: "Next" }).click();
+    if ((await page.getByTestId("exclusion-accept").count()) > 0) await page.getByTestId("exclusion-accept").click();
+    await page.getByRole("button", { name: "Next" }).click();
+    await page.getByRole("button", { name: "Review" }).click();
+    await createFromReview(page);
+    // Every rule in force, and the extract rule: the library's own count, whatever it is.
+    const rules = (await report(page)).rules.length - 1;
+    const file = await passesReloadsAndRoundTrips(page, browser, base, { id: "requested", rules });
+    assert.equal(`${file.project.library.package} ${file.project.library.version}`, label);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+}
 
 test("the Project tab draws page types as slot diagrams, caps as meters, budgets against today's routes, and rules as grouped cards", async ({ browser, base }) => {
   const { page, errors, context } = await openApp(browser, base);

@@ -17,6 +17,13 @@ import type { LibraryDescription, LibrarySetup } from "@design-harness/core";
  * 3. list it and its stylesheets under `designHarness.libraries` in package.json, so the vendor build serves it;
  * 4. add an entry here.
  *
+ * A designer asks for one from the wizard, and the library request
+ * workflow (`.github/workflows/library-request.yml`, its logic in
+ * `scripts/library-request.mjs`) does these four steps and opens a pull
+ * request. It appends its entry to the end of this list, so the list stays
+ * one array literal closed by `];` on a line of its own, each entry's
+ * `package` line right above its `version` line.
+ *
  * `registry.test.ts` holds each entry to the description file, to
  * package.json and to the version installed.
  */

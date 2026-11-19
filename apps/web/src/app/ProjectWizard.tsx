@@ -28,6 +28,7 @@ import { resolvePackages } from "../runtime/package-source";
 import type { LoadNote } from "../store/migrate";
 import type { PrototypeRecord } from "../store/project-file";
 import { FrameCard } from "./Board";
+import { LibraryRequestForm } from "./LibraryRequest";
 import { blankPrototype } from "./new-prototype";
 import { packageSource } from "./runtime";
 import { useSessions } from "./sessions";
@@ -181,7 +182,7 @@ export function ProjectWizard({ takenIds, hasTally, onCancel, onCreate, onExampl
     } catch (error) {
       setLibraryProblems([
         `This deployment cannot render ${library.name}: ${error instanceof Error ? error.message : String(error)}.`,
-        "A project on it could be checked but never drawn, so the wizard stops here. Add the library to the deployment (below), or pick one it ships.",
+        "A project on it could be checked but never drawn, so the wizard stops here. Ask for the library to be added (below), or pick one it ships.",
       ]);
     } finally {
       setChecking(false);
@@ -404,11 +405,15 @@ export function ProjectWizard({ takenIds, hasTally, onCancel, onCreate, onExampl
                     )}
                   </Alert.Root>
                 )}
-                <Disclosure.Root className="wizard-note">
+                <Disclosure.Root className="wizard-note" data-testid="unlisted-library">
                   <Disclosure.Summary>Use a library that is not listed</Disclosure.Summary>
-                  <Stack.Root gap="condensed">
+                  <Stack.Root gap="normal">
                     <Text.Root as="p">
-                      A library&apos;s parts are read from its TypeScript declarations by a script that needs Node and npm, and a frame can only load code this deployment serves. Neither can happen in a browser on a static site, so a new library is added in the repository, once, and then everyone can pick it here:
+                      A library&apos;s parts are read from its TypeScript declarations by a script that needs Node and npm, and a frame can only load code this deployment serves. Neither can happen in a browser on a static site, so a new library is added in the repository, once, and then everyone can pick it here.
+                    </Text.Root>
+                    <LibraryRequestForm listed={(request) => SHIPPED_LIBRARIES.some((library) => library.package === request.package && library.version === request.version)} />
+                    <Text.Root as="p" tone="muted">
+                      Someone with the repository can also add one by hand, which is what the workflow does:
                     </Text.Root>
                     <ol className="wizard-list">
                       <li>

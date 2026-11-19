@@ -49,11 +49,14 @@ describe("every library version the app describes is served", () => {
   });
 
   it("is installed at that version, under its own name or its npm alias", () => {
-    expect(served.map((library) => [library.package, library.version, library.install])).toEqual([
-      ["@tounsoo/todae", "0.11.3", "@tounsoo/todae"],
-      ["@tounsoo/todae", "0.10.1", "@tounsoo/todae-0.10.1"],
-      ["@mantine/core", "9.7.4", "@mantine/core"],
-    ]);
+    // These three at least; the library request workflow adds others.
+    expect(served.map((library) => [library.package, library.version, library.install])).toEqual(
+      expect.arrayContaining([
+        ["@tounsoo/todae", "0.11.3", "@tounsoo/todae"],
+        ["@tounsoo/todae", "0.10.1", "@tounsoo/todae-0.10.1"],
+        ["@mantine/core", "9.7.4", "@mantine/core"],
+      ]),
+    );
     for (const library of served) {
       const installed = JSON.parse(readFileSync(join(root, "node_modules", library.install, "package.json"), "utf8")) as { name: string; version: string };
       expect([installed.name, installed.version]).toEqual([library.package, library.version]);
