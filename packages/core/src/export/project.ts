@@ -127,9 +127,14 @@ body { margin: 0; }
 function mainFile(config: ProjectConfig): string {
   const styles = (config.library.stylesheets ?? []).map((path) => `import "${config.library.package}/${path}";`);
   const scheme = config.library.schemeAttribute ? `\ndocument.documentElement.setAttribute(${JSON.stringify(config.library.schemeAttribute)}, "light");` : "";
+  // The library's root part, which every page renders inside, as each frame renders it, in the light scheme.
+  const root = config.library.root;
+  const rootProps = root ? Object.entries({ ...root.props, ...(root.schemeProp ? { [root.schemeProp]: "light" } : {}) }).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)) : [];
+  const rootOpen = root ? `<${root.component}${rootProps.map(([name, value]) => ` ${name}={${JSON.stringify(value)}}`).join("")}>` : "";
+  const rootImport = root ? `import { ${root.component} } from "${config.library.package}";\n` : "";
   return `import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
-${styles.join("\n")}${styles.length > 0 ? "\n" : ""}import "./shell.css";
+${rootImport}${styles.join("\n")}${styles.length > 0 ? "\n" : ""}import "./shell.css";
 import { PageShell } from "./page-kit";
 import { pages, scenarios } from "./scenarios";
 
@@ -177,7 +182,7 @@ function App() {
 }
 ${scheme}
 const root = document.getElementById("root");
-if (root) createRoot(root).render(<StrictMode><App /></StrictMode>);
+if (root) createRoot(root).render(<StrictMode>${root ? `${rootOpen}<App /></${root.component}>` : "<App />"}</StrictMode>);
 `;
 }
 

@@ -1,9 +1,9 @@
 {
-  "what": "A style prop on the room cards' stack: no part takes one",
+  "what": "A style prop on the room cards' stack: Nook excludes Todae's style props",
   "expect": [
     {
       "rule": "extract",
-      "message": "element \"list\" sets \"style\", which a Stack.Root does not take"
+      "message": "element \"list\" sets \"style\", a style prop the project excludes (\"style\" in library.excludedProps)"
     }
   ]
 }

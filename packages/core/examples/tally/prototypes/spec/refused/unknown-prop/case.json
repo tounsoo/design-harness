@@ -1,0 +1,9 @@
+{
+  "what": "Submit expense given Mantine's gradient, a prop whose type (an object) the describer could not read as a JSON value, so a spec cannot set it",
+  "expect": [
+    {
+      "rule": "extract",
+      "message": "sets \"gradient\", which a Button declares with a type that could not be read as a JSON value, so a spec cannot set it."
+    }
+  ]
+}

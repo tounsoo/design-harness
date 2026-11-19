@@ -1,0 +1,18 @@
+{
+  "params": {
+    "expenses": {
+      "type": "list",
+      "of": { "record": { "id": "text", "name": "text", "amount": "text" } },
+      "description": "The expenses, one card each, each card opening its expense.",
+      "example": [{ "id": "lunch", "name": "Team lunch", "amount": "48.20" }]
+    }
+  },
+  "root": "list",
+  "elements": {
+    "list": { "type": "Stack", "props": {}, "repeat": { "param": "expenses", "key": "id" }, "children": ["card"] },
+    "card": { "type": "Card", "props": { "withBorder": true }, "children": ["name", "amount", "open"] },
+    "name": { "type": "Title", "props": { "order": 2, "text": { "$item": "name" } }, "children": [] },
+    "amount": { "type": "Text", "props": { "text": { "$template": "${amount} euros" } }, "children": [] },
+    "open": { "type": "Button", "props": { "variant": "default", "text": { "$template": "Open ${name}" } }, "children": [] }
+  }
+}

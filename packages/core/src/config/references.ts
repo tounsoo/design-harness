@@ -44,6 +44,16 @@ export function configReferenceIssues(config: ProjectConfig): Issue[] {
     if (!inventories.flowStates.includes(task.successState)) issues.push({ path: `$.inputs.tasks[${index}].successState`, message: `is "${task.successState}", which is not an inventoried flow state` });
   });
 
+  const root = config.library.root;
+  if (root) {
+    const part = config.library.parts?.[root.component];
+    if (config.library.parts && !part) issues.push({ path: "$.library.root.component", message: `is "${root.component}", which ${config.library.package} ${config.library.version} has no part of` });
+    if (root.schemeProp !== undefined && root.props && root.schemeProp in root.props) issues.push({ path: "$.library.root.schemeProp", message: `"${root.schemeProp}" is also given in root.props; the view's scheme sets it` });
+    const scheme = root.schemeProp === undefined ? undefined : part?.props[root.schemeProp];
+    if (scheme && !(scheme.type === "string" || (scheme.type === "enum" && scheme.values.includes("light") && scheme.values.includes("dark")))) {
+      issues.push({ path: "$.library.root.schemeProp", message: `"${root.schemeProp}" of ${root.component} does not take "light" and "dark"` });
+    }
+  }
   config.rules.forEach((rule, index) => issues.push(...ruleReferenceIssues(rule, config, `$.rules[${index}]`)));
   if (config.views.length === 0) {
     config.rules.forEach((rule, index) => {

@@ -89,3 +89,21 @@ describe("a TSX prototype exported as a React project", () => {
     expect(exported.notes).toEqual([]);
   });
 });
+
+describe("a project on a library with a root part, exported", () => {
+  it("renders every page inside the root, in the light scheme, as the frames do, and checks as the spec does", async () => {
+    const { tally } = await import("../examples/tally/project");
+    const spec = loadPrototype(join(import.meta.dirname, "..", "examples", "tally", "prototypes", "spec", "legal", "expense"));
+    const result = exportReactProject({ config: tally, prototype: spec, name: "Expense", at: "2026-11-18T12:00:00.000Z" });
+    if (!result.ok) throw new Error(result.error);
+    const exported = result.value;
+    const main = exported.files["src/main.tsx"] ?? "";
+    expect(main).toContain('import { MantineProvider } from "@mantine/core";\nimport "@mantine/core/styles.css";');
+    expect(main).toContain('<StrictMode><MantineProvider forceColorScheme={"light"}><App /></MantineProvider></StrictMode>');
+    expect(JSON.parse(exported.files["package.json"] ?? "{}").dependencies["@mantine/core"]).toBe("9.7.4");
+    const files = Object.fromEntries(Object.entries(exported.files).filter(([path]) => path.startsWith("src/prototype/") && !path.endsWith("manifest.json")).map(([path, text]) => [path.slice("src/prototype/".length), text]));
+    const tsx = parsePrototype({ ...JSON.parse(exported.files["src/prototype/manifest.json"] ?? "{}"), files });
+    if (!tsx.ok) throw new Error(JSON.stringify(tsx.error));
+    expect(checkPrototype({ config: tally, prototype: tsx.value }).rules.filter((rule) => rule.status === "fail")).toEqual([]);
+  });
+});

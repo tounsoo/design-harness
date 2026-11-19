@@ -1,0 +1,10 @@
+{
+  "what": "A second Submit expense in the amount layout, with no variant: primary by Mantine's default, as the confirmed roles say",
+  "expect": [
+    {
+      "rule": "one-primary-per-page",
+      "message": "Page \"expense\" has 2 primary actions, more than 1: Button \"Submit expense\" at layouts/amount-question.json"
+    }
+  ]
+}
+

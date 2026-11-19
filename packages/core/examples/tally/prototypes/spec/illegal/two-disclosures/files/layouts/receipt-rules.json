@@ -1,0 +1,19 @@
+{
+  "params": {
+    "items": { "type": "list", "of": "text", "description": "What a receipt must show, one line each.", "example": ["Attach a receipt for anything over 25 euros"] },
+    "summary": { "type": "text", "default": "Receipt rules", "description": "The disclosure's summary: the disclosed section's name." }
+  },
+  "root": "accordion",
+  "elements": {
+    "accordion": { "type": "Accordion", "props": {}, "children": ["item", "mileage"] },
+    "item": { "type": "Accordion.Item", "props": { "value": "rules" }, "children": ["control", "panel"] },
+    "control": { "type": "Accordion.Control", "props": { "text": { "$param": "summary" } }, "children": [] },
+    "panel": { "type": "Accordion.Panel", "props": {}, "children": ["lines"] },
+    "lines": { "type": "Stack", "props": {}, "repeat": { "param": "items" }, "children": ["line"] },
+    "line": { "type": "Text", "props": { "text": { "$item": "" } }, "children": [] },
+    "mileage": { "type": "Accordion.Item", "props": { "value": "mileage" }, "children": ["mileage-control", "mileage-panel"] },
+    "mileage-control": { "type": "Accordion.Control", "props": { "text": "Mileage rules" }, "children": [] },
+    "mileage-panel": { "type": "Accordion.Panel", "props": {}, "children": ["mileage-line"] },
+    "mileage-line": { "type": "Text", "props": { "text": "Claim 30 cents a kilometre" }, "children": [] }
+  }
+}

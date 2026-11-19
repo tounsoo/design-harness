@@ -6,10 +6,14 @@ import type { ModuleSource, StyleSource } from "./protocol";
  * project's component library by bare specifier; a package source says, for
  * one package at one exact version, where each module and stylesheet is.
  *
- * - `localPackageSource` serves the versions installed in this repository's
- *   node_modules, prebuilt into `public/vendor/` by `npm run vendor`. It is
- *   what development, the tests and the default build use, and it works
- *   offline. It refuses any other version rather than render with the wrong one.
+ * - `localPackageSource` serves React, React DOM, json-render and every
+ *   component library apps/web/package.json lists under
+ *   `designHarness.libraries`, at the versions installed in this
+ *   repository's node_modules, prebuilt into `public/vendor/` by
+ *   `npm run vendor`, each by name and exact version. It is what
+ *   development, the tests and the default build use, and it works offline.
+ *   It refuses any other package or version rather than render with the
+ *   wrong one.
  * - `esmShPackageSource` points the frame at esm.sh, so any published version
  *   loads, with React kept external so the library and the page share one React.
  */
@@ -61,7 +65,10 @@ export async function resolvePackages(library: ComponentLibrary, source: Package
   return { modules: Object.fromEntries(resolved), styles };
 }
 
-type VendorManifest = { readonly packages: Readonly<Record<string, { readonly version: string; readonly modules: Readonly<Record<string, string>>; readonly files: Readonly<Record<string, string>> }>> };
+/** One package at one version, as the vendor build wrote it: the file for each module specifier, and for each package file (a stylesheet). */
+type VendorEntry = { readonly modules: Readonly<Record<string, string>>; readonly files: Readonly<Record<string, string>> };
+/** `public/vendor/manifest.json`: every package the build served, by name and exact version. */
+export type VendorManifest = { readonly packages: Readonly<Record<string, { readonly versions: Readonly<Record<string, VendorEntry>> }>> };
 
 type Fetch = (url: string) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
 
@@ -88,10 +95,11 @@ export function localPackageSource(base: string, fetchText: Fetch = (url) => fet
   let manifest: Promise<VendorManifest> | undefined;
   const entry = async (request: PackageRequest) => {
     manifest ??= get("manifest.json").then((text) => JSON.parse(text) as VendorManifest);
-    const found = (await manifest).packages[request.package];
-    if (!found) throw new Error(`the local package source has no ${request.package}; it serves only the packages installed in node_modules`);
-    if (found.version !== request.version) {
-      throw new Error(`the local package source has ${request.package} ${found.version}, but the project asks for ${request.version}; it serves only the version installed in node_modules`);
+    const versions = (await manifest).packages[request.package]?.versions;
+    if (!versions) throw new Error(`the local package source has no ${request.package}; it serves only the packages this app was built with (open the app with ?packages=esm.sh to load any package from esm.sh)`);
+    const found = Object.hasOwn(versions, request.version) ? versions[request.version] : undefined;
+    if (!found) {
+      throw new Error(`the local package source has ${request.package} ${Object.keys(versions).sort().join(", ")}, but the project asks for ${request.version}; it serves only the versions this app was built with`);
     }
     return found;
   };

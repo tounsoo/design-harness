@@ -20,7 +20,7 @@ import type { SpecPage, specPage } from "./spec";
  */
 
 type Kit = {
-  mount: (container: HTMLElement, Page: unknown, props: PageProps, type: RenderRequest["pageType"], onLateError: (error: Error) => void) => Promise<void>;
+  mount: (container: HTMLElement, Page: unknown, props: PageProps, type: RenderRequest["pageType"], onLateError: (error: Error) => void, root?: { readonly component: unknown; readonly props: Readonly<Record<string, unknown>> }) => Promise<void>;
   Slot: Parameters<typeof specPage>[1];
 };
 
@@ -126,6 +126,7 @@ async function render(request: RenderRequest): Promise<void> {
   const view = request.view;
   let kit: Kit;
   let Page: unknown;
+  let root: { component: unknown; props: Readonly<Record<string, unknown>> } | undefined;
   let pendingRedraw: typeof redraw = null;
   try {
     await addStyles(request);
@@ -135,13 +136,25 @@ async function render(request: RenderRequest): Promise<void> {
       // A spec page: the library and the spec renderer, and the spec as data. No prototype module exists to load.
       const payload = request.page.spec;
       const [renderer, library] = await Promise.all([import(/* @vite-ignore */ SPEC_RENDERER) as Promise<{ specPage: typeof specPage }>, import(/* @vite-ignore */ payload.library) as Promise<Record<string, unknown>>]);
-      const page: SpecPage = renderer.specPage(library, kit.Slot, payload, request.pageType.slots, { tags: request.tags });
+      const page: SpecPage = renderer.specPage(library, kit.Slot, payload, request.pageType.slots, {
+        tags: request.tags,
+        onError: (error) => {
+          runtimeError ??= error;
+        },
+      });
       Page = page;
       pendingRedraw = page.redraw;
     } else {
       const module = (await import(/* @vite-ignore */ request.page.module)) as Record<string, unknown>;
       Page = module[request.page.export];
       if (typeof Page !== "function") throw new Error(`${request.page.module.replace(/^@prototype\//, "")} has no function export "${request.page.export}"`);
+    }
+    if (request.root) {
+      // The library's provider or theme root, which the page renders inside: the library's own export, never prototype code.
+      const library = (await import(/* @vite-ignore */ request.root.module)) as Record<string, unknown>;
+      const component = Object.hasOwn(library, request.root.component) ? library[request.root.component] : undefined;
+      if (typeof component !== "function" && (typeof component !== "object" || component === null)) throw new Error(`${request.root.module} has no component "${request.root.component}" to render pages inside`);
+      root = { component, props: request.root.props };
     }
   } catch (error) {
     fail("load", error);
@@ -150,9 +163,16 @@ async function render(request: RenderRequest): Promise<void> {
   const container = document.getElementById("root");
   if (!container) return fail("render", new Error("the frame has no #root"));
   try {
-    await kit.mount(container, Page, { scenario: request.scenario.id, state: request.scenario.state }, request.pageType, (error) => {
-      runtimeError ??= error;
-    });
+    await kit.mount(
+      container,
+      Page,
+      { scenario: request.scenario.id, state: request.scenario.state },
+      request.pageType,
+      (error) => {
+        runtimeError ??= error;
+      },
+      root,
+    );
   } catch (error) {
     fail("render", error);
     return;

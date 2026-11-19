@@ -16,12 +16,18 @@ export type RoleMapping = {
  * One prop of a library part, as a spec may set it: a JSON scalar of a type,
  * one of a set of strings, or a list of `{ value, label }` options. `bind`
  * names the part's callback that reports a new value, so a spec may bind the
- * prop to state (`{ "$bindState": "/path" }`).
+ * prop to state (`{ "$bindState": "/path" }`). `unknown` is a prop the library
+ * declares whose type could not be read as a JSON value (an object, JSX, a
+ * union of unlike types): a spec cannot set it, so it fails closed.
  */
 export type PropSchema =
   | { readonly type: "string" | "number" | "boolean"; readonly required: boolean; readonly bind?: string }
   | { readonly type: "enum"; readonly values: readonly string[]; readonly required: boolean; readonly bind?: string }
-  | { readonly type: "options"; readonly required: boolean };
+  | { readonly type: "options"; readonly required: boolean }
+  | { readonly type: "unknown"; readonly required: boolean };
+
+/** The props a spec may set: every prop schema but `unknown`. */
+export type SettablePropSchema = Exclude<PropSchema, { readonly type: "unknown" }>;
 
 /**
  * A part of the library as a spec prototype uses it, generated from the
@@ -36,6 +42,20 @@ export type PartDescription = {
   readonly content: "children" | "options" | "none";
   readonly events?: readonly "press"[];
   readonly needs?: readonly string[];
+};
+
+/**
+ * A part of the library every page renders inside, as many libraries need a
+ * provider or theme root (Mantine's `MantineProvider`, Radix Themes'
+ * `Theme`). The frame and the code export wrap each page in it; a prototype
+ * never names it. `schemeProp` is the prop set to the view's colour scheme,
+ * `light` or `dark`.
+ */
+export type LibraryRoot = {
+  /** A top-level export of the library, such as `MantineProvider`. */
+  readonly component: string;
+  readonly props?: Readonly<Record<string, Literal>>;
+  readonly schemeProp?: string;
 };
 
 export type ComponentLibrary = {
@@ -53,6 +73,16 @@ export type ComponentLibrary = {
    * Without it, a view's scheme is applied only as the CSS `color-scheme`.
    */
   readonly schemeAttribute?: string;
+  /** The part every page renders inside, when the library needs one. */
+  readonly root?: LibraryRoot;
+  /**
+   * Props a spec may never set on any part, by name or by a pattern where `*`
+   * stands for any characters: the library's style props (`style`,
+   * `className`, Mantine's `bg`, `c`, `m`, `p`, ...), which style a part around
+   * its own variants and tokens. The catalog leaves them out as it leaves out
+   * `unknown` props, and a spec that sets one is refused.
+   */
+  readonly excludedProps?: readonly string[];
   readonly roles: Readonly<Record<RoleName, RoleMapping>>;
   /**
    * Every part of the library, described for spec prototypes (`Button.Root`

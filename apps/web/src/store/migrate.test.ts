@@ -22,14 +22,14 @@ describe("a stored project without library.parts", () => {
     expect(migration.kind).toBe("added-parts");
     expect(migration.config.library.parts).toEqual(nook.library.parts);
     expect(parseProjectConfig(JSON.parse(JSON.stringify(migration.config))).ok).toBe(true);
-    expect(migration.kind === "added-parts" && migration.note).toMatch(/added the one it ships for @tounsoo\/todae 0\.11\.3 \(198 parts\)/);
+    expect(migration.kind === "added-parts" && migration.note).toMatch(/added the one it ships for @tounsoo\/todae 0\.11\.3 \(203 parts\)/);
     expect(checkPrototype({ config: migration.config, prototype: seedSpec() }).findings).toEqual(checkPrototype({ config: nook, prototype: seedSpec() }).findings);
   });
 
   it("picks the description of the project's own library version", () => {
     const older = withLibraryParts(stored("0.10.1"));
     expect(older.kind).toBe("added-parts");
-    expect(older.kind === "added-parts" && older.note).toMatch(/added the one it ships for @tounsoo\/todae 0\.10\.1 \(198 parts\)/);
+    expect(older.kind === "added-parts" && older.note).toMatch(/added the one it ships for @tounsoo\/todae 0\.10\.1 \(203 parts\)/);
     expect(older.config.library.parts).toEqual(todae0101.parts);
     expect(older.config.library.parts).not.toBe(nook.library.parts);
   });

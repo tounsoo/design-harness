@@ -1,0 +1,41 @@
+{
+  "format": "spec",
+  "pages": [
+    { "id": "expense", "pageType": "expense", "component": { "file": "pages/expense.json", "export": "default" } },
+    { "id": "expenses", "pageType": "expenses", "component": { "file": "pages/expenses.json", "export": "default" } }
+  ],
+  "layouts": [
+    { "id": "amount-question", "component": { "file": "layouts/amount-question.json", "export": "default" } },
+    { "id": "expense-cards", "component": { "file": "layouts/expense-cards.json", "export": "default" } },
+    { "id": "receipt-rules", "component": { "file": "layouts/receipt-rules.json", "export": "default" } }
+  ],
+  "scenarios": [
+    { "id": "expenses-list", "state": "expenses", "page": "expenses" },
+    { "id": "lunch-open", "state": "expense-open", "page": "expense" },
+    { "id": "lunch-submitted", "state": "submitted", "page": "expense" },
+    { "id": "lunch-saved", "state": "saved", "page": "expense" }
+  ],
+  "flow": {
+    "states": ["expenses", "expense-open", "submitted", "saved"],
+    "tasks": [
+      {
+        "task": "submit-expense",
+        "start": "expenses",
+        "transitions": [
+          { "from": "expenses", "event": "open-expense", "to": "expense-open" },
+          { "from": "expense-open", "event": "submit", "to": "submitted" },
+          { "from": "expense-open", "event": "save", "to": "saved" },
+          { "from": "saved", "event": "submit", "to": "submitted" }
+        ]
+      },
+      {
+        "task": "save-draft",
+        "start": "expenses",
+        "transitions": [
+          { "from": "expenses", "event": "open-expense", "to": "expense-open" },
+          { "from": "expense-open", "event": "save", "to": "saved" }
+        ]
+      }
+    ]
+  }
+}

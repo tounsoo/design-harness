@@ -1,0 +1,24 @@
+{
+  "root": "page",
+  "elements": {
+    "page": {
+      "type": "Page",
+      "props": {},
+      "children": [],
+      "slots": {
+        "title": ["heading"],
+        "intro": ["intro"],
+        "body": ["cards"]
+      }
+    },
+    "heading": { "type": "Title", "props": { "order": 1, "text": "Expenses" }, "children": [] },
+    "intro": { "type": "Text", "props": { "text": "Pick an expense to submit or save." }, "children": [] },
+    "cards": { "type": "Layout", "props": { "id": "expense-cards", "expenses": { "$state": "/expenses" } }, "children": [] }
+  },
+  "state": {
+    "expenses": [
+      { "id": "lunch", "name": "Team lunch", "amount": "48.20" },
+      { "id": "train", "name": "Train to Leeds", "amount": "36.50" }
+    ]
+  }
+}
