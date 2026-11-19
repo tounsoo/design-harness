@@ -80,7 +80,17 @@ export type PinEvent =
   | { readonly kind: "closed"; readonly at: string; readonly by: "you" }
   | { readonly kind: "reopened"; readonly at: string; readonly by: "you" }
   /** The person undid the agent's turn that addressed the note: it is open again, and that reply no longer stands. */
-  | { readonly kind: "undone"; readonly at: string; readonly by: "you" };
+  | { readonly kind: "undone"; readonly at: string; readonly by: "you" }
+  /**
+   * The person applied a pick that took the note's part of the page from the
+   * variant it was pinned on, so the note went with it onto the prototype
+   * (`pick.ts`). `at` is the pick's own time, which names it among the picks
+   * applied; `from` is the note's anchor on the variant as it was, which
+   * undoing the pick puts back.
+   */
+  | { readonly kind: "picked"; readonly at: string; readonly by: "you"; readonly variant: string; readonly from: PinAnchor }
+  /** The person undid that pick: the note is back on the variant, where it was. */
+  | { readonly kind: "unpicked"; readonly at: string; readonly by: "you"; readonly variant: string };
 
 export type Pin = {
   /** The pin's number on the canvas, from 1, never reused. */
@@ -185,6 +195,26 @@ export function moveAnchor(state: PinState, number: number, anchor: PinAnchor): 
   return { ...state, pins: state.pins.map((pin) => (pin.number === number ? { ...pin, anchor } : pin)) };
 }
 
+/**
+ * The variant a note is away from: the one a pick took it off, while that
+ * pick is not undone; null for a note no pick holds. False for a history
+ * that could not have happened: a note picked twice with no undoing
+ * between, or put back with no pick, or to another variant.
+ */
+export function awayOn(history: readonly PinEvent[]): string | null | false {
+  let away: string | null = null;
+  for (const event of history) {
+    if (event.kind === "picked") {
+      if (away !== null) return false;
+      away = event.variant;
+    } else if (event.kind === "unpicked") {
+      if (away !== event.variant) return false;
+      away = null;
+    }
+  }
+  return away;
+}
+
 export const openPins = (state: PinState): Pin[] => state.pins.filter((pin) => pin.status === "open");
 
 // ---- reading stored pins ---------------------------------------------------
@@ -245,6 +275,10 @@ function eventOk(value: unknown): boolean {
     case "reopened":
     case "undone":
       return only(value, ["kind", "at", "by"]) && value.by === "you";
+    case "picked":
+      return only(value, ["kind", "at", "by", "variant", "from"]) && value.by === "you" && typeof value.variant === "string" && VARIANT.test(value.variant) && anchorOk(value.from) && (value.from as Json).variant === value.variant;
+    case "unpicked":
+      return only(value, ["kind", "at", "by", "variant"]) && value.by === "you" && typeof value.variant === "string" && VARIANT.test(value.variant);
     default:
       return false;
   }
@@ -278,6 +312,17 @@ export function parsePinState(value: unknown): { readonly ok: true; readonly val
     else if ((pin.history[0] as Json).kind !== "created") errors.push(`${at}.history: a pin's history starts with its creation`);
     // An agent's turn is undone only right after it addressed the note.
     else if ((pin.history as Json[]).some((event, place, all) => event.kind === "undone" && all[place - 1]?.kind !== "addressed")) errors.push(`${at}.history: a turn is undone only straight after the agent addressed the note`);
+    else {
+      // A pick takes a note off its variant and undoing it puts the note back, in turn; where the note is now is where the last of them left it.
+      const away = awayOn(pin.history as unknown as readonly PinEvent[]);
+      const variant = isObject(pin.anchor) ? pin.anchor.variant : undefined;
+      if (away === false) errors.push(`${at}.history: a pick takes a note from its variant once, and only that pick's undoing puts it back`);
+      else if (away !== null && variant !== undefined) errors.push(`${at}.anchor: a note that came with a pick is on the prototype, not on a variant`);
+      else if (away === null) {
+        const back = (pin.history as Json[]).filter((event) => event.kind === "unpicked").at(-1);
+        if (back && back.variant !== variant) errors.push(`${at}.anchor: a note put back by undoing a pick is on the variant it came from`);
+      }
+    }
   });
   if (!Number.isSafeInteger(value.next) || (value.next as number) <= highest) errors.push("$.next: expected a number above every pin's");
   if (errors.length > 0) return { ok: false, error: errors };

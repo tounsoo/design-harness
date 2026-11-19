@@ -46,6 +46,15 @@ export type Recombination = {
   /** Slot to source, in the page type's slot order. */
   readonly slots: Readonly<Record<string, string>>;
   readonly renamed: readonly Rename[];
+  /** The key of the page's root in the result. */
+  readonly root: string;
+  /**
+   * Source to every element key it brings, and the key that element has in
+   * the result: the same key, unless `renamed` names it. Each source used
+   * also lists its own root, which is the result's root. An element a
+   * source holds but no slot picked from it reaches is not listed.
+   */
+  readonly keys: Readonly<Record<string, Readonly<Record<string, string>>>>;
 };
 
 type Element = { [field: string]: JsonValue };
@@ -316,5 +325,37 @@ export function recombine(prototype: Prototype, config: ProjectConfig, page: str
   if (Object.keys(state).length > 0) spec.state = sortedRecord(state);
   const text = formatSpec(spec);
   renamed.sort((a, b) => compare(a.kind, b.kind) || compare(a.source, b.source) || compare(a.from, b.from));
-  return { ok: true, value: { spec: text, prototype: withPageSpec(prototype, page, text), slots, renamed } };
+  const keys: Record<string, Record<string, string>> = {};
+  for (const name of used) {
+    const source = read.get(name) as Source;
+    const map = keyMaps.get(name) as Map<string, string>;
+    const own = new Map<string, string>([[source.root, rootKey]]);
+    for (const key of brought.get(name) ?? []) own.set(key, map.get(key) ?? key);
+    keys[name] = Object.fromEntries([...own.keys()].sort(compare).map((key) => [key, own.get(key) as string]));
+  }
+  return { ok: true, value: { spec: text, prototype: withPageSpec(prototype, page, text), slots, renamed, root: rootKey, keys } };
+}
+
+/**
+ * Where an element of one source is in a recombined page: its key in the
+ * result's expanded page, or null when the result does not hold it, because
+ * no slot picked from that source reaches it. `key` is the element's key in
+ * the source's expanded page, as a finding's target and an element tag give
+ * it: a key of the page's file, `<instance>/<key>` for what a layout
+ * instance draws, or `<root>/slots/<name>` for one of the page's slots. An
+ * instance keeps what it draws under its own key, so only the first part of
+ * a key is ever renamed. A slot is in the result when it was picked from
+ * that source, and the page's root itself only when every slot was.
+ */
+export function recombinedKey(result: Pick<Recombination, "keys" | "root" | "slots">, source: string, key: string): string | null {
+  const cut = key.indexOf("/");
+  const head = cut < 0 ? key : key.slice(0, cut);
+  const rest = cut < 0 ? "" : key.slice(cut);
+  const own = result.keys[source];
+  const to = own && Object.hasOwn(own, head) ? own[head] : undefined;
+  if (to === undefined) return null;
+  if (to !== result.root) return `${to}${rest}`;
+  if (rest === "") return Object.values(result.slots).every((name) => name === source) ? to : null;
+  const slot = rest.startsWith("/slots/") ? rest.slice("/slots/".length) : null;
+  return slot !== null && Object.hasOwn(result.slots, slot) && result.slots[slot] === source ? `${to}${rest}` : null;
 }

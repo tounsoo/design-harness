@@ -5496,6 +5496,136 @@ test("a note pinned on a variant: on the variant's own element, listed with its 
   assert.deepEqual(errors, []);
 });
 
+/**
+ * Whether a marker's point is on an element of the frame under it: the
+ * element's box in the frame's own page, mapped onto the artboard by its
+ * zoom. Only places are compared, never a size a font decides.
+ */
+async function markerOnElement(page, pin, title, role, name) {
+  const frame = await liveFrame(page, title);
+  const box = await frame.getByRole(role, { name, exact: true }).first().evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+  });
+  const viewport = await page.locator(`.frame-viewport[data-frame-name="${title}"]`).first().boundingBox();
+  const scale = viewport.width / Number(await page.locator(`iframe[title="${title}"]`).first().getAttribute("width"));
+  const at = await pin.evaluate((element) => {
+    const layer = element.closest(".pin-layer").getBoundingClientRect();
+    const mark = element.getBoundingClientRect();
+    return { x: mark.left - layer.left, y: mark.bottom - layer.top };
+  });
+  return { on: at.x >= box.x * scale - 1 && at.x <= (box.x + box.width) * scale + 1 && at.y >= box.y * scale - 1 && at.y <= (box.y + box.height) * scale + 1, at, box, scale };
+}
+
+test("a variant's note follows its pick: applying a pick that takes its slot moves the note onto the prototype's element, undo puts it back on the variant, and a note on a slot not taken stays put, each kept across a reload", async ({ browser, base, api }) => {
+  const { page, errors } = await openSpec(browser, base);
+  const before = await report(page);
+  await offerVariants(page, api);
+  await page.getByRole("button", { name: "Compare variants" }).click();
+  for (const [id, state] of [["current", "pass"], ["a", "pass"], ["b", "pass"]]) await standing(page, id, state);
+
+  // Two notes on Variant A: one on its question, in the body, and one on its action.
+  await page.getByTestId("variants-pin-mode").click();
+  await page.getByTestId("variants-pin-hint").waitFor();
+  await pinOnVariant(page, "a", "Variant A", "lantern-open", "desktop", "combobox", "For how long?", "Offer a whole day too");
+  await pinOnVariant(page, "a", "Variant A", "lantern-open", "desktop", "button", "Book room", "Too quiet in this one");
+  await page.keyboard.press("Escape");
+  await eventually(page, () => page.getByTestId("variants-pin-mode").getAttribute("aria-pressed"), (value) => value === "false", "Escape leaves pin mode");
+  const onA = (number) => variantCard(page, "a").locator(`[data-testid="pin"][data-pin="${number}"]`);
+  const onBoard = (number) => page.locator(`.board [data-testid="pin"][data-pin="${number}"]`);
+  assert.deepEqual([await onA(1).count(), await onA(2).count(), await onBoard(1).count(), await onBoard(2).count()], [1, 1, 0, 0], "both notes are on Variant A alone");
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  assert.deepEqual([await noteRow(page, 1).getAttribute("data-variant"), await noteRow(page, 2).getAttribute("data-variant")], ["a", "a"]);
+  assert.deepEqual(await report(page), before, "a note changes no report");
+
+  // The pick takes the body from Variant A, and nothing else.
+  await pickRadio(page, "body", "Variant A").check();
+  await page.waitForFunction(() => document.querySelector('[data-testid="variant-combination"]')?.getAttribute("data-standing") === "pass", null, { timeout: 90000 });
+  await page.getByTestId("apply-pick").click();
+  const notice = page.getByTestId("notice");
+  await eventually(page, () => notice.textContent().catch(() => ""), (text) => /Pick applied/.test(text), "the pick is confirmed");
+  assert.match(await notice.textContent(), /1 note came along from Variant A \(note 1\): it is on the board now, under Your notes\./, "the confirmation says how many notes came along");
+  await shot(page, "variant-pins-applied-light");
+  await measured(page, 2);
+  const picked = await report(page);
+  assert.equal(picked.status, "pass", JSON.stringify(picked.findings, null, 1));
+
+  // Note 1 is the prototype's now: no variant in Your notes, and on the board on the element the pick brought.
+  const movedState = async () => [await noteRow(page, 1).getAttribute("data-variant"), await noteRow(page, 2).getAttribute("data-variant"), await noteRow(page, 1).getAttribute("data-status"), await noteRow(page, 1).getAttribute("data-lost")];
+  assert.deepEqual(await movedState(), [null, "a", "open", null], "note 1 left its variant, and note 2, on the action the pick did not take, stays on Variant A");
+  assert.match(await noteRow(page, 1).locator(".note-where").textContent(), /^On combobox "For how long\?" · Booking, room open — desktop \(Lantern open\)$/);
+  assert.match(await noteRow(page, 2).locator(".note-where").textContent(), /^On button "Book room" · Variant A · /);
+  assert.equal(await page.getByTestId("notes-summary").textContent(), "2 open", "it keeps its state, and none is dropped");
+  await noteRow(page, 1).getByTestId("pin-history").locator("summary").click();
+  assert.match(await noteRow(page, 1).getByTestId("pin-history").textContent(), /History: 2 entries.*You wrote: Offer a whole day too.*You applied a pick from Variant A: the note came with it, onto the prototype/s);
+  assert.match(await noteRow(page, 2).getByTestId("pin-history").textContent(), /History: 1 entry/);
+  await shot(page, "variant-pins-your-notes-light");
+  await shotDark(page, "variant-pins-your-notes-dark");
+  // Current, in the Variants view, is the prototype: it draws note 1 too, and Variant A keeps only note 2.
+  assert.deepEqual([await variantCard(page, "current").locator('[data-testid="pin"][data-pin="1"]').count(), await onA(1).count(), await onA(2).count()], [1, 0, 1]);
+  await mainView(page, "Canvas").click();
+  await page.locator('main[aria-label="Canvas"]').waitFor();
+  const boardPlace = () => markerOnElement(page, onBoard(1), "lantern-open at desktop", "combobox", "For how long?");
+  await eventually(page, async () => (await onBoard(1).count()) === 1 && (await boardPlace()).on, (on) => on === true, "note 1 is on the board, on the question the pick brought");
+  assert.equal(await onBoard(1).getAttribute("data-lost"), null);
+  assert.equal(await onBoard(2).count(), 0, "the board never draws the note left on the variant");
+  await shot(page, "variant-pins-board-light");
+  await shotDark(page, "variant-pins-board-dark");
+
+  // The agent reads note 1 as a note on the prototype's page, and note 2 as on its variant.
+  api.script([
+    (body) => {
+      const notes = lastMessage(body);
+      assert.match(notes, /^The person applied a pick to page "booking": .*\. Their note 1 on what was picked is on the prototype's page now, not on a variant\.\n/);
+      assert.match(notes, /\n- note 1: "Offer a whole day too" \[spec element "question\/[a-z]+", scenario lantern-open, view desktop\]\n/);
+      assert.match(notes, /\n- note 2: "Too quiet in this one" \[variant "a", spec element "book", scenario lantern-open, view desktop\]\n/);
+      return textReply("Noted.");
+    },
+  ]);
+  await ask(page, "What do my notes say?");
+  assert.equal(await turnEnded(page), "done");
+  assert.equal(api.left(), 0);
+
+  // A reload keeps the moved note on the prototype.
+  await page.reload();
+  await measured(page, 1);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  assert.deepEqual(await movedState(), [null, "a", "open", null], "after a reload note 1 is still the prototype's");
+  await eventually(page, async () => (await onBoard(1).count()) === 1 && (await boardPlace()).on, (on) => on === true, "and still on its element on the board");
+  assert.deepEqual(await report(page), picked, "the report is the pick's, with or without the note");
+
+  // Undo puts the page back, and the note back on its variant, where it was.
+  await mainView(page, "Variants").click();
+  await standing(page, "a", "pass");
+  await page.getByTestId("undo-pick").click();
+  await eventually(page, () => notice.textContent().catch(() => ""), (text) => /Pick undone/.test(text), "the undo is confirmed");
+  assert.match(await notice.textContent(), /1 note is back on Variant A, where it was \(note 1\)\./);
+  await shot(page, "variant-pins-undone-light");
+  await measured(page, 2);
+  assert.deepEqual(await report(page), before, "the report is as it was before the pick, byte for byte");
+  await eventually(page, movedState, (value) => JSON.stringify(value) === JSON.stringify(["a", "a", "open", null]), "note 1 is back on Variant A");
+  assert.match(await noteRow(page, 1).locator(".note-where").textContent(), /^On combobox "For how long\?" · Variant A · /);
+  assert.match(await noteRow(page, 1).getByTestId("pin-history").textContent(), /History: 3 entries.*You undid that pick: the note is back on Variant A, where it was/s);
+  assert.equal(await onBoard(1).count(), 0, "and off the board");
+  await standing(page, "a", "pass");
+  const variantPlace = () => markerOnElement(page, onA(1), "Variant A: lantern-open at desktop", "combobox", "For how long?");
+  await eventually(page, async () => (await onA(1).count()) === 1 && (await variantPlace()).on, (on) => on === true, "on the variant's own question again");
+  assert.equal(await onA(2).count(), 1);
+
+  // A reload keeps that too.
+  await page.reload();
+  await measured(page, 1);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  assert.deepEqual(await movedState(), ["a", "a", "open", null], "after a reload note 1 is still on Variant A");
+  assert.equal(await page.getByTestId("notes-summary").textContent(), "2 open");
+  await mainView(page, "Variants").click();
+  await standing(page, "a", "pass");
+  await eventually(page, async () => (await onA(1).count()) === 1 && (await variantPlace()).on, (on) => on === true, "and on its element there");
+  assert.equal(await onBoard(1).count(), 0);
+  assert.deepEqual(await report(page), before);
+  assert.deepEqual(errors, []);
+});
+
 // ---- runner ----------------------------------------------------------------
 
 const server = await preview({ root, configFile: join(root, "vite.config.ts"), logLevel: "silent", preview: { port: 0, host: "127.0.0.1" } });

@@ -4,7 +4,7 @@ import { nook } from "../examples/nook/project";
 import { checkPrototype } from "../src/engine/check";
 import { formatSpec } from "../src/spec/format";
 import type { JsonValue } from "../src/spec/json";
-import { recombine } from "../src/variants/recombine";
+import { recombine, recombinedKey } from "../src/variants/recombine";
 import { CURRENT } from "../src/variants/types";
 import { checkVariant, nextVariantIds, parseVariantState, variantLabel, withPageSpec } from "../src/variants/variants";
 import { EXAMPLES, loadPrototype } from "./fixtures";
@@ -172,6 +172,66 @@ describe("recombining a page slot by slot", () => {
     expect(whole.value.renamed).toEqual([]);
     const current = recombine(legal, nook, "booking", sources(), { title: CURRENT, facts: CURRENT, body: CURRENT, alternate: CURRENT, action: CURRENT });
     expect(current.ok && JSON.parse(current.value.spec)).toEqual(JSON.parse(legal.files[BOOKING] as string));
+  });
+
+  it("says which key each source's elements have in the result", () => {
+    const { keys, root } = result.value;
+    expect(root).toBe("page");
+    expect(Object.keys(keys)).toEqual(["b", "c", CURRENT]);
+    // B gave the title and the body: its own root, its renamed question, and the rest under their own keys.
+    expect(keys.b).toMatchObject({ page: "page", question: "question-b", details: "details", name: "name" });
+    expect(keys.c).toMatchObject({ page: "page", question: "question-c", seats: "seats" });
+    // Not reached by a slot picked from that source: C's body, B's facts.
+    expect(Object.hasOwn(keys.c!, "ask")).toBe(false);
+    expect(Object.hasOwn(keys.c!, "details")).toBe(false);
+    expect(Object.hasOwn(keys.b!, "seats")).toBe(false);
+    // Every key named is an element of the result, and none twice.
+    const all = Object.values(keys).flatMap((own) => Object.entries(own).filter(([, to]) => to !== root).map(([, to]) => to));
+    expect(new Set(all).size).toBe(all.length);
+    expect(all.sort()).toEqual(Object.keys(spec.elements).filter((key) => key !== root).sort());
+    for (const own of Object.values(keys)) expect(Object.keys(own)).toEqual(Object.keys(own).sort());
+    for (const item of result.value.renamed.filter((rename) => rename.kind === "element")) expect(keys[item.source]![item.from]).toBe(item.to);
+  });
+
+  it("maps a key of a source's expanded page to the result's", () => {
+    const at = (source: string, key: string) => recombinedKey(result.value, source, key);
+    expect(at("b", "question")).toBe("question-b");
+    expect(at("c", "question")).toBe("question-c");
+    expect(at("b", "name")).toBe("name");
+    // What a layout instance draws stays under the instance's key.
+    expect(at("b", "details/summary")).toBe("details/summary");
+    expect(at("c", "question/inner/label")).toBe("question-c/inner/label");
+    // A slot of the page, when it was picked from that source; the page itself only when every slot was.
+    expect(at("b", "page/slots/body")).toBe("page/slots/body");
+    expect(at("c", "page/slots/body")).toBeNull();
+    expect(at(CURRENT, "page/slots/alternate")).toBe("page/slots/alternate");
+    expect(at("b", "page/slots/sidebar")).toBeNull();
+    expect(at("b", "page/elsewhere")).toBeNull();
+    expect(at("b", "page")).toBeNull();
+    // Not in the result: a slot not taken from that source, a key it never had, a source not used.
+    expect(at("c", "ask")).toBeNull();
+    expect(at("c", "details/summary")).toBeNull();
+    expect(at("b", "seats")).toBeNull();
+    expect(at("b", "nothing")).toBeNull();
+    expect(at("d", "question")).toBeNull();
+    expect(at("b", "toString")).toBeNull();
+  });
+
+  it("maps every key of a source taken whole to itself, the page's root included", () => {
+    const whole = recombine(legal, nook, "booking", sources(), { title: "b", facts: "b", body: "b", alternate: "b", action: "b" });
+    if (!whole.ok) throw new Error(whole.error);
+    const b = variantB();
+    expect(whole.value.root).toBe(b.root);
+    expect(whole.value.keys).toEqual({ b: Object.fromEntries(Object.keys(b.elements).sort().map((key) => [key, key])) });
+    expect(recombinedKey(whole.value, "b", "page")).toBe("page");
+    expect(recombinedKey(whole.value, "b", "page/slots/action")).toBe("page/slots/action");
+    expect(recombinedKey(whole.value, "b", "details/summary")).toBe("details/summary");
+    expect(recombinedKey(whole.value, CURRENT, "question")).toBeNull();
+  });
+
+  it("gives the same keys whatever order the sources and picks come in", () => {
+    const again = recombine(legal, nook, "booking", Object.fromEntries(Object.entries(sources()).reverse()), Object.fromEntries(Object.entries(picks).reverse()));
+    expect(again.ok && JSON.stringify(again.value.keys)).toBe(JSON.stringify(result.value.keys));
   });
 
   it("refuses a slot with no pick, a slot the page type lacks, and a source not given", () => {
