@@ -126,6 +126,37 @@ describe("a spec with actions, conditions, templates and repeats, exported", () 
   });
 });
 
+describe("a layout that reads its parameters in conditions and templates, exported", () => {
+  // The room details, shown with the room's floor when the page asks, and a line that compares the page's seats with a parameter.
+  const layout = JSON.parse(legal.files["layouts/room-details.json"] as string) as { params: Record<string, unknown>; elements: Record<string, Record<string, unknown>> };
+  layout.params = { ...layout.params, floor: { type: "text", required: false }, "floor-shown": { type: "boolean", default: false }, "min-seats": { type: "number", default: 4 } };
+  (layout.elements.details as { children: string[] }).children.push("floor", "big");
+  layout.elements.floor = { type: "Text.Root", props: { as: "p", text: { $template: "On the ${$param:floor}" } }, visible: { $param: "floor-shown" }, children: [] };
+  layout.elements.big = { type: "Text.Root", props: { as: "p", text: { $cond: { $param: "min-seats", lte: { $state: "/room/seats" } }, $then: "A big room", $else: "A small room" } }, visible: { $state: "/room/seats", gte: { $param: "min-seats" } }, children: [] };
+  const page = (legal.files["pages/booking.json"] as string).replace('"items": { "$state": "/room/details" } }', '"items": { "$state": "/room/details" }, "floor": { "$state": "/room/floor" }, "floor-shown": true }');
+  const prototype = { ...legal, files: { ...legal.files, "layouts/room-details.json": JSON.stringify(layout), "pages/booking.json": page } };
+  const tsx = exported(prototype);
+
+  it("writes each parameter as its prop, in a condition and in a template", () => {
+    const details = tsx.files["layouts/room-details.tsx"] as string;
+    expect(details).toContain("readonly floor?: string;");
+    expect(details).toContain('{floorShown && <Text.Root as="p">On the {floor}</Text.Root>}');
+    expect(details).toContain('{room.seats >= minSeats && <Text.Root as="p">{minSeats <= room.seats ? "A big room" : "A small room"}</Text.Root>}');
+    expect(tsx.files["pages/booking.tsx"]).toContain("floorShown");
+    const cards = tsx.files["layouts/room-cards.tsx"] as string;
+    expect(cards).toContain('{detail === "seats" && <Text.Root as="p">{room.seats} seats</Text.Root>}');
+    expect(cards).toContain('<Button.Root variant="secondary">{verb}{" "}{room.name}</Button.Root>');
+  });
+
+  it("gives the same report as the spec", () => {
+    const fromSpec = checkPrototype({ config: nook, prototype });
+    const back = checkPrototype({ config: nook, prototype: tsx });
+    expect(fromSpec.findings).toEqual([]);
+    expect(back.rules.find((rule) => rule.rule === "extract")?.findings).toEqual([]);
+    expect(shape(back)).toEqual(shape(fromSpec));
+  });
+});
+
 describe("each refused Nook spec, exported, agrees on every rule but extract", () => {
   for (const item of loadCases(legal, join(SPEC, "refused"))) {
     it(item.name, () => {
