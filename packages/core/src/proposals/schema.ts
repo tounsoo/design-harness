@@ -2,6 +2,7 @@ import { cap, capName, pageType, rankedAction, roleMapping, task } from "../conf
 import { prototypeSchema } from "../prototype/schema";
 import { snapshotSchema } from "../rendered/schema";
 import { ruleSpec } from "../rules/schema";
+import { BOUND_KEYS } from "../rules/bounds";
 import { ROLE_NAMES } from "../rules/types";
 import { INVALID, arr, int, obj, oneOf, slug, str, tagged, type Check } from "../validate";
 import { PROPOSAL_STATUSES, type InventoryOp, type Proposal } from "./types";
@@ -57,6 +58,8 @@ const contentExtra = { needsRuleType: ruleTypeRequest } as const;
 
 const changeClass = oneOf(["adds", "tightens", "loosens-or-removes"] as const);
 
+const boundChange = obj({ bound: oneOf(BOUND_KEYS), before: str(), after: str(), direction: oneOf(["stricter", "looser", "unknown"] as const) });
+
 const proposalEvent = tagged("kind", {
   revised: obj({ kind: oneOf(["revised"] as const), at: str(), previous: obj(content, contentExtra) }, { by: str(), note: str() }),
   "sent-back": obj({ kind: oneOf(["sent-back"] as const), at: str(), note: str() }, { by: str() }),
@@ -72,7 +75,7 @@ const proposalShape = obj(
   {
     ...contentExtra,
     events: arr(proposalEvent),
-    classification: obj({ class: changeClass, changes: arr(obj({ change: str(), class: changeClass, reason: str() })) }),
+    classification: obj({ class: changeClass, changes: arr(obj({ change: str(), class: changeClass, reason: str() }, { rule: slug, was: str(), bounds: arr(boundChange) })) }),
   },
 );
 

@@ -28,20 +28,21 @@ import {
   type View,
 } from "@design-harness/core";
 import { frameKey, type Session, type SessionState } from "../runtime/session";
-import { isSpecRecord, type PrototypeRecord, type SpecRecord } from "../store/project-file";
+import type { PrototypeRecord } from "../store/project-file";
 import { adoptProposal, approveProposal, declineProposal, sendBackProposal, type ExampleMeasurement } from "../review/actions";
 import { inventoryDiff, type DiffSection } from "../review/diff";
 import { REVIEWER, draftedBy, formatTime, proposalTimeline, timelineTitle, type TimelineEntry } from "../review/timeline";
 import { FrameCard, FrameViewport } from "./Board";
 import { EvidenceFigure, drawsFigure } from "../visual/figures";
 import { ClassScale, ProposalTrack, RuleFigure } from "../visual/project-figures";
-import { proofPair, proposalPreview, ruleBound } from "../visual/project-model";
+import { proofPair, proposalPreview, ruleBound, ruleLines } from "../visual/project-model";
 import { FindingButton } from "./ChecksPanel";
 import { lineRange } from "./CodePanel";
 import { SpecimenTile } from "./Palette";
-import { PreviewFigure, SnapshotThumb, flaggedIn } from "./ProposalPreview";
+import { PreviewFigure, RuleLineView, SnapshotThumb, flaggedIn } from "./ProposalPreview";
 import { ClassBadge, RequestBadge, RuleWords, StatusBadge, classWords, classificationOf } from "./proposal-parts";
-import { measurementOf, useSessions, type Measured, type Measurement } from "./sessions";
+import { MeasureFrames, useProjectExisting } from "./project-measure";
+import { useSessions, type Measured } from "./sessions";
 import { exampleLabel, frameNameOf, scenarioName, scenarioNameOf, viewLabel } from "./words";
 
 type Props = {
@@ -337,29 +338,8 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
   const exampleItems = useMemo(() => all.map(({ example }) => ({ id: example.name, config: renderConfig, prototype: example.prototype })), [all, renderConfig]);
   const exampleFrames = useSessions(exampleItems);
 
-  // Every spec prototype in the project, measured, for the impact; a stored TSX one is checked by nothing. The open one is the board's.
-  const others = useMemo(() => (live ? prototypes.filter(isSpecRecord).filter((record) => record.id !== openPrototypeId) : []), [live, prototypes, openPrototypeId]);
-  const otherItems = useMemo(() => others.map((record) => ({ id: `prototype-${record.id}`, config, prototype: record.prototype })), [others, config]);
-  const otherFrames = useSessions(otherItems);
-  const openRecord = prototypes.filter(isSpecRecord).find((record) => record.id === openPrototypeId);
-  const boardCurrent = board.session.current();
-  const openMeasurement: Measurement | null = !live || !openRecord ? null : boardCurrent?.prototype === openRecord.prototype && board.state.revision === boardCurrent.revision ? measurementOf(board.state) : { state: "measuring", answered: 0, total: board.state.frames.length };
-  const existing: readonly ExistingPrototype[] | null = useMemo(() => {
-    if (!live) return null;
-    const out: ExistingPrototype[] = [];
-    const add = (record: SpecRecord, measurement: Measurement) => out.push({ name: record.name, prototype: record.prototype, snapshots: measurement.state === "measured" ? measurement.snapshots : [] });
-    if (openRecord && openMeasurement) {
-      if (openMeasurement.state === "measuring") return null;
-      add(openRecord, openMeasurement);
-    }
-    for (const [index, record] of others.entries()) {
-      const measured = otherFrames[index];
-      if (!measured || measured.measurement.state === "measuring") return null;
-      add(record, measured.measurement);
-    }
-    return out;
-    // The measurements' states decide; their objects are new on every render.
-  }, [live, openRecord, openMeasurement?.state, others, otherFrames.map((item) => item.measurement.state).join(",")]);
+  // Every prototype in the project, measured, for the impact. The open one is the board's.
+  const { existing, frames: otherFrames } = useProjectExisting({ config, prototypes, openPrototypeId, board, live });
 
   const exampleMeasurement: ExampleMeasurement | null = exampleFrames.every((item) => item.measurement.state === "measured")
     ? Object.fromEntries(exampleFrames.map((item) => [item.id, item.measurement.state === "measured" ? item.measurement.snapshots : []]))
@@ -579,7 +559,7 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
         <Examples views={views} config={renderConfig} status={proposal.status} focus={focusExample} onFocused={() => setFocusExample(null)} />
 
         {live && <Impact impact={impact} measuring={existing === null} dryRun={dryRun} prototypes={prototypes} existing={existing} views={config.views} onOpenPrototype={onOpenPrototype} />}
-        {live && <OtherFrames items={otherFrames} />}
+        {live && <MeasureFrames items={otherFrames} />}
 
         <History proposal={proposal} config={config} />
       </Stack.Root>
@@ -812,7 +792,12 @@ function Changes({ proposal, config, renderConfig, views, onShowExample }: { rea
   const quiet = renderConfig.inventories.components.filter((name) => !added.includes(name));
   // The rule inputs it moves, each as its figure: a cap, a step budget, a page type's slots.
   const figured = proposal.inventory.filter((op) => FIGURED_OPS.includes(op.op));
-  const removed = proposal.rules.remove.map((id) => ({ id, rule: config.rules.find((rule) => rule.id === id) }));
+  // A rule removed and added again under its id is a changed rule: one line, with core's words before and after, and its proof.
+  const lines = ruleLines(proposal, config);
+  const changedIds = new Set(lines.filter((line) => line.kind === "changes").map((line) => line.rule));
+  const addedRules = proposal.rules.add.filter((rule) => !changedIds.has(rule.id));
+  const changedRules = proposal.rules.add.filter((rule) => changedIds.has(rule.id));
+  const removed = lines.filter((line) => line.kind === "removes").map((line) => ({ line, rule: proposal.status === "adopted" ? undefined : config.rules.find((rule) => rule.id === line.rule) }));
   return (
     <section aria-labelledby="review-changes" className="review-section">
       <Text.Root as="h2" id="review-changes">
@@ -879,18 +864,47 @@ function Changes({ proposal, config, renderConfig, views, onShowExample }: { rea
           ))}
         </ul>
       )}
-      {proposal.rules.add.length > 0 && (
+      {changedRules.length > 0 && (
+        <>
+          <div className="section-head">
+            <Text.Root as="h3">{changedRules.length === 1 ? "The rule it changes, and its proof" : `The ${changedRules.length} rules it changes, and their proof`}</Text.Root>
+            <Text.Root as="p" tone="muted">
+              It takes the rule out and puts it back under its id with the change. Each limit that moves is before and after in core&apos;s words, with two of the proposal&apos;s examples: one the changed rule must pass and one it must flag.
+            </Text.Root>
+          </div>
+          <ul className="review-rules" aria-label="Rules it changes">
+            {changedRules.map((rule) => {
+              const line = lines.find((item) => item.rule === rule.id);
+              return (
+                <li key={rule.id}>
+                  <Card.Root className="rule-proof" data-rule-proof={rule.id} data-testid="rule-changed">
+                    <div className="rule-proof-rule">
+                      <RuleFigure rule={rule} label={ruleBound(rule, renderConfig)} />
+                      <div className="rule-change">
+                        {line && <RuleLineView line={line} />}
+                        <RuleWords rule={rule} config={renderConfig} />
+                      </div>
+                    </div>
+                    <Proof proposal={proposal} rule={rule.id} views={views} config={renderConfig} onShowExample={onShowExample} />
+                  </Card.Root>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+      {addedRules.length > 0 && (
         <>
           <div className="section-head">
             <Text.Root as="h3">
-              {proposal.rules.add.length === 1 ? "The rule it adds, and its proof" : `The ${proposal.rules.add.length} rules it adds, and their proof`}
+              {addedRules.length === 1 ? "The rule it adds, and its proof" : `The ${addedRules.length} rules it adds, and their proof`}
             </Text.Root>
             <Text.Root as="p" tone="muted">
               Each rule in core&apos;s words, with a picture when it is about how the page looks, and two of the proposal&apos;s examples: one it must pass and one it must flag. They are examples, not a before and after.
             </Text.Root>
           </div>
           <ul className="review-rules" aria-label="Rules it adds">
-            {proposal.rules.add.map((rule) => (
+            {addedRules.map((rule) => (
               <li key={rule.id}>
                 <Card.Root className="rule-proof" data-rule-proof={rule.id}>
                   <div className="rule-proof-rule">
@@ -909,20 +923,23 @@ function Changes({ proposal, config, renderConfig, views, onShowExample }: { rea
           <Text.Root as="h3">
             Removes {removed.length === 1 ? "a rule" : `${removed.length} rules`}
           </Text.Root>
+          <Text.Root as="p" tone="muted">
+            {proposal.status === "adopted" ? "Nothing checks this any more." : "Once it is adopted, nothing checks this any more, on any prototype in the project."}
+          </Text.Root>
           <ul className="review-rules" aria-label="Rules it removes">
-            {removed.map(({ id, rule }) => (
-              <li key={id}>
-                <Stack.Root direction="row" align="center" gap="condensed">
-                  <Badge.Root tone="critical">removes</Badge.Root>
-                  <Code.Root>{id}</Code.Root>
-                </Stack.Root>
-                {rule ? (
-                  <RuleWords rule={rule} config={config} />
-                ) : (
-                  <Text.Root as="p" tone="muted">
-                    Not in force now.
-                  </Text.Root>
-                )}
+            {removed.map(({ line, rule }) => (
+              <li key={line.rule}>
+                <Card.Root className="figure-card" data-testid="rule-removed">
+                  {/* In force, the rule is said by core now, with its data; once adopted, by the words core kept. */}
+                  <RuleLineView line={line} withoutWas={rule !== undefined} />
+                  {rule ? (
+                    <RuleWords rule={rule} config={config} />
+                  ) : line.was === undefined ? (
+                    <Text.Root as="p" tone="muted">
+                      {proposal.status === "adopted" ? "It is no longer in force." : "It is not in force now, so this proposal cannot apply."}
+                    </Text.Root>
+                  ) : null}
+                </Card.Root>
               </li>
             ))}
           </ul>
@@ -1338,23 +1355,6 @@ function SourceLine({ view, finding }: { readonly view: ExampleView; readonly fi
 }
 
 /** Which of the project's prototypes would newly fail once it is adopted, with what core finds. */
-/**
- * The frames that measure the project's other prototypes for the impact:
- * laid out at their views' sizes, so they measure as the board would, but
- * not shown. Without them those sessions would wait forever for frames.
- */
-function OtherFrames({ items }: { readonly items: readonly Measured[] }) {
-  return (
-    <div className="impact-frames" aria-hidden="true" data-testid="impact-frames">
-      {items.flatMap((item) =>
-        item.state.frames.map((spec) => (
-          <FrameCard key={`${item.key}:${spec.key}`} session={item.session} spec={spec} revision={item.state.revision} frameState={item.state.frameStates[spec.key] ?? { state: "waiting" }} scale={0.25} focused={false} hidden selected={false} label={item.id} />
-        )),
-      )}
-    </div>
-  );
-}
-
 /**
  * Core's adoption check as a grid of the project's prototypes: every one is
  * a tile, so it is plain each was checked. One that would newly fail is

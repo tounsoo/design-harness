@@ -3,7 +3,7 @@ import { flowFacts, type Proposal, type RuleSpec } from "@design-harness/core";
 import { nook } from "../../../../packages/core/examples/nook/project";
 import { tally } from "../../../../packages/core/examples/tally/project";
 import { seedSpec } from "../../test/nook";
-import { RULE_GROUPS, budgetMeter, capDirection, capMeter, capReaders, capsRead, changeLine, groupRules, pageTypeWords, projectTimeline, proofPair, proposalPreview, proposalTrack, previewLabel, ruleBound, ruleGlyph, ruleGroup, ruleSource, slotRows, sortProposals } from "./project-model";
+import { RULE_GROUPS, budgetMeter, capDirection, capMeter, capReaders, capsRead, changeCount, changeLine, groupRules, pageTypeWords, projectTimeline, proofPair, proposalPreview, proposalTrack, previewLabel, ruleBound, ruleGlyph, ruleGroup, ruleLines, ruleSource, slotRows, sortProposals } from "./project-model";
 
 const proposal = (change: Partial<Proposal>): Proposal => ({ id: "p", title: "A change", reason: "Because.", states: [], inventory: [], rules: { add: [], remove: [] }, examples: { pass: [], fail: [] }, status: "open", history: [{ status: "open", at: "2026-11-01T10:00:00.000Z", by: "agent" }], ...change });
 const toastRule: RuleSpec = { type: "count", id: "one-toast-per-page", select: { component: "Toast.Root" }, scope: "page", max: 1 };
@@ -157,5 +157,50 @@ describe("a proposal on its card and its track", () => {
     expect(proofPair({ examples }, "one-toast-per-page")).toEqual({ pass: "one-toast", fail: "two-toasts" });
     expect(proofPair({ examples }, "unproved")).toEqual({ pass: "one-toast" });
     expect(proofPair({ examples: { pass: [], fail: [] } }, "x")).toEqual({});
+  });
+});
+
+describe("a rule a proposal removes or changes, as a line", () => {
+  const onePrimary = nook.rules.find((rule) => rule.id === "one-primary-per-page") as RuleSpec;
+  const change = (rule: RuleSpec) => proposal({ rules: { remove: [rule.id], add: [rule] } });
+
+  it("reads a removal as a removal, with the rule in core's words", () => {
+    const removal = proposal({ rules: { add: [], remove: ["one-primary-per-page"] } });
+    expect(ruleLines(removal, nook)).toEqual([{ kind: "removes", rule: "one-primary-per-page", words: "Removes rule one-primary-per-page", moves: [], was: "Each page holds at most 1 primary action." }]);
+    expect(proposalPreview(removal, nook)).toMatchObject({ kind: "rule-line", line: { kind: "removes" } });
+    expect(previewLabel(removal)).toBe("− rule");
+    expect(changeLine(removal)).toBe("Removes 1 rule.");
+  });
+
+  it("reads a rule removed and added again as one change: each limit before and after, and the way it moved", () => {
+    const looser = change({ ...onePrimary, max: 2 } as RuleSpec);
+    expect(ruleLines(looser, nook)).toEqual([
+      { kind: "changes", rule: "one-primary-per-page", words: "Changes rule one-primary-per-page: at most 1 → at most 2, looser", moves: [{ bound: "max", before: "at most 1", after: "at most 2", direction: "looser" }], direction: "looser", was: "Each page holds at most 1 primary action." },
+    ]);
+    expect(proposalPreview(looser, nook)).toMatchObject({ kind: "rule-line", line: { kind: "changes", direction: "looser" } });
+    expect(previewLabel(looser)).toBe("rule");
+    expect(changeLine(looser)).toBe("Changes 1 rule.");
+    expect(changeCount(looser)).toBe(1);
+    expect(ruleLines(change({ ...onePrimary, min: 1, max: 1 } as RuleSpec), nook)[0]).toMatchObject({ words: "Changes rule one-primary-per-page: no lower limit → at least 1, stricter", direction: "stricter" });
+  });
+
+  it("says when more than a limit differs, or nothing the rule checks", () => {
+    expect(ruleLines(change({ ...onePrimary, select: { role: "action" } } as RuleSpec), nook)[0]).toMatchObject({ words: "Changes rule one-primary-per-page: more than its limits, which is not provably stricter", direction: "looser", moves: [] });
+    expect(ruleLines(change({ ...onePrimary, description: "One." } as RuleSpec), nook)[0]).toMatchObject({ words: "Changes rule one-primary-per-page: only its own sentence; it checks the same thing", direction: "the same" });
+  });
+
+  it("keeps reading the same once adopted, from the classification core kept, when the old rule is gone", () => {
+    const kept = { class: "loosens-or-removes" as const, changes: [{ change: 'change rule "one-primary-per-page"', class: "loosens-or-removes" as const, reason: "moves max from 1 to 2, the looser way", rule: "one-primary-per-page", was: "Each page holds at most 1 primary action.", bounds: [{ bound: "max" as const, before: "at most 1", after: "at most 2", direction: "looser" as const }] }] };
+    const adopted = proposal({ status: "adopted", rules: { remove: ["one-primary-per-page"], add: [{ ...onePrimary, max: 2 } as RuleSpec] }, classification: kept });
+    const after = { ...nook, rules: nook.rules.map((rule) => (rule.id === onePrimary.id ? ({ ...rule, max: 2 } as RuleSpec) : rule)) };
+    expect(ruleLines(adopted, after)[0]?.words).toBe("Changes rule one-primary-per-page: at most 1 → at most 2, looser");
+    // A proposal adopted before core kept the rule's name still reads as what it did.
+    const old = proposal({ status: "adopted", rules: { remove: ["gone"], add: [] }, classification: { class: "loosens-or-removes", changes: [{ change: 'remove rule "gone"', class: "loosens-or-removes", reason: "a rule leaves force" }] } });
+    expect(ruleLines(old, nook)).toEqual([{ kind: "removes", rule: "gone", words: "Removes rule gone", moves: [] }]);
+  });
+
+  it("counts a proposal's changes with a changed rule once", () => {
+    expect(changeLine(proposal({ inventory: [{ op: "set-cap", name: "MAX_VISIBLE_QUESTIONS", value: 2 }], rules: { remove: ["one-primary-per-page", "rank-1-shown"], add: [{ ...onePrimary, max: 2 } as RuleSpec, toastRule] } }))).toBe("Changes 1 cap and 1 rule, adds 1 rule and removes 1 rule.");
+    expect(changeCount(proposal({ inventory: [{ op: "set-cap", name: "MAX_VISIBLE_QUESTIONS", value: 2 }], rules: { remove: ["one-primary-per-page", "rank-1-shown"], add: [{ ...onePrimary, max: 2 } as RuleSpec, toastRule] } }))).toBe(4);
   });
 });

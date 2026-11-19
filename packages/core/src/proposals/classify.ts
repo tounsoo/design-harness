@@ -1,4 +1,7 @@
 import type { ProjectConfig } from "../config/types";
+import { describeRule } from "../engine/words";
+import { boundValue, boundWords, compareRules, type BoundKey, type BoundMove } from "../rules/bounds";
+import type { RuleSpec } from "../rules/types";
 import { opLabel } from "./apply";
 import type { InventoryOp, Proposal } from "./types";
 
@@ -11,7 +14,23 @@ import type { InventoryOp, Proposal } from "./types";
  */
 export type ChangeClass = "adds" | "tightens" | "loosens-or-removes";
 
-export type ClassifiedChange = { readonly change: string; readonly class: ChangeClass; readonly reason: string };
+/** One limit of a changed rule, before and after in words ("at most 1", "at most 2"), and which way it moved. */
+export type BoundChange = { readonly bound: BoundKey; readonly before: string; readonly after: string; readonly direction: BoundMove["direction"] };
+
+/**
+ * One change and its class. A change to a rule in force also names the rule
+ * (`rule`) and says it in core's words as it was when classified (`was`),
+ * since a removed or replaced rule is gone from the config once the
+ * proposal is adopted; `bounds` lists the limits a changed rule moves.
+ */
+export type ClassifiedChange = {
+  readonly change: string;
+  readonly class: ChangeClass;
+  readonly reason: string;
+  readonly rule?: string;
+  readonly was?: string;
+  readonly bounds?: readonly BoundChange[];
+};
 
 export type Classification = { readonly class: ChangeClass; readonly changes: readonly ClassifiedChange[] };
 
@@ -57,12 +76,48 @@ function classifyOp(op: InventoryOp, config: ProjectConfig): ClassifiedChange {
   }
 }
 
+/** One moved limit as a reason: "moves max from 1 to 2, the looser way". */
+function moveReason(move: BoundMove, config: ProjectConfig): string {
+  const said = (value: BoundMove["before"]) => (value === undefined ? "none" : typeof value === "number" ? String(value) : `the cap ${value.cap} (now ${boundValue(value, config) ?? "unset"})`);
+  if (move.direction === "unknown") return `replaces ${move.key} ${said(move.before)} with ${said(move.after)}, which is not provably stricter: a cap moves on its own`;
+  const way = `the ${move.direction} way`;
+  if (move.before === undefined) return `adds ${move.key} ${said(move.after)} where there was no limit, ${way}`;
+  if (move.after === undefined) return `drops ${move.key} ${said(move.before)}, ${way}`;
+  return `moves ${move.key} from ${said(move.before)} to ${said(move.after)}, ${way}`;
+}
+
+/**
+ * A rule in force that the proposal removes and adds again under the same
+ * id: a change to that rule, classified by what differs. When only numeric
+ * limits moved, it tightens if every one moved the stricter way, and loosens
+ * otherwise; anything else differing is not provably stricter.
+ */
+function classifyChangedRule(before: RuleSpec, after: RuleSpec, config: ProjectConfig): ClassifiedChange {
+  const base = { change: `change rule "${after.id}"`, rule: after.id, was: describeRule(before, config) };
+  const difference = compareRules(before, after);
+  if (difference.kind === "same") return { ...base, class: "adds", reason: "puts the rule back as it is, its description apart: it checks the same thing" };
+  if (difference.kind === "other") return { ...base, class: "loosens-or-removes", reason: "replaces the rule with one that differs by more than its numeric limits, which is not provably stricter" };
+  const bounds = difference.moves.map((move): BoundChange => ({ bound: move.key, before: boundWords(move.key, move.before, config), after: boundWords(move.key, move.after, config), direction: move.direction }));
+  const stricter = difference.moves.every((move) => move.direction === "stricter");
+  return { ...base, class: stricter ? "tightens" : "loosens-or-removes", reason: difference.moves.map((move) => moveReason(move, config)).join("; "), bounds };
+}
+
 /** Classifies a proposal against the config it would change. Deterministic: the same proposal and config give the same answer. */
 export function classifyProposal(proposal: Proposal, config: ProjectConfig): Classification {
+  const inForce = (id: string) => config.rules.find((rule) => rule.id === id);
+  // A rule removed and added again under its id is one change to that rule, listed where it is removed.
+  const readded = (id: string) => (inForce(id) ? proposal.rules.add.find((rule) => rule.id === id) : undefined);
   const changes: ClassifiedChange[] = [
     ...proposal.inventory.map((op) => classifyOp(op, config)),
-    ...proposal.rules.remove.map((id): ClassifiedChange => ({ change: `remove rule "${id}"`, class: "loosens-or-removes", reason: "a rule leaves force" })),
-    ...proposal.rules.add.map((rule): ClassifiedChange => ({ change: `add rule "${rule.id}"`, class: "tightens", reason: "a new rule can only fail more prototypes" })),
+    ...proposal.rules.remove.map((id): ClassifiedChange => {
+      const before = inForce(id);
+      const after = readded(id);
+      if (before && after) return classifyChangedRule(before, after, config);
+      return { change: `remove rule "${id}"`, class: "loosens-or-removes", reason: "a rule leaves force", rule: id, ...(before ? { was: describeRule(before, config) } : {}) };
+    }),
+    ...proposal.rules.add
+      .filter((rule) => !(proposal.rules.remove.includes(rule.id) && inForce(rule.id)))
+      .map((rule): ClassifiedChange => ({ change: `add rule "${rule.id}"`, class: "tightens", reason: "a new rule can only fail more prototypes" })),
   ];
   const worst = changes.reduce<ChangeClass>((acc, item) => (ORDER.indexOf(item.class) > ORDER.indexOf(acc) ? item.class : acc), "adds");
   return { class: worst, changes };

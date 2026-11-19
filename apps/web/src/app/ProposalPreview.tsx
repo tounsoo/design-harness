@@ -1,9 +1,9 @@
-import { Text } from "@tounsoo/todae";
+import { Code, Text, VisuallyHidden } from "@tounsoo/todae";
 import { ArrowRight } from "lucide-react";
 import { useId } from "react";
 import { describeRule, type Finding, type ProjectConfig, type Proposal, type RenderedSnapshot } from "@design-harness/core";
 import { CapChange, RuleFigure, SlotDiagram } from "../visual/project-figures";
-import { previewLabel, proposalPreview, ruleBound, type ProposalPreview as Preview } from "../visual/project-model";
+import { changeCount, previewLabel, proposalPreview, ruleBound, type ProposalPreview as Preview, type RuleLine } from "../visual/project-model";
 import { SpecimenStage, useSpecimen } from "./Palette";
 import { humanize } from "./words";
 
@@ -90,6 +90,8 @@ export function PreviewFigure({ preview, config }: { readonly preview: Preview; 
           <Text.Root as="p">{describeRule(preview.rule, config)}</Text.Root>
         </div>
       );
+    case "rule-line":
+      return <RuleLineView line={preview.line} />;
     case "request":
       return (
         <div className="preview-plate">
@@ -107,10 +109,50 @@ export function PreviewFigure({ preview, config }: { readonly preview: Preview; 
   }
 }
 
+/**
+ * A rule a proposal removes or changes, in words: which rule, each limit
+ * before and after with the way it moved, and the rule as core said it
+ * before. Two numbers and a direction read whole; there is nothing to draw.
+ */
+export function RuleLineView({ line, withoutWas = false }: { readonly line: RuleLine; /** True where the rule is said in full right under the line. */ readonly withoutWas?: boolean }) {
+  return (
+    <div className="rule-change" data-testid="rule-line" data-kind={line.kind} data-rule={line.rule} {...(line.direction ? { "data-direction": line.direction } : {})}>
+      <Text.Root as="p" weight="medium" data-testid="rule-line-words">
+        {line.kind === "removes" ? "Removes rule " : "Changes rule "}
+        <Code.Root>{line.rule}</Code.Root>
+        {line.detail !== undefined ? `: ${line.detail}` : ""}
+      </Text.Root>
+      {line.moves.length > 0 && (
+        <ul className="rule-change-list" aria-label="Limits it moves">
+          {line.moves.map((move) => (
+            <li key={move.bound} className="rule-move" data-direction={move.direction}>
+              <span className="rule-move-words">
+                <span>{move.before}</span>
+                <ArrowRight aria-hidden="true" />
+                <VisuallyHidden.Root> becomes </VisuallyHidden.Root>
+                <strong>{move.after}</strong>
+              </span>
+              <Text.Root as="span" weight="medium">
+                {move.direction === "unknown" ? "not provably stricter" : move.direction}
+              </Text.Root>
+            </li>
+          ))}
+        </ul>
+      )}
+      {line.was !== undefined && !withoutWas && (
+        <Text.Root as="p" tone="muted" data-testid="rule-line-was">
+          {line.kind === "removes" ? "It says: " : "Before: "}
+          {line.was}
+        </Text.Root>
+      )}
+    </div>
+  );
+}
+
 /** The top of a proposal's card: the kind of its first change, the picture of it, and how many more changes it has. */
 export function ProposalLead({ proposal, config }: { readonly proposal: Proposal; readonly config: ProjectConfig }) {
   const preview = proposalPreview(proposal, config);
-  const total = proposal.inventory.length + proposal.rules.add.length + proposal.rules.remove.length;
+  const total = changeCount(proposal);
   return (
     <div className="preview" data-preview={preview.kind} data-testid="proposal-preview">
       <Text.Root as="span" tone="muted" className="preview-label">

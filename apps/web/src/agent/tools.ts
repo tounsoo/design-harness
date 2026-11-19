@@ -100,7 +100,10 @@ const PROPOSAL_FIELDS: Readonly<Record<string, JsonSchema>> = {
   inventory: { type: "array", items: { type: "object" }, description: 'Inventory operations such as { "op": "add-component", "name": "Toast" }, { "op": "add-layout", "id": "..." }, { "op": "add-page-type", "pageType": {...} }, { "op": "add-flow-state", "state": "..." }, { "op": "set-cap", "name": "...", "value": 2 }.' },
   rules: {
     type: "object",
-    properties: { add: { type: "array", items: { type: "object" }, description: "Rules in the rule vocabulary, as read_project shows them." }, remove: { type: "array", items: { type: "string" }, description: "Ids of rules to take out of force." } },
+    properties: {
+      add: { type: "array", items: { type: "object" }, description: "Rules in the rule vocabulary, as read_project shows them. To change a rule in force, give the changed rule here under its own id and put that id in remove too: core then reads it as one change, and classifies a move of its numeric limits (min, max, depth, minPx) as stricter or looser." },
+      remove: { type: "array", items: { type: "string" }, description: "Ids of rules in force to take out of force. Alone, it removes the rule; with the same id in add, it changes it." },
+    },
     additionalProperties: false,
   },
   examples: {
@@ -179,7 +182,7 @@ const TOOLS: readonly Tool[] = [
   ),
   tool(
     "draft_proposal",
-    "Draft a proposal when the request needs something the inventories lack or a rule in force forbids: a component, layout, page type, flow state or task, a changed cap or ranking, or a new rule. Use it instead of working around a check. It is saved as open, and core's adoption dry run tells you whether it would be adopted or why not. To change a proposal you drafted, use revise_proposal, which keeps its history; draft_proposal refuses an id that exists. Only the user can approve, decline or adopt it. Each example starts from the current prototype: files replace or add files, remove_files removes some, manifest replaces the manifest. Give examples, or, only when no rule type in the vocabulary can express the rule, needs_rule_type in place of rules, inventory and examples: a request for a code change that can never be adopted.",
+    "Draft a proposal when the request needs something the inventories lack or a rule in force forbids: a component, layout, page type, flow state or task, a changed cap or ranking, a new rule, or a rule in force removed (rules.remove) or changed (its id in rules.remove and the changed rule under that id in rules.add). Use it instead of working around a check. It is saved as open, and core's adoption dry run tells you whether it would be adopted or why not. To change a proposal you drafted, use revise_proposal, which keeps its history; draft_proposal refuses an id that exists. Only the user can approve, decline or adopt it. Each example starts from the current prototype: files replace or add files, remove_files removes some, manifest replaces the manifest. Give examples, or, only when no rule type in the vocabulary can express the rule, needs_rule_type in place of rules, inventory and examples: a request for a code change that can never be adopted.",
     { type: "object", properties: { id: { type: "string", pattern: SLUG }, ...PROPOSAL_FIELDS }, required: ["id", "title", "reason"], additionalProperties: false },
   ),
   tool(

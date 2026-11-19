@@ -733,6 +733,33 @@
   .rule-card-lead { font-size: var(--todae-font-size-2); --todae-text-font-size: var(--todae-font-size-2); overflow-wrap: anywhere; }
   .rule-card-source { display: grid; gap: var(--todae-space-1); justify-items: start; }
   .rule-card-source button { padding-inline: 0; text-align: start; }
+  .rule-card-actions { display: flex; flex-wrap: wrap; gap: 0 var(--todae-space-3); margin-inline-start: calc(var(--todae-space-2) * -1); }
+
+  /* Removing or changing a rule, from its card: Todae's Dialog, Field, Alert and Badge. This sheet sets the dialog's measure and lays its sections out. */
+  .rule-flow { --todae-dialog-max-width: var(--todae-harness-measure-note); }
+  .rule-flow-body { display: grid; gap: var(--todae-space-5); min-width: 0; }
+  .rule-flow-section { display: grid; gap: var(--todae-space-2); min-width: 0; }
+  .rule-flow-section h3 { margin: 0; --todae-text-h3-font-size: var(--todae-font-size-2); }
+  .rule-flow-section p, .rule-flow-lead { margin: 0; }
+  .rule-flow .rule-words { margin-block-start: 0; }
+  .rule-limits { display: flex; flex-wrap: wrap; gap: var(--todae-space-4); }
+  .rule-limit { display: grid; gap: var(--todae-space-1); flex: 1 1 var(--todae-harness-size-picker-wide); min-width: 0; align-content: start; }
+  .rule-limit-field { max-inline-size: var(--todae-harness-size-picker-wide); }
+  .rule-flow-preview { display: grid; gap: var(--todae-space-2); padding: var(--todae-space-3); border: var(--todae-border-width) solid var(--todae-color-border-subtle); border-radius: var(--todae-radius-md); background: var(--todae-color-bg-subtle); min-width: 0; }
+  .rule-moves, .rule-impact, .rule-examples, .rule-waiting, .rule-change-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--todae-space-2); }
+  .rule-move { display: flex; flex-wrap: wrap; align-items: center; gap: var(--todae-space-2) var(--todae-space-3); }
+  .rule-move-words { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--todae-space-2); font-size: var(--todae-font-size-3); font-variant-numeric: tabular-nums; }
+  .rule-move-words svg { inline-size: 1em; block-size: 1em; flex: none; color: var(--todae-color-fg-muted); }
+  .rule-before-after { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--todae-space-1) var(--todae-space-3); margin: 0; font-size: var(--todae-font-size-1); }
+  .rule-before-after dt { color: var(--todae-color-fg-muted); }
+  .rule-before-after dd { margin: 0; overflow-wrap: anywhere; }
+  .rule-impact > li, .rule-examples > li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--todae-space-2); align-items: start; overflow-wrap: anywhere; }
+  .rule-impact-mark { display: inline-grid; place-items: center; block-size: 1lh; color: var(--todae-color-fg-muted); }
+  .rule-impact-mark svg { inline-size: 1em; block-size: 1em; }
+  .rule-impact > li[data-effect="clears"] .rule-impact-mark, .rule-examples > li[data-expect="pass"] .rule-impact-mark { color: var(--todae-color-status-success-fg); }
+  .rule-impact > li[data-effect="fails"] .rule-impact-mark, .rule-examples > li[data-expect="fail"] .rule-impact-mark { color: var(--todae-color-status-critical-fg); }
+  .rule-waiting button { padding-inline: 0; }
+  .rule-change { display: grid; gap: var(--todae-space-2); }
 
   .history-line { display: grid; gap: var(--todae-space-3); }
   .history-line > li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--todae-space-3); align-items: start; }

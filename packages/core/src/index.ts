@@ -32,6 +32,8 @@ export type {
   TextMatch,
 } from "./rules/types";
 export { PAGE_KINDS, ROLE_NAMES } from "./rules/types";
+export type { BoundKey, BoundMove, RuleBound, RuleChange } from "./rules/bounds";
+export { BOUND_KEYS, boundValue, boundWords, compareRules, ruleBounds, withRuleBound } from "./rules/bounds";
 export type { FailingExample, InventoryOp, PassingExample, Proposal, ProposalContent, ProposalEvent, ProposalStatus, RuleTypeExample, RuleTypeRequest, StateNote, StatusChange } from "./proposals/types";
 export type { RuleTypeIssue } from "./proposals/request";
 export { ruleTypeIssue } from "./proposals/request";
@@ -56,11 +58,11 @@ export { RULE_TYPES, checkPrototype } from "./engine/check";
 export { BUILT_IN_RULES } from "./builtins";
 export { describeRule } from "./engine/words";
 
-export type { ChangeClass, Classification, ClassifiedChange } from "./proposals/classify";
+export type { BoundChange, ChangeClass, Classification, ClassifiedChange } from "./proposals/classify";
 export { classifyProposal } from "./proposals/classify";
 export { applyProposal } from "./proposals/apply";
-export type { Adoption, ExampleResult, ExampleRun, ExistingPrototype, NewlyFailing, ProposalDraft, Refusal, RefusalCode, Stamp } from "./proposals/lifecycle";
-export { adopt, approve, contentOf, decline, dryRunAdoption, newlyFailingOf, propose, rerunExamples, revise, sendBack, tryExamples, withExampleSnapshots } from "./proposals/lifecycle";
+export type { Adoption, ExampleResult, ExampleRun, ExistingPrototype, NewlyFailing, ProposalDraft, ProposalImpact, PrototypeImpact, Refusal, RefusalCode, Stamp } from "./proposals/lifecycle";
+export { adopt, approve, contentOf, decline, dryRunAdoption, newlyFailingOf, proposalImpact, propose, rerunExamples, revise, sendBack, tryExamples, withExampleSnapshots } from "./proposals/lifecycle";
 
 export type { CatalogComponent, SpecCatalog } from "./spec/catalog";
 export { LAYOUT_TYPE, PAGE_TYPE, SCENARIO_STATE, SPEC_ACTIONS, TEXT_PROP, specCatalog } from "./spec/catalog";

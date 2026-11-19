@@ -4316,6 +4316,472 @@ test("the proposals list is cards that lead with the change: a cap before and af
   await context.close();
 });
 
+// ---- removing and changing a rule, from its card -------------------------------
+
+const QUESTION = '"answer": { "$bindState": "/duration" } }, "children": [] },';
+/** `count` more primary Book room buttons, passed into the question layout's hint slot: `count + 1` primary actions, which one-primary-per-page flags and no other rule does. */
+const MORE_PRIMARIES = (count) => (text) => {
+  const keys = Array.from({ length: count }, (_, index) => `book-early-${index + 1}`);
+  return text.replace(QUESTION, `"answer": { "$bindState": "/duration" } }, "slots": { "hint": [${keys.map((key) => `"${key}"`).join(", ")}] }, "children": [] },\n${keys.map((key) => `    "${key}": { "type": "Button.Root", "props": { "text": "Book room" }, "children": [] },`).join("\n")}`);
+};
+/** A second question in the booking page's body, which visible-questions flags and no other rule does. */
+const SECOND_QUESTION = (text) =>
+  text
+    .replace('"body": ["question", "details"]', '"body": ["question", "question-again", "details"]')
+    .replace('    "hold": {', '    "question-again": { "type": "Layout", "props": { "id": "select-question", "label": "Starting when?", "choices": { "$state": "/durations" }, "answer": { "$bindState": "/start" } }, "children": [] },\n    "hold": {');
+
+/**
+ * Imports the open Nook project again with `prototypes` in place of its one:
+ * each is the seeded Booking with a change to its booking page. `project`
+ * changes the config. The two light views only, so each prototype is eight
+ * frames. The first prototype opens, and this waits until it is measured.
+ */
+async function importNook(page, prototypes, project = (config) => config) {
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export", exact: true }).click()]);
+  const exported = JSON.parse(readFileSync(await download.path(), "utf8"));
+  const seed = exported.prototypes[0].prototype;
+  const file = join(mkdtempSync(join(tmpdir(), "design-harness-rules-")), "nook.design-harness.json");
+  const config = project({ ...exported.project, views: exported.project.views.filter((view) => !view.name.endsWith("-dark")) });
+  const made = prototypes.map(({ id, name, change }) => {
+    const before = seed.files["pages/booking.json"];
+    const after = change ? change(before) : before;
+    if (change) assert.notEqual(after, before, `the change for ${name} changes nothing`);
+    return { id, name, prototype: { ...seed, files: { ...seed.files, "pages/booking.json": after } } };
+  });
+  writeFileSync(file, JSON.stringify({ ...exported, project: config, prototypes: made }));
+  await page.locator('[data-testid="import-file"]').setInputFiles(file);
+  const frames = SCENARIOS.length * config.views.length;
+  await page.waitForFunction((count) => {
+    const cards = [...document.querySelectorAll(".board .frame-card")];
+    return cards.length === count && cards.every((card) => card.dataset.state === "measured") && document.querySelector(".checks[data-measured]") !== null;
+  }, frames, { timeout: 60000 });
+}
+
+const ruleCard = (page, id) => page.locator(`.rule-card[data-rule="${id}"]`);
+
+/** Opens a rule's remove or change flow from its card in the Project view, and waits for core's reading of the project. */
+async function openRuleFlow(page, id, kind) {
+  await mainView(page, "Project").click();
+  await ruleCard(page, id).getByRole("button", { name: new RegExp(`^${kind} this rule…`) }).click();
+  const dialog = page.getByRole("dialog", { name: `${kind} this rule` });
+  await dialog.waitFor();
+  return dialog;
+}
+
+/** A limit's number in the change flow: typed and committed, as a person leaving the field commits it. */
+async function setLimit(dialog, key, value) {
+  const input = dialog.locator(`.rule-limit[data-limit="${key}"]`).getByRole("spinbutton");
+  await input.fill(String(value));
+  await input.press("Tab");
+}
+
+/** Approves and adopts the proposal on the open review page, once its examples are judged. */
+async function approveAndAdopt(page) {
+  await judged(page);
+  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector(".review")?.getAttribute("data-status") === "approved");
+  await page.waitForSelector('[data-testid="review-measuring"][data-measured]', { timeout: 60000 });
+  await page.getByRole("button", { name: "Adopt", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector(".review")?.getAttribute("data-status") === "adopted");
+}
+
+/** The open prototype's report once it no longer changes with the config: read on the canvas after an adoption. */
+async function reportWhen(page, accept, message) {
+  await mainView(page, "Canvas").click();
+  return eventually(page, async () => ((await page.locator(".checks[data-measured]").count()) > 0 ? report(page) : null), (value) => value !== null && accept(value), message);
+}
+
+test("a person removes a rule from its card: the proposal opens with examples from the project, and once adopted the rule and its findings are gone and nothing else changes", async ({ browser, base, api }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  api.script([]);
+  await importNook(page, [
+    { id: "booking-spec", name: "Booking", change: MORE_PRIMARIES(1) },
+    { id: "two-questions", name: "Two questions", change: SECOND_QUESTION },
+  ]);
+  const before = await report(page);
+  assert.deepEqual(failing(before), ["one-primary-per-page"]);
+  assert.equal(before.findings.length, 1);
+
+  const dialog = await openRuleFlow(page, "one-primary-per-page", "Remove");
+  // The rule in the card's sentence and in core's words.
+  assert.match(await dialog.textContent(), /A page holds at most one primary action\./);
+  assert.equal((await dialog.getByTestId("rule-words").textContent()).trim(), "Each page holds at most 1 primary action.");
+  // Core's reading of every prototype in the project with the rule gone, each measured in frames.
+  await dialog.getByTestId("rule-impact-summary").waitFor({ timeout: 60000 });
+  assert.equal(await dialog.getByTestId("rule-impact-summary").textContent(), "1 of 2 prototypes has findings from this rule now; 1 would stop failing.");
+  assert.deepEqual(await dialog.locator(".rule-impact > li").evaluateAll((items) => items.map((item) => [item.dataset.prototype, item.dataset.effect])), [
+    ["Booking", "clears"],
+    ["Two questions", "same"],
+  ]);
+  assert.match(await dialog.locator('.rule-impact > li[data-prototype="Booking"]').textContent(), /1 finding from this rule now\. It would stop failing\./);
+  assert.equal(await dialog.getByTestId("rule-retired").count(), 0, "no adopted proposal keeps an example of a built-in rule");
+  // Its examples are the project's own prototypes: one the removal lets through, one a rule still in force flags.
+  assert.deepEqual(await dialog.locator(".rule-examples > li").evaluateAll((items) => items.map((item) => [item.dataset.example, item.dataset.expect])), [
+    ["booking", "pass"],
+    ["two-questions", "fail"],
+  ]);
+  assert.match(await dialog.locator('.rule-examples > li[data-example="two-questions"]').textContent(), /must fail, flagged by visible-questions: the prototype Two questions, as it is now\./);
+  assert.equal(await dialog.getByTestId("rule-needs").count(), 0);
+  await shot(page, "rule-remove-light");
+  await shotDark(page, "rule-remove-dark");
+
+  // Why is required.
+  await dialog.getByRole("button", { name: "Open the proposal" }).click();
+  assert.match(await dialog.getByRole("alert").filter({ hasText: "Say why" }).textContent(), /Say why: a proposal needs its reason\./);
+  await dialog.getByRole("textbox", { name: "Why" }).fill("Booking early is a second primary action, and we want both.");
+  await dialog.getByRole("button", { name: "Open the proposal" }).click();
+
+  // It is an open proposal by the person, on its review page: nothing is removed yet.
+  const review = page.locator('.review[data-proposal="remove-one-primary-per-page"]');
+  await review.waitFor();
+  assert.equal(await reviewStatus(page), "open");
+  assert.equal((await review.locator("h1").textContent()).trim(), "Remove the rule “A page holds at most one primary action”");
+  assert.match(await review.textContent(), /Drafted by you/);
+  assert.match(await page.getByTestId("proposal-reason").textContent(), /Booking early is a second primary action/);
+  assert.equal(await review.locator('[data-testid="class-scale"]').getAttribute("data-class"), "loosens-or-removes");
+  const removed = review.getByTestId("rule-removed");
+  assert.equal((await removed.getByTestId("rule-line-words").textContent()).trim(), "Removes rule one-primary-per-page");
+  assert.equal((await removed.getByTestId("rule-words").textContent()).trim(), "Each page holds at most 1 primary action.");
+  assert.equal((await report(page)).rules.some((rule) => rule.rule === "one-primary-per-page"), true, "the rule is still in force");
+  await judged(page);
+  assert.deepEqual([await example(page, "booking").getAttribute("data-verdict"), await example(page, "two-questions").getAttribute("data-verdict")], ["ok", "ok"]);
+  await review.getByTestId("review-impact").locator('[data-prototype="two-questions"]').waitFor({ timeout: 60000 });
+  await shot(page, "rule-remove-review-light");
+  await shotDark(page, "rule-remove-review-dark");
+
+  // The rule's card says a proposal waits on it, and so does a second flow started on it.
+  await mainView(page, "Project").click();
+  assert.match(await ruleCard(page, "one-primary-per-page").getByTestId("rule-waiting-proposal").textContent(), /open.*A proposal waiting for you removes this rule\./s);
+  const again = await openRuleFlow(page, "one-primary-per-page", "Remove");
+  assert.match(await again.getByTestId("rule-waiting").textContent(), /A proposal already waits on this rule.*“Remove the rule “A page holds at most one primary action”” is open and removes this rule\./s);
+  await again.getByTestId("rule-waiting").getByRole("button", { name: "Open it" }).click();
+  await review.waitFor();
+
+  // The proposals list reads it as a removal, by you.
+  await page.getByRole("button", { name: "← All proposals" }).click();
+  const card = page.locator('.proposal-cards [data-proposal="remove-one-primary-per-page"]');
+  assert.equal(await card.getByTestId("rule-line").getAttribute("data-kind"), "removes");
+  assert.match(await card.textContent(), /− rule.*Removes rule one-primary-per-page.*It says: Each page holds at most 1 primary action\..*Removes 1 rule\..*1 must pass.*1 must fail.*By you/s);
+  await shot(page, "rule-remove-card-light");
+  await card.getByRole("button", { name: /^Remove the rule/ }).click();
+  await review.waitFor();
+
+  await approveAndAdopt(page);
+  assert.match(await page.getByTestId("review-rechecked").textContent(), /Every prototype was re-checked: none newly fails\./);
+  // Adopted, the old rule is gone from the project; the page still says what was removed, in the words core kept.
+  assert.match(await review.getByTestId("rule-removed").textContent(), /Removes rule one-primary-per-page.*It says: Each page holds at most 1 primary action\./s);
+  await shot(page, "rule-remove-adopted-light");
+
+  // The rule is gone from Rules in force, and from the report with its findings; every other rule reads as it did.
+  await mainView(page, "Project").click();
+  assert.match(await page.getByTestId("project-rules").textContent(), /Rules in force \(28\)/);
+  assert.equal(await ruleCard(page, "one-primary-per-page").count(), 0);
+  const after = await reportWhen(page, (value) => !value.rules.some((rule) => rule.rule === "one-primary-per-page"), "the report drops the removed rule");
+  assert.equal(after.status, "pass");
+  assert.deepEqual(after.findings, []);
+  assert.deepEqual(after.rules, before.rules.filter((rule) => rule.rule !== "one-primary-per-page"), "the report is otherwise unchanged");
+  assert.equal(api.requests.length, 0, "no model was asked anything");
+  assert.deepEqual(errors, []);
+});
+
+test("a person changes a count limit from 1 to 2: live before and after, classified looser, and once adopted the prototype that had 2 passes", async ({ browser, base, api }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  api.script([]);
+  await importNook(page, [
+    { id: "booking-spec", name: "Booking", change: MORE_PRIMARIES(1) },
+    { id: "three-ways", name: "Three ways to book", change: MORE_PRIMARIES(2) },
+  ]);
+  assert.deepEqual(failing(await report(page)), ["one-primary-per-page"]);
+
+  const dialog = await openRuleFlow(page, "one-primary-per-page", "Change");
+  assert.equal(await dialog.getByTestId("rule-preview").getAttribute("data-state"), "unchanged");
+  assert.match(await dialog.locator('.rule-limit[data-limit="max"]').textContent(), /At most.*Now 1\. Stricter when lower\./s);
+  assert.equal(await dialog.getByRole("button", { name: "Open the proposal" }).isDisabled(), true, "there is nothing to propose until a number differs");
+  await setLimit(dialog, "max", 2);
+  // The limit before and after in words, the way it moved, and core's class.
+  const preview = dialog.getByTestId("rule-preview");
+  await eventually(page, () => preview.getAttribute("data-state"), (value) => value === "changed", "the preview follows the number");
+  assert.equal(await preview.getAttribute("data-class"), "loosens-or-removes");
+  assert.deepEqual([await preview.getByTestId("rule-move-before").textContent(), await preview.getByTestId("rule-move-after").textContent(), await preview.getByTestId("rule-move").getAttribute("data-direction")], ["at most 1", "at most 2", "looser"]);
+  assert.equal(await preview.getByTestId("rule-words-before").textContent(), "Each page holds at most 1 primary action.");
+  assert.equal(await preview.getByTestId("rule-words-after").textContent(), "Each page holds at most 2 primary actions.");
+  assert.equal(await preview.getByTestId("proposal-class").getAttribute("data-class"), "loosens-or-removes");
+  assert.match(await preview.textContent(), /moves max from 1 to 2, the looser way/);
+  await dialog.getByTestId("rule-impact-summary").waitFor({ timeout: 60000 });
+  assert.equal(await dialog.getByTestId("rule-impact-summary").textContent(), "2 of 2 prototypes have findings from this rule now; 1 would stop failing.");
+  assert.deepEqual(await dialog.locator(".rule-impact > li").evaluateAll((items) => items.map((item) => [item.dataset.prototype, item.dataset.effect])), [
+    ["Booking", "clears"],
+    ["Three ways to book", "still-fails"],
+  ]);
+  // The changed rule's examples, from the project: the prototype with 2 passes it, the one with 3 is flagged by it alone.
+  assert.deepEqual(await dialog.locator(".rule-examples > li").evaluateAll((items) => items.map((item) => [item.dataset.example, item.dataset.expect])), [
+    ["booking", "pass"],
+    ["three-ways-to-book", "fail"],
+  ]);
+  await dialog.getByRole("textbox", { name: "Why" }).fill("Booking offers to book early, above the details.");
+  await shot(page, "rule-change-light");
+  await shotDark(page, "rule-change-dark");
+  await dialog.getByRole("button", { name: "Open the proposal" }).click();
+
+  const review = page.locator('.review[data-proposal="change-one-primary-per-page"]');
+  await review.waitFor();
+  assert.equal((await review.locator("h1").textContent()).trim(), "Change “A page holds at most one primary action” to at most 2");
+  assert.match(await review.textContent(), /Drafted by you/);
+  assert.equal(await review.locator('[data-testid="class-scale"]').getAttribute("data-class"), "loosens-or-removes");
+  assert.match(await page.getByTestId("review-class").textContent(), /change rule "one-primary-per-page".*loosens or removes.*moves max from 1 to 2, the looser way/s);
+  const changed = review.getByTestId("rule-changed");
+  assert.equal(await changed.getByTestId("rule-line").getAttribute("data-direction"), "looser");
+  assert.match((await changed.getByTestId("rule-line").textContent()).replace(/\s+/g, " "), /Changes rule one-primary-per-page.*at most 1.*at most 2.*looser.*Before: Each page holds at most 1 primary action\./);
+  assert.equal((await changed.getByTestId("rule-words").textContent()).trim(), "Each page holds at most 2 primary actions.");
+  assert.equal(await review.getByTestId("rule-removed").count(), 0, "a changed rule is not listed as removed");
+  await judged(page);
+  assert.deepEqual([await example(page, "booking").getAttribute("data-verdict"), await example(page, "three-ways-to-book").getAttribute("data-verdict")], ["ok", "ok"]);
+  await shot(page, "rule-change-review-light");
+  await shotDark(page, "rule-change-review-dark");
+
+  await page.getByRole("button", { name: "← All proposals" }).click();
+  const card = page.locator('.proposal-cards [data-proposal="change-one-primary-per-page"]');
+  assert.equal(await card.getByTestId("rule-line").getAttribute("data-direction"), "looser");
+  assert.match((await card.textContent()).replace(/\s+/g, " "), /Changes rule one-primary-per-page.*at most 1.*at most 2.*looser.*Changes 1 rule\./);
+  assert.equal(await card.getByTestId("proposal-class").getAttribute("data-class"), "loosens-or-removes");
+  await shot(page, "rule-change-card-light");
+  await card.getByRole("button", { name: /^Change “A page holds/ }).click();
+  await review.waitFor();
+
+  await approveAndAdopt(page);
+  // Adopted, the line still reads what moved, from the classification core kept.
+  assert.match((await review.getByTestId("rule-changed").getByTestId("rule-line").textContent()).replace(/\s+/g, " "), /Changes rule one-primary-per-page.*at most 1.*at most 2.*looser/);
+  // The prototype that had 2 passes now, and the card reads the new limit in core's words.
+  const after = await reportWhen(page, (value) => value.status === "pass", "Booking, with 2 primary actions, passes once 2 are allowed");
+  assert.deepEqual(after.findings, []);
+  assert.equal(after.rules.find((rule) => rule.rule === "one-primary-per-page").status, "pass");
+  await mainView(page, "Project").click();
+  assert.match(await ruleCard(page, "one-primary-per-page").textContent(), /Each page holds at most 2 primary actions\./);
+  assert.match(await page.getByTestId("project-rules").textContent(), /Rules in force \(29\)/);
+  // Tightening it back would break the example this proposal keeps as a test: the flow says core would refuse.
+  const back = await openRuleFlow(page, "one-primary-per-page", "Change");
+  await setLimit(back, "max", 1);
+  await back.getByTestId("rule-broken").waitFor({ timeout: 60000 });
+  assert.match(await back.getByTestId("rule-broken").textContent(), /Core would refuse to adopt it as it is.*passing example booking of change-one-primary-per-page/s);
+  assert.equal(await back.getByTestId("rule-preview").getAttribute("data-class"), "tightens");
+  assert.equal(api.requests.length, 0);
+  assert.deepEqual(errors, []);
+});
+
+test("a person changes a limit the stricter way: classified tightens, proven on a prototype the new limit flags, and that prototype newly fails once adopted", async ({ browser, base, api }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  api.script([]);
+  // A project that allows two primary actions on a page.
+  await importNook(
+    page,
+    [
+      { id: "booking-spec", name: "Booking" },
+      { id: "early", name: "Early booking", change: MORE_PRIMARIES(1) },
+    ],
+    (config) => ({ ...config, rules: config.rules.map((rule) => (rule.id === "one-primary-per-page" ? { type: "count", id: "one-primary-per-page", scope: "page", select: { role: "primary-action" }, max: 2 } : rule)) }),
+  );
+  assert.equal((await report(page)).status, "pass");
+  const dialog = await openRuleFlow(page, "one-primary-per-page", "Change");
+  // The step button moves it by one.
+  await dialog.locator('.rule-limit[data-limit="max"]').getByRole("button", { name: /decre|lower|minus/i }).click();
+  const preview = dialog.getByTestId("rule-preview");
+  await eventually(page, () => preview.getAttribute("data-class"), (value) => value === "tightens", "one less is stricter");
+  assert.deepEqual([await preview.getByTestId("rule-move-before").textContent(), await preview.getByTestId("rule-move-after").textContent(), await preview.getByTestId("rule-move").getAttribute("data-direction")], ["at most 2", "at most 1", "stricter"]);
+  await dialog.getByTestId("rule-impact-summary").waitFor({ timeout: 60000 });
+  assert.equal(await dialog.getByTestId("rule-impact-summary").textContent(), "0 of 2 prototypes have findings from this rule now; 1 would newly fail.");
+  assert.match(await dialog.locator('.rule-impact > li[data-effect="fails"]').textContent(), /Early booking.*It would newly fail one-primary-per-page: Page "booking" has 2 primary actions, more than 1/s);
+  // Core adopts a changed rule only on a failing example it flags alone: the project has one, and the flow names it.
+  assert.match(await dialog.getByTestId("rule-examples").textContent(), /one the changed rule flags and no other rule does/);
+  assert.deepEqual(await dialog.locator(".rule-examples > li").evaluateAll((items) => items.map((item) => [item.dataset.example, item.dataset.expect])), [
+    ["booking", "pass"],
+    ["early-booking", "fail"],
+  ]);
+  await dialog.getByRole("textbox", { name: "Why" }).fill("One way to book on a page.");
+  await shot(page, "rule-tighten-light");
+  await dialog.getByRole("button", { name: "Open the proposal" }).click();
+  const review = page.locator('.review[data-proposal="change-one-primary-per-page"]');
+  await review.waitFor();
+  assert.equal(await review.locator('[data-testid="class-scale"]').getAttribute("data-class"), "tightens");
+  assert.equal(await review.getByTestId("rule-changed").getByTestId("rule-line").getAttribute("data-direction"), "stricter");
+  await judged(page);
+  assert.match(await example(page, "early-booking").textContent(), /flagged by "one-primary-per-page" and no other rule/);
+  await review.getByTestId("impact-some").waitFor({ timeout: 60000 });
+  assert.equal(await review.getByTestId("impact-some").textContent(), "1 of 2 prototypes would newly fail.");
+  await shot(page, "rule-tighten-review-light");
+  await approveAndAdopt(page);
+  assert.match(await page.getByTestId("review-rechecked").textContent(), /Every prototype was re-checked: Early booking newly fails\./);
+  assert.equal((await reportWhen(page, (value) => value.rules.some((rule) => rule.rule === "one-primary-per-page"), "the rule is in force")).status, "pass", "Booking, with one primary action, still passes");
+  assert.equal(api.requests.length, 0);
+  assert.deepEqual(errors, []);
+});
+
+test("a limit that reads a cap routes to set-cap, and names the other rules that read the cap", async ({ browser, base, api }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  api.script([]);
+  await importNook(
+    page,
+    [
+      { id: "booking-spec", name: "Booking", change: SECOND_QUESTION },
+      { id: "early", name: "Early booking", change: MORE_PRIMARIES(1) },
+    ],
+    (config) => ({ ...config, rules: [...config.rules, { type: "count", id: "questions-on-lists", scope: "page", pages: { kinds: ["collection"] }, select: { role: "question" }, max: { cap: "MAX_VISIBLE_QUESTIONS" } }] }),
+  );
+  assert.deepEqual(failing(await report(page)), ["visible-questions"]);
+  const dialog = await openRuleFlow(page, "visible-questions", "Change");
+  const note = dialog.getByTestId("rule-cap-note");
+  assert.equal(await note.textContent(), "This limit reads the cap MAX_VISIBLE_QUESTIONS, now 1. Changing it moves the cap, not this rule: one other rule reads it and moves with it: questions-on-lists.");
+  await setLimit(dialog, "max", 2);
+  const preview = dialog.getByTestId("rule-preview");
+  await eventually(page, () => preview.getAttribute("data-class"), (value) => value === "loosens-or-removes", "a higher cap is looser");
+  assert.deepEqual([await preview.getByTestId("rule-move-before").textContent(), await preview.getByTestId("rule-move-after").textContent(), await preview.getByTestId("rule-move").getAttribute("data-direction")], ["at most 1", "at most 2", "looser"]);
+  assert.match(await preview.textContent(), /moves MAX_VISIBLE_QUESTIONS from 1 to 2, the looser way/);
+  assert.equal(await dialog.getByRole("textbox", { name: /own sentence/ }).count(), 0, "the rule itself does not change, so its sentence stays");
+  await dialog.getByTestId("rule-impact-summary").waitFor({ timeout: 60000 });
+  // Both readers are read: the open prototype's two questions stop failing.
+  assert.equal(await dialog.getByTestId("rule-impact-summary").textContent(), "1 of 2 prototypes has findings from these rules now; 1 would stop failing.");
+  assert.deepEqual(await dialog.locator(".rule-examples > li").evaluateAll((items) => items.map((item) => [item.dataset.example, item.dataset.expect])), [
+    ["booking", "pass"],
+    ["early-booking", "fail"],
+  ]);
+  await dialog.getByRole("textbox", { name: "Why" }).fill("Booking asks when it starts as well as how long.");
+  await shot(page, "rule-cap-light");
+  await dialog.getByRole("button", { name: "Open the proposal" }).click();
+  // The proposal moves the cap and touches no rule.
+  const review = page.locator('.review[data-proposal="set-max-visible-questions"]');
+  await review.waitFor();
+  assert.equal((await review.locator("h1").textContent()).trim(), "Move the cap MAX_VISIBLE_QUESTIONS from 1 to 2");
+  assert.equal(await review.locator('[data-testid="op-figures"] [data-testid="cap-change"]').getAttribute("data-moved"), "looser");
+  assert.match(await page.getByTestId("review-class").textContent(), /set-cap MAX_VISIBLE_QUESTIONS to 2.*moves MAX_VISIBLE_QUESTIONS from 1 to 2, the looser way/s);
+  assert.equal(await review.getByTestId("rule-changed").count() + (await review.getByTestId("rule-removed").count()), 0);
+  await approveAndAdopt(page);
+  const after = await reportWhen(page, (value) => value.status === "pass", "two questions pass once the cap is 2");
+  assert.equal(after.rules.length, 31, "every rule is still in force, the second reader included");
+  await mainView(page, "Project").click();
+  assert.match(await ruleCard(page, "visible-questions").textContent(), /Reads the cap MAX_VISIBLE_QUESTIONS, now 2\./);
+  assert.match(await ruleCard(page, "questions-on-lists").textContent(), /Reads the cap MAX_VISIBLE_QUESTIONS, now 2\./);
+  assert.equal(api.requests.length, 0);
+  assert.deepEqual(errors, []);
+});
+
+test("what a card cannot change in place asks the agent: the chat is prefilled with the rule and the person's words, and with the examples a proposal still needs", async ({ browser, base, api }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  api.script([]);
+  await enterKey(page);
+  // A rule with no number: only the agent can draft a change to it.
+  const dialog = await openRuleFlow(page, "rank-2-secondary", "Change");
+  assert.match(await dialog.getByTestId("rule-ask").textContent(), /This rule has no number to change here\./);
+  assert.equal(await dialog.getByRole("button", { name: "Open the proposal" }).count(), 0);
+  await dialog.getByRole("textbox", { name: "What should change" }).fill("Let Hold room be a ghost button on the rooms page.");
+  await shot(page, "rule-ask-light");
+  await dialog.getByRole("button", { name: "Ask the agent to draft this change" }).click();
+  await dialog.waitFor({ state: "hidden" });
+  const box = page.getByRole("textbox", { name: "Message the agent" });
+  await page.waitForFunction(() => (document.querySelector(".chat-composer textarea")?.value ?? "") !== "");
+  const text = await box.inputValue();
+  assert.match(text, /^Draft a proposal that changes the rule "rank-2-secondary"\. In core's words it says: Every action reading the rank-2 action "Hold room" is also a secondary action\./);
+  assert.match(text, /What I want changed: Let Hold room be a ghost button on the rooms page\./);
+  assert.match(text, /put "rank-2-secondary" in rules\.remove and the changed rule, under the same id, in rules\.add/);
+  assert.equal(api.requests.length, 0, "the message waits for the person to send it");
+  await box.fill("");
+
+  // A rule with a number offers the same, under its limits.
+  const numbered = await openRuleFlow(page, "one-primary-per-page", "Change");
+  assert.match(await numbered.getByTestId("rule-ask").textContent(), /Something else about this rule/);
+  // One prototype cannot be both examples: the flow says which the project lacks, and writes none.
+  await setLimit(numbered, "max", 0);
+  await numbered.getByTestId("rule-needs").waitFor({ timeout: 60000 });
+  assert.deepEqual(await numbered.locator(".rule-examples > li").evaluateAll((items) => items.map((item) => [item.dataset.example, item.dataset.expect])), [["booking", "fail"]]);
+  assert.match(await numbered.getByTestId("rule-needs").textContent(), /It cannot be adopted until it has one more example.*The project has none of: a prototype that passes every rule once this is adopted\./s);
+  await numbered.getByRole("textbox", { name: "Why" }).fill("No page needs a primary action.");
+  await shot(page, "rule-needs-light");
+  await numbered.getByRole("button", { name: "Open it and ask the agent for examples" }).click();
+  const review = page.locator('.review[data-proposal="change-one-primary-per-page"]');
+  await review.waitFor();
+  await page.waitForFunction(() => (document.querySelector(".chat-composer textarea")?.value ?? "") !== "");
+  const asked = await box.inputValue();
+  assert.match(asked, /^I opened proposal "change-one-primary-per-page" \(Change “A page holds at most one primary action” to at most 0\)\./);
+  assert.match(asked, /- a prototype that passes every rule once this is adopted/);
+  assert.match(asked, /revise_proposal, keeping its id, and give only examples/);
+  // Core refuses to adopt it as it stands, and the review page says so in core's words.
+  await judged(page);
+  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector(".review")?.getAttribute("data-status") === "approved");
+  await page.waitForSelector('[data-testid="review-measuring"][data-measured]', { timeout: 60000 });
+  assert.match(await review.textContent(), /\[missing-examples\] proposal "change-one-primary-per-page" needs at least one passing and one failing example; it has 0 passing and 1 failing/);
+  assert.equal(api.requests.length, 0);
+  assert.deepEqual(errors, []);
+});
+
+test("the agent drafts a change to a rule, and it reads as a change wherever proposals are listed", async ({ browser, base, api }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  await draftByAgent(page, api, {
+    id: "two-primaries",
+    title: "Allow two primary actions on a page",
+    reason: "Booking offers to book early.",
+    rules: { remove: ["one-primary-per-page"], add: [{ type: "count", id: "one-primary-per-page", scope: "page", select: { role: "primary-action" }, max: 2 }] },
+    examples: { pass: [{ name: "book-early", files: { "pages/booking.json": MORE_PRIMARIES(1)(SPEC_BOOKING) } }], fail: [{ name: "three-ways", files: { "pages/booking.json": MORE_PRIMARIES(2)(SPEC_BOOKING) }, flagged_by: { rule: "one-primary-per-page" } }] },
+  });
+  assert.match(await page.locator('.chat-proposal[data-proposal="two-primaries"]').last().textContent(), /Core's adoption dry run passes/);
+  await openReview(page, "two-primaries");
+  const review = page.locator('.review[data-proposal="two-primaries"]');
+  assert.match(await review.textContent(), /Drafted by agent/);
+  assert.equal(await review.getByTestId("rule-changed").getByTestId("rule-line").getAttribute("data-direction"), "looser");
+  assert.match((await review.getByTestId("rule-changed").getByTestId("rule-line").textContent()).replace(/\s+/g, " "), /Changes rule one-primary-per-page.*at most 1.*at most 2.*looser/);
+  assert.equal(await reviewStatus(page), "open", "the agent drafts; only the person approves and adopts");
+  await page.getByRole("button", { name: "← All proposals" }).click();
+  assert.equal(await page.locator('.proposal-cards [data-proposal="two-primaries"]').getByTestId("rule-line").getAttribute("data-direction"), "looser");
+  // The rule's card says the agent's proposal waits on it.
+  await mainView(page, "Project").click();
+  assert.match(await ruleCard(page, "one-primary-per-page").getByTestId("rule-waiting-proposal").textContent(), /A proposal waiting for you changes this rule\./);
+  assert.deepEqual(errors, []);
+});
+
+test("the rule flows at phone width: the dialog fits the screen, and its actions are reachable by keyboard", async ({ browser, base, api }) => {
+  const { page, errors } = await openApp(browser, base, { viewport: { width: 390, height: 844 } });
+  api.script([]);
+  await mainView(page, "Project").click();
+  const card = ruleCard(page, "one-primary-per-page");
+  await card.scrollIntoViewIfNeeded();
+  // By keyboard alone: focus the card's action, open the flow, and the dialog takes focus.
+  await card.getByRole("button", { name: /^Change this rule…/ }).focus();
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Change this rule" });
+  await dialog.waitFor();
+  assert.equal(await dialog.evaluate((element) => element.contains(document.activeElement)), true, "focus moves into the dialog");
+  const input = dialog.locator('.rule-limit[data-limit="max"]').getByRole("spinbutton");
+  await input.focus();
+  await page.keyboard.press("ArrowUp");
+  await eventually(page, () => dialog.getByTestId("rule-preview").getAttribute("data-class"), (value) => value === "loosens-or-removes", "Arrow Up raises the limit by one");
+  assert.equal(await dialog.getByTestId("rule-move-after").textContent(), "at most 2");
+  const box = await dialog.boundingBox();
+  assert.ok(box && box.x >= 0 && box.x + box.width <= 390, `the dialog is as wide as the phone at most: ${JSON.stringify(box)}`);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, "nothing scrolls sideways");
+  const widest = await dialog.evaluate((element) => Math.max(...[...element.querySelectorAll("*")].map((item) => item.getBoundingClientRect().right)));
+  assert.ok(widest <= 390.5, `nothing in the dialog reaches past the screen: ${widest}`);
+  await dialog.getByTestId("rule-examples").waitFor({ timeout: 60000 });
+  await shot(page, "rule-change-phone-light");
+  await shotDark(page, "rule-change-phone-dark");
+  // The way out is reachable: the dialog scrolls to its actions, inside the screen.
+  const open = dialog.getByRole("button", { name: "Open the proposal" });
+  await open.scrollIntoViewIfNeeded();
+  const at = await open.boundingBox();
+  assert.ok(at && at.y >= 0 && at.y + at.height <= 844 && at.x + at.width <= 390, `Open the proposal is on screen: ${JSON.stringify(at)}`);
+  await shot(page, "rule-change-phone-end-light");
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "hidden" });
+  await card.getByRole("button", { name: /^Remove this rule…/ }).click();
+  const remove = page.getByRole("dialog", { name: "Remove this rule" });
+  await remove.getByTestId("rule-examples").waitFor({ timeout: 60000 });
+  await shot(page, "rule-remove-phone-light");
+  assert.deepEqual(errors, []);
+});
+
 // ---- pinned feedback ---------------------------------------------------------
 
 const pinMode = (page) => page.getByTestId("pin-mode");
