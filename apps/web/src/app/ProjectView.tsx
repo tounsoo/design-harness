@@ -115,7 +115,7 @@ export function ProjectView({
       <Rules config={config} onOpenProposal={onOpenProposal} />
 
       <section aria-labelledby="project-inputs">
-        <SectionHead id="project-inputs" title="Tasks and limits" text={`The numbers the rules read: how many steps each task may take, which action matters most, and the project's caps.${prototype && flow ? ` A filled step is one ${prototype.name} takes today; the dashed line is the limit.` : " The dashed line is the limit."}`} />
+        <SectionHead id="project-inputs" title="Tasks and limits" text={`The numbers the rules read: how many steps each task may take, which action matters most, and the project's caps.${prototype && flow ? ` Under each task is what ${prototype.name}'s longest route takes today.` : ""}`} />
         <div className="limits">
           <Card.Root className="figure-card" data-testid="project-tasks">
             <Text.Root as="h3" className="figure-title">

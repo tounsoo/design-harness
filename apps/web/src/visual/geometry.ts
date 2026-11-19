@@ -1,4 +1,4 @@
-import type { BoxWithNeighbourEvidence, CountVsCapEvidence, Rect, RegionLineEvidence, RouteVsBudgetEvidence, SequenceGapEvidence } from "@design-harness/core";
+import type { BoxWithNeighbourEvidence, Rect, RegionLineEvidence, RouteVsBudgetEvidence, SequenceGapEvidence } from "@design-harness/core";
 
 /**
  * The geometry of the evidence figures: pure functions from core's evidence
@@ -73,12 +73,6 @@ export function boxFigure(evidence: BoxWithNeighbourEvidence, size: Size = { wid
   };
 }
 
-/** Where a contrast ratio sits on a scale from 1:1 to 21:1, from 0 to 1. The scale is logarithmic, as contrast is perceived: 4.5:1 is at about half. */
-export function contrastPosition(ratio: number): number {
-  const clamped = Math.min(21, Math.max(1, ratio));
-  return round(Math.log(clamped) / Math.log(21));
-}
-
 export type OutlineRow =
   | { readonly kind: "heading"; readonly level: number; readonly text: string; readonly shown: boolean; readonly flag?: string }
   /** A level the outline skips: an empty row where a heading would be. */
@@ -117,35 +111,6 @@ export function outlineRows(evidence: SequenceGapEvidence, most = 8): OutlineRow
   out.push(...rows.slice(start, end));
   if (end < rows.length) out.push({ kind: "more", count: rows.length - end });
   return out;
-}
-
-/** One unit of a count bar: within the limit, past it, or missing below a minimum. */
-export type Pip = "within" | "over" | "missing";
-
-export type CountBar = {
-  readonly pips: readonly Pip[];
-  /** How many pips sit before the limit line. */
-  readonly limitAfter: number;
-  /** Units not drawn, when the count is larger than the bar. */
-  readonly more: number;
-  readonly words: string;
-};
-
-/**
- * A count against its cap as pips with a limit line: for a maximum, the
- * count's pips with those past the cap marked; for a minimum, the cap's
- * pips with those the count does not reach left empty.
- */
-export function countBar(evidence: Pick<CountVsCapEvidence, "count" | "cap" | "bound">, most = 12): CountBar {
-  const { count, cap, bound } = evidence;
-  const total = bound === "max" ? Math.max(count, cap) : cap;
-  const drawn = Math.min(total, most);
-  const pips: Pip[] = [];
-  for (let index = 0; index < drawn; index += 1) {
-    if (bound === "max") pips.push(index < cap ? (index < count ? "within" : "missing") : "over");
-    else pips.push(index < count ? "within" : "missing");
-  }
-  return { pips, limitAfter: Math.min(cap, drawn), more: total - drawn, words: bound === "max" ? `${count}, at most ${cap}` : `${count}, at least ${cap}` };
 }
 
 export type RegionFigure = {

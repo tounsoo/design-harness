@@ -5,7 +5,7 @@ import { EVIDENCE_KINDS, RULE_EVIDENCE, RULE_TYPES, checkPrototype, type Evidenc
 import { nook } from "../../../../packages/core/examples/nook/project";
 import { renderedCases } from "../../../../packages/core/examples/nook/rendered-cases";
 import { seedLegal } from "../../test/nook";
-import { EvidenceFigure, FIGURES } from "./figures";
+import { EvidenceFigure, FIGURES, drawsFigure } from "./figures";
 
 const legal = seedLegal();
 
@@ -31,21 +31,36 @@ const SAMPLES: { readonly [K in Evidence["kind"]]: Extract<Evidence, { kind: K }
 };
 
 const finding = (evidence?: Evidence, extra: Partial<Finding> = {}): Finding => ({ rule: "r", kind: "violation", message: "Core's exact words.", ...(evidence ? { evidence } : {}), ...extra });
+/** The kinds that draw a figure, and the kinds whose message stands alone, as the registry decides. */
+const DRAWN = EVIDENCE_KINDS.filter((kind) => "Figure" in FIGURES[kind]);
+const WORDS_ONLY = EVIDENCE_KINDS.filter((kind) => !("Figure" in FIGURES[kind]));
 const draw = (item: Finding, findings: readonly Finding[] = [item]) => renderToStaticMarkup(createElement(EvidenceFigure, { finding: item, findings, children: createElement("p", null, item.message) }));
 
 describe("the figure registry", () => {
-  it("has one figure for every evidence kind core has, and no other", () => {
+  it("has one entry for every evidence kind core has, and no other: a figure, or the reason for none", () => {
     expect(Object.keys(FIGURES).sort()).toEqual([...EVIDENCE_KINDS].sort());
-    for (const kind of EVIDENCE_KINDS) expect(typeof FIGURES[kind].Figure, kind).toBe("function");
+    for (const kind of EVIDENCE_KINDS) {
+      const entry = FIGURES[kind];
+      if ("Figure" in entry) {
+        expect(typeof entry.Figure, kind).toBe("function");
+        expect(entry.shows.length, kind).toBeGreaterThan(0);
+      } else expect(entry.wordsOnly.length, kind).toBeGreaterThan(0);
+    }
   });
 
   it("covers every kind a rule type in core's vocabulary declares", () => {
-    for (const kind of declaredKinds()) expect(Object.keys(FIGURES), `no figure is registered for ${kind}`).toContain(kind);
+    for (const kind of declaredKinds()) expect(Object.keys(FIGURES), `no entry is registered for ${kind}`).toContain(kind);
   });
 
-  for (const kind of EVIDENCE_KINDS) {
+  it("draws what words cannot show, and leaves a count to its words", () => {
+    expect(DRAWN).toEqual(["box-with-neighbour", "colour-pair", "sequence-gap", "region-line", "route-vs-budget"]);
+    expect(WORDS_ONLY).toEqual(["count-vs-cap", "coverage"]);
+  });
+
+  for (const kind of DRAWN) {
     it(`${kind}: draws, with core's message word for word as its caption`, () => {
       const html = draw(finding(SAMPLES[kind]));
+      expect(drawsFigure(finding(SAMPLES[kind]))).toBe(true);
       expect(html).toContain(`data-evidence="${kind}"`);
       expect(html).toContain("<figcaption");
       expect(html).toContain("<p>Core&#x27;s exact words.</p>");
@@ -54,6 +69,13 @@ describe("the figure registry", () => {
     it(`${kind}: every drawing is hidden from a screen reader or has a role and a name`, () => {
       const html = draw(finding(SAMPLES[kind]));
       for (const svg of html.match(/<svg[^>]*>/g) ?? []) expect(svg.includes('aria-hidden="true"') || /role="img"[^>]*aria-label="[^"]+"|aria-label="[^"]+"[^>]*role="img"/.test(svg), svg).toBe(true);
+    });
+  }
+
+  for (const kind of WORDS_ONLY) {
+    it(`${kind}: draws nothing, and core's message stands alone with nothing above it`, () => {
+      expect(drawsFigure(finding(SAMPLES[kind]))).toBe(false);
+      expect(draw(finding(SAMPLES[kind]))).toBe("<p>Core&#x27;s exact words.</p>");
     });
   }
 });
@@ -67,7 +89,7 @@ describe("what each figure says", () => {
     expect(html).toContain("where it meets &quot;Map&quot;");
   });
 
-  it("contrast shows the text in its measured colours, once for each scheme its findings cover", () => {
+  it("contrast shows the text in its measured colours, once for each scheme its findings cover, with no scale beside the ratios", () => {
     const light = finding(SAMPLES["colour-pair"], { scenario: "rooms-list", view: "phone" });
     const dark = finding({ ...SAMPLES["colour-pair"], scheme: "dark", foreground: "#52525b", background: "#121212", ratio: 2.31 }, { scenario: "rooms-list", view: "phone-dark" });
     const other = finding({ ...SAMPLES["colour-pair"], text: "Another line", scheme: "dark" }, { scenario: "rooms-list", view: "phone-dark" });
@@ -77,7 +99,8 @@ describe("what each figure says", () => {
     expect(html).toContain("2.31:1");
     expect(html).toContain("color:#a1a1aa;background:#ffffff");
     expect(html).toContain("color:#52525b;background:#121212");
-    expect(html).toContain("AA 4.5:1");
+    expect(html).toContain("16 px: needs 4.5:1");
+    expect(html).not.toContain("contrast-scale");
     expect(html).not.toContain("Another line");
   });
 
@@ -88,37 +111,28 @@ describe("what each figure says", () => {
     expect(html).toContain("skips a level");
   });
 
-  it("a count names itself to a screen reader, and marks what is past the limit", () => {
-    const html = draw(finding(SAMPLES["count-vs-cap"]));
-    expect(html).toContain('role="img" aria-label="2, at most 1 primary actions"');
-    expect(html.match(/data-pip="over"/g)).toHaveLength(1);
-  });
-
-  it("a route's map numbers each step, marks the one past the budget, and lists the same steps in words", () => {
+  it("a route's map numbers each step, marks the one past the budget, and lists the same steps in words, with no pips", () => {
     const html = draw(finding(SAMPLES["route-vs-budget"]));
     expect(html.match(/data-testid="flow-step"/g)).toHaveLength(3);
     expect(html.match(/data-testid="flow-step" data-over=""/g)).toHaveLength(1);
     expect(html).toContain('data-testid="flow-limit"');
     expect(html).toContain("3 steps on the longest route, budget 2");
     expect(html).toContain("past the budget of 2");
+    expect(html).not.toContain('class="pip"');
   });
 });
 
-describe("the fallback", () => {
-  it("a finding with no evidence and no element stands as its message alone", () => {
+describe("a finding with no figure", () => {
+  it("with no evidence stands as its message alone", () => {
     expect(draw(finding())).toBe("<p>Core&#x27;s exact words.</p>");
   });
 
-  it("a finding with an element in a measured snapshot gets its outline, and a rule found in several places a count", () => {
+  it("with an element in a measured snapshot, found in several places, still stands as its message alone: the frame outlines the element", () => {
     const report = checkPrototype({ config: nook, prototype: legal, snapshots: renderedCases.find((item) => item.name === "unnamed-control")?.snapshots() ?? [] });
     const found = report.findings.find((item) => item.rule === "accessible-names");
     if (!found) throw new Error("no finding");
-    const snapshot = renderedCases.find((item) => item.name === "unnamed-control")?.snapshots().find((item) => item.scenario === found.scenario && item.view === found.view);
-    const view = nook.views.find((item) => item.name === found.view);
-    const html = renderToStaticMarkup(createElement(EvidenceFigure, { finding: found, findings: [found, found, found], snapshot, view, children: createElement("p", null, found.message) }));
-    expect(html).toContain('data-evidence="fallback"');
-    expect(html).toContain('data-testid="figure-outline-fallback"');
-    expect(html).toContain('aria-label="Found in 3 places"');
-    expect(html).toContain("has no accessible name.");
+    expect(found.element).toBeDefined();
+    const html = draw(found, [found, found, found]);
+    expect(html).toBe(`<p>${found.message.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#x27;")}</p>`);
   });
 });

@@ -321,7 +321,7 @@ There are seven kinds, and the rule's **type** decides the kind, never the indiv
 1. Add the type to the vocabulary as usual (`rules/types.ts`, `rules/schema.ts`, an evaluator in `engine/check.ts`).
 2. Declare it in `RULE_EVIDENCE`: an existing kind, or `{ textOnly: "why" }`. The build fails until you do, because the table's type lists every rule type and every flow and rendered check.
 3. If it has a kind, set `evidence` on its findings in its evaluator, from the values the verdict was decided with. [`test/evidence.test.ts`](test/evidence.test.ts) fails a declared kind that no fixture finding of that type carries, and a finding that carries a kind its type did not declare.
-4. Only when no kind fits, add one: a type in `evidence.ts` and its name in `EVIDENCE_KINDS`. The app then fails its own build and test until it registers a figure for it (`apps/web`, [Visual checks](../../apps/web/README.md#visual-checks)).
+4. Only when no kind fits, add one: a type in `evidence.ts` and its name in `EVIDENCE_KINDS`. The app then fails its own build and test until it registers the kind: a figure for it, or the reason its message stands alone (`apps/web`, [Visual checks](../../apps/web/README.md#visual-checks)).
 
 A snapshot may also carry the page's `scrollHeight`. No rule reads it: it is evidence, so a picture can show how far a page runs past its first view.
 

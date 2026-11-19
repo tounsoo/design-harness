@@ -1,22 +1,28 @@
 import { Text } from "@tounsoo/todae";
 import { Check, X } from "lucide-react";
 import { useContext, useId, type ReactNode } from "react";
-import type { Evidence, EvidenceKind, Finding, RenderedSnapshot, View } from "@design-harness/core";
+import type { Evidence, EvidenceKind, Finding } from "@design-harness/core";
 import { FlowMap } from "./FlowMap";
-import { Bar, VisualContext } from "./parts";
-import { boxFigure, contrastPosition, countBar, outlineRows, regionFigure } from "./geometry";
+import { VisualContext } from "./parts";
+import { boxFigure, outlineRows, regionFigure } from "./geometry";
 
 /**
- * Evidence figures: what a rule measured, drawn from core's evidence. There
- * is one figure per evidence kind, never per rule, so a rule a proposal adds
- * in the existing vocabulary is drawn the day it is adopted. A figure is a
- * schematic of measured boxes, not the page's pixels, and it decides
- * nothing: core's message stays beside it word for word, as its caption and
- * its text alternative.
+ * Evidence figures: what a rule measured, drawn from core's evidence. Every
+ * evidence kind has one entry, never one per rule, so a rule a proposal adds
+ * in the existing vocabulary is shown the day it is adopted. An entry either
+ * draws a figure or says in words why it draws none.
  *
- * To draw a new evidence kind, add its figure to `FIGURES`. The type fails
- * to compile, and `figures.test.ts` fails, until every kind core declares
- * has one.
+ * A kind draws only when the picture shows what core's message cannot: a
+ * size, a ratio seen as the colours themselves, a place on the page, a gap
+ * in an order, a route. A number against a limit reads whole in the message
+ * ("has 2 primary actions, more than 1"), so it draws nothing: pips beside
+ * that sentence would only repeat it. A figure is a schematic of measured
+ * boxes, not the page's pixels, and it decides nothing: core's message stays
+ * beside it word for word, as its caption and its text alternative.
+ *
+ * To show a new evidence kind, add its entry to `FIGURES`. The type fails to
+ * compile, and `figures.test.ts` fails, until every kind core declares has
+ * decided: a figure, or the reason for none.
  */
 
 export type FigureProps<K extends EvidenceKind = EvidenceKind> = {
@@ -26,46 +32,51 @@ export type FigureProps<K extends EvidenceKind = EvidenceKind> = {
   readonly findings: readonly Finding[];
 };
 
-type FigureEntry<K extends EvidenceKind> = {
-  /** What the figure shows, in a few words, for its note. */
-  readonly note: string;
-  readonly Figure: (props: FigureProps<K>) => ReactNode;
-};
+export type FigureEntry<K extends EvidenceKind = EvidenceKind> =
+  | {
+      /** What the figure shows that the message cannot, in a few words. */
+      readonly shows: string;
+      readonly Figure: (props: FigureProps<K>) => ReactNode;
+    }
+  | {
+      /** Why this kind's message stands alone, in words. */
+      readonly wordsOnly: string;
+    };
 
 export const FIGURES: { readonly [K in EvidenceKind]: FigureEntry<K> } = {
-  "box-with-neighbour": { note: "The control, its circle and the control it meets, from measured boxes", Figure: BoxWithNeighbour },
-  "colour-pair": { note: "The text in its measured colours", Figure: ColourPair },
-  "sequence-gap": { note: "The page's outline", Figure: SequenceGap },
-  "count-vs-cap": { note: "The count against its limit", Figure: CountVsCap },
-  "region-line": { note: "The page in miniature, from measured boxes", Figure: RegionLine },
-  "route-vs-budget": { note: "The task's routes, the longest numbered", Figure: RouteVsBudget },
-  coverage: { note: "The flow's states with a scenario", Figure: Coverage },
+  "box-with-neighbour": { shows: "The control at scale, its circle and the control it meets: sizes and a gap, from measured boxes", Figure: BoxWithNeighbour },
+  "colour-pair": { shows: "The text in its measured colours, as it is painted in each scheme", Figure: ColourPair },
+  "sequence-gap": { shows: "The page's outline in order, with the level it skips", Figure: SequenceGap },
+  "count-vs-cap": { wordsOnly: "A count against its limit is two numbers, and core's message says both and names each element counted. The elements are outlined in their frames." },
+  "region-line": { shows: "Where the first view ends or the view's edge runs, and how far the element or the page lies past it", Figure: RegionLine },
+  "route-vs-budget": { shows: "The task's routes as a map, the longest numbered against the budget", Figure: RouteVsBudget },
+  coverage: { wordsOnly: "How many states have a scenario is two numbers, and the message names the state that has none. The coverage grid shows every state against every view." },
 };
 
+/** The figure of a finding's evidence kind, when that kind draws one. */
+function figureOf(finding: Finding): ((props: FigureProps) => ReactNode) | undefined {
+  const entry = finding.evidence ? (FIGURES[finding.evidence.kind] as FigureEntry | undefined) : undefined;
+  return entry && "Figure" in entry ? entry.Figure : undefined;
+}
+
+/** True when a finding has a figure to show: it carries evidence of a kind that draws. */
+export function drawsFigure(finding: Finding): boolean {
+  return figureOf(finding) !== undefined;
+}
+
 /**
- * A finding's figure with core's message as its caption (`children`). With
- * no evidence it falls back to the element's outline on a miniature of its
- * page, when the finding has an element in a measured snapshot, and a bar
- * of how many places the rule found; with neither there is no figure, and
- * the message stands alone.
+ * A finding's figure with core's message as its caption (`children`). A
+ * finding with no evidence, or with evidence of a kind that reads whole in
+ * words, has no figure: the message stands alone, with nothing above it.
  */
-export function EvidenceFigure({ finding, findings, snapshot, view, children }: { readonly finding: Finding; readonly findings: readonly Finding[]; readonly snapshot?: RenderedSnapshot | undefined; readonly view?: View | undefined; readonly children: ReactNode }) {
+export function EvidenceFigure({ finding, findings, children }: { readonly finding: Finding; readonly findings: readonly Finding[]; readonly children: ReactNode }) {
   const evidence = finding.evidence;
-  const entry = evidence ? (FIGURES[evidence.kind] as FigureEntry<EvidenceKind> | undefined) : undefined;
-  const element = finding.element !== undefined ? snapshot?.elements[finding.element] : undefined;
-  const fallback = !entry && ((element !== undefined && view !== undefined) || findings.length > 1);
-  if (!entry && !fallback) return <>{children}</>;
+  const Figure = figureOf(finding);
+  if (!evidence || !Figure) return <>{children}</>;
   return (
-    <figure className="evidence" data-evidence={evidence && entry ? evidence.kind : "fallback"} data-testid="evidence">
+    <figure className="evidence" data-evidence={evidence.kind} data-testid="evidence">
       <div className="evidence-figure">
-        {evidence && entry ? (
-          <entry.Figure evidence={evidence} finding={finding} findings={findings} />
-        ) : (
-          <>
-            {element && view && <ElementOutline rect={element.rect} view={view} pageHeight={snapshot?.scrollHeight} />}
-            {findings.length > 1 && <Bar bar={{ pips: Array.from({ length: Math.min(findings.length, 12) }, () => "over" as const), limitAfter: 0, more: Math.max(0, findings.length - 12), words: `Found in ${findings.length} places` }} limit={false} />}
-          </>
-        )}
+        <Figure evidence={evidence} finding={finding} findings={findings} />
       </div>
       <figcaption className="evidence-caption">{children}</figcaption>
     </figure>
@@ -193,7 +204,6 @@ function schemesOf(finding: Finding, findings: readonly Finding[]): Extract<Evid
 
 function ColourPair({ evidence, finding, findings }: FigureProps<"colour-pair">) {
   const schemes = schemesOf(finding, findings);
-  const needs = [...new Set(schemes.map((item) => item.needs))].sort((a, b) => a - b);
   return (
     <>
       <ul className="contrast" aria-label="Measured contrast, by colour scheme">
@@ -217,36 +227,7 @@ function ColourPair({ evidence, finding, findings }: FigureProps<"colour-pair">)
           </li>
         ))}
       </ul>
-      <div className="contrast-scale" aria-hidden="true" data-testid="figure-scale">
-        <span className="contrast-track" />
-        {needs.map((need) => (
-          <span key={need} className="contrast-pass" style={{ insetInlineStart: `${contrastPosition(need) * 100}%` }} />
-        ))}
-        {needs.map((need) => (
-          <span key={need} className="contrast-tick" style={{ insetInlineStart: `${contrastPosition(need) * 100}%` }} data-testid="figure-aa">
-            <span>AA {need}:1</span>
-          </span>
-        ))}
-        {schemes.map((item) => (
-          <span key={`${item.scheme}${item.ratio}`} className="contrast-mark" data-scheme={item.scheme} style={{ insetInlineStart: `${contrastPosition(item.ratio) * 100}%` }}>
-            <i />
-          </span>
-        ))}
-      </div>
-      <Legend
-        items={[
-          ...schemes.map((item) => (
-            <>
-              <span className="contrast-mark contrast-mark-key" data-scheme={item.scheme} aria-hidden="true">
-                <i />
-              </span>
-              {item.scheme === "dark" ? "dark" : "light"}, {item.ratio.toFixed(2)}:1
-            </>
-          )),
-          `${evidence.px} px${evidence.weight >= 600 ? ", bold" : ""}: ${evidence.needs === 3 ? "large text needs 3:1" : "needs 4.5:1"}`,
-          "on a scale from 1:1 to 21:1",
-        ]}
-      />
+      <Legend items={[`${evidence.px} px${evidence.weight >= 600 ? ", bold" : ""}: ${evidence.needs === 3 ? "large text needs 3:1" : "needs 4.5:1"}`]} />
     </>
   );
 }
@@ -280,10 +261,6 @@ function SequenceGap({ evidence }: FigureProps<"sequence-gap">) {
       )}
     </ol>
   );
-}
-
-function CountVsCap({ evidence }: FigureProps<"count-vs-cap">) {
-  return <Bar bar={countBar(evidence)} unit={evidence.unit} />;
 }
 
 function RegionLine({ evidence }: FigureProps<"region-line">) {
@@ -346,25 +323,4 @@ function RegionLine({ evidence }: FigureProps<"region-line">) {
 function RouteVsBudget({ evidence }: FigureProps<"route-vs-budget">) {
   const { scenarios, onOpenState } = useContext(VisualContext);
   return <FlowMap scenarios={scenarios} onOpenState={onOpenState} task={{ id: evidence.task, start: evidence.start, success: evidence.success, budget: evidence.budget, transitions: evidence.transitions, longest: evidence.route, status: evidence.steps > evidence.budget ? "over" : "fits" }} />;
-}
-
-function Coverage({ evidence }: FigureProps<"coverage">) {
-  const pips = Array.from({ length: Math.min(evidence.states, 12) }, (_, index) => (index < evidence.covered ? ("within" as const) : ("missing" as const)));
-  return <Bar bar={{ pips, limitAfter: pips.length, more: Math.max(0, evidence.states - 12), words: `${evidence.covered} of ${evidence.states} flow states have a scenario` }} limit={false} />;
-}
-
-/** The fallback: the element's box on a miniature of its page, with nothing else claimed about it. */
-function ElementOutline({ rect, view, pageHeight }: { readonly rect: { x: number; y: number; width: number; height: number }; readonly view: View; readonly pageHeight?: number | undefined }) {
-  const figure = regionFigure({ kind: "region-line", axis: "y", line: view.height, from: rect.y, to: rect.y + rect.height, box: rect, view: { width: view.width, height: view.height }, ...(pageHeight !== undefined ? { pageHeight } : {}) }, { width: 280, height: 120 }, { closeUp: false, labels: 0 });
-  const box = figure.box;
-  return (
-    <>
-      <svg className="vis-svg" viewBox={`0 0 ${figure.size.width} ${figure.size.height}`} aria-hidden="true" data-testid="figure-outline-fallback">
-        <rect className="vis-box" x={figure.view.x} y={figure.view.y} width={figure.view.width} height={figure.view.height} />
-        <rect className="vis-page" x={figure.page.x} y={figure.page.y} width={figure.page.width} height={figure.page.height} fill="none" />
-        {box && <rect className="vis-subject vis-subject-fail" x={box.x - 1.5} y={box.y - 1.5} width={Math.max(box.width, 2) + 3} height={Math.max(box.height, 2) + 3} rx="2" />}
-      </svg>
-      <Legend items={["Where it is on the page, in miniature"]} />
-    </>
-  );
 }

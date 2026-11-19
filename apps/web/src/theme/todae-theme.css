@@ -80,7 +80,6 @@
   --todae-harness-figure-indent: var(--_todae-harness-figure-indent, 1.125rem);
   --todae-harness-figure-mark: var(--_todae-harness-figure-mark, 0.75rem);
   --todae-harness-figure-node: var(--_todae-harness-figure-node, 5.5rem);
-  --todae-harness-figure-pip: var(--_todae-harness-figure-pip, 1.375rem);
   --todae-harness-figure-slot: var(--_todae-harness-figure-slot, 1.75rem);
   --todae-harness-figure-stop: var(--_todae-harness-figure-stop, 0.5rem);
   --todae-harness-figure-swatch: var(--_todae-harness-figure-swatch, 1rem);

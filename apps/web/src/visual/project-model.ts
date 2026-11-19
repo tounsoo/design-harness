@@ -1,12 +1,11 @@
 import type { Bound, Cap, ChangeClass, InventoryOp, PageType, ProjectConfig, Proposal, ProposalStatus, RuleSpec, Task, TaskFacts } from "@design-harness/core";
 import { humanize } from "../app/words";
-import { countBar, type CountBar } from "./geometry";
 
 /**
  * What the Project and Proposals tabs draw, worked out from the project
  * config and core's facts: which group a rule belongs to, which figure it
- * gets, what a page type's slots are, a cap as a meter, a task's budget as
- * pips, where a proposal stands and what it leads with. Pure functions of
+ * gets, what a page type's slots are, a cap and a task's budget in words,
+ * where a proposal stands and what it leads with. Pure functions of
  * data core already decided; nothing here passes or fails anything, and
  * every number is the config's or core's own.
  */
@@ -148,12 +147,9 @@ export function pageTypeWords(type: PageType): { readonly kind: string; readonly
   return { kind, slots: `${plural(type.slots.length, "slot")}, ${chrome} of them chrome. ${type.kind === "action" ? `Primary slot: ${type.primarySlot}.` : "No primary slot."}` };
 }
 
-/** How many pips a meter draws before it becomes a number alone. */
-export const MOST_PIPS = 12;
-
 export type CapMeter = {
-  /** `size`: a length in CSS px, drawn at its actual size. `pips`: a count, one pip per unit up to the limit. `number`: too large for pips. */
-  readonly kind: "size" | "pips" | "number";
+  /** `size`: a length in CSS px, drawn at its actual size, which words cannot show. `number`: a count, which reads whole in its words and draws nothing. */
+  readonly kind: "size" | "number";
   readonly value: number;
   /** "at most 1", "at least 24 px". */
   readonly words: string;
@@ -163,12 +159,12 @@ export type CapMeter = {
   readonly title: string;
 };
 
-/** A cap as a meter: the limit from the config, and which way is stricter. It says nothing about how much of it a prototype uses. */
+/** A cap's limit from the config, and which way is stricter. It says nothing about how much of it a prototype uses. */
 export function capMeter(name: string, cap: Cap): CapMeter {
   const px = name.endsWith("_PX");
   const bound = cap.stricter === "lower" ? "at most" : "at least";
   return {
-    kind: px ? "size" : cap.value <= MOST_PIPS && Number.isInteger(cap.value) && cap.value >= 0 ? "pips" : "number",
+    kind: px ? "size" : "number",
     value: cap.value,
     words: `${bound} ${cap.value}${px ? " px" : ""}`,
     direction: `stricter when ${cap.stricter}`,
@@ -183,7 +179,6 @@ export function capDirection(cap: Pick<Cap, "stricter">, before: number, after: 
 }
 
 export type BudgetMeter = {
-  readonly bar: CountBar;
   /** "at most 3 steps". */
   readonly words: string;
   /** What core's flow facts say of the open prototype's routes; absent when no prototype is open. */
@@ -191,16 +186,15 @@ export type BudgetMeter = {
 };
 
 /**
- * A task's step budget as pips to a limit. With core's facts for the open
- * prototype (`flowFacts`), the pips its longest route takes are filled and
- * the rest are hollow; without them every pip is hollow, and nothing is
- * said about today.
+ * A task's step budget in words, and, with core's facts for the open
+ * prototype (`flowFacts`), what its longest route takes today against it.
+ * Two small numbers read whole in a sentence; the route itself is drawn by
+ * the flow map.
  */
 export function budgetMeter(task: Task, facts: TaskFacts | undefined, prototype: string | undefined): BudgetMeter {
   const steps = facts?.longest?.length;
-  const bar = countBar({ count: steps ?? 0, cap: task.maxSteps, bound: "max" }, MOST_PIPS);
   const words = `at most ${plural(task.maxSteps, "step")}`;
-  if (!facts || prototype === undefined) return { bar: { ...bar, words }, words };
+  if (!facts || prototype === undefined) return { words };
   const today =
     facts.status === "fits" || facts.status === "over"
       ? { text: `${prototype}'s longest route today: ${plural(steps ?? 0, "step")}${facts.status === "over" ? `, ${(steps ?? 0) - task.maxSteps} over the limit` : steps === task.maxSteps ? ", at the limit" : ""}.`, over: facts.status === "over" }
@@ -209,7 +203,7 @@ export function budgetMeter(task: Task, facts: TaskFacts | undefined, prototype:
         : facts.status === "too-many"
           ? { text: `${prototype} has more routes than can be walked.`, over: false }
           : { text: `${prototype} does not model this task.`, over: false };
-  return { bar: { ...bar, words: steps === undefined ? words : `${plural(steps, "step")} today, ${words.replace(/ steps?$/, "")}` }, words, today };
+  return { words, today };
 }
 
 // ---- Proposals --------------------------------------------------------------------

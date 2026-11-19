@@ -319,7 +319,7 @@
    * page or a dark one, never from the app's appearance. A failure is never colour alone: it is hatched or solid
    * where passing things are dashed, it carries a mark, and it is said in words beside the picture.
    */
-  .evidence, .flow, .coverage, .count-bar, .task-maps, .rule-glyph, .slot-diagram, .slot-legend, .cap, .cap-change, .preview { --vis-ink: var(--todae-color-fg-default); --vis-muted: var(--todae-color-fg-muted); --vis-fail: var(--todae-color-status-critical-fg); --vis-line: var(--todae-color-border-default); --vis-surface: var(--todae-color-bg-surface); --vis-halo: var(--todae-color-bg-subtle); }
+  .evidence, .flow, .coverage, .task-maps, .rule-glyph, .slot-diagram, .slot-legend, .cap, .cap-change, .preview { --vis-ink: var(--todae-color-fg-default); --vis-muted: var(--todae-color-fg-muted); --vis-fail: var(--todae-color-status-critical-fg); --vis-line: var(--todae-color-border-default); --vis-surface: var(--todae-color-bg-surface); --vis-halo: var(--todae-color-bg-subtle); }
   .lens-layer[data-scheme="light"] { --vis-ink: var(--todae-harness-annotation-on-light-ink); --vis-fail: var(--todae-harness-annotation-on-light-fail); --vis-halo: var(--todae-harness-annotation-on-light-halo); }
   .lens-layer[data-scheme="dark"] { --vis-ink: var(--todae-harness-annotation-on-dark-ink); --vis-fail: var(--todae-harness-annotation-on-dark-fail); --vis-halo: var(--todae-harness-annotation-on-dark-halo); }
 
@@ -330,18 +330,17 @@
   .evidence-legend li { display: inline-flex; align-items: center; gap: var(--todae-space-1); }
   .legend-mark { display: inline-block; inline-size: var(--todae-harness-figure-swatch); block-size: var(--todae-harness-figure-mark); flex: none; }
   .legend-dash { block-size: 0; border-block-start: var(--todae-harness-annotation-stroke) dashed var(--vis-ink); }
-  .legend-hatch, .pip[data-pip="over"] { background: repeating-linear-gradient(135deg, var(--vis-fail) 0 var(--todae-harness-annotation-hatch-line), transparent var(--todae-harness-annotation-hatch-line) calc(var(--todae-harness-annotation-hatch-gap) * 0.7)); outline: var(--todae-harness-annotation-stroke) solid var(--vis-fail); outline-offset: calc(-1 * var(--todae-harness-annotation-stroke)); }
+  .legend-hatch { background: repeating-linear-gradient(135deg, var(--vis-fail) 0 var(--todae-harness-annotation-hatch-line), transparent var(--todae-harness-annotation-hatch-line) calc(var(--todae-harness-annotation-hatch-gap) * 0.7)); outline: var(--todae-harness-annotation-stroke) solid var(--vis-fail); outline-offset: calc(-1 * var(--todae-harness-annotation-stroke)); }
 
   .vis-svg { display: block; inline-size: 100%; block-size: auto; overflow: visible; }
   .vis-hatch line { stroke: var(--vis-fail); stroke-width: var(--todae-harness-annotation-hatch-line); }
   .vis-box { fill: var(--vis-surface); stroke: var(--vis-line); stroke-width: var(--todae-harness-annotation-stroke); }
   .vis-subject { fill: var(--vis-surface); stroke: var(--vis-ink); stroke-width: var(--todae-harness-annotation-stroke-strong); }
-  .vis-subject-fail { fill: none; stroke: var(--vis-fail); }
   .vis-guide { fill: none; stroke: var(--vis-ink); stroke-width: var(--todae-harness-annotation-stroke); stroke-dasharray: var(--todae-harness-annotation-dash); }
   .vis-fail-area { stroke: none; }
   .vis-fail-edge { stroke: var(--vis-fail); stroke-width: var(--todae-harness-annotation-stroke); }
   .vis-dimension line { stroke: var(--vis-muted); stroke-width: var(--todae-border-width); }
-  .vis-ghost, .vis-page { fill: none; stroke: var(--vis-muted); stroke-width: var(--todae-border-width); stroke-dasharray: var(--todae-harness-annotation-dash); }
+  .vis-ghost { fill: none; stroke: var(--vis-muted); stroke-width: var(--todae-border-width); stroke-dasharray: var(--todae-harness-annotation-dash); }
   .vis-line-strong { stroke: var(--vis-ink); stroke-width: var(--todae-harness-annotation-stroke-strong); }
   .vis-text { font-family: var(--todae-text-font-family); font-size: var(--todae-harness-annotation-label-size); fill: var(--vis-ink); font-variant-numeric: tabular-nums; }
   .vis-text-muted { fill: var(--vis-muted); }
@@ -353,23 +352,12 @@
   .vis-verdict-icon, .coverage-icon, .lens-words-icon { display: inline-grid; place-items: center; flex: none; }
   .vis-verdict-icon svg, .coverage-icon svg, .lens-words-icon svg { inline-size: 1em; block-size: 1em; }
 
-  /* Contrast: the text in its measured colours, a row per scheme, and where each ratio falls against AA. */
+  /* Contrast: the text in its measured colours, a row per scheme with its ratio. */
   .contrast { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--todae-space-2); }
   .contrast-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--todae-space-1) var(--todae-space-2); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
   .contrast-sample { padding: var(--todae-space-1) var(--todae-space-2); border: var(--todae-border-width) solid var(--todae-color-border-default); border-radius: var(--todae-radius-sm); font-size: var(--todae-font-size-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .contrast-pair { grid-column: 2 / -1; display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--todae-space-1); color: var(--todae-color-fg-muted); font-family: var(--todae-font-family-mono); }
   .contrast-swatch { display: inline-block; inline-size: var(--todae-harness-figure-mark); block-size: var(--todae-harness-figure-mark); border: var(--todae-border-width) solid var(--todae-color-border-default); border-radius: var(--todae-radius-sm); }
-  .contrast-scale { position: relative; block-size: calc(var(--todae-harness-figure-swatch) * 3); margin-inline: var(--todae-space-4); font-size: var(--todae-harness-annotation-label-size); }
-  .contrast-track, .contrast-pass { position: absolute; inset-block-start: calc(var(--todae-harness-figure-swatch) * 1.5); block-size: var(--todae-harness-figure-track); border-radius: var(--todae-radius-full); }
-  .contrast-track { inset-inline: 0; background: var(--vis-line); }
-  .contrast-pass { inset-inline-end: 0; background: var(--vis-ink); border-start-start-radius: 0; border-end-start-radius: 0; }
-  .contrast-tick { position: absolute; inset-block-start: calc(var(--todae-harness-figure-swatch) * 1.1); block-size: calc(var(--todae-harness-figure-swatch) * 1.2); border-inline-start: var(--todae-harness-annotation-stroke-strong) solid var(--vis-ink); }
-  .contrast-tick span { position: absolute; inset-block-start: 100%; inset-inline-start: 0; translate: -50% 0; white-space: nowrap; font-weight: var(--todae-font-weight-medium); }
-  /* A failing ratio is a diamond on the scale, solid in the light scheme and hollow in the dark, so two schemes are told apart by shape. */
-  .contrast-mark { position: absolute; inset-block-start: calc(var(--todae-harness-figure-swatch) * 1.5 + var(--todae-harness-figure-track) / 2); translate: -50% -50%; display: grid; }
-  .contrast-mark i { display: block; inline-size: var(--todae-harness-figure-mark); block-size: var(--todae-harness-figure-mark); background: var(--vis-fail); rotate: 45deg; border: var(--todae-harness-annotation-stroke-strong) solid var(--vis-fail); box-sizing: border-box; outline: var(--todae-harness-annotation-stroke) solid var(--vis-halo); }
-  .contrast-mark[data-scheme="dark"] i { background: var(--vis-halo); }
-  .contrast-mark-key { position: static; translate: none; margin-inline: calc(var(--todae-space-1) / 2); scale: 0.8; }
 
   /* Headings: the outline, indented by level, with a skipped level as an empty dashed row. */
   .outline { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--todae-space-1); font-size: var(--todae-font-size-1); }
@@ -381,15 +369,7 @@
   .outline-row[data-hidden] .outline-text, .outline-note, .outline-more { color: var(--vis-muted); }
   .outline-more { padding-inline-start: var(--todae-space-2); }
 
-  /* A count against its cap: pips and a limit line. */
-  .count-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--todae-space-2) var(--todae-space-3); font-size: var(--todae-font-size-1); }
-  .pips { display: inline-flex; align-items: center; gap: var(--todae-space-1); }
-  .pip { display: block; inline-size: var(--todae-harness-figure-pip); block-size: var(--todae-harness-figure-mark); border-radius: var(--todae-radius-sm); background: var(--vis-ink); }
-  .pip[data-pip="missing"] { background: none; outline: var(--todae-harness-annotation-stroke) dashed var(--vis-muted); outline-offset: calc(-1 * var(--todae-harness-annotation-stroke)); }
-  .pip-limit { display: block; inline-size: 0; block-size: calc(var(--todae-harness-figure-mark) * 2); border-inline-start: var(--todae-harness-annotation-stroke-strong) dashed var(--vis-ink); margin-inline: calc(var(--todae-space-1) / 2); }
-  .pips-more { color: var(--vis-muted); }
   .count-words { font-variant-numeric: tabular-nums; }
-  .count-bar:has(.pip[data-pip="over"]) .count-words { color: var(--vis-fail); font-weight: var(--todae-font-weight-bold); }
 
   /* The flow map: the longest route as a spine of numbered steps, the other transitions dashed. */
   .flow { display: grid; gap: var(--todae-space-2); min-width: 0; }
@@ -418,6 +398,8 @@
   .flow-step-event { font-family: var(--todae-font-family-mono); }
   .flow-step-over { color: var(--vis-fail); font-weight: var(--todae-font-weight-bold); }
   .flow-state-name { font-weight: var(--todae-font-weight-medium); }
+  .flow-count { margin: 0; font-size: var(--todae-font-size-1); font-variant-numeric: tabular-nums; }
+  .flow-count[data-over] { color: var(--vis-fail); font-weight: var(--todae-font-weight-bold); }
   .flow-note { margin: 0; color: var(--todae-color-fg-muted); font-size: var(--todae-font-size-1); }
   .task-maps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--todae-space-4); }
   .task-map { display: grid; gap: var(--todae-space-2); min-width: 0; }
@@ -718,15 +700,13 @@
   .class-stop[data-current] .class-stop-line { block-size: var(--todae-harness-figure-track); margin-block-start: 0; background: var(--todae-color-fg-default); }
   .class-stop[data-current] .class-stop-line::after { content: ""; position: absolute; inset-block-start: 100%; inset-inline-start: 50%; translate: -50% 0; border: var(--todae-harness-figure-stop) solid transparent; border-block-end-width: 0; border-block-start-color: var(--todae-color-fg-default); }
   .class-stop[data-current] .class-stop-title { color: var(--todae-color-fg-default); font-weight: var(--todae-font-weight-bold); }
-  .class-stop-title { font-weight: var(--todae-font-weight-medium); }
-  .class-scale:not([data-small]) .class-stop-title { font-size: var(--todae-font-size-2); }
+  .class-stop-title { font-weight: var(--todae-font-weight-medium); font-size: var(--todae-font-size-2); }
 
   .proposal-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--todae-harness-size-proposal-card)), 1fr)); gap: var(--todae-space-4); }
   .proposal-card { --todae-card-padding: 0; --todae-card-gap: 0; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
   .proposal-card[data-waiting] { box-shadow: 0 0 0 var(--todae-focus-ring-width) var(--todae-color-status-warning-border), var(--todae-card-shadow); }
   .proposal-card-body { display: grid; gap: var(--todae-space-2); align-content: start; justify-items: start; padding: var(--todae-space-3) var(--todae-space-4) var(--todae-space-4); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); min-width: 0; }
   .proposal-card-body .proposals-title { font-size: var(--todae-font-size-2); --todae-button-font-size: var(--todae-font-size-2); white-space: normal; overflow-wrap: anywhere; block-size: auto; }
-  .proposal-card-body .class-scale { justify-self: stretch; }
   .proposal-standing { overflow-wrap: anywhere; }
   .proposal-examples { display: flex; flex-wrap: wrap; gap: var(--todae-space-1) var(--todae-space-3); }
   .proposal-example { display: inline-flex; align-items: center; gap: var(--todae-space-1); }
