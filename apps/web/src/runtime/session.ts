@@ -1,6 +1,6 @@
 import { checkPrototype, extractPrototype, specModel, type CheckReport, type ComponentLibrary, type PageType, type ProjectConfig, type Prototype, type PrototypeModel, type RenderedSnapshot, type Scenario, type View } from "@design-harness/core";
 import { frameDocument } from "./frame-document";
-import { resolvePackages, type PackageSource, type RuntimePackages } from "./package-source";
+import { PACKAGES_UNAVAILABLE, resolvePackages, sourceFor, type PackageSource, type RuntimePackages } from "./package-source";
 import { RENDER_SLOTS, type RenderSlots } from "./render-slots";
 import { PROTOCOL, readFrameMessage, type FrameMessage, type FrameStage, type ModuleSource, type PageRef, type RenderRequest, type RootRef } from "./protocol";
 import { SPEC_RENDERER, specParts, specPayload } from "./spec-payload";
@@ -63,6 +63,8 @@ export type SessionState = {
 
 export type SessionOptions = {
   readonly source: PackageSource;
+  /** esm.sh, when the deployment lets a project load its library from there (`library.source`); null or absent when it does not. */
+  readonly esm?: PackageSource | null;
   /** The page kit module's code. */
   readonly kit: string;
   /** The spec renderer module's code, which a spec prototype's frames import. */
@@ -112,6 +114,8 @@ export class Session {
   private modules: Readonly<Record<string, ModuleSource>> = {};
   private packages: { key: string; value: Promise<RuntimePackages> } | null = null;
   private resolved: RuntimePackages | null = null;
+  /** The source the current revision's packages come from, whose origins its frames' CSP names. */
+  private source: PackageSource;
   private readonly channels = new Map<string, FrameKey>();
   /** Where each measured frame's page is scrolled to, and who is listening. Kept out of the state: a scroll re-renders one overlay, not the board. */
   private readonly scrolls = new Map<FrameKey, { readonly x: number; readonly y: number }>();
@@ -124,6 +128,7 @@ export class Session {
 
   constructor(private readonly options: SessionOptions) {
     this.tags = options.tags ?? tagsByDefault();
+    this.source = options.source;
     this.slots = options.slots ?? RENDER_SLOTS;
     options.window.addEventListener("message", this.onMessage);
   }
@@ -182,22 +187,24 @@ export class Session {
     this.scrolls.clear();
     this.set({ revision, frames, frameStates, compileProblems: compiled.problems, report: checkPrototype({ config, prototype, model }), measured: false });
 
-    const libraryKey = JSON.stringify([config.library.package, config.library.version, config.library.react, config.library.stylesheets ?? [], spec]);
+    const libraryKey = JSON.stringify([config.library.package, config.library.version, config.library.react, config.library.stylesheets ?? [], spec, config.library.source ?? null]);
     if (this.packages?.key !== libraryKey) {
       this.resolved = null;
-      const value = resolvePackages(config.library, this.options.source, { spec });
+      const source = sourceFor(config.library, { page: this.options.source, esm: this.options.esm ?? null });
+      this.source = source;
+      const value = resolvePackages(config.library, source, { spec });
       this.packages = { key: libraryKey, value };
       this.set({ packages: { state: "loading" } });
       value.then(
         (packages) => {
           if (this.packages?.value !== value) return;
           this.resolved = packages;
-          this.set({ packages: { state: "ready", source: this.options.source.name } });
+          this.set({ packages: { state: "ready", source: source.name } });
           for (const [key, attached] of this.attached) if (attached.generation === this.state.revision) this.sendIfReady(key);
         },
         (error: unknown) => {
           if (this.packages?.value !== value) return;
-          const message = `Packages could not load from the ${this.options.source.name} source: ${error instanceof Error ? error.message : String(error)}`;
+          const message = `${PACKAGES_UNAVAILABLE} from the ${source.name} source: ${error instanceof Error ? error.message : String(error)}`;
           this.set({ packages: { state: "failed", message } });
           this.failAll(message);
         },
@@ -221,7 +228,7 @@ export class Session {
       boot: this.options.boot,
       scheme: spec.view.scheme,
       ...(this.config.library.schemeAttribute ? { schemeAttribute: this.config.library.schemeAttribute } : {}),
-      origins: this.options.source.origins,
+      origins: this.source.origins,
     });
     return { generation: this.state.revision, channel, html };
   }

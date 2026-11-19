@@ -16,6 +16,13 @@ import type { ModuleSource, StyleSource } from "./protocol";
  *   wrong one.
  * - `esmShPackageSource` points the frame at esm.sh, so any published version
  *   loads, with React kept external so the library and the page share one React.
+ *
+ * A page uses one source for every project (`?packages=esm.sh` picks
+ * esm.sh for all of them). A project whose library version the page's
+ * source does not serve can be set, by a person, to load from esm.sh alone
+ * (`library.source`), when the deployment allows it: `sourceFor` picks the
+ * source for one project's library, and the frame's CSP names that source's
+ * origins only, so no other project's frames can reach esm.sh.
  */
 export type PackageRequest = { readonly package: string; readonly version: string };
 
@@ -28,6 +35,24 @@ export interface PackageSource {
   module(specifier: string, request: PackageRequest): Promise<ModuleSource>;
   /** A file inside a package, such as `dist/todae.css`. */
   stylesheet(path: string, request: PackageRequest): Promise<StyleSource>;
+  /** The exact versions of a package this source serves, sorted, or `any` for a CDN that serves every published version. */
+  versions?(name: string): Promise<readonly string[] | "any">;
+}
+
+/** How a failure to load packages starts, wherever it is shown, so a frame's card can tell it from its page's own failure. */
+export const PACKAGES_UNAVAILABLE = "Packages could not load";
+
+/** The page's source, and esm.sh when the deployment lets a project choose it for a version the page's source does not serve. */
+export type PackageSources = { readonly page: PackageSource; readonly esm: PackageSource | null };
+
+/**
+ * The source one project's frames load its library from: esm.sh when the
+ * project chose it and the deployment allows it, else the page's source.
+ * A project that chose esm.sh on a deployment that does not allow it loads
+ * from the page's source, and its failure says so.
+ */
+export function sourceFor(library: Pick<ComponentLibrary, "source">, sources: PackageSources): PackageSource {
+  return library.source === "esm.sh" && sources.esm ? sources.esm : sources.page;
 }
 
 /** What a frame needs from packages: every module by specifier, and the library's stylesheets. */
@@ -99,13 +124,17 @@ export function localPackageSource(base: string, fetchText: Fetch = (url) => fet
     if (!versions) throw new Error(`the local package source has no ${request.package}; it serves only the packages this app was built with (open the app with ?packages=esm.sh to load any package from esm.sh)`);
     const found = Object.hasOwn(versions, request.version) ? versions[request.version] : undefined;
     if (!found) {
-      throw new Error(`the local package source has ${request.package} ${Object.keys(versions).sort().join(", ")}, but the project asks for ${request.version}; it serves only the versions this app was built with`);
+      throw new Error(`the local package source has ${request.package} ${sortVersions(Object.keys(versions)).join(", ")}, but the project asks for ${request.version}; it serves only the versions this app was built with`);
     }
     return found;
   };
   return {
     name: "local",
     origins: [],
+    async versions(name) {
+      manifest ??= get("manifest.json").then((text) => JSON.parse(text) as VendorManifest);
+      return sortVersions(Object.keys((await manifest).packages[name]?.versions ?? {}));
+    },
     async module(specifier, request) {
       const found = await entry(request);
       const file = found.modules[specifier];
@@ -133,6 +162,7 @@ export function esmShPackageSource(origin = "https://esm.sh"): PackageSource {
   return {
     name: "esm.sh",
     origins: [base],
+    versions: () => Promise.resolve("any"),
     module(specifier, request) {
       if (specifier !== request.package && !specifier.startsWith(`${request.package}/`)) return Promise.reject(new Error(`${specifier} is not a module of ${request.package}`));
       const subpath = specifier.slice(request.package.length);
@@ -142,4 +172,23 @@ export function esmShPackageSource(origin = "https://esm.sh"): PackageSource {
       return Promise.resolve({ url: `${base}/${request.package}@${request.version}/${path}` });
     },
   };
+}
+
+/** Versions in numeric order, oldest first: 0.9.0 before 0.10.1. */
+export function sortVersions(versions: readonly string[]): string[] {
+  const parts = (version: string) => version.split(/[.-]/).map((part) => (/^\d+$/.test(part) ? Number(part) : part));
+  return [...versions].sort((a, b) => {
+    const x = parts(a);
+    const y = parts(b);
+    for (let index = 0; index < Math.max(x.length, y.length); index += 1) {
+      const p = x[index];
+      const q = y[index];
+      if (p === q) continue;
+      if (p === undefined) return -1;
+      if (q === undefined) return 1;
+      if (typeof p === "number" && typeof q === "number") return p - q;
+      return String(p) < String(q) ? -1 : 1;
+    }
+    return 0;
+  });
 }
