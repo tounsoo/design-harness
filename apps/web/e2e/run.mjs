@@ -41,7 +41,11 @@ const test = (name, fn) => tests.push({ name, fn });
 // ---- helpers ---------------------------------------------------------------
 
 const SCENARIOS = ["rooms-list", "lantern-open", "lantern-booked", "lantern-held"];
-const VIEWS = ["desktop", "phone"];
+// The seed's views: core's two light ones, and the same two in the dark scheme.
+const VIEWS = ["desktop", "phone", "desktop-dark", "phone-dark"];
+const FRAMES = SCENARIOS.length * VIEWS.length;
+// Tally keeps its own two views.
+const TALLY_VIEWS = ["desktop", "phone"];
 
 async function openApp(browser, base, options = {}) {
   // The fake API's certificate is self-signed; only it is reached at api.anthropic.com (see the runner).
@@ -226,7 +230,7 @@ test("a second primary action brings core's finding: selecting it outlines both 
       assert.equal(await page.locator(`.frame-card[data-frame-key="${scenario}@${view}"]`).getAttribute("data-selected"), "");
     }
   }
-  assert.equal(await page.getByTestId("finding-outline").textContent(), "Outlined in 6 frames (lantern-open, lantern-booked, lantern-held).");
+  assert.equal(await page.getByTestId("finding-outline").textContent(), `Outlined in ${3 * VIEWS.length} frames (lantern-open, lantern-booked, lantern-held).`);
   await shot(page, "failing-source-outlined-light");
   await page.locator('.rule[data-rule="one-primary-per-page"]').getByRole("button", { name: "Show in code" }).first().click();
   await page.waitForSelector('[data-testid="code-line"]');
@@ -248,7 +252,7 @@ test("an undersized control brings the rendered target-size finding, highlighted
   assert.match(finding.message, /^At 1280 by 900: button "A" is \d+×\d+ CSS px, under 24, and fails the spacing exception\.$/);
   assert.equal(typeof finding.element, "number");
   await showAllRules(page);
-  await page.locator('.rule[data-rule="target-size"] .finding').filter({ hasText: finding.message }).filter({ hasText: "scenario lantern-open" }).filter({ hasText: "view desktop" }).click();
+  await page.locator('.rule[data-rule="target-size"] .finding').filter({ hasText: finding.message }).filter({ hasText: "scenario lantern-open" }).filter({ hasText: /view desktop$/ }).click();
   const frame = page.frameLocator('iframe[title="lantern-open at desktop"]');
   await frame.locator("[data-design-harness-overlay]").waitFor({ state: "attached" });
   const overlay = await frame.locator("[data-design-harness-overlay]").boundingBox();
@@ -333,7 +337,7 @@ test("a frame cannot reach the app: no parent DOM, storage, cookies or network",
   assert.ok(flagged.some((message) => message.startsWith("pages/rooms.tsx:1:7 uses window")), `core refuses the prototype that reaches for the app: ${flagged.join(" | ")}`);
 
   const sandboxes = await page.locator("iframe").evaluateAll((elements) => elements.map((element) => element.getAttribute("sandbox")));
-  assert.equal(sandboxes.length, 8);
+  assert.equal(sandboxes.length, FRAMES);
   assert.ok(sandboxes.every((value) => value === "allow-scripts"));
 
   const codeFromStrings = [];
@@ -382,10 +386,7 @@ test("a frame cannot reach the app: no parent DOM, storage, cookies or network",
     });
     if (strings[0] !== undefined) codeFromStrings.push(strings);
   }
-  assert.deepEqual(codeFromStrings, [
-    ["EvalError", "EvalError"],
-    ["EvalError", "EvalError"],
-  ], "the CSP refuses eval and the Function constructor to prototype code in both rooms frames");
+  assert.deepEqual(codeFromStrings, VIEWS.map(() => ["EvalError", "EvalError"]), "the CSP refuses eval and the Function constructor to prototype code in every rooms frame");
 });
 
 test("the board opens a frame at full size and the project view reads the config", async ({ browser, base }) => {
@@ -507,7 +508,7 @@ test("a project on another library, Mantine, renders on the board with every rul
   for (const rule of ["target-size", "accessible-names", "heading-structure", "text-contrast", "rank-1-in-first-view", "no-sideways-scroll"]) {
     assert.equal(value.rules.find((item) => item.rule === rule)?.status, "pass", `${rule} ran on measured Mantine frames`);
   }
-  for (const scenario of TALLY_SCENARIOS) for (const view of VIEWS) assert.equal(await page.locator(`iframe[title="${scenario} at ${view}"]`).count(), 1, `${scenario} at ${view} is on the board`);
+  for (const scenario of TALLY_SCENARIOS) for (const view of TALLY_VIEWS) assert.equal(await page.locator(`iframe[title="${scenario} at ${view}"]`).count(), 1, `${scenario} at ${view} is on the board`);
   // Mantine's own parts, inside its provider, in each view's scheme: the phone view is dark.
   const open = page.frameLocator('iframe[title="lunch-open at desktop"]');
   assert.equal((await open.locator("h1").textContent()).trim(), "Team lunch");
@@ -806,7 +807,7 @@ test("the key is in no frame, export, project storage, page storage or log; reme
   assert.match(await page.getByTestId("key-status").textContent(), /^Key sk-ant-…mnop: in this tab's memory, and stored on this device in IndexedDB database "design-harness-key"/);
 
   const frames = page.frames().filter((item) => item !== page.mainFrame());
-  assert.equal(frames.length, 8);
+  assert.equal(frames.length, FRAMES);
   for (const frame of frames) {
     const seen = await frame.evaluate(async (key) => {
       const reach = async (fn) => {
@@ -1005,6 +1006,12 @@ test("a drafted proposal opens to its review page: examples side by side in fram
   // The flagged line, marked as the code view marks a finding's line.
   const finding = await example(page, "two-toasts").locator(".finding-message").first().textContent();
   assert.match(finding, /^Page "booking" has 2 Toast.Root, more than 1: Toast.Root "Booked" at pages\/booking.tsx:\d+:\d+/);
+  // The failing example's figure: a rule a proposal adds is drawn by its type, a count against its cap, with core's message as the caption.
+  const figure = example(page, "two-toasts").getByTestId("evidence");
+  assert.equal(await figure.getAttribute("data-evidence"), "count-vs-cap");
+  assert.match(await figure.getByTestId("figure-count-words").textContent(), /^2, at most 1 /);
+  assert.equal(await figure.locator('.pip[data-pip="over"]').count(), 1, "the one toast past the cap is marked");
+  assert.equal(await figure.getByTestId("example-figure-message").textContent(), finding);
   const marked = await example(page, "two-toasts").locator('.example-source [data-kind="finding"]').textContent();
   assert.ok(marked.includes("<Toast.Root>Booked</Toast.Root><Toast.Root>Booked</Toast.Root>"), `the marked line holds both toasts: ${marked}`);
   assert.match(await page.getByTestId("review-verdict").textContent(), /^Core's adoption dry run: it would be adopted, classified tightens, and no prototype would newly fail\./);
@@ -1212,14 +1219,14 @@ test("a proposal that adds a rendered rule adopts on measured snapshots, and giv
   // The snapshots it was adopted on are stored with the proposal.
   const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export", exact: true }).click()]);
   const stored = JSON.parse(readFileSync(await download.path(), "utf8")).project.proposals.find((item) => item.id === "harbor-first-view");
-  assert.deepEqual([stored.status, stored.examples.pass[0].snapshots.length, stored.examples.fail[0].snapshots.length], ["adopted", 8, 8]);
+  assert.deepEqual([stored.status, stored.examples.pass[0].snapshots.length, stored.examples.fail[0].snapshots.length], ["adopted", FRAMES, FRAMES]);
 
   await page.reload();
   await measured(page, 1);
   await page.getByRole("tab", { name: "Project" }).click();
   await page.getByRole("button", { name: "Re-run every adopted proposal's examples" }).click();
   assert.match(await page.getByTestId("regression-summary").textContent(), /^All 2 examples behave/);
-  assert.equal(await page.locator("iframe").count(), 8, "re-running reads the stored snapshots: no example is rendered again");
+  assert.equal(await page.locator("iframe").count(), FRAMES, "re-running reads the stored snapshots: no example is rendered again");
   assert.deepEqual(await page.locator('[data-testid="regression"] tbody tr').evaluateAll((rows) => rows.map((row) => [...row.cells].map((cell) => cell.textContent.trim()))), [
     ["harbor-first-view", "as-is", "pass", "behaves", "passes every rule"],
     ["harbor-first-view", "long-intro", "fail", "behaves", 'flagged by "harbor-in-first-view"'],
@@ -1833,7 +1840,7 @@ test("canvas only hides the header and both panels, and its button, shortcut and
   assert.match(await bar.textContent(), /^Booking.*Fit \(\d+%\).*Follows the rules.*Show panels/);
   assert.equal(await page.getByRole("combobox", { name: "Zoom" }).isVisible(), true, "zoom stays");
   await eventually(page, () => page.locator(".board-area").evaluate((element) => element.clientWidth), (wider) => wider > before + 400, `the canvas takes the room from ${before}`);
-  assert.deepEqual(await page.locator(".frame-card").evaluateAll((cards) => cards.map((card) => card.dataset.state)), Array(8).fill("measured"), "the frames stay rendered");
+  assert.deepEqual(await page.locator(".frame-card").evaluateAll((cards) => cards.map((card) => card.dataset.state)), Array(FRAMES).fill("measured"), "the frames stay rendered");
   await shot(page, "canvas-only-light");
   await shotDark(page, "canvas-only-dark");
 
@@ -2047,9 +2054,9 @@ test("a scripted agent offers three variants: side by side in measured frames, e
   // Every scenario and view is measured; the scenario picked is shown.
   for (const id of ["a", "b", "c"]) {
     const frames = page.locator(`.variant-card[data-variant="${id}"] .frame-card`);
-    assert.equal(await frames.count(), 8, `${id}: 4 scenarios × 2 views, measured`);
+    assert.equal(await frames.count(), FRAMES, `${id}: 4 scenarios × 4 views, measured`);
     assert.deepEqual(await frames.evaluateAll((cards) => cards.filter((card) => !card.hasAttribute("data-hidden")).map((card) => card.dataset.frameKey)), ["lantern-open@desktop", "lantern-open@phone"]);
-    assert.equal(await page.locator(`.variant-card[data-variant="${id}"] .frame-card[data-state="measured"]`).count(), 8);
+    assert.equal(await page.locator(`.variant-card[data-variant="${id}"] .frame-card[data-state="measured"]`).count(), FRAMES);
   }
   const askFrame = page.frameLocator('iframe[title="Variant A: lantern-open at desktop"]');
   assert.equal((await askFrame.locator("label").first().textContent()).trim(), "For how long?");
@@ -2407,6 +2414,419 @@ test("code export writes no element tags, for a TSX prototype or a spec", async 
     const entries = unzipSync(readFileSync(await download.path()));
     assert.ok(Object.keys(entries).some((path) => path.endsWith("pages/booking.tsx")), `${prototype}: the export has the booking page`);
     for (const [path, bytes] of Object.entries(entries)) assert.ok(!strFromU8(bytes).includes("data-dh-source"), `${prototype}: ${path} has no element tag`);
+  }
+});
+
+// ---- visual checks -----------------------------------------------------------
+
+const lensButton = (page, name) => page.getByTestId("lens-control").getByRole("button", { name });
+const card = (page, key) => page.locator(`.frame-card[data-frame-key="${key}"]`);
+const fixCard = (page, rule) => page.locator(`.fix[data-rule="${rule}"]`);
+/** A paragraph in a grey that fails AA on white and on Todae's dark canvas alike. */
+const FAINT = (text) => text.replace("{lantern.seats} seats, {lantern.floor}\n        </Text.Root>", '{lantern.seats} seats, {lantern.floor}\n        </Text.Root>\n        <p style={{ color: "#777777" }}>Faint helper text</p>');
+/** A block that pushes Book room below the first view on a phone, and makes the page wider than a phone. */
+const TALL_AND_WIDE = (text) => text.replace("<RoomDetails items={lantern.details} />", '<RoomDetails items={lantern.details} />\n        <div style={{ height: 520, width: 470 }} />');
+/** One more state on the way to a booking, with no scenario: book-room's longest route is then 4 steps, against 3. */
+const LONGER_ROUTE = (text) => {
+  const manifest = JSON.parse(text);
+  manifest.flow.states.push("pick-time");
+  manifest.flow.tasks.find((item) => item.task === "book-room").transitions.push({ from: "room-open", event: "choose", to: "pick-time" }, { from: "pick-time", event: "hold", to: "held" });
+  return JSON.stringify(manifest, null, 2);
+};
+
+/** True when the element a locator finds lies inside the board's visible area. */
+async function onScreen(page, locator) {
+  const box = await locator.boundingBox();
+  const area = await page.locator(".board-area").boundingBox();
+  return box !== null && area !== null && box.y + box.height > area.y && box.y < area.y + area.height && box.x + box.width > area.x && box.x < area.x + area.width;
+}
+
+test("a target-size card shows its figure with the neighbour", async ({ browser, base }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  await editFile(page, "pages/booking.tsx", UNDERSIZED);
+  await measured(page, 2);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  const fix = fixCard(page, "target-size");
+  const figure = fix.getByTestId("evidence");
+  assert.equal(await figure.getAttribute("data-evidence"), "box-with-neighbour");
+  // Core's evidence for the finding shown: the control, the minimum, and the neighbour its circle meets.
+  const found = (await report(page)).findings.find((finding) => finding.rule === "target-size");
+  assert.deepEqual([found.evidence.kind, found.evidence.name, found.evidence.min, found.evidence.neighbour.name, found.evidence.neighbour.meets], ["box-with-neighbour", "A", 24, "B", "in-circle"]);
+  // The figure draws that neighbour, hatched where the circle reaches it, and says the scale and what the marks mean.
+  await figure.getByTestId("figure-neighbour").waitFor({ state: "attached" });
+  assert.equal(await figure.getByTestId("figure-neighbour").locator("rect").count(), 2, "the neighbour's box, and the hatched part of it");
+  assert.match(await figure.locator(".evidence-legend").textContent(), /Shown at \d+(\.\d+)?×.*its 24 px circle.*where it meets "B"/);
+  const box = await figure.locator(".vis-subject").evaluate((rect) => ({ width: Number(rect.getAttribute("width")), height: Number(rect.getAttribute("height")) }));
+  assert.ok(Math.abs(box.width / box.height - found.evidence.box.width / found.evidence.box.height) < 0.05, "the control is drawn in its measured proportions");
+  // The picture is hidden from a screen reader; core's message, word for word, is its caption.
+  assert.equal(await figure.getByTestId("figure-box").getAttribute("aria-hidden"), "true");
+  assert.equal(await figure.locator("figcaption").getByTestId("fix-message").textContent(), found.message);
+  await fix.scrollIntoViewIfNeeded();
+  await shot(page, "visual-card-target-size-light");
+  await shotDark(page, "visual-card-target-size-dark");
+  assert.deepEqual(errors, []);
+});
+
+test("the contrast figure shows the ratio in light and dark", async ({ browser, base }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  await editFile(page, "pages/booking.tsx", FAINT);
+  await measured(page, 2);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  const figure = fixCard(page, "text-contrast").getByTestId("evidence");
+  assert.equal(await figure.getAttribute("data-evidence"), "colour-pair");
+  const findings = (await report(page)).findings.filter((finding) => finding.rule === "text-contrast");
+  const bySchemeFrom = (scheme) => findings.find((finding) => finding.evidence.scheme === scheme).evidence;
+  assert.deepEqual([...new Set(findings.map((finding) => finding.evidence.scheme))].sort(), ["dark", "light"], "core found it in both schemes");
+  // One row per scheme: the text in its measured colours, and the ratio core measured.
+  const rows = figure.getByTestId("figure-contrast-row");
+  assert.deepEqual(await rows.evaluateAll((items) => items.map((item) => item.dataset.scheme)), ["light", "dark"]);
+  for (const scheme of ["light", "dark"]) {
+    const evidence = bySchemeFrom(scheme);
+    const row = figure.locator(`[data-testid="figure-contrast-row"][data-scheme="${scheme}"]`);
+    assert.equal(await row.getByTestId("figure-ratio").textContent(), `${evidence.ratio.toFixed(2)}:1`);
+    assert.equal(await row.locator(".contrast-sample").textContent(), "Faint helper text");
+    const painted = await row.locator(".contrast-sample").evaluate((sample) => [window.getComputedStyle(sample).color, window.getComputedStyle(sample).backgroundColor]);
+    const rgb = (hex) => `rgb(${[1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16)).join(", ")})`;
+    assert.deepEqual(painted, [rgb(evidence.foreground), rgb(evidence.background)], `${scheme}: the sample is painted in the measured pair`);
+    assert.ok(evidence.ratio < 4.5);
+  }
+  assert.notEqual(bySchemeFrom("light").background, bySchemeFrom("dark").background);
+  // The scale carries the AA mark and one mark per scheme; it is for the eye, and the rows say the same in words.
+  assert.equal(await figure.getByTestId("figure-aa").textContent(), "AA 4.5:1");
+  assert.equal(await figure.locator(".contrast-scale > .contrast-mark").count(), 2);
+  assert.equal(await figure.getByTestId("figure-scale").getAttribute("aria-hidden"), "true");
+  assert.equal(await figure.locator("ul.contrast").getAttribute("aria-label"), "Measured contrast, by colour scheme");
+  assert.equal(await figure.locator("figcaption").getByTestId("fix-message").textContent(), findings[0].message);
+  await fixCard(page, "text-contrast").scrollIntoViewIfNeeded();
+  await shot(page, "visual-card-contrast-light");
+  await shotDark(page, "visual-card-contrast-dark");
+  assert.deepEqual(errors, []);
+});
+
+test("the heading figure shows the gap", async ({ browser, base }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  await editFile(page, "layouts/room-cards.tsx", (text) => text.replace('as="h2"', 'as="h3"'));
+  await measured(page, 2);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  const figure = fixCard(page, "heading-structure").getByTestId("evidence");
+  assert.equal(await figure.getAttribute("data-evidence"), "sequence-gap");
+  // The outline in order: the title, an empty row for the level skipped, then the heading that skips it, flagged.
+  const rows = await figure.getByTestId("figure-outline").locator("li").evaluateAll((items) => items.map((item) => [item.classList.contains("outline-gap") ? "gap" : "heading", item.querySelector(".outline-level")?.textContent, item.hasAttribute("data-flagged")]));
+  assert.deepEqual(rows.slice(0, 3), [["heading", "h1", false], ["gap", "h2", false], ["heading", "h3", true]]);
+  assert.equal(await figure.getByTestId("figure-gap").textContent(), "h2no heading at this level");
+  assert.equal(await figure.getByTestId("figure-flag").first().textContent(), "skips a level");
+  assert.equal(await figure.getByTestId("figure-outline").getAttribute("aria-label"), "The page's headings, in order");
+  const found = (await report(page)).findings.find((finding) => finding.rule === "heading-structure");
+  assert.deepEqual([found.evidence.problem, found.evidence.missing], ["skipped", [2]]);
+  assert.equal(await figure.locator("figcaption").getByTestId("fix-message").textContent(), found.message);
+  await shot(page, "visual-card-headings-light");
+  assert.deepEqual(errors, []);
+});
+
+test("Show me moves the camera to a tiny element: its artboard opens at full size, and closes again when the finding is put down", async ({ browser, base }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  await editFile(page, "pages/booking.tsx", (text) => FAINT(UNDERSIZED(text)));
+  await measured(page, 2);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  // At Fit the 11 by 20 px control is a few px on screen.
+  const scale = await card(page, "lantern-open@desktop").evaluate((element) => element.getBoundingClientRect().width / 1280);
+  assert.ok(scale < 0.7, `the board is zoomed out (${scale})`);
+  const first = (await report(page)).findings.find((finding) => finding.rule === "target-size");
+  const key = `${first.scenario}@${first.view}`;
+  await fixCard(page, "target-size").getByTestId("show-me").click();
+  await page.locator(`.frame-card[data-frame-key="${key}"][data-focused]`).waitFor();
+  assert.equal(await page.locator(".frame-card[data-focused]").count(), 1);
+  assert.equal(await card(page, key).evaluate((element) => Math.round(element.querySelector("iframe").getBoundingClientRect().width)), first.view.startsWith("phone") ? 390 : 1280, "at full size");
+  await eventually(page, () => page.getByTestId("board-said").textContent(), (text) => /^Opened .* at full size: what the finding points at is too small to see at \d+%\.$/.test(text), "a screen reader hears where the camera went");
+  // The outline is in that frame, and now large enough to see; the board shows it.
+  const overlay = page.frameLocator(`iframe[title="${first.scenario} at ${first.view}"]`).locator("[data-design-harness-overlay]");
+  await overlay.waitFor({ state: "attached" });
+  const size = await overlay.boundingBox();
+  assert.ok(size.width >= 16 && size.height >= 16, `the outline is ${size.width} by ${size.height} px on screen`);
+  assert.ok(await onScreen(page, overlay), "the outlined element is in view");
+  await page.getByRole("button", { name: "Back to board" }).waitFor();
+  await shot(page, "visual-show-me-opened-light");
+  // Putting the finding down takes the camera back to the board.
+  await fixCard(page, "target-size").getByTestId("show-me").click();
+  await eventually(page, () => page.locator(".frame-card[data-focused]").count(), (count) => count === 0, "the artboard the camera opened closes again");
+
+  // A line of text is plain to see at this zoom: the camera only scrolls to its artboard.
+  const faint = (await report(page)).findings.find((finding) => finding.rule === "text-contrast" && finding.scenario === "lantern-held");
+  await showAllRules(page);
+  await page.locator('.checks-rules .rule[data-rule="text-contrast"] .finding').filter({ hasText: "At 390 by 844" }).nth(2).click();
+  await eventually(page, () => page.getByTestId("board-said").textContent(), (text) => /^Showing /.test(text), "the camera says it moved");
+  assert.equal(await page.locator(".frame-card[data-focused]").count(), 0, "nothing opens for an element that can be seen");
+  const shownKey = await page.locator(".frame-card[data-selected]").first().getAttribute("data-frame-key");
+  await eventually(page, () => onScreen(page, card(page, shownKey)), (value) => value === true, "the finding's artboard is scrolled into view");
+  assert.ok(faint, "the faint text is found on the held page too");
+  assert.deepEqual(errors, []);
+});
+
+test("the tap-target lens draws failing and passing boxes on every artboard, with its words under each", async ({ browser, base }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  // On the legal prototype every hit area is drawn quietly, and each artboard says so.
+  assert.equal(await page.getByTestId("lens-layer").count(), 0, "no lens until one is chosen");
+  await lensButton(page, "Tap targets").click();
+  await eventually(page, () => page.getByTestId("lens-layer").count(), (count) => count === FRAMES, "every artboard gets the lens");
+  assert.equal(await page.locator('[data-testid="lens-box"][data-tone="fail"]').count(), 0);
+  assert.equal(await card(page, "rooms-list@desktop").getByTestId("lens-words").textContent(), "2 controls, all 24 px or more.");
+  assert.equal(await card(page, "lantern-open@phone-dark").getByTestId("lens-words").textContent(), "4 controls, all 24 px or more.");
+  assert.equal(await card(page, "lantern-open@phone").locator('[data-testid="lens-box"][data-tone="quiet"]').count(), 4);
+  await shot(page, "visual-lens-targets-before-light");
+
+  await editFile(page, "pages/booking.tsx", UNDERSIZED);
+  // While the revision measures there is nothing true to draw.
+  await measured(page, 2);
+  await eventually(page, () => page.getByTestId("lens-layer").count(), (count) => count === FRAMES, "the lens is back once the frames are measured");
+  const found = (await report(page)).findings.filter((finding) => finding.rule === "target-size");
+  for (const key of ["lantern-open@phone", "lantern-booked@desktop-dark"]) {
+    const [scenario, view] = key.split("@");
+    const here = found.filter((finding) => finding.scenario === scenario && finding.view === view);
+    assert.equal(here.length, 2, `core finds A and B in ${key}`);
+    const board = card(page, key);
+    // Failing: a solid box, a hatched circle and a size label each. Passing: a quiet dashed box.
+    assert.equal(await board.locator('[data-testid="lens-box"][data-tone="fail"]').count(), 2);
+    assert.equal(await board.locator('[data-testid="lens-box"][data-tone="quiet"]').count(), 4);
+    assert.equal(await board.getByTestId("lens-circle").count(), 2);
+    assert.match(await board.getByTestId("lens-circle").first().getAttribute("fill"), /^url\(#.*hatch\)$/, "the circle is hatched, not only coloured");
+    assert.deepEqual(await board.getByTestId("lens-label").evaluateAll((items) => items.map((item) => item.textContent)), ["✕ A · 11 × 20", "✕ B · 10 × 20"]);
+    const styles = await board.evaluate((element) => ({ fail: window.getComputedStyle(element.querySelector('[data-testid="lens-box"][data-tone="fail"]')).strokeDasharray, quiet: window.getComputedStyle(element.querySelector('[data-testid="lens-box"][data-tone="quiet"]')).strokeDasharray }));
+    assert.equal(styles.fail, "none", "a failing box is solid");
+    assert.notEqual(styles.quiet, "none", "a passing box is dashed");
+    assert.equal(await board.getByTestId("lens-words").textContent(), "2 of 6 controls are under 24 px and too close to another.");
+    assert.equal(await board.getByTestId("lens-layer").getAttribute("aria-hidden"), "true");
+    assert.equal(await board.getByTestId("lens-layer").getAttribute("data-scheme"), view.endsWith("dark") ? "dark" : "light");
+    // The box is drawn where the control is on screen: over the frame, at the artboard's zoom.
+    const drawn = await board.locator('[data-testid="lens-box"][data-tone="fail"]').first().boundingBox();
+    const artboard = await board.locator(".frame-viewport").boundingBox();
+    const zoom = artboard.width / (view.startsWith("phone") ? 390 : 1280);
+    const [inFrame] = await buttonBoxes(page, scenario, view, "A");
+    // Centre to centre: the drawn box's bounds include its stroke.
+    const control = { x: artboard.x + (inFrame.x + inFrame.width / 2) * zoom, y: artboard.y + (inFrame.y + inFrame.height / 2) * zoom };
+    const centre = { x: drawn.x + drawn.width / 2, y: drawn.y + drawn.height / 2 };
+    assert.ok(Math.abs(centre.x - control.x) < 1 && Math.abs(centre.y - control.y) < 1 && drawn.width - inFrame.width * zoom < 4, `${key}: the box sits on the control (${JSON.stringify(drawn)} against ${JSON.stringify(control)})`);
+  }
+  assert.equal(await card(page, "rooms-list@phone").getByTestId("lens-words").textContent(), "2 controls, all 24 px or more.");
+  await shot(page, "visual-lens-targets-after-light");
+  await shotDark(page, "visual-lens-targets-after-dark");
+
+  // One lens at a time; pressing the pressed one takes it off. It is in the canvas-only bar too.
+  await lensButton(page, "First view").click();
+  assert.deepEqual([await lensButton(page, "Tap targets").getAttribute("aria-pressed"), await lensButton(page, "First view").getAttribute("aria-pressed")], ["false", "true"]);
+  assert.equal(await page.getByTestId("lens-circle").count(), 0);
+  await lensButton(page, "First view").click();
+  await eventually(page, () => page.getByTestId("lens-layer").count(), (count) => count === 0, "the lens is off");
+  await page.keyboard.press("Control+.");
+  await page.locator(".board[data-floating]").waitFor();
+  await lensButton(page, "Tap targets").click();
+  await eventually(page, () => page.getByTestId("lens-layer").count(), (count) => count === FRAMES, "the lens works from the canvas-only bar");
+  await shot(page, "visual-lens-canvas-only-light");
+  assert.deepEqual(errors, []);
+});
+
+test("the first-view lens draws the fold, a ghost of what lies below it, and the phone edge with its overflow strip", async ({ browser, base }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  await lensButton(page, "First view").click();
+  await eventually(page, () => page.getByTestId("lens-layer").count(), (count) => count === FRAMES, "every artboard gets the lens");
+  // The legal prototype: a quiet fold and edge on every artboard, nothing hatched.
+  assert.equal(await page.getByTestId("lens-fold").count(), FRAMES);
+  assert.equal(await page.getByTestId("lens-edge").count(), FRAMES);
+  assert.equal(await page.locator('[data-testid="lens-fold"][data-tone="fail"], [data-testid="lens-edge"][data-tone="fail"]').count(), 0);
+  assert.equal(await page.getByTestId("lens-strip").count(), 0);
+  assert.equal(await card(page, "lantern-open@phone").getByTestId("lens-words").textContent(), '"Book room" is in the first view. The whole page fits it.');
+  assert.equal(await card(page, "rooms-list@desktop").getByTestId("lens-words").textContent(), '"Book room" is not on this page. The whole page fits it.');
+  await shot(page, "visual-lens-first-view-before-light");
+
+  await editFile(page, "pages/booking.tsx", TALL_AND_WIDE);
+  await measured(page, 2);
+  await eventually(page, () => page.getByTestId("lens-layer").count(), (count) => count === FRAMES, "the lens is back once the frames are measured");
+  const all = await report(page);
+  const below = all.findings.find((finding) => finding.rule === "rank-1-in-first-view" && finding.scenario === "lantern-open" && finding.view === "phone");
+  const wide = all.findings.find((finding) => finding.rule === "no-sideways-scroll" && finding.scenario === "lantern-open" && finding.view === "phone");
+  assert.deepEqual([below.evidence.kind, below.evidence.axis, below.evidence.line, wide.evidence.axis, wide.evidence.line], ["region-line", "y", 844, "x", 390]);
+  assert.ok(below.evidence.pageHeight > 844, "the frame sent the page's height");
+  const phone = card(page, "lantern-open@phone");
+  // The fold: a labelled line where the first view ends, failing here, with the measured boxes below it as a ghost.
+  assert.equal(await phone.getByTestId("lens-fold").getAttribute("data-tone"), "fail");
+  const labels = await phone.getByTestId("lens-label").evaluateAll((items) => items.map((item) => item.textContent));
+  assert.ok(labels.includes("✕ First view ends · 844 px"), `the fold is named: ${labels}`);
+  assert.ok(labels.includes("✕ Book room"), `the action below it is named: ${labels}`);
+  await phone.getByTestId("lens-ghost-area").waitFor({ state: "attached" });
+  assert.equal(await phone.locator('[data-testid="lens-ghost"][data-tone="fail"]').count(), 1, "Book room is the marked ghost");
+  assert.match(await phone.locator('[data-testid="lens-ghost"][data-tone="fail"]').getAttribute("fill"), /^url\(#.*hatch\)$/);
+  const board = await phone.locator(".frame-viewport").boundingBox();
+  const ghost = await phone.locator('[data-testid="lens-ghost"][data-tone="fail"]').boundingBox();
+  assert.ok(ghost.y >= board.y + board.height, "the ghost is drawn under the artboard, not over it");
+  // The phone's edge: a line, and a hatched strip beside the artboard for what runs past it.
+  assert.equal(await phone.getByTestId("lens-edge").getAttribute("data-tone"), "fail");
+  const strip = await phone.getByTestId("lens-strip").boundingBox();
+  assert.ok(strip.x >= board.x + board.width - 1 && strip.width > 4, "the overflow strip is beside the artboard");
+  assert.ok(labels.includes(`✕ +${Math.round(wide.evidence.to - wide.evidence.line)} px`), `the overflow is given in px: ${labels}`);
+  const by = Math.round(below.evidence.to - below.evidence.line);
+  assert.equal(await phone.getByTestId("lens-words").textContent(), `"Book room" ends ${by} px below the first view. The page is ${Math.round(wide.evidence.to - wide.evidence.line)} px wider than the view.`);
+  // A desktop artboard of the same page passes, quietly.
+  assert.equal(await card(page, "lantern-open@desktop").getByTestId("lens-fold").getAttribute("data-tone"), "quiet");
+  assert.equal(await card(page, "lantern-open@desktop").getByTestId("lens-strip").count(), 0);
+  await phone.scrollIntoViewIfNeeded();
+  await shot(page, "visual-lens-first-view-after-light");
+  await shotDark(page, "visual-lens-first-view-after-dark");
+
+  // The frame says where it is scrolled to, and what belongs to the page moves with it: the fold rises by as much.
+  const before = (await phone.getByTestId("lens-fold").boundingBox()).y;
+  const zoom = board.width / 390;
+  const down = Math.min(60, Math.floor(below.evidence.pageHeight - 844));
+  assert.ok(down >= 12, `the page scrolls far enough to tell (${down} px)`);
+  await page.frameLocator('iframe[title="lantern-open at phone"]').locator("body").evaluate((_, y) => window.scrollTo(0, y), down);
+  await eventually(page, async () => before - (await phone.getByTestId("lens-fold").boundingBox()).y, (moved) => Math.abs(moved - down * zoom) <= 1, `the fold line follows the page's scroll (${down} px at ${zoom})`);
+  // No report changed for any of it.
+  assert.deepEqual(await report(page), all);
+  assert.deepEqual(errors, []);
+});
+
+test("the coverage grid shows states against views and navigates to an artboard", async ({ browser, base }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  assert.equal((await page.getByTestId("board-summary").textContent()).trim(), "4 scenarios · 4 views");
+  await page.getByTestId("board-summary").click();
+  const grid = page.getByTestId("coverage-grid");
+  await grid.waitFor();
+  // A real table: a row per state's scenario, a column per view, every cell a button that says what it has to fix.
+  assert.deepEqual(await grid.locator("thead th").evaluateAll((cells) => cells.map((cell) => cell.textContent)), ["State", "Desktop", "Phone", "Desktop dark", "Phone dark"]);
+  assert.deepEqual(await grid.getByTestId("coverage-row").evaluateAll((rows) => rows.map((row) => row.dataset.state)), ["rooms", "room-open", "booked", "held"]);
+  assert.equal(await grid.getByTestId("coverage-cell").count(), FRAMES);
+  assert.deepEqual(await grid.getByTestId("coverage-cell").evaluateAll((cells) => [...new Set(cells.map((cell) => cell.textContent))]), ["Passes"]);
+  assert.match(await grid.locator("caption").textContent(), /4 of 4 flow states have a scenario/);
+  await shot(page, "visual-coverage-grid-legal-light");
+  // A cell goes to its artboard: the popover closes, the board scrolls there, and focus lands on it.
+  const target = "lantern-held@phone-dark";
+  assert.equal(await onScreen(page, card(page, target)), false, "the artboard starts off screen");
+  await grid.locator(`[data-testid="coverage-cell"][data-frame="${target}"]`).click();
+  await grid.waitFor({ state: "hidden" });
+  await eventually(page, () => onScreen(page, card(page, target)), (value) => value === true, "the board scrolls to the artboard");
+  await becomesFocused(page, card(page, target), "focus moves to the artboard");
+  assert.equal(await card(page, target).getAttribute("data-pointed"), "");
+  assert.equal(await page.getByTestId("board-said").textContent(), "Showing Booking, held — phone-dark (Lantern held).");
+
+  // Findings are counted where core put them, and a flow state with no scenario is a row with nowhere to go.
+  await editFile(page, "pages/booking.tsx", UNDERSIZED);
+  await measured(page, 2);
+  await editFile(page, "manifest.json", LONGER_ROUTE);
+  await measured(page, 3);
+  await page.getByTestId("board-summary").click();
+  await grid.waitFor();
+  const cells = await grid.getByTestId("coverage-cell").evaluateAll((items) => Object.fromEntries(items.map((item) => [item.dataset.frame, item.textContent])));
+  const findings = (await report(page)).findings;
+  for (const key of ["rooms-list@desktop", "lantern-open@phone", "lantern-booked@desktop-dark"]) {
+    const [scenario, view] = key.split("@");
+    const count = findings.filter((finding) => finding.scenario === scenario && finding.view === view).length;
+    assert.equal(cells[key], count === 0 ? "Passes" : `${count} to fix`, key);
+  }
+  assert.equal(cells["rooms-list@desktop"], "Passes");
+  assert.equal(cells["lantern-open@phone"], "2 to fix");
+  assert.equal(await grid.locator('[data-testid="coverage-row"][data-state="pick-time"]').getByTestId("coverage-never").textContent(), "Never drawn: add a scenario");
+  assert.equal(await grid.locator('[data-testid="coverage-row"][data-state="pick-time"] button').count(), 0);
+  assert.match(await grid.locator("caption").textContent(), /4 of 5 flow states have a scenario/);
+  await shot(page, "visual-coverage-grid-failing-light");
+  await shotDark(page, "visual-coverage-grid-failing-dark");
+  assert.deepEqual(errors, []);
+});
+
+test("the flow map numbers the longest route against the budget, on the step-budget card and in the Project view", async ({ browser, base }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  // Passing: the map sits with the rule under Details, each task's longest route numbered within its budget.
+  await showAllRules(page);
+  const passing = page.locator('.checks-rules .rule[data-rule="step-budget"]').getByTestId("rule-flow");
+  await passing.locator("summary").click();
+  assert.deepEqual(await passing.getByTestId("flow-map").evaluateAll((maps) => maps.map((map) => [map.dataset.task, map.dataset.status])), [["book-room", "fits"], ["hold-room", "fits"]]);
+  assert.equal(await passing.locator('[data-testid="flow-step"][data-over]').count(), 0);
+  assert.equal(await passing.getByTestId("flow-limit").count(), 0);
+
+  await editFile(page, "manifest.json", LONGER_ROUTE);
+  await measured(page, 2);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  const found = (await report(page)).findings.find((finding) => finding.rule === "step-budget");
+  assert.deepEqual([found.evidence.kind, found.evidence.task, found.evidence.steps, found.evidence.budget, found.evidence.route.map((step) => step.event)], ["route-vs-budget", "book-room", 4, 3, ["open-room", "choose", "hold", "book"]]);
+  const figure = fixCard(page, "step-budget").getByTestId("evidence");
+  assert.equal(await figure.getAttribute("data-evidence"), "route-vs-budget");
+  // The longest route's steps, numbered 1 to 4, the fourth past the budget line, and the other transitions unnumbered.
+  assert.deepEqual(await figure.getByTestId("flow-step").evaluateAll((steps) => steps.map((step) => [step.querySelector('[data-testid="flow-step-number"]').textContent, step.hasAttribute("data-over")])), [["1", false], ["2", false], ["3", false], ["4", true]]);
+  await figure.getByTestId("flow-limit").waitFor({ state: "attached" });
+  assert.equal(await figure.getByTestId("flow-limit").locator("text").textContent(), "budget 3");
+  assert.equal(await figure.getByTestId("flow-other").count(), found.evidence.transitions.length - found.evidence.route.length);
+  assert.deepEqual(await figure.getByTestId("flow-node").evaluateAll((nodes) => nodes.map((node) => [node.dataset.state, node.dataset.role, node.hasAttribute("data-drawn")])), [["rooms", "start", true], ["room-open", "state", true], ["pick-time", "state", false], ["held", "state", true], ["booked", "success", true]]);
+  assert.equal(await figure.getByTestId("figure-count-words").textContent(), "4 steps on the longest route, budget 3");
+  // The same route as an ordered list, for a screen reader; the map itself is hidden from it.
+  assert.equal(await figure.getByTestId("flow-svg").getAttribute("aria-hidden"), "true");
+  const steps = await figure.getByTestId("flow-steps").locator("li").evaluateAll((items) => items.map((item) => item.textContent.replace(/\s+/g, " ").trim()));
+  assert.deepEqual(steps, ["1Rooms open-room → Room open", "2choose → Pick time", "3hold → Held", "4book → Booked ✕ past the budget of 3"]);
+  assert.equal(await figure.locator("figcaption").getByTestId("fix-message").textContent(), found.message);
+  await fixCard(page, "step-budget").scrollIntoViewIfNeeded();
+  await shot(page, "visual-card-flow-map-light");
+  await shotDark(page, "visual-card-flow-map-dark");
+  // A state in the list goes to its artboard.
+  await figure.getByRole("button", { name: "Show Held on the canvas" }).click();
+  await becomesFocused(page, card(page, "lantern-held@desktop"), "the state's artboard takes focus");
+
+  // The Project view draws every task's map for the open prototype.
+  await page.getByRole("tab", { name: "Project" }).click();
+  const project = page.getByTestId("project-flow");
+  assert.deepEqual(await project.getByTestId("flow-map").evaluateAll((maps) => maps.map((map) => [map.dataset.task, map.dataset.status])), [["book-room", "over"], ["hold-room", "fits"]]);
+  assert.equal(await project.locator('[data-task="hold-room"] [data-testid="figure-count-words"]').textContent(), "2 steps on the longest route, budget 2");
+  await project.scrollIntoViewIfNeeded();
+  await shot(page, "visual-project-flow-light");
+  await project.locator('[data-task="hold-room"]').getByRole("button", { name: "Show Room open on the canvas" }).click();
+  await becomesFocused(page, card(page, "lantern-open@desktop"), "from the Project view, a state opens the canvas at its artboard");
+  assert.equal(await page.getByRole("tab", { name: "Canvas" }).getAttribute("aria-selected"), "true");
+  assert.deepEqual(errors, []);
+});
+
+test("lenses change nothing a rule measures: Nook's reports are identical with the lenses on and off", async ({ browser, base }) => {
+  const change = (text) => TALL_AND_WIDE(FAINT(UNDERSIZED(text)));
+  /** Core's report for the legal prototype and for the same edit, with a lens (or none) on from the start. */
+  const run = async (lens) => {
+    const { page, context, errors } = await openApp(browser, base);
+    await measured(page, 1);
+    if (lens) {
+      await lensButton(page, lens).click();
+      await eventually(page, () => page.getByTestId("lens-layer").count(), (count) => count === FRAMES, `${lens} is on`);
+    }
+    await showAllRules(page);
+    const legal = await report(page);
+    await editFile(page, "pages/booking.tsx", change);
+    await measured(page, 2);
+    if (lens) await eventually(page, () => page.getByTestId("lens-layer").count(), (count) => count === FRAMES, `${lens} is drawn on the measured revision`);
+    await showAllRules(page);
+    const failing = await report(page);
+    assert.deepEqual(errors, []);
+    await context.close();
+    return { legal, failing };
+  };
+  const off = await run(null);
+  assert.equal(off.legal.status, "pass");
+  assert.equal(off.failing.status, "fail");
+  assert.ok(off.failing.findings.some((finding) => finding.evidence), "the failing report carries evidence");
+  for (const lens of ["Tap targets", "First view"]) {
+    const on = await run(lens);
+    assert.deepEqual(on.legal, off.legal, `${lens}: the legal prototype's report is the same`);
+    assert.deepEqual(on.failing, off.failing, `${lens}: the failing prototype's report is the same, evidence included`);
+  }
+  // Turning a lens on and off on one measured revision changes nothing either, and starts no new revision.
+  const { page } = await openApp(browser, base);
+  await measured(page, 1);
+  await showAllRules(page);
+  const before = await report(page);
+  for (const lens of ["Tap targets", "First view"]) {
+    await lensButton(page, lens).click();
+    await eventually(page, () => page.getByTestId("lens-layer").count(), (count) => count === FRAMES, `${lens} is on`);
+    assert.deepEqual(await report(page), before);
+    assert.equal(await page.locator(".checks").getAttribute("data-revision"), "1");
   }
 });
 
