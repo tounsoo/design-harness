@@ -96,9 +96,12 @@ describe("page types, caps and budgets", () => {
     const [book, hold] = nook.inputs.tasks;
     if (!book || !hold) throw new Error("no tasks");
     const booked = budgetMeter(book, facts.tasks.find((item) => item.task === book.id), "Booking");
-    expect(booked.bar.pips).toEqual(["within", "within", "missing"]);
+    expect(booked.bar.pips).toEqual(["within", "within", "within"]);
     expect(booked.bar.limitAfter).toBe(3);
-    expect(booked.today).toEqual({ text: "Booking's longest route today: 2 steps.", over: false });
+    expect(booked.today).toEqual({ text: "Booking's longest route today: 3 steps, at the limit.", over: false });
+    // A shorter route leaves the rest of the budget hollow.
+    expect(budgetMeter({ ...book, maxSteps: 5 }, facts.tasks.find((item) => item.task === book.id), "Booking").bar.pips).toEqual(["within", "within", "within", "missing", "missing"]);
+    expect(budgetMeter({ ...book, maxSteps: 5 }, facts.tasks.find((item) => item.task === book.id), "Booking").today?.text).toBe("Booking's longest route today: 3 steps.");
     const held = budgetMeter(hold, facts.tasks.find((item) => item.task === hold.id), "Booking");
     expect(held.bar.pips).toEqual(["within", "within"]);
     expect(held.today?.text).toBe("Booking's longest route today: 2 steps, at the limit.");

@@ -1,4 +1,4 @@
-import { Badge, Card, Code, Text, useAppearance } from "@tounsoo/todae";
+import { Badge, Card, Code, Text, VisuallyHidden, useAppearance } from "@tounsoo/todae";
 import { Minus, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { partSpecimen, unplacedRoles, type PartSpecimen, type ProjectConfig, type RoleName, type SpecimenSample } from "@design-harness/core";
@@ -98,7 +98,7 @@ function SampleLine({ sample }: { readonly sample: SpecimenSample }) {
       <span className="specimen-sample-name">
         {sample.rank !== undefined && (
           <span className="rank" data-testid="specimen-rank">
-            <span className="visually-hidden">Rank </span>
+            <VisuallyHidden.Root>Rank </VisuallyHidden.Root>
             {sample.rank}
           </span>
         )}

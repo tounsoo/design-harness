@@ -1,4 +1,4 @@
-import { Text } from "@tounsoo/todae";
+import { Text, VisuallyHidden } from "@tounsoo/todae";
 import { ArrowDown, ArrowRight, ArrowUp } from "lucide-react";
 import { useId, type ReactNode } from "react";
 import type { Cap, ChangeClass, PageType, Proposal, RuleSpec } from "@design-harness/core";
@@ -181,7 +181,7 @@ export function ProposalTrack({ proposal, note }: { readonly proposal: Pick<Prop
             {step.title}
             {step.state === "current" && note ? `: ${note}` : ""}
           </span>
-          <span className="track-state visually-hidden">{step.state === "done" ? ", done" : step.state === "current" ? ", now" : ", not yet"}</span>
+          <VisuallyHidden.Root>{step.state === "done" ? ", done" : step.state === "current" ? ", now" : ", not yet"}</VisuallyHidden.Root>
         </li>
       ))}
     </ol>
@@ -249,7 +249,8 @@ export function RuleFigure({ rule, label }: { readonly rule: RuleSpec; /** The r
         )}
         {glyph === "count" && (
           <>
-            <rect className="glyph-ink" x="22" y="24" width="30" height="16" rx="3" />
+            {/* A limit of none has nothing before the line. */}
+            {label !== "none" && <rect className="glyph-ink" x="22" y="24" width="30" height="16" rx="3" />}
             <line className="vis-guide" x1="62" y1="14" x2="62" y2="52" />
             <rect className="vis-fail-area vis-fail-edge" x="72" y="24" width="30" height="16" rx="3" fill={hatch} />
           </>

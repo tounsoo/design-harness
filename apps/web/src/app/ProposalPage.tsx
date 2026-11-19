@@ -946,7 +946,7 @@ function Proof({ proposal, rule, views, config, onShowExample }: { readonly prop
   const fail = views.find((view) => view.expect === "fail" && view.name === pair.fail);
   const pass = views.find((view) => view.expect === "pass" && view.name === pair.pass);
   // Both are drawn at the scenario and view the rule flags the failing one in, when it has one there.
-  const flagged = fail?.findings.find((finding) => finding.rule === rule && finding.scenario !== undefined && finding.view !== undefined) ?? fail?.findings.find((finding) => finding.scenario !== undefined);
+  const flagged = fail?.findings.find((finding) => finding.rule === rule && finding.scenario !== undefined && finding.view !== undefined) ?? fail?.findings.find((finding) => finding.scenario !== undefined) ?? fail?.findings.find((finding) => finding.page !== undefined);
   if (!fail && !pass) {
     return (
       <Text.Root as="p" tone="muted" data-testid="proof-none">
@@ -971,7 +971,8 @@ function Proof({ proposal, rule, views, config, onShowExample }: { readonly prop
 function ProofExample({ view, config, at, rule, onShow }: { readonly view: ExampleView; readonly config: ProjectConfig; readonly at: Finding | undefined; readonly rule?: string; readonly onShow: () => void }) {
   const { prototype } = view.example;
   const scenario = prototype.scenarios.find((item) => item.id === at?.scenario) ?? prototype.scenarios.find((item) => item.page === at?.page) ?? prototype.scenarios[0];
-  const shownView = config.views.find((item) => item.name === at?.view) ?? config.views[0];
+  // The view core's finding is in, else the narrowest, where a page reads at close to its own size.
+  const shownView = config.views.find((item) => item.name === at?.view) ?? [...config.views].sort((a, b) => a.width - b.width)[0];
   // One scenario at one view, in a session of its own: the full set is measured in the Examples section below.
   const items = useMemo(() => {
     if (!scenario || !shownView) return [];
@@ -990,7 +991,7 @@ function ProofExample({ view, config, at, rule, onShow }: { readonly view: Examp
     measured.session.highlight(frame.key, element ?? null);
   }, [measured?.session, frame?.key, measuredNow, element]);
   const badge = verdictBadge(view);
-  const scale = shownView ? Math.min(1, Math.max(0.08, Math.min((width - 4) / shownView.width, FRAME_MAX_HEIGHT / shownView.height))) : 1;
+  const scale = shownView ? Math.min(1, Math.max(0.08, (width - 4) / shownView.width)) : 1;
   return (
     <figure className="proof-example" data-proof={view.name} data-expect={view.expect} data-verdict={view.verdict.state}>
       <figcaption className="proof-head">
@@ -1008,7 +1009,7 @@ function ProofExample({ view, config, at, rule, onShow }: { readonly view: Examp
         </Badge.Root>
       </figcaption>
       <div className="example-frames proof-frame" ref={area}>
-        {measured && frame && frameState && <FrameViewport session={measured.session} spec={frame} revision={measured.state.revision} frameState={frameState} scale={scale} hidden={false} name={`${view.name}, as proof: ${frame.scenario.id} at ${frame.view.name}`} />}
+        {measured && frame && frameState && <FrameViewport session={measured.session} spec={frame} revision={measured.state.revision} frameState={frameState} scale={scale} hidden={false} name={`${view.name}, as proof: ${frame.scenario.id} at ${frame.view.name}`} fit />}
       </div>
       <Text.Root as="p" tone="muted" className="review-small">
         {scenario ? scenarioName(scenario) : "No scenario"}

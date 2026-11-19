@@ -1,4 +1,4 @@
-import { Badge, Button, Card, Code, DataList, Disclosure, Stack, Table, Text, ToggleGroup } from "@tounsoo/todae";
+import { Badge, Button, Card, Code, DataList, Disclosure, Stack, Table, Text, ToggleGroup, VisuallyHidden } from "@tounsoo/todae";
 import { useMemo, useState } from "react";
 import { ROLE_NAMES, describeRule, flowFacts, rerunExamples, type ConfirmedRole, type ExampleRun, type ProjectConfig, type RoleMapping, type RuleSpec } from "@design-harness/core";
 import { formatTime } from "../review/timeline";
@@ -130,7 +130,7 @@ export function ProjectView({ config, onOpenProposal, onOpenProposals, prototype
                       {item.rank}
                     </span>
                     <span>
-                      <span className="visually-hidden">{item.rank}. </span>
+                      <VisuallyHidden.Root>{item.rank}. </VisuallyHidden.Root>
                       <Text.Root as="span" weight="medium">
                         {item.action}
                       </Text.Root>{" "}

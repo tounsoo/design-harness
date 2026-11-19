@@ -174,7 +174,7 @@ export function capMeter(name: string, cap: Cap): CapMeter {
     value: cap.value,
     words: `${bound} ${cap.value}${px ? " px" : ""}`,
     direction: `stricter when ${cap.stricter}`,
-    title: humanize(name.replace(/^(MAX|MIN)_/, "").replace(/_PX$/, "")),
+    title: humanize(name.replace(/_PX$/, "").replace(/(^|_)(MAX|MIN)(?=_|$)/g, "$1").replace(/^_+|_+$/g, "")),
   };
 }
 
