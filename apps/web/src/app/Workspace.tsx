@@ -744,7 +744,19 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
                 )}
                 {center === "project" && (
                   <div className="app-main-pane app-main-scroll">
-                    <ProjectView config={config} onOpenProposal={openProposal} prototype={current} onGoToState={goToState} prototypes={records} onSave={(next) => void saveConfig(next)} libraryTarget={libraryTarget} />
+                    <ProjectView
+                      config={config}
+                      onOpenProposal={openProposal}
+                      onOpenProposals={() => {
+                        setReviewing(null);
+                        setCenter("proposals");
+                      }}
+                      prototype={current}
+                      onGoToState={goToState}
+                      prototypes={records}
+                      onSave={(next) => void saveConfig(next)}
+                      libraryTarget={libraryTarget}
+                    />
                   </div>
                 )}
                 {center === "proposals" && (
