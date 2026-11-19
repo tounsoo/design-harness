@@ -1,29 +1,28 @@
-import { Button, Dialog, Field, Label, RadioGroup, Stack, Text } from "@tounsoo/todae";
+import { Button, Dialog, Field, Label, Stack, Text } from "@tounsoo/todae";
 import { Plus } from "lucide-react";
 import { useState } from "react";
-import { specCatalog, type ProjectConfig } from "@design-harness/core";
-import { defaultFormat, type PrototypeFormat } from "./new-prototype";
+import type { ProjectConfig } from "@design-harness/core";
+import { cannotCreate } from "./new-prototype";
 
 /**
- * New prototype: a name and a format, json-render spec by default. TSX is
- * one choice away; the prototypes already in the project keep the format
- * they were made in. It draws its own button unless `dialog` is given: then
- * the caller opens it, from a menu item say, and owns whether it is open.
+ * New prototype: a name. A prototype is a json-render spec, pages and
+ * layouts as data; there is no other format to choose. A project whose
+ * library has no part description cannot check a spec, so the dialog says
+ * so and makes nothing. It draws its own button unless `dialog` is given:
+ * then the caller opens it, from a menu item say, and owns whether it is open.
  */
-export function NewPrototype({ config, onCreate, dialog }: { readonly config: ProjectConfig; readonly onCreate: (name: string, format: PrototypeFormat) => void; readonly dialog?: { readonly open: boolean; readonly onOpenChange: (open: boolean) => void } }) {
+export function NewPrototype({ config, onCreate, dialog }: { readonly config: ProjectConfig; readonly onCreate: (name: string) => void; readonly dialog?: { readonly open: boolean; readonly onOpenChange: (open: boolean) => void } }) {
   const [ownOpen, setOwnOpen] = useState(false);
   const open = dialog ? dialog.open : ownOpen;
   const setOpen = dialog ? dialog.onOpenChange : setOwnOpen;
   const [name, setName] = useState("");
-  const specs = specCatalog(config) !== null;
-  const [format, setFormat] = useState<PrototypeFormat>(defaultFormat(config));
+  const why = cannotCreate(config);
   const create = () => {
     const trimmed = name.trim();
-    if (!trimmed) return;
-    onCreate(trimmed, format);
+    if (!trimmed || why !== null) return;
+    onCreate(trimmed);
     setOpen(false);
     setName("");
-    setFormat(defaultFormat(config));
   };
   return (
     <>
@@ -55,28 +54,17 @@ export function NewPrototype({ config, onCreate, dialog }: { readonly config: Pr
                   <Field.TextInput value={name} onValueChange={setName} placeholder="Checkout" />
                 </Field.Root>
               </Stack.Root>
-              <Stack.Root gap="condensed">
-                <Text.Root as="span" weight="medium" id="new-prototype-format">
-                  How it is written
+              {why !== null && (
+                <Text.Root as="p" tone="muted" data-testid="new-prototype-unavailable">
+                  {why}
                 </Text.Root>
-                <RadioGroup.Root aria-labelledby="new-prototype-format" value={format} onValueChange={(value) => setFormat(value === "tsx" ? "tsx" : "spec")}>
-                  <RadioGroup.Item value="spec" disabled={!specs}>
-                    Spec, recommended: pages as data the agent changes safely, checked before each change applies
-                  </RadioGroup.Item>
-                  <RadioGroup.Item value="tsx">TSX: pages as React code, for when you want to edit code by hand</RadioGroup.Item>
-                </RadioGroup.Root>
-                {!specs && (
-                  <Text.Root as="p" tone="muted">
-                    The project's library has no part description, so a spec prototype cannot be checked here.
-                  </Text.Root>
-                )}
-              </Stack.Root>
+              )}
             </Stack.Root>
           </form>
         </Dialog.Body>
         <Dialog.Footer>
           <Dialog.Close>Cancel</Dialog.Close>
-          <Button.Root type="submit" form="new-prototype-form" variant="primary" disabled={name.trim() === ""}>
+          <Button.Root type="submit" form="new-prototype-form" variant="primary" disabled={name.trim() === "" || why !== null}>
             Create
           </Button.Root>
         </Dialog.Footer>

@@ -39,7 +39,7 @@ describe("a stored project without library.parts", () => {
     const migration = withLibraryParts(config);
     expect(migration.kind).toBe("no-parts");
     expect(migration.config).toBe(config);
-    expect(migration.kind === "no-parts" && migration.note).toBe('Project "Nook" uses @tounsoo/todae 0.11.0, and this app has no description of that library\'s parts, so its spec prototypes cannot be checked or written. Its TSX prototypes work as before. Import a project file whose config has library.parts for @tounsoo/todae 0.11.0 to use specs.');
+    expect(migration.kind === "no-parts" && migration.note).toBe('Project "Nook" uses @tounsoo/todae 0.11.0, and this app has no description of that library\'s parts, so no prototype can be made or edited in it: its spec prototypes cannot be checked, and its TSX ones are read-only. Import a project file whose config has library.parts for @tounsoo/todae 0.11.0 to use specs.');
   });
 
   it("leaves a project that has them alone", () => {

@@ -250,7 +250,7 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
         <Alert.Root tone="info" data-testid="variants-tsx">
           <Alert.Title>Variants are for spec prototypes</Alert.Title>
           <Alert.Description>
-            This prototype is TSX. Picking slots from several variants needs each page as data, which a spec prototype is and code is not, so variants and slot picks work only on spec prototypes. Make a new spec prototype (New prototype) to compare variants.
+            This prototype is TSX, which is read-only here: it takes no variants and no picks. Variants need each page as data, which a spec is and code is not. Start a spec version of it from the canvas to compare variants.
           </Alert.Description>
         </Alert.Root>
       </Stack.Root>

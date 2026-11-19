@@ -197,7 +197,7 @@ export function ProjectWizard({ takenIds, hasTally, onCancel, onCreate, onExampl
     setCreating(true);
     setFailed(null);
     const { config, starter } = project;
-    const record: PrototypeRecord = starter.ok ? { projectId: config.id, id: "starter", name: "Starter", prototype: starter.value } : { projectId: config.id, id: "first", name: "First prototype", prototype: blankPrototype("spec") };
+    const record: PrototypeRecord = starter.ok ? { projectId: config.id, id: "starter", name: "Starter", prototype: starter.value } : { projectId: config.id, id: "first", name: "First prototype", prototype: blankPrototype() };
     const note: LoadNote = starter.ok
       ? { tone: "info", title: `${config.name} was created`, text: `It is built with ${config.library.package} ${config.library.version}, with ${config.rules.length} rules in force. Its starter prototype is on the canvas: describe a change to the agent, or edit it in the code view.` }
       : { tone: "warning", title: `${config.name} was created, without a starter page`, text: starter.error };
@@ -823,7 +823,7 @@ function ExcludedProps({ draft, state, library, onChange, invalid }: { readonly 
       ) : (
         <Alert.Root tone="info">
           <Alert.Title>The description names no style props</Alert.Title>
-          <Alert.Description>Nothing is excluded unless you add a prop below. Inline styles in TSX are refused by a rule of their own either way.</Alert.Description>
+          <Alert.Description>Nothing is excluded unless you add a prop below. A spec cannot set an inline style either way: no part in the catalog takes one.</Alert.Description>
         </Alert.Root>
       )}
       {!draft.excludedProps && state.props.length > 0 && (

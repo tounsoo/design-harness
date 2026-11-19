@@ -1,5 +1,7 @@
 # Trial: prototypes as json-render specs
 
+> **2026-11-19: the app went spec-only.** New prototypes, the seed and the agent write specs alone; a stored or imported TSX prototype is kept read-only (it renders and checks, and offers Export code and Start a spec version). The main reason below for keeping TSX, that layouts had no parameters, is gone: layouts now take parameters, and each instance draws with its own (verified: e2e "the Nook spec draws each layout instance with its own parameters"). Existing TSX prototypes still cannot be converted, and `Toast.Region` and the `Temporal` date inputs are unavailable to a spec for now; the owner accepted both. Core keeps its TSX path for this step; removing it is a later one. The rest of this page is the trial as it was recorded.
+
 Question: would design-harness be more solid if a prototype were a [json-render](https://github.com/vercel-labs/json-render) spec instead of TSX?
 
 Branch `claude/json-render-trial` builds a second prototype format beside TSX, end to end: core reads and checks it, the board renders and measures it, the agent writes it, and proposals work on it. This page is the decision and the evidence. "Verified" means a test or a command in this branch shows it; "inferred" means read from source or docs and not run.

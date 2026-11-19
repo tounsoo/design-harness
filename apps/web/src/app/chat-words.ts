@@ -4,7 +4,7 @@ import { humanize } from "./words";
 type ToolItem = Extract<TurnItem, { kind: "tool" }>;
 type ChecksItem = Extract<TurnItem, { kind: "checks" }>;
 
-/** A prototype file in words: "pages/booking.tsx" is "the booking page". */
+/** A prototype file in words: "pages/booking.json" is "the booking page". */
 export function fileWords(path: string): string {
   if (path === "manifest.json") return "the prototype's pages and scenarios";
   const match = /^(pages|layouts|data|components)\/(.+?)(\.[a-z]+)?$/.exec(path);
@@ -26,6 +26,7 @@ function inputPath(item: ToolItem): string | null {
   }
 }
 
+// edit_file and write_file are the TSX tools the agent no longer has; a chat saved with calls to them still reads them as changes.
 const CHANGES = new Set(["edit_file", "write_file", "write_spec", "patch_spec", "insert_layout", "set_layout_params"]);
 
 /**

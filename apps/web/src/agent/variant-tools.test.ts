@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fakeHost } from "../../test/agent-host";
 import { seedLegal, seedSpec } from "../../test/nook";
-import { runTool, SPEC_TOOL_DEFINITIONS, TOOL_DEFINITIONS } from "./tools";
+import { runTool, TOOL_DEFINITIONS } from "./tools";
 
 const signal = new AbortController().signal;
 const call = (name: string, input: unknown) => ({ id: "toolu_1", name, input });
@@ -77,7 +77,7 @@ describe("propose_variants", () => {
     const same = await runTool(call("propose_variants", { page: "booking", variants: [first, { note: "No change", spec: booking() }] }), parts.host, signal);
     expect(same.content).toMatch(/Variant 2 \("No change"\) is the page as it is now/);
     const tsx = fakeHost(seedLegal());
-    expect((await runTool(call("propose_variants", { page: "booking", variants: three() }), tsx.host, signal)).content).toMatch(/There is no tool "propose_variants" for this prototype/);
+    expect((await runTool(call("propose_variants", { page: "booking", variants: three() }), tsx.host, signal)).content).toMatch(/^This prototype is TSX\. TSX prototypes are no longer edited here/);
   });
 
   it("asks for more like one, and gives new ids after the ones in use", async () => {
@@ -112,7 +112,7 @@ describe("revise_variant and list_variants", () => {
 
 describe("the agent never picks", () => {
   it("has no tool that picks, applies or adopts, in either mode", () => {
-    for (const definitions of [SPEC_TOOL_DEFINITIONS, TOOL_DEFINITIONS]) expect(definitions.map((tool) => tool.name).filter((name) => /pick|apply|choose|select|undo/.test(name))).toEqual([]);
+    expect(TOOL_DEFINITIONS.map((tool) => tool.name).filter((name) => /pick|apply|choose|select|undo/.test(name))).toEqual([]);
   });
 
   it("refuses a pick smuggled into a tool's input, and an unknown pick tool", async () => {

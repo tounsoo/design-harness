@@ -3,6 +3,7 @@ import { checkPrototype, extractPrototype, type ProjectConfig, type Prototype, t
 import { legalSnapshots } from "../../../../packages/core/examples/nook/snapshots";
 import { seedProject } from "../seed/nook";
 import { tallyProject } from "../seed/tally";
+import { seedLegal } from "../../test/nook";
 import { mainThreadEngine, runEngine, workerEngine, type CheckEngine, type EngineCache, type EngineWorker, type WorkerAnswer, type WorkerCall } from "./check-engine";
 import { specParts, specPayload } from "./spec-payload";
 import { tagSites } from "./tags";
@@ -55,8 +56,9 @@ function snapshotsFor(config: ProjectConfig, prototype: Prototype): RenderedSnap
 const nook = seedProject();
 const tally = tallyProject();
 const SEEDS = [
-  { name: "Nook, TSX", config: nook.config, prototype: nook.prototype },
-  { name: "Nook, spec", config: nook.config, prototype: nook.spec },
+  // A TSX prototype is no longer made or edited in the app, but one stored or imported still renders and checks, read-only.
+  { name: "Nook, TSX (stored, read-only)", config: nook.config, prototype: seedLegal() },
+  { name: "Nook, spec", config: nook.config, prototype: nook.prototype },
   { name: "Tally, spec on Mantine", config: tally.config, prototype: tally.prototype },
 ];
 

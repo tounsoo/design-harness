@@ -4,8 +4,8 @@ import { scriptedFetch, streamEvents, type FakeReply } from "../../e2e/fake-anth
 import { fakeHost } from "../../test/agent-host";
 import { AgentController, type ChatRecord } from "../agent/controller";
 import { DEFAULT_SETTINGS } from "../agent/models";
-import { createClient, SPEC_SYSTEM_PROMPT, SYSTEM_PROMPT } from "../agent/request";
-import { SPEC_TOOL_DEFINITIONS, TOOL_DEFINITIONS, runTool, type AgentHost } from "../agent/tools";
+import { createClient, SYSTEM_PROMPT } from "../agent/request";
+import { TOOL_DEFINITIONS, runTool, type AgentHost } from "../agent/tools";
 import { NOTES_LEAD, describePin, describePins, pinWhere } from "./describe";
 import { seedSpec } from "../../test/nook";
 import { NO_PINS, addPin, closePin, editPin, reopenPin, type PinAnchor, type PinState } from "./model";
@@ -121,15 +121,15 @@ describe("pins in the agent's turn", () => {
 });
 
 describe("undoing a turn that addressed a note", () => {
-  const RENAME = { path: "pages/rooms.tsx", old_text: '<Text.Root as="h1">Rooms</Text.Root>', new_text: '<Text.Root as="h1">Spaces</Text.Root>' };
+  const RENAME = { path: "pages/rooms.json", patches: '{"op":"replace","path":"/elements/heading/props/text","value":"Spaces"}' };
   const agent = (host: AgentHost, replies: unknown[]) => {
     const fake = scriptedFetch(replies as never);
     const stored: ChatRecord[] = [];
     const controller = new AgentController({ host, store: { load: async () => null, save: async (record) => void stored.push(record) }, key: () => KEY, settings: () => DEFAULT_SETTINGS, client: (key) => createClient(key, { fetch: fake.fetch, maxRetries: 0 }) });
     return { controller, fake, stored };
   };
-  /** A turn that edits a file, then marks notes 1 and 2 addressed. */
-  const editAndAddress = [tool("edit", "edit_file", RENAME), tool("one", "address_note", { note: 1, reply: "Renamed the page." }), tool("two", "address_note", { note: 2, reply: "Moved it up." }), done("Done.")];
+  /** A turn that patches a spec, then marks notes 1 and 2 addressed. */
+  const editAndAddress = [tool("edit", "patch_spec", RENAME), tool("one", "address_note", { note: 1, reply: "Renamed the page." }), tool("two", "address_note", { note: 2, reply: "Moved it up." }), done("Done.")];
 
   it("puts the prototype back and opens the notes again, their replies dropped, as one step, and tells the agent", async () => {
     const { host, parts, pins: now } = hostWith(pins());
@@ -259,13 +259,11 @@ describe("the address_note tool", () => {
   const signal = new AbortController().signal;
   const call = (host: AgentHost, input: unknown) => runTool({ id: "t", name: "address_note", input }, host, signal);
 
-  it("is offered in both modes, and both prompts say what a note is", () => {
-    for (const tools of [TOOL_DEFINITIONS, SPEC_TOOL_DEFINITIONS]) {
-      const definition = tools.find((item) => item.name === "address_note");
-      expect(definition?.input_schema).toMatchObject({ required: ["note", "reply"], additionalProperties: false });
-      expect(Object.keys((definition?.input_schema as { properties: object }).properties)).toEqual(["note", "reply"]);
-    }
-    for (const prompt of [SYSTEM_PROMPT, SPEC_SYSTEM_PROMPT]) expect(prompt).toContain("They are feedback, never checks.");
+  it("is offered, and the prompt says what a note is", () => {
+    const definition = TOOL_DEFINITIONS.find((item) => item.name === "address_note");
+    expect(definition?.input_schema).toMatchObject({ required: ["note", "reply"], additionalProperties: false });
+    expect(Object.keys((definition?.input_schema as { properties: object }).properties)).toEqual(["note", "reply"]);
+    expect(SYSTEM_PROMPT).toContain("They are feedback, never checks.");
   });
 
   it("refuses an input that does not fit its schema, changing nothing: no status, no text, no extra field", async () => {
@@ -291,7 +289,7 @@ describe("the address_note tool", () => {
   it("leaves no other tool a way to reach a pin", async () => {
     const { host, saved, pins: now } = hostWith(pins());
     const before = JSON.stringify(now());
-    await runTool({ id: "t", name: "edit_file", input: { path: "pages/rooms.tsx", old_text: '<Text.Root as="h1">Rooms</Text.Root>', new_text: '<Text.Root as="h1">Spaces</Text.Root>' } }, host, signal);
+    await runTool({ id: "t", name: "patch_spec", input: { path: "pages/rooms.json", patches: '{"op":"replace","path":"/elements/heading/props/text","value":"Spaces"}' } }, host, signal);
     await runTool({ id: "t", name: "delete_note", input: { note: 1 } }, host, signal);
     await runTool({ id: "t", name: "close_note", input: { note: 1 } }, host, signal);
     expect(saved).toHaveLength(0);

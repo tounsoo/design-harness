@@ -31,6 +31,7 @@ export function ChatPanel({
   prefill,
   onClose,
   suggestion,
+  readOnly,
 }: {
   readonly controller: AgentController;
   readonly vault: KeyVault;
@@ -45,6 +46,8 @@ export function ChatPanel({
   readonly onClose?: () => void;
   /** Something that keeps coming up, offered quietly: accepting sends the agent the evidence; nothing happens unless the person presses. */
   readonly suggestion?: { readonly pattern: Pattern; readonly onAccept: () => void; readonly onDismiss: () => void };
+  /** Why the agent cannot work on the open prototype (a TSX one is read-only): the box is disabled and this is said instead. */
+  readonly readOnly?: string;
 }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getState);
   const key = useSyncExternalStore(vault.subscribe, vault.getState);
@@ -63,7 +66,7 @@ export function ChatPanel({
   const send = (event?: FormEvent) => {
     event?.preventDefault();
     const text = draft.trim();
-    if (!text || state.running || !key.present || !state.loaded) return;
+    if (!text || state.running || !key.present || !state.loaded || readOnly !== undefined) return;
     setDraft("");
     void controller.send(text);
   };
@@ -97,6 +100,11 @@ export function ChatPanel({
         </Disclosure.Root>
       )}
 
+      {readOnly !== undefined && (
+        <Alert.Root tone="info" className="chat-problem" data-testid="chat-read-only">
+          <Alert.Description>{readOnly}</Alert.Description>
+        </Alert.Root>
+      )}
       {state.problem && (
         <Alert.Root tone="warning" className="chat-problem">
           <Alert.Description>{state.problem}</Alert.Description>
@@ -149,11 +157,11 @@ export function ChatPanel({
         <Conversation.ScrollButton />
       </Conversation.Root>
 
-      {suggestion && key.present && <LoopSuggestion {...suggestion} />}
+      {suggestion && key.present && readOnly === undefined && <LoopSuggestion {...suggestion} />}
 
       <form className="chat-composer" onSubmit={send}>
-        <Field.Root aria-label="Message the agent" disabled={!key.present} className="chat-input">
-          <Field.Textarea ref={field} value={draft} onValueChange={setDraft} onKeyDown={onKeyDown} rows={2} maxRows={8} autoGrow placeholder={key.present ? "Describe a change…" : "Add your API key above to start"} />
+        <Field.Root aria-label="Message the agent" disabled={!key.present || readOnly !== undefined} className="chat-input">
+          <Field.Textarea ref={field} value={draft} onValueChange={setDraft} onKeyDown={onKeyDown} rows={2} maxRows={8} autoGrow placeholder={readOnly !== undefined ? "This prototype is read-only" : key.present ? "Describe a change…" : "Add your API key above to start"} />
           <Field.Row className="chat-composer-row">
             <Text.Root as="span" tone="muted" className="chat-composer-hint">
               {key.present ? `${model} · Enter to send` : ""}
@@ -166,7 +174,7 @@ export function ChatPanel({
                 Stop
               </Button.Root>
             ) : (
-              <Button.Root type="submit" variant="primary" aria-label="Send" disabled={!key.present || draft.trim() === ""}>
+              <Button.Root type="submit" variant="primary" aria-label="Send" disabled={!key.present || readOnly !== undefined || draft.trim() === ""}>
                 <Button.Icon>
                   <ArrowUp />
                 </Button.Icon>

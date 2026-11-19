@@ -3,17 +3,16 @@ import { nook } from "../../../../packages/core/examples/nook/project";
 
 /**
  * The project the app opens with when it has none: core's worked example,
- * Nook on Todae, with its legal booking prototype twice: in TSX, and as
- * json-render specs. Both are read from the files core's own tests read, so
- * the seed and the regression fixtures cannot drift apart.
+ * Nook on Todae, with its legal booking prototype as json-render specs, read
+ * from the files core's own tests read, so the seed and the regression
+ * fixtures cannot drift apart. The app makes and edits spec prototypes only,
+ * so the seed holds no TSX one.
  */
-const ROOT = "../../../../packages/core/examples/nook/prototypes/legal/booking/";
-const raw = import.meta.glob("../../../../packages/core/examples/nook/prototypes/legal/booking/**/*", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
-const SPEC_ROOT = "../../../../packages/core/examples/nook/prototypes/spec/legal/booking/";
-const specRaw = import.meta.glob("../../../../packages/core/examples/nook/prototypes/spec/legal/booking/**/*", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
+const ROOT = "../../../../packages/core/examples/nook/prototypes/spec/legal/booking/";
+const raw = import.meta.glob("../../../../packages/core/examples/nook/prototypes/spec/legal/booking/**/*", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 
-export const SEED_PROTOTYPE_ID = "booking";
-export const SEED_SPEC_PROTOTYPE_ID = "booking-spec";
+/** The seeded prototype's id, kept from when the seed also held a TSX booking prototype, so a stored chat or pin still finds it. */
+export const SEED_PROTOTYPE_ID = "booking-spec";
 
 function prototypeFrom(root: string, texts: Record<string, string>): Prototype {
   const files: Record<string, string> = {};
@@ -35,8 +34,8 @@ function prototypeFrom(root: string, texts: Record<string, string>): Prototype {
  */
 export const SEED_VIEWS: ProjectConfig["views"] = [...nook.views, ...nook.views.map((view) => ({ ...view, name: `${view.name}-dark`, scheme: "dark" as const }))];
 
-export function seedProject(): { readonly config: ProjectConfig; readonly prototype: Prototype; readonly spec: Prototype } {
+export function seedProject(): { readonly config: ProjectConfig; readonly prototype: Prototype } {
   const config = parseProjectConfig(JSON.parse(JSON.stringify({ ...nook, views: SEED_VIEWS })));
   if (!config.ok) throw new Error("the Nook seed does not validate");
-  return { config: config.value, prototype: prototypeFrom(ROOT, raw), spec: prototypeFrom(SPEC_ROOT, specRaw) };
+  return { config: config.value, prototype: prototypeFrom(ROOT, raw) };
 }

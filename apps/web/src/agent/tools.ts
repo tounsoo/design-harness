@@ -1,6 +1,5 @@
 import type { BetaTool } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { ROLE_NAMES, dryRunAdoption, formatIssues, parsePrototype, propose, revise, type CheckReport, type JsonValue, type Variant, type VariantState, type FailingExample, type PassingExample, type ProjectConfig, type Proposal, type Prototype, type ProposalDraft } from "@design-harness/core";
-import type { CompileProblem } from "../runtime/transform";
 import { MAX_REPLY_LENGTH, addressPin, openPins, type PinState } from "../pins/model";
 import { validateInput, type JsonSchema } from "./schema";
 import { SPEC_TOOL_DESCRIPTIONS, SPEC_TOOL_SCHEMAS, insertLayout, listLayouts, patchSpec, setLayoutParams, writeSpec } from "./spec-tools";
@@ -29,8 +28,8 @@ export type Measured = { readonly revision: number; readonly report: CheckReport
 export interface AgentHost {
   config(): ProjectConfig;
   prototype(): Prototype;
-  /** Makes `next` the prototype at once, as a new revision; returns it and what did not compile. */
-  apply(next: Prototype): { readonly revision: number; readonly compileProblems: readonly CompileProblem[] };
+  /** Makes `next` the prototype at once, as a new revision, and returns that revision. */
+  apply(next: Prototype): { readonly revision: number };
   saveConfig(next: ProjectConfig): Promise<void>;
   /** Core's report for the current source, once every frame has measured that revision. */
   measured(signal: AbortSignal): Promise<Measured>;
@@ -53,12 +52,6 @@ export interface AgentHost {
 
 type Tool = { readonly definition: BetaTool; readonly schema: JsonSchema };
 
-const PATH: JsonSchema = {
-  type: "string",
-  pattern: "^(?!manifest\\.json$)[A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*\\.(?:tsx|ts|jsx|js)$",
-  maxLength: 160,
-  description: 'A path inside the prototype, such as "pages/booking.tsx": forward slashes, no leading "/", "./" or "..", ending .tsx, .ts, .jsx or .js.',
-};
 const SLUG = "^[a-z0-9]+(?:-[a-z0-9]+)*$";
 const NOTHING: JsonSchema = { type: "object", properties: {}, additionalProperties: false };
 const MANIFEST_SCHEMA: JsonSchema = {
@@ -69,6 +62,7 @@ const MANIFEST_SCHEMA: JsonSchema = {
     layouts: { type: "array", items: { type: "object" }, description: 'Each { "id", "component": { "file", "export" } }.' },
     scenarios: { type: "array", items: { type: "object" }, description: 'Each { "id", "state", "page" }: one row of frames, the page rendered in that flow state.' },
     flow: { type: "object", description: '{ "states": [...], "tasks": [{ "task", "start", "transitions": [{ "from", "event", "to" }] }] }.' },
+    format: { type: "string", enum: ["spec"], description: 'Optional: "spec", as list_files shows it. A prototype stays a spec either way.' },
   },
   additionalProperties: false,
 };
@@ -144,6 +138,14 @@ const tool = (name: string, description: string, schema: JsonSchema): Tool => ({
   schema,
 });
 
+/**
+ * The agent's tools, in a fixed order so the cached prefix never changes:
+ * reading, the manifest, the checks and proposals; write_spec and
+ * patch_spec, which edit a spec as data and are checked against the catalog
+ * before they apply; the layout tools, list_layouts, insert_layout and
+ * set_layout_params; the variant tools; and address_note. There is no tool
+ * that writes code: the agent writes specs only.
+ */
 const TOOLS: readonly Tool[] = [
   tool(
     "read_project",
@@ -156,22 +158,12 @@ const TOOLS: readonly Tool[] = [
     "Read one file of the prototype, or manifest.json for the manifest. Call it before editing a file you have not read in this conversation.",
     { type: "object", properties: { path: { type: "string", maxLength: 160, description: 'A file from list_files, or "manifest.json".' } }, required: ["path"], additionalProperties: false },
   ),
-  tool(
-    "write_file",
-    "Create a file, or replace a file's whole content. Use it for new files and rewrites; use edit_file for a small change. The change is a new revision at once: the frames re-render and the checks run again.",
-    { type: "object", properties: { path: PATH, content: { type: "string", maxLength: 100_000 } }, required: ["path", "content"], additionalProperties: false },
-  ),
-  tool(
-    "edit_file",
-    "Replace one exact piece of text in a file with another. old_text must appear exactly once in the file, whitespace included. The change is a new revision at once.",
-    {
-      type: "object",
-      properties: { path: PATH, old_text: { type: "string", minLength: 1, maxLength: 50_000 }, new_text: { type: "string", maxLength: 100_000 } },
-      required: ["path", "old_text", "new_text"],
-      additionalProperties: false,
-    },
-  ),
-  tool("delete_file", "Delete a file from the prototype. The change is a new revision at once.", { type: "object", properties: { path: PATH }, required: ["path"], additionalProperties: false }),
+  tool("list_layouts", SPEC_TOOL_DESCRIPTIONS.list_layouts, SPEC_TOOL_SCHEMAS.list_layouts),
+  tool("write_spec", SPEC_TOOL_DESCRIPTIONS.write_spec, SPEC_TOOL_SCHEMAS.write_spec),
+  tool("patch_spec", SPEC_TOOL_DESCRIPTIONS.patch_spec, SPEC_TOOL_SCHEMAS.patch_spec),
+  tool("insert_layout", SPEC_TOOL_DESCRIPTIONS.insert_layout, SPEC_TOOL_SCHEMAS.insert_layout),
+  tool("set_layout_params", SPEC_TOOL_DESCRIPTIONS.set_layout_params, SPEC_TOOL_SCHEMAS.set_layout_params),
+  tool("delete_file", "Delete a spec file from the prototype. The change is a new revision at once.", { type: "object", properties: { path: SPEC_TOOL_SCHEMAS.patch_spec.properties.path }, required: ["path"], additionalProperties: false }),
   tool(
     "set_manifest",
     "Replace the prototype's manifest: its pages, layouts, scenarios and flow. Core validates it first; a manifest it refuses is not applied, and the reasons come back. The change is a new revision at once.",
@@ -192,6 +184,9 @@ const TOOLS: readonly Tool[] = [
     "Revise an open proposal, such as one the user sent back to you with a note. Give its id, a note saying what you changed and why (kept in the proposal's history beside the version it replaces), and only the fields you change: each one you give replaces that field whole, and the rest stay as they are. examples, when given, replaces both lists, each example starting from the current prototype. Core's adoption dry run runs again on the revision. Only an open proposal can be revised, and its status stays open: only the user can approve, decline or adopt it.",
     { type: "object", properties: { id: { type: "string", pattern: SLUG }, note: { type: "string", minLength: 1, maxLength: 2000 }, ...PROPOSAL_FIELDS }, required: ["id", "note"], additionalProperties: false },
   ),
+  tool("propose_variants", VARIANT_TOOL_DESCRIPTIONS.propose_variants, VARIANT_TOOL_SCHEMAS.propose_variants),
+  tool("revise_variant", VARIANT_TOOL_DESCRIPTIONS.revise_variant, VARIANT_TOOL_SCHEMAS.revise_variant),
+  tool("list_variants", VARIANT_TOOL_DESCRIPTIONS.list_variants, VARIANT_TOOL_SCHEMAS.list_variants),
   tool(
     "address_note",
     "Mark one of the person's pinned notes as addressed, after you changed the prototype for it, with a short reply saying what you did (or why you could not). Notes are the person's feedback on a spot of a frame; they arrive with the person's message as \"Your notes from the person\". They are never checks and change no rule's verdict. This is all you can do to a note: you cannot write, edit, close, reopen or remove one. The person closes it, or reopens it for you to try again.",
@@ -204,39 +199,14 @@ const TOOLS: readonly Tool[] = [
   ),
 ];
 
-/** The tool definitions sent with every request, in a fixed order so the cached prefix never changes. */
+/** The tool definitions sent with every request. */
 export const TOOL_DEFINITIONS: readonly BetaTool[] = TOOLS.map((item) => item.definition);
 
-const shared = (name: string): Tool => TOOLS.find((item) => item.definition.name === name) as Tool;
+/** Why a prototype that is not a spec takes no tool and no turn: TSX prototypes are kept, read-only. */
+export const TSX_READ_ONLY = "This prototype is TSX. TSX prototypes are no longer edited here: the agent writes specs only. It still renders and checks, read-only. Export its code, or start a spec version of it.";
 
-/**
- * A spec prototype's tools: the same reading, manifest, checks and proposal
- * tools, and, in place of the file tools, write_spec and patch_spec, which
- * edit a spec as data and are checked against the catalog before they apply,
- * and the layout tools: list_layouts, insert_layout and set_layout_params.
- */
-const SPEC_TOOLS: readonly Tool[] = [
-  shared("read_project"),
-  shared("list_files"),
-  shared("read_file"),
-  tool("list_layouts", SPEC_TOOL_DESCRIPTIONS.list_layouts, SPEC_TOOL_SCHEMAS.list_layouts),
-  tool("write_spec", SPEC_TOOL_DESCRIPTIONS.write_spec, SPEC_TOOL_SCHEMAS.write_spec),
-  tool("patch_spec", SPEC_TOOL_DESCRIPTIONS.patch_spec, SPEC_TOOL_SCHEMAS.patch_spec),
-  tool("insert_layout", SPEC_TOOL_DESCRIPTIONS.insert_layout, SPEC_TOOL_SCHEMAS.insert_layout),
-  tool("set_layout_params", SPEC_TOOL_DESCRIPTIONS.set_layout_params, SPEC_TOOL_SCHEMAS.set_layout_params),
-  tool("delete_file", "Delete a spec file from the prototype. The change is a new revision at once.", { type: "object", properties: { path: SPEC_TOOL_SCHEMAS.patch_spec.properties.path }, required: ["path"], additionalProperties: false }),
-  shared("set_manifest"),
-  shared("run_checks"),
-  shared("draft_proposal"),
-  shared("revise_proposal"),
-  tool("propose_variants", VARIANT_TOOL_DESCRIPTIONS.propose_variants, VARIANT_TOOL_SCHEMAS.propose_variants),
-  tool("revise_variant", VARIANT_TOOL_DESCRIPTIONS.revise_variant, VARIANT_TOOL_SCHEMAS.revise_variant),
-  tool("list_variants", VARIANT_TOOL_DESCRIPTIONS.list_variants, VARIANT_TOOL_SCHEMAS.list_variants),
-  shared("address_note"),
-];
-
-/** The spec mode's tool definitions, in a fixed order. */
-export const SPEC_TOOL_DEFINITIONS: readonly BetaTool[] = SPEC_TOOLS.map((item) => item.definition);
+/** Whether the agent can work on a prototype: only a spec one. */
+export const isSpec = (prototype: Prototype): boolean => prototype.format === "spec";
 
 export type ToolCall = { readonly id: string; readonly name: string; readonly input: unknown };
 
@@ -276,9 +246,9 @@ const refused = (title: string, content: string): ToolOutcome => ({ content, isE
 
 /** Validates a call's input against its tool's schema, then runs it. */
 export async function runTool(call: ToolCall, host: AgentHost, signal: AbortSignal): Promise<ToolOutcome> {
-  const tools = host.prototype().format === "spec" ? SPEC_TOOLS : TOOLS;
-  const found = tools.find((item) => item.definition.name === call.name);
-  if (!found) return refused(`Unknown tool ${call.name}`, `There is no tool "${call.name}" for this prototype. The tools are ${tools.map((item) => item.definition.name).join(", ")}.`);
+  if (!isSpec(host.prototype())) return refused(`${call.name} not run: TSX is read-only`, `${TSX_READ_ONLY} Nothing ran.`);
+  const found = TOOLS.find((item) => item.definition.name === call.name);
+  if (!found) return refused(`Unknown tool ${call.name}`, `There is no tool "${call.name}" for this prototype. The tools are ${TOOLS.map((item) => item.definition.name).join(", ")}.`);
   const issues = validateInput(found.schema, call.input);
   if (issues.length > 0) {
     return refused(`${call.name}: input refused`, `The input does not fit ${call.name}'s schema, so nothing ran:\n${issues.slice(0, 20).join("\n")}\nThe input as received: ${JSON.stringify({ INVALID_INPUT: JSON.stringify(call.input) }).slice(0, 2000)}`);
@@ -291,10 +261,6 @@ export async function runTool(call: ToolCall, host: AgentHost, signal: AbortSign
       return listFiles(host.prototype());
     case "read_file":
       return readFile(host.prototype(), String(input.path));
-    case "write_file":
-      return writeFile(host, String(input.path), String(input.content));
-    case "edit_file":
-      return editFile(host, String(input.path), String(input.old_text), String(input.new_text));
     case "delete_file":
       return deleteFile(host, String(input.path));
     case "write_spec":
@@ -356,7 +322,7 @@ function projectText(config: ProjectConfig): string {
     {
       project: { id: config.id, name: config.name },
       library: { package: library.package, version: library.version, react: library.react, roles: Object.fromEntries(ROLE_NAMES.map((role) => [role, library.roles[role]])) },
-      pageKit: 'TSX pages import { Slot, type PageProps } from "@design-harness/page", fill their page type\'s slots with <Slot name="...">, and receive { scenario, state } as props. A spec page is a json-render spec whose root is a Page with the slots; it reads the scenario at /scenario.',
+      pageKit: "A spec page is a json-render spec whose root is a Page with its page type's slots; it reads the scenario at /scenario.",
       inventories,
       inputs,
       views,
@@ -396,31 +362,11 @@ function readFile(prototype: Prototype, path: string): ToolOutcome {
 }
 
 /** Applies a new prototype after core's validation, and says what happened. */
-function change(host: AgentHost, next: Prototype, title: string, done: string, path?: string): ToolOutcome {
+function change(host: AgentHost, next: Prototype, title: string, done: string): ToolOutcome {
   const parsed = parsePrototype(next);
   if (!parsed.ok) return refused(`${title}: refused`, `Core refused the change, so it was not applied:\n${formatIssues(parsed.error)}`);
-  const { revision, compileProblems } = host.apply(parsed.value);
-  const problems = compileProblems.filter((problem) => path === undefined || problem.file === path).map((problem) => problem.message);
-  const compiled = problems.length > 0 ? `\nIt does not compile:\n${problems.join("\n")}` : "";
-  return { content: `${done} Revision ${revision} is rendering; the checks for it follow this round.${compiled}`, isError: false, changed: true, title };
-}
-
-function writeFile(host: AgentHost, path: string, content: string): ToolOutcome {
-  const current = host.prototype();
-  const existed = current.files[path] !== undefined;
-  if (current.files[path] === content) return { content: `${path} already has exactly this content; nothing changed.`, isError: false, changed: false, title: `Wrote ${path} (unchanged)` };
-  return change(host, { ...current, files: { ...current.files, [path]: content } }, `${existed ? "Rewrote" : "Created"} ${path}`, `${existed ? "Replaced" : "Created"} ${path} (${content.split("\n").length} lines).`, path);
-}
-
-function editFile(host: AgentHost, path: string, oldText: string, newText: string): ToolOutcome {
-  const current = host.prototype();
-  const text = current.files[path];
-  if (text === undefined) return refused(`edit_file: no ${path}`, `There is no file "${path}". Use write_file to create it.`);
-  const count = text.split(oldText).length - 1;
-  if (count !== 1) return refused(`edit_file: ${path} not changed`, `old_text appears ${count} times in ${path}; it must appear exactly once. Read the file and copy the text exactly, with enough around it to be unique.`);
-  const next = text.replace(oldText, () => newText);
-  if (next === text) return { content: "old_text and new_text are the same; nothing changed.", isError: false, changed: false, title: `Edited ${path} (unchanged)` };
-  return change(host, { ...current, files: { ...current.files, [path]: next } }, `Edited ${path}`, `Edited ${path}.`, path);
+  const { revision } = host.apply(parsed.value);
+  return { content: `${done} Revision ${revision} is rendering; the checks for it follow this round.`, isError: false, changed: true, title };
 }
 
 function deleteFile(host: AgentHost, path: string): ToolOutcome {
@@ -433,7 +379,8 @@ function deleteFile(host: AgentHost, path: string): ToolOutcome {
 
 function setManifest(host: AgentHost, manifest: Record<string, unknown>): ToolOutcome {
   const current = host.prototype();
-  return change(host, { ...(manifest as Omit<Prototype, "files">), files: current.files }, "Changed the manifest", "Replaced the manifest.");
+  // The manifest replaces the pages, layouts, scenarios and flow; the prototype stays a spec, whether or not the input says so.
+  return change(host, { ...(manifest as Omit<Prototype, "files">), format: "spec", files: current.files }, "Changed the manifest", "Replaced the manifest.");
 }
 
 const counts = (report: CheckReport) => {
