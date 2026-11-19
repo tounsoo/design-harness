@@ -4096,7 +4096,8 @@ test("a pinned note reaches the scripted agent as a finding; the agent fixes it 
   await enterKey(page);
   await page.getByRole("tab", { name: /Checks/ }).click();
   await page.getByTestId("notes-ask").click();
-  assert.equal(await page.getByRole("textbox", { name: "Message the agent" }).inputValue(), "Please address my pinned note.");
+  const box = page.getByRole("textbox", { name: "Message the agent" });
+  assert.equal(await eventually(page, () => box.inputValue(), (text) => text !== "", "the chat box is filled with a message about the note"), "Please address my pinned note.");
   await page.getByRole("button", { name: "Send" }).click();
   assert.equal(await turnEnded(page), "done");
   assert.equal(api.left(), 0);
