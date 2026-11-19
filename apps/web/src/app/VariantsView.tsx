@@ -123,7 +123,11 @@ function FrameRow({ item, label, scenario, viewName }: { readonly item: Measured
   }, []);
   const shown = item.state.frames.filter((spec) => spec.scenario.id === scenario && (viewName === "all" || spec.view.name === viewName));
   // Until the row is measured, the least scale: nothing drawn wider than the row.
-  const scale = box ? rowScale(shown.map((spec) => spec.view.width), box) : MIN_SCALE;
+  // As on the board, a scenario's light views share one line and its dark views the next: the row is sized for the widest line, and the next scheme wraps under it.
+  const lines = new Map<string, number[]>();
+  for (const spec of shown) lines.set(spec.view.scheme, [...(lines.get(spec.view.scheme) ?? []), spec.view.width]);
+  const widest = [...lines.values()].reduce((best, line) => (line.reduce((sum, width) => sum + width, 0) > best.reduce((sum, width) => sum + width, 0) ? line : best), [] as number[]);
+  const scale = box ? rowScale(widest, box) : MIN_SCALE;
   return (
     <div className="variant-frames" ref={row}>
       {item.state.frames.map((spec) => (
