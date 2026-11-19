@@ -103,4 +103,33 @@ export const SHIPPED_LIBRARIES: readonly ShippedLibrary[] = [
     ],
     describe: async () => (await import("../../../../packages/core/libraries/mantine-core-9.7.4.json")).default as unknown as LibraryDescription,
   },
+  {
+    // Added by the library request workflow from issue #32. A person must check:
+    //   - The primary-action role was drafted at medium confidence: check it in New project.
+    //   - Its `setup` (light and dark, root part, rules, part props) and `notes` are copied from the 0.11.3 entry: check they still hold for 0.11.2.
+    //   - `about` is the workflow's words: say what the library is.
+    id: "tounsoo-todae-0-11-2",
+    name: "@tounsoo/todae",
+    package: "@tounsoo/todae",
+    version: "0.11.2",
+    about: "Requested in issue #32. Parts are namespaced, such as Button.Root.",
+    setup: {
+      react: FRAME_REACT,
+      stylesheets: ["dist/todae.css"],
+      schemeAttribute: "data-appearance",
+      rules: [
+        {
+          type: "prop-values",
+          id: "text-as-heading-or-paragraph",
+          select: { component: "Text.Root" },
+          prop: "as",
+          allowed: ["h1", "h2", "h3", "p", "span"],
+          required: true,
+          description: "Text.Root says what it is: a heading level, a paragraph or a span.",
+        },
+      ],
+    },
+    notes: ["Light and dark come from the data-appearance attribute on the page.", "One rule of its own: a Text.Root says whether it is a heading, a paragraph or a span."],
+    describe: async () => (await import("../../../../packages/core/libraries/tounsoo-todae-0.11.2.json")).default as unknown as LibraryDescription,
+  },
 ];

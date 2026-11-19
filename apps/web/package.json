@@ -23,6 +23,7 @@
     "@mantine/hooks": "9.7.4",
     "@tounsoo/todae": "0.11.3",
     "@tounsoo/todae-0.10.1": "npm:@tounsoo/todae@0.10.1",
+    "@tounsoo/todae-0.11.2": "npm:@tounsoo/todae@0.11.2",
     "dom-accessibility-api": "0.7.1",
     "fflate": "0.8.3",
     "lucide-react": "1.74.0",
@@ -43,6 +44,9 @@
           "dist/todae.css"
         ],
         "0.10.1": [
+          "dist/todae.css"
+        ],
+        "0.11.2": [
           "dist/todae.css"
         ]
       },
