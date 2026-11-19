@@ -585,12 +585,15 @@ function Actions({ proposal, agent, measuring, ready, dryRun, judgedRefusal, onA
   const [form, setForm] = useState<"decline" | "send-back" | null>(null);
   const { status } = proposal;
   if (status === "adopted" || status === "declined") return null;
-  const measured = measuring.total > 0 && measuring.answered === measuring.total && measuring.failed === 0;
-  const progress = measured
-    ? `Every example measured: ${measuring.total} frames.`
-    : measuring.failed > 0
-      ? `${measuring.failed === 1 ? "An example" : `${measuring.failed} examples`} could not be measured in every frame, so it cannot be adopted as it is.`
-      : `Measuring the examples: ${measuring.answered} of ${measuring.total} frames answered.`;
+  const none = proposal.examples.pass.length + proposal.examples.fail.length === 0;
+  const measured = none || (measuring.total > 0 && measuring.answered === measuring.total && measuring.failed === 0);
+  const progress = none
+    ? "No examples to measure: it only removes rules."
+    : measured
+      ? `Every example measured: ${measuring.total} frames.`
+      : measuring.failed > 0
+        ? `${measuring.failed === 1 ? "An example" : `${measuring.failed} examples`} could not be measured in every frame, so it cannot be adopted as it is.`
+        : `Measuring the examples: ${measuring.answered} of ${measuring.total} frames answered.`;
   const verdict = judgedRefusal
     ? { tone: "critical" as const, text: `Core cannot judge the examples: [${judgedRefusal.code}] ${judgedRefusal.message}` }
     : !dryRun
@@ -624,7 +627,7 @@ function Actions({ proposal, agent, measuring, ready, dryRun, judgedRefusal, onA
           </Stack.Root>
           <Text.Root as="p" tone="muted" id="review-measuring" className="review-small" aria-live="polite" data-testid="review-measuring" data-measured={measured ? "" : undefined}>
             {progress}
-            {status === "approved" && !ready ? " Adoption waits until every example, and every prototype in the project, is measured." : ""}
+            {status === "approved" && !ready ? (none ? " Adoption waits until every prototype in the project is measured." : " Adoption waits until every example, and every prototype in the project, is measured.") : ""}
           </Text.Root>
           {verdict && (
             <Text.Root as="p" className="review-small review-verdict" data-tone={verdict.tone} data-testid="review-verdict">
