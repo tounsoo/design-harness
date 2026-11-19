@@ -1,4 +1,5 @@
 import { Alert, Badge, Button, Card, Code, DataList, Disclosure, EmptyState, ErrorMessage, Field, Label, Stack, Steps, Table, Text } from "@tounsoo/todae";
+import { Check, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import {
   applyProposal,
@@ -18,6 +19,7 @@ import {
   type Finding,
   type NewlyFailing,
   type PassingExample,
+  type InventoryOp,
   type ProjectConfig,
   type Proposal,
   type ProposalContent,
@@ -30,13 +32,17 @@ import type { PrototypeRecord } from "../store/project-file";
 import { adoptProposal, approveProposal, declineProposal, sendBackProposal, type ExampleMeasurement } from "../review/actions";
 import { inventoryDiff, type DiffSection } from "../review/diff";
 import { REVIEWER, draftedBy, formatTime, proposalTimeline, timelineTitle, type TimelineEntry } from "../review/timeline";
-import { FrameCard } from "./Board";
+import { FrameCard, FrameViewport } from "./Board";
 import { EvidenceFigure } from "../visual/figures";
+import { ClassScale, ProposalTrack, RuleFigure } from "../visual/project-figures";
+import { proofPair, proposalPreview, ruleBound } from "../visual/project-model";
 import { FindingButton } from "./ChecksPanel";
 import { lineRange } from "./CodePanel";
+import { SpecimenTile } from "./Palette";
+import { PreviewFigure, SnapshotThumb, flaggedIn } from "./ProposalPreview";
 import { ClassBadge, RequestBadge, RuleWords, StatusBadge, classWords, classificationOf } from "./proposal-parts";
 import { measurementOf, useSessions, type Measured, type Measurement } from "./sessions";
-import { exampleLabel, frameNameOf, scenarioNameOf, viewLabel } from "./words";
+import { exampleLabel, frameNameOf, scenarioName, scenarioNameOf, viewLabel } from "./words";
 
 type Props = {
   readonly config: ProjectConfig;
@@ -151,6 +157,7 @@ function RequestReview({ config, proposal, agent, onBack, onSave, onSendBack }: 
           <Text.Root as="h1" className="review-title">
             {proposal.title}
           </Text.Root>
+          <ProposalTrack proposal={proposal} note={proposal.status === "open" ? "it cannot be approved: it needs a code change" : undefined} />
           <Stack.Root direction="row" align="center" gap="condensed" wrap>
             <StatusBadge status={proposal.status} />
             <RequestBadge />
@@ -443,6 +450,56 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
 
   const drafted = draftedBy(proposal);
   const classification = classificationOf(proposal, config);
+  // What the current step waits for, from the measurement and core's dry run.
+  const trackNote =
+    proposal.status === "open"
+      ? "waiting for you"
+      : proposal.status === "approved"
+        ? exampleMeasurement === null || existing === null
+          ? measuring.failed > 0
+            ? "an example could not be measured"
+            : `measuring, ${measuring.answered} of ${measuring.total} frames`
+          : dryRun && !dryRun.ok
+            ? "core's dry run refuses it"
+            : "ready for you to adopt"
+        : proposal.status === "adopted"
+          ? "in force"
+          : undefined;
+  const classSection = (
+    <section aria-labelledby="review-class" className="review-section" data-testid="review-class">
+      <Text.Root as="h2" id="review-class">
+        How far it moves the project
+      </Text.Root>
+      <Text.Root as="p" tone="muted">
+        Core classifies every change{proposal.classification ? ", kept from when it was adopted" : ", against the project as it is now"}. A proposal sits at its loosest change: this one {classWords(classification.class)}.
+      </Text.Root>
+      <Card.Root className="figure-card">
+        <ClassScale value={classification.class} />
+        <Table.Root className="project-table" aria-label="Each change and its class">
+          <Table.Head>
+            <Table.Row>
+              <Table.HeaderCell>Change</Table.HeaderCell>
+              <Table.HeaderCell>Class</Table.HeaderCell>
+              <Table.HeaderCell>Why</Table.HeaderCell>
+            </Table.Row>
+          </Table.Head>
+          <Table.Body>
+            {classification.changes.map((change, index) => (
+              <Table.Row key={index} data-sets-class={change.class === classification.class ? "" : undefined}>
+                <Table.Cell>
+                  <Code.Root>{change.change}</Code.Root>
+                </Table.Cell>
+                <Table.Cell>
+                  <ClassBadge value={change.class} />
+                </Table.Cell>
+                <Table.Cell>{change.reason}</Table.Cell>
+              </Table.Row>
+            ))}
+          </Table.Body>
+        </Table.Root>
+      </Card.Root>
+    </section>
+  );
 
   return (
     <div className="review" data-proposal={id} data-status={proposal.status}>
@@ -456,9 +513,9 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
           <Text.Root as="h1" className="review-title">
             {proposal.title}
           </Text.Root>
+          <ProposalTrack proposal={proposal} note={trackNote} />
           <Stack.Root direction="row" align="center" gap="condensed" wrap>
             <StatusBadge status={proposal.status} />
-            <ClassBadge value={classification.class} />
             <Code.Root>{id}</Code.Root>
             <Text.Root as="span" tone="muted">
               Drafted by {drafted.by}, <time dateTime={drafted.at}>{formatTime(drafted.at)}</time>
@@ -493,6 +550,8 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
 
         {proposal.status === "adopted" && <InForce proposal={proposal} config={config} adoption={adoption} onOpenPrototype={onOpenPrototype} prototypes={prototypes} />}
 
+        {classSection}
+
         <section aria-labelledby="review-why" className="review-section">
           <Text.Root as="h2" id="review-why">
             Why
@@ -515,43 +574,12 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
           )}
         </section>
 
-        <Changes proposal={proposal} config={config} />
+        <Changes proposal={proposal} config={config} renderConfig={renderConfig} views={views} onShowExample={setFocusExample} />
 
         <Examples views={views} config={renderConfig} status={proposal.status} focus={focusExample} onFocused={() => setFocusExample(null)} />
 
-        {live && <Impact impact={impact} measuring={existing === null} dryRun={dryRun} prototypes={prototypes} onOpenPrototype={onOpenPrototype} />}
+        {live && <Impact impact={impact} measuring={existing === null} dryRun={dryRun} prototypes={prototypes} existing={existing} views={config.views} onOpenPrototype={onOpenPrototype} />}
         {live && <OtherFrames items={otherFrames} />}
-
-        <section aria-labelledby="review-class" className="review-section">
-          <Text.Root as="h2" id="review-class">
-            Classification: {classWords(classification.class)}
-          </Text.Root>
-          <Text.Root as="p" tone="muted">
-            Core&apos;s reading of every change{proposal.classification ? ", kept from when it was adopted" : ", against the project as it is now"}. A proposal is as loose as its loosest change.
-          </Text.Root>
-          <Table.Root className="project-table" aria-label="Classification">
-            <Table.Head>
-              <Table.Row>
-                <Table.HeaderCell>Change</Table.HeaderCell>
-                <Table.HeaderCell>Class</Table.HeaderCell>
-                <Table.HeaderCell>Why</Table.HeaderCell>
-              </Table.Row>
-            </Table.Head>
-            <Table.Body>
-              {classification.changes.map((change, index) => (
-                <Table.Row key={index}>
-                  <Table.Cell>
-                    <Code.Root>{change.change}</Code.Root>
-                  </Table.Cell>
-                  <Table.Cell>
-                    <ClassBadge value={change.class} />
-                  </Table.Cell>
-                  <Table.Cell>{change.reason}</Table.Cell>
-                </Table.Row>
-              ))}
-            </Table.Body>
-          </Table.Root>
-        </section>
 
         <History proposal={proposal} config={config} />
       </Stack.Root>
@@ -777,8 +805,13 @@ function InForce({ proposal, config, adoption, prototypes, onOpenPrototype }: { 
 }
 
 /** What it changes: the inventories and rule inputs before and after, and each rule it adds or removes in words. */
-function Changes({ proposal, config }: { readonly proposal: Proposal; readonly config: ProjectConfig }) {
+function Changes({ proposal, config, renderConfig, views, onShowExample }: { readonly proposal: Proposal; readonly config: ProjectConfig; /** The project with the proposal applied. */ readonly renderConfig: ProjectConfig; readonly views: readonly ExampleView[]; readonly onShowExample: (name: string) => void }) {
   const diff = proposal.status === "adopted" ? null : inventoryDiff(config, proposal);
+  const added = proposal.inventory.flatMap((op) => (op.op === "add-component" ? [op.name] : []));
+  const dropped = proposal.inventory.flatMap((op) => (op.op === "remove-component" ? [op.name] : []));
+  const quiet = renderConfig.inventories.components.filter((name) => !added.includes(name));
+  // The rule inputs it moves, each as its figure: a cap, a step budget, a page type's slots.
+  const figured = proposal.inventory.filter((op) => FIGURED_OPS.includes(op.op));
   const removed = proposal.rules.remove.map((id) => ({ id, rule: config.rules.find((rule) => rule.id === id) }));
   return (
     <section aria-labelledby="review-changes" className="review-section">
@@ -804,15 +837,68 @@ function Changes({ proposal, config }: { readonly proposal: Proposal; readonly c
           ))}
         </div>
       )}
+      {(added.length > 0 || dropped.length > 0) && (
+        <div className="palette-after" data-testid="palette-after">
+          <div className="section-head">
+            <Text.Root as="h3">What a prototype could build with, after</Text.Root>
+            <Text.Root as="p" tone="muted">
+              {added.length > 0 ? `The new ${added.length === 1 ? "part is" : "parts are"} drawn by ${config.library.package} ${config.library.version}, as the examples below draw ${added.length === 1 ? "it" : "them"}.` : `What it removes is drawn by ${config.library.package} ${config.library.version}, as it is in the project now.`}
+            </Text.Root>
+          </div>
+          <ul className="palette" aria-label="Components it adds or removes">
+            {added.map((name) => (
+              <li key={name}>
+                <SpecimenTile config={renderConfig} component={name} mark="new">
+                  <Text.Root as="p" tone="muted">
+                    {proposal.status === "adopted" ? "Added by this proposal." : "Before: not in the inventory."}
+                  </Text.Root>
+                </SpecimenTile>
+              </li>
+            ))}
+            {dropped.map((name) => (
+              <li key={name}>
+                <SpecimenTile config={config} component={name} mark="removed">
+                  <Text.Root as="p" tone="muted">
+                    {proposal.status === "adopted" ? "Removed by this proposal." : "After: not in the inventory."}
+                  </Text.Root>
+                </SpecimenTile>
+              </li>
+            ))}
+          </ul>
+          <Text.Root as="p" tone="muted" className="review-small">
+            {quiet.length === 0 ? "Nothing else is in the inventory." : `Unchanged beside ${added.length + dropped.length === 1 ? "it" : "them"}: ${quiet.join(", ")}.`}
+          </Text.Root>
+        </div>
+      )}
+      {figured.length > 0 && (
+        <ul className="review-rules op-figures" aria-label="The limits it moves, drawn" data-testid="op-figures">
+          {figured.map((op, index) => (
+            <li key={index} className="op-figure preview" data-op={op.op}>
+              <PreviewFigure preview={proposalPreview({ ...proposal, inventory: [op] }, config)} config={config} />
+            </li>
+          ))}
+        </ul>
+      )}
       {proposal.rules.add.length > 0 && (
         <>
-          <Text.Root as="h3">
-            Adds {proposal.rules.add.length === 1 ? "a rule" : `${proposal.rules.add.length} rules`}
-          </Text.Root>
+          <div className="section-head">
+            <Text.Root as="h3">
+              {proposal.rules.add.length === 1 ? "The rule it adds, and its proof" : `The ${proposal.rules.add.length} rules it adds, and their proof`}
+            </Text.Root>
+            <Text.Root as="p" tone="muted">
+              Each rule in core&apos;s words, with a picture of the kind of thing it checks and two of the proposal&apos;s examples: one it must pass and one it must flag. They are examples, not a before and after.
+            </Text.Root>
+          </div>
           <ul className="review-rules" aria-label="Rules it adds">
             {proposal.rules.add.map((rule) => (
               <li key={rule.id}>
-                <RuleWords rule={rule} config={config} />
+                <Card.Root className="rule-proof" data-rule-proof={rule.id}>
+                  <div className="rule-proof-rule">
+                    <RuleFigure rule={rule} label={ruleBound(rule, renderConfig)} />
+                    <RuleWords rule={rule} config={config} />
+                  </div>
+                  <Proof proposal={proposal} rule={rule.id} views={views} config={renderConfig} onShowExample={onShowExample} />
+                </Card.Root>
               </li>
             ))}
           </ul>
@@ -843,6 +929,103 @@ function Changes({ proposal, config }: { readonly proposal: Proposal; readonly c
         </>
       )}
     </section>
+  );
+}
+
+const FIGURED_OPS: readonly InventoryOp["op"][] = ["add-cap", "set-cap", "set-max-steps", "add-task", "add-page-type"];
+
+/**
+ * A rule's proof, right under it: the first failing example the rule must
+ * flag and the first passing example, each drawn in a frame of its own at
+ * one scenario and view, with core's verdict. The failing one is outlined
+ * where core's finding points, with core's message quoted. The pair is two
+ * examples, not a diff: nothing says they differ only by what is outlined.
+ */
+function Proof({ proposal, rule, views, config, onShowExample }: { readonly proposal: Proposal; readonly rule: string; readonly views: readonly ExampleView[]; readonly config: ProjectConfig; readonly onShowExample: (name: string) => void }) {
+  const pair = proofPair(proposal, rule);
+  const fail = views.find((view) => view.expect === "fail" && view.name === pair.fail);
+  const pass = views.find((view) => view.expect === "pass" && view.name === pair.pass);
+  // Both are drawn at the scenario and view the rule flags the failing one in, when it has one there.
+  const flagged = fail?.findings.find((finding) => finding.rule === rule && finding.scenario !== undefined && finding.view !== undefined) ?? fail?.findings.find((finding) => finding.scenario !== undefined) ?? fail?.findings.find((finding) => finding.page !== undefined);
+  if (!fail && !pass) {
+    return (
+      <Text.Root as="p" tone="muted" data-testid="proof-none">
+        No example proves this rule. Core adopts a rule only when a failing example is flagged by it.
+      </Text.Root>
+    );
+  }
+  return (
+    <div className="proof" data-testid="rule-proof">
+      {pass ? <ProofExample view={pass} config={config} at={flagged} onShow={() => onShowExample(pass.name)} /> : <Text.Root as="p" tone="muted">No passing example.</Text.Root>}
+      {fail ? (
+        <ProofExample view={fail} config={config} at={flagged} rule={rule} onShow={() => onShowExample(fail.name)} />
+      ) : (
+        <Text.Root as="p" tone="muted" data-testid="proof-none">
+          No failing example is flagged by this rule, so core will refuse to adopt it.
+        </Text.Root>
+      )}
+    </div>
+  );
+}
+
+function ProofExample({ view, config, at, rule, onShow }: { readonly view: ExampleView; readonly config: ProjectConfig; readonly at: Finding | undefined; readonly rule?: string; readonly onShow: () => void }) {
+  const { prototype } = view.example;
+  const scenario = prototype.scenarios.find((item) => item.id === at?.scenario) ?? prototype.scenarios.find((item) => item.page === at?.page) ?? prototype.scenarios[0];
+  // The view core's finding is in, else the narrowest, where a page reads at close to its own size.
+  const shownView = config.views.find((item) => item.name === at?.view) ?? [...config.views].sort((a, b) => a.width - b.width)[0];
+  // One scenario at one view, in a session of its own: the full set is measured in the Examples section below.
+  const items = useMemo(() => {
+    if (!scenario || !shownView) return [];
+    return [{ id: `proof:${view.name}`, config: { ...config, views: [shownView] }, prototype: { ...prototype, scenarios: [scenario] } }];
+  }, [config, prototype, scenario, shownView, view.name]);
+  const [measured] = useSessions(items);
+  const [area, width] = useWidth();
+  const frame = measured?.state.frames[0];
+  const frameState = measured && frame ? (measured.state.frameStates[frame.key] ?? { state: "waiting" as const }) : undefined;
+  // What core's finding points at in this frame: the same element index, since the frame draws the same page at the same view.
+  const finding = rule ? (view.findings.find((item) => item.rule === rule && item.scenario === scenario?.id && item.view === shownView?.name) ?? view.findings.find((item) => item.rule === rule) ?? view.findings[0]) : undefined;
+  const element = finding && finding.scenario === scenario?.id && finding.view === shownView?.name ? finding.element : undefined;
+  const measuredNow = frameState?.state === "measured";
+  useEffect(() => {
+    if (!measured || !frame || !measuredNow) return;
+    measured.session.highlight(frame.key, element ?? null);
+  }, [measured?.session, frame?.key, measuredNow, element]);
+  const badge = verdictBadge(view);
+  const scale = shownView ? Math.min(1, Math.max(0.08, (width - 4) / shownView.width)) : 1;
+  return (
+    <figure className="proof-example" data-proof={view.name} data-expect={view.expect} data-verdict={view.verdict.state}>
+      <figcaption className="proof-head">
+        <span className="proof-mark" data-expect={view.expect} aria-hidden="true">
+          {view.expect === "pass" ? <Check /> : <X />}
+        </span>
+        <Text.Root as="span" weight="medium">
+          {exampleLabel(view.name)}
+        </Text.Root>
+        <Text.Root as="span" tone="muted">
+          an example that must {view.expect}
+        </Text.Root>
+        <Badge.Root tone={badge.tone} data-testid="proof-verdict">
+          {badge.text}
+        </Badge.Root>
+      </figcaption>
+      <div className="example-frames proof-frame" ref={area}>
+        {measured && frame && frameState && <FrameViewport session={measured.session} spec={frame} revision={measured.state.revision} frameState={frameState} scale={scale} hidden={false} name={`${view.name}, as proof: ${frame.scenario.id} at ${frame.view.name}`} fit />}
+      </div>
+      <Text.Root as="p" tone="muted" className="review-small">
+        {scenario ? scenarioName(scenario) : "No scenario"}
+        {shownView ? `, ${viewLabel(shownView.name).toLowerCase()}` : ""}.
+      </Text.Root>
+      {finding && view.verdict.state !== "not-judged" && (
+        <Text.Root as="p" className="fix-message" data-testid="proof-message">
+          {finding.message}
+        </Text.Root>
+      )}
+      <div>
+        <Button.Root variant="ghost" className="review-back" onClick={onShow}>
+          {`Show ${exampleLabel(view.name)} in every view`}
+        </Button.Root>
+      </div>
+    </figure>
   );
 }
 
@@ -1174,7 +1357,14 @@ function OtherFrames({ items }: { readonly items: readonly Measured[] }) {
   );
 }
 
-function Impact({ impact, measuring, dryRun, prototypes, onOpenPrototype }: { readonly impact: readonly NewlyFailing[] | null; readonly measuring: boolean; readonly dryRun: ReturnType<typeof dryRunAdoption> | null; readonly prototypes: readonly PrototypeRecord[]; readonly onOpenPrototype: (id: string, finding?: Finding) => void }) {
+/**
+ * Core's adoption check as a grid of the project's prototypes: every one is
+ * a tile, so it is plain each was checked. One that would newly fail is
+ * outlined, says what fails in core's words, shows a miniature of the page
+ * from its measured boxes with what core flags hatched, and opens on the
+ * board. The rest carry a name and a mark.
+ */
+function Impact({ impact, measuring, dryRun, prototypes, existing, views, onOpenPrototype }: { readonly impact: readonly NewlyFailing[] | null; readonly measuring: boolean; readonly dryRun: ReturnType<typeof dryRunAdoption> | null; readonly prototypes: readonly PrototypeRecord[]; readonly existing: readonly ExistingPrototype[] | null; readonly views: readonly View[]; readonly onOpenPrototype: (id: string, finding?: Finding) => void }) {
   return (
     <section aria-labelledby="review-impact" className="review-section" data-testid="review-impact">
       <Text.Root as="h2" id="review-impact">
@@ -1183,48 +1373,72 @@ function Impact({ impact, measuring, dryRun, prototypes, onOpenPrototype }: { re
       <Text.Root as="p" tone="muted">
         Core&apos;s adoption check against every prototype in the project, each measured in frames: the ones that would newly fail{dryRun && !dryRun.ok ? " with the proposal applied, though the dry run refuses it as it is" : ""}.
       </Text.Root>
-      {impact === null ? (
+      {impact === null || existing === null ? (
         <Text.Root as="p" tone="muted">
           {measuring ? "Measuring the project's prototypes and the examples…" : "Waiting for the examples to be measured."}
         </Text.Root>
-      ) : impact.length === 0 ? (
-        <Text.Root as="p" data-testid="impact-none">
-          No prototype in the project would newly fail.
-        </Text.Root>
       ) : (
-        <ul className="review-impact" aria-label="Prototypes that would newly fail">
-          {impact.map((item) => {
-            const record = prototypes.find((entry) => entry.name === item.name);
-            return (
-              <li key={item.name} data-prototype={record?.id ?? item.name}>
-                <Card.Root>
-                  <Card.Header>
-                    <Stack.Root direction="row" align="center" gap="condensed" wrap>
-                      <Text.Root as="h3" className="example-name">
-                        {item.name}
-                      </Text.Root>
-                      <Badge.Root tone="critical">would newly fail {item.rules.join(", ") || "with new findings"}</Badge.Root>
-                      {record && (
-                        <Button.Root variant="secondary" onClick={() => onOpenPrototype(record.id)}>
-                          Open on the board
-                        </Button.Root>
-                      )}
-                    </Stack.Root>
-                  </Card.Header>
-                  <Card.Body>
-                    <ul className="findings" aria-label={`New findings in ${item.name}`}>
-                      {item.findings.map((finding, index) => (
-                        <li key={index}>
-                          <FindingButton finding={finding} selected={false} onSelect={() => record && onOpenPrototype(record.id, finding)} />
-                        </li>
-                      ))}
-                    </ul>
-                  </Card.Body>
-                </Card.Root>
-              </li>
-            );
-          })}
-        </ul>
+        <>
+          <Text.Root as="p" data-testid={impact.length === 0 ? "impact-none" : "impact-some"}>
+            {impact.length === 0 ? "No prototype in the project would newly fail." : `${impact.length} of ${existing.length} ${existing.length === 1 ? "prototype" : "prototypes"} would newly fail.`}
+          </Text.Root>
+          <ul className="impact-grid" aria-label="The project's prototypes, with the proposal applied">
+            {existing.map((item) => {
+              const failing = impact.find((entry) => entry.name === item.name);
+              const record = prototypes.find((entry) => entry.name === item.name);
+              const flagged = failing ? flaggedIn(failing.findings, item.snapshots ?? [], item.prototype.scenarios) : null;
+              const view = flagged ? views.find((entry) => entry.name === flagged.snapshot.view) : undefined;
+              return (
+                <li key={item.name} data-prototype={record?.id ?? item.name} data-impact={failing ? "fails" : "holds"}>
+                  <Card.Root className="impact-tile">
+                    {failing && flagged && view && (
+                      <figure className="impact-thumb">
+                        <SnapshotThumb snapshot={flagged.snapshot} view={view} flagged={flagged.elements} />
+                        <figcaption className="review-small">
+                          {scenarioNameOf(flagged.snapshot.scenario, item.prototype.scenarios)}, {viewLabel(flagged.snapshot.view).toLowerCase()}, in miniature from measured boxes{flagged.elements.length > 0 ? "; what core flags is hatched" : ""}.
+                        </figcaption>
+                      </figure>
+                    )}
+                    <Text.Root as="h3" className="example-name">
+                      {item.name}
+                    </Text.Root>
+                    {failing ? (
+                      <>
+                        <span className="vis-verdict">
+                          <span className="vis-verdict-icon" aria-hidden="true">
+                            <X />
+                          </span>
+                          would newly fail {failing.rules.join(", ") || "with new findings"}
+                        </span>
+                        <ul className="findings" aria-label={`New findings in ${item.name}`}>
+                          {failing.findings.map((finding, index) => (
+                            <li key={index}>
+                              <FindingButton finding={finding} selected={false} onSelect={() => record && onOpenPrototype(record.id, finding)} />
+                            </li>
+                          ))}
+                        </ul>
+                        {record && (
+                          <div>
+                            <Button.Root variant="secondary" onClick={() => onOpenPrototype(record.id)}>
+                              Open on the board
+                            </Button.Root>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <span className="vis-verdict" data-ok="">
+                        <span className="vis-verdict-icon" aria-hidden="true">
+                          <Check />
+                        </span>
+                        no new failure
+                      </span>
+                    )}
+                  </Card.Root>
+                </li>
+              );
+            })}
+          </ul>
+        </>
       )}
     </section>
   );

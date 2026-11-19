@@ -41,7 +41,7 @@ export type LibrarySetup = {
 };
 
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-const familyOf = (part: string) => part.split(".")[0] as string;
+export const familyOf = (part: string) => part.split(".")[0] as string;
 const unique = <T>(values: readonly T[]) => [...new Set(values)];
 
 /** A lowercase slug from a name: "Save & exit" is "save-exit". Empty when the name has no letter or digit. */
@@ -73,7 +73,7 @@ const ANSWER_FAMILY = /(Input|Select|Textarea|TextArea|Checkbox|Radio|Switch|Sli
 const EMPHASIS_PROPS = ["variant", "kind", "intent", "appearance", "emphasis", "priority", "color", "tone"];
 
 /** The part that stands for a family: `X.Root`, else `X`, when the library has it and a spec can draw it. */
-function rootOf(description: LibraryDescription, family: string): string | null {
+export function rootOf(description: LibraryDescription, family: string): string | null {
   for (const name of [`${family}.Root`, family]) {
     const part = description.parts[name];
     if (part && !(part.needs && part.needs.length > 0)) return name;
@@ -214,6 +214,99 @@ const PREVIEW_PAGE_TYPE = "preview";
 export type RolePreview = { readonly ok: true; readonly config: ProjectConfig; readonly prototype: Prototype } | { readonly ok: false; readonly why: string };
 
 /**
+ * Writes spec elements for a library's parts, one call at a time, for a
+ * picture of them: `rolePreview` here and `partSpecimen` (specimen.ts) both
+ * compose with it, so a role is drawn the same way in the wizard and on the
+ * Project tab's palette. `disclosure` and `question` read the composition
+ * from part names (a family's root around its item, a summary beside a
+ * panel, a label for a field).
+ */
+export function composer(description: LibraryDescription, partProps: LibrarySetup["partProps"], roles: Readonly<Partial<Record<RoleName, RoleMapping>>>) {
+  const elements: Elements = {};
+  const state: Record<string, unknown> = {};
+  const used = new Set<string>();
+  const texts = textParts(description);
+  let count = 0;
+  const add = (type: string, props: Record<string, unknown> = {}, children: string[] = []): string | null => {
+    const part = description.parts[type];
+    if (!part) return null;
+    count += 1;
+    const key = `${slugOf(type) || "part"}-${count}`;
+    used.add(type);
+    const text = props.text;
+    const given = { ...requiredProps(part, state, key), ...(partProps?.[type] ?? {}), ...props };
+    if (part.content !== "children" || text === undefined) delete given.text;
+    elements[key] = { type, props: given, children };
+    return key;
+  };
+  const keys = (...items: (string | null)[]) => items.filter((item): item is string => item !== null);
+  /** A disclosure with its summary and what it holds, inside its family's root when it is an item of one; the keys to put on the page. */
+  const disclosure = (component: string, role: "disclosure" | "disclosure-summary", open: boolean): string[] => {
+    const family = familyOf(component);
+    // The summary to draw: the chosen one of this family, else the first the family has.
+    const item = role === "disclosure" ? component : (roles.disclosure?.components.find((name) => familyOf(name) === family) ?? [`${family}.Item`].find((name) => name in description.parts) ?? rootOf(description, family) ?? component);
+    const summary = role === "disclosure-summary" ? component : (roles["disclosure-summary"]?.components.find((name) => familyOf(name) === family) ?? SUMMARY_MEMBERS.map((member) => `${family}.${member}`).find((name) => name in description.parts) ?? null);
+    const panelPart = PANEL_MEMBERS.map((member) => `${family}.${member}`).find((name) => name in description.parts && name !== summary);
+    const body = "What this section holds stays here until it is opened.";
+    const panel = panelPart ? add(panelPart, { text: body }) : texts.text ? add(texts.text.part, { ...texts.text.props, text: body }) : null;
+    const inner = keys(summary ? add(summary, { text: "Section name" }) : null, panel);
+    const drawn = item === summary ? null : add(item, open && description.parts[item]?.props.defaultOpen?.type === "boolean" ? { defaultOpen: true } : {}, inner);
+    const itemValue = drawn ? elements[drawn]?.props.value : undefined;
+    const wrapper = item.endsWith(".Item") ? rootOf(description, family) : null;
+    if (drawn && wrapper && wrapper !== item) return keys(add(wrapper, open && typeof itemValue === "string" && description.parts[wrapper]?.props.defaultValue?.type === "string" ? { defaultValue: itemValue } : {}, [drawn]));
+    return drawn ? [drawn] : inner;
+  };
+  /** A question with its label: the part's own `label`, a label part beside it, or its accessible name. */
+  const question = (component: string): string[] => {
+    const part = description.parts[component];
+    if (!part) return [];
+    const family = familyOf(component);
+    const label = "Your answer";
+    if (part.props.label?.type === "string") return keys(add(component, { label }));
+    const control = part.content === "children" ? ["TextInput", "Input", "Control", "Select", "Textarea"].map((member) => `${family}.${member}`).find((name) => name in description.parts && name !== component) : undefined;
+    const labelPart = [`${family}.Label`, "Label.Root", "Label"].find((name) => name in description.parts && description.parts[name]?.content === "children");
+    const field = add(component, {}, control ? keys(add(control, {})) : []);
+    if (!field) return [];
+    const out: string[] = [];
+    const hasId = part.props.id?.type === "string";
+    const id = `preview-answer-${field}`;
+    if (hasId) (elements[field] as SpecElement).props.id = id;
+    if (labelPart && hasId && description.parts[labelPart]?.props.htmlFor) out.push(...keys(add(labelPart, { htmlFor: id, text: label })));
+    else if (part.props["aria-label"]?.type === "string") (elements[field] as SpecElement).props["aria-label"] = label;
+    out.push(field);
+    return out;
+  };
+  /** The one-page prototype that draws `top`, each on a row of its own, and the config to render it with. */
+  const page = (top: readonly string[], id: string, name: string, setup: LibrarySetup, view: { readonly width: number; readonly height: number; readonly scheme: "light" | "dark" }): { config: ProjectConfig; prototype: Prototype } => {
+    // One slot per sample, so the shell lays each on a row of its own.
+    const slots = top.map((_, index) => `sample-${index + 1}`);
+    elements.page = { type: "Page", props: {}, children: [], slots: Object.fromEntries(top.map((key, index) => [slots[index] as string, [key]])) };
+    const components = unique([...used].map(familyOf)).sort(compare);
+    const config: ProjectConfig = {
+      schemaVersion: CONFIG_SCHEMA_VERSION,
+      id,
+      name,
+      library: libraryOf(description, setup, NO_ROLES, [], components),
+      inventories: { components, layouts: [], pageTypes: [{ id: PREVIEW_PAGE_TYPE, kind: "content", slots, chrome: [] }], flowStates: [PREVIEW_PAGE_TYPE] },
+      inputs: { tasks: [], ranking: [], disclosedSections: [], caps: {} },
+      views: [{ name: "preview", ...view }],
+      rules: [],
+      proposals: [],
+    };
+    const prototype: Prototype = {
+      format: "spec",
+      files: { "pages/preview.json": `${JSON.stringify({ root: "page", elements, state }, null, 2)}\n` },
+      pages: [{ id: PREVIEW_PAGE_TYPE, pageType: PREVIEW_PAGE_TYPE, component: { file: "pages/preview.json", export: "default" } }],
+      layouts: [],
+      scenarios: [{ id: PREVIEW_PAGE_TYPE, state: PREVIEW_PAGE_TYPE, page: PREVIEW_PAGE_TYPE }],
+      flow: { states: [PREVIEW_PAGE_TYPE], tasks: [] },
+    };
+    return { config, prototype };
+  };
+  return { add, keys, disclosure, question, page, texts, elements };
+}
+
+/**
  * A one-page spec prototype, and a config to render it with, that draws the
  * parts a role maps to, so a person sees them with the library's own styles
  * before confirming: an action as a pressable part, a primary or secondary
@@ -228,31 +321,12 @@ export type RolePreview = { readonly ok: true; readonly config: ProjectConfig; r
 export function rolePreview(description: LibraryDescription, setup: LibrarySetup, role: RoleName, roles: Readonly<Partial<Record<RoleName, RoleMapping>>>, scheme: "light" | "dark" = "light"): RolePreview {
   const mapping = roles[role];
   if (!mapping || mapping.components.length === 0) return { ok: false, why: "No part is mapped, so there is nothing to draw." };
-  const elements: Elements = {};
-  const state: Record<string, unknown> = {};
+  const { add, keys, disclosure, question, page } = composer(description, setup.partProps, roles);
   const top: string[] = [];
-  const used = new Set<string>();
-  const texts = textParts(description);
-  let count = 0;
-  const add = (type: string, props: Record<string, unknown> = {}, children: string[] = []): string | null => {
-    const part = description.parts[type];
-    if (!part) return null;
-    count += 1;
-    const key = `${slugOf(type) || "part"}-${count}`;
-    used.add(type);
-    const text = props.text;
-    const given = { ...requiredProps(part, state, key), ...(setup.partProps?.[type] ?? {}), ...props };
-    if (part.content !== "children" || text === undefined) delete given.text;
-    elements[key] = { type, props: given, children };
-    return key;
-  };
-  const keys = (...items: (string | null)[]) => items.filter((item): item is string => item !== null);
-
   for (const component of mapping.components) {
     const part = description.parts[component];
     if (!part) return { ok: false, why: `${description.package} ${description.version} has no part named ${component}.` };
     if (part.needs && part.needs.length > 0) return { ok: false, why: `${component} needs ${part.needs.map((need) => `"${need}"`).join(", ")}, which a spec cannot give, so it cannot be drawn here.` };
-    const family = familyOf(component);
     if (role === "action") top.push(...keys(add(component, { text: "Action" })));
     else if (role === "primary-action" || role === "secondary-action") {
       const prop = mapping.prop;
@@ -261,61 +335,12 @@ export function rolePreview(description: LibraryDescription, setup: LibrarySetup
         for (const value of prop.values) top.push(...keys(add(component, { [prop.name]: value, text: `${prop.name}: ${String(value)}` })));
         if (prop.whenMissing) top.push(...keys(add(component, { text: `no ${prop.name}` })));
       }
-    } else if (role === "disclosure" || role === "disclosure-summary") {
-      // The summary to draw: the chosen one of this family, else the first the family has.
-      const disclosure = role === "disclosure" ? component : (roles.disclosure?.components.find((name) => familyOf(name) === family) ?? [`${family}.Item`].find((name) => name in description.parts) ?? rootOf(description, family) ?? component);
-      const summary = role === "disclosure-summary" ? component : (roles["disclosure-summary"]?.components.find((name) => familyOf(name) === family) ?? SUMMARY_MEMBERS.map((member) => `${family}.${member}`).find((name) => name in description.parts) ?? null);
-      const panelPart = PANEL_MEMBERS.map((member) => `${family}.${member}`).find((name) => name in description.parts && name !== summary);
-      const body = "What this section holds stays here until it is opened.";
-      const panel = panelPart ? add(panelPart, { text: body }) : texts.text ? add(texts.text.part, { ...texts.text.props, text: body }) : null;
-      const inner = keys(summary ? add(summary, { text: "Section name" }) : null, panel);
-      const item = disclosure === summary ? null : add(disclosure, description.parts[disclosure]?.props.defaultOpen?.type === "boolean" ? { defaultOpen: true } : {}, inner);
-      const itemValue = item ? elements[item]?.props.value : undefined;
-      const wrapper = disclosure.endsWith(".Item") ? rootOf(description, family) : null;
-      if (item && wrapper && wrapper !== disclosure) top.push(...keys(add(wrapper, typeof itemValue === "string" && description.parts[wrapper]?.props.defaultValue?.type === "string" ? { defaultValue: itemValue } : {}, [item])));
-      else top.push(...(item ? [item] : inner));
-    } else {
-      const label = "Your answer";
-      if (part.props.label?.type === "string") top.push(...keys(add(component, { label })));
-      else {
-        const control = part.content === "children" ? ["TextInput", "Input", "Control", "Select", "Textarea"].map((member) => `${family}.${member}`).find((name) => name in description.parts && name !== component) : undefined;
-        const labelPart = [`${family}.Label`, "Label.Root", "Label"].find((name) => name in description.parts && description.parts[name]?.content === "children");
-        const field = add(component, {}, control ? keys(add(control, {})) : []);
-        if (!field) continue;
-        const hasId = part.props.id?.type === "string";
-        if (hasId) (elements[field] as SpecElement).props.id = "preview-answer";
-        if (labelPart && hasId && description.parts[labelPart]?.props.htmlFor) top.push(...keys(add(labelPart, { htmlFor: "preview-answer", text: label })));
-        else if (part.props["aria-label"]?.type === "string") (elements[field] as SpecElement).props["aria-label"] = label;
-        top.push(field);
-      }
-    }
+    } else if (role === "disclosure" || role === "disclosure-summary") top.push(...disclosure(component, role, true));
+    else top.push(...question(component));
   }
   if (top.length === 0) return { ok: false, why: "Nothing could be drawn for this mapping." };
-  // One slot per sample, so the shell lays each on a row of its own.
-  const slots = top.map((_, index) => `sample-${index + 1}`);
-  elements.page = { type: "Page", props: {}, children: [], slots: Object.fromEntries(top.map((key, index) => [slots[index] as string, [key]])) };
-  const components = unique([...used].map(familyOf)).sort(compare);
-  const config: ProjectConfig = {
-    schemaVersion: CONFIG_SCHEMA_VERSION,
-    id: "role-preview",
-    name: "Role preview",
-    library: libraryOf(description, setup, NO_ROLES, [], components),
-    inventories: { components, layouts: [], pageTypes: [{ id: PREVIEW_PAGE_TYPE, kind: "content", slots, chrome: [] }], flowStates: [PREVIEW_PAGE_TYPE] },
-    inputs: { tasks: [], ranking: [], disclosedSections: [], caps: {} },
-    // Tall enough for what it draws: an app shows as much of it as the page fills.
-    views: [{ name: "preview", width: 320, height: Math.min(720, 120 + 72 * top.length + (role === "disclosure" || role === "disclosure-summary" ? 120 : 0)), scheme }],
-    rules: [],
-    proposals: [],
-  };
-  const prototype: Prototype = {
-    format: "spec",
-    files: { "pages/preview.json": `${JSON.stringify({ root: "page", elements, state }, null, 2)}\n` },
-    pages: [{ id: PREVIEW_PAGE_TYPE, pageType: PREVIEW_PAGE_TYPE, component: { file: "pages/preview.json", export: "default" } }],
-    layouts: [],
-    scenarios: [{ id: PREVIEW_PAGE_TYPE, state: PREVIEW_PAGE_TYPE, page: PREVIEW_PAGE_TYPE }],
-    flow: { states: [PREVIEW_PAGE_TYPE], tasks: [] },
-  };
-  return { ok: true, config, prototype };
+  // Tall enough for what it draws: an app shows as much of it as the page fills.
+  return { ok: true, ...page(top, "role-preview", "Role preview", setup, { width: 320, height: Math.min(720, 120 + 72 * top.length + (role === "disclosure" || role === "disclosure-summary" ? 120 : 0)), scheme }) };
 }
 
 /** The config's `library`: the description cut to the parts of the inventoried components and the root, as `describe-library.mjs --only` cuts it. */

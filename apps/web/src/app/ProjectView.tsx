@@ -1,22 +1,35 @@
-import { Badge, Button, Code, DataList, Disclosure, Stack, Table, Text } from "@tounsoo/todae";
-import { useState } from "react";
-import { ROLE_NAMES, describeRule, flowFacts, rerunExamples, type ConfirmedRole, type ExampleRun, type ProjectConfig, type Proposal, type RoleMapping } from "@design-harness/core";
+import { Badge, Button, Card, Code, DataList, Disclosure, Stack, Table, Text, ToggleGroup, VisuallyHidden } from "@tounsoo/todae";
+import { useMemo, useState } from "react";
+import { ROLE_NAMES, describeRule, flowFacts, rerunExamples, type ConfirmedRole, type ExampleRun, type ProjectConfig, type RoleMapping, type RuleSpec } from "@design-harness/core";
 import { formatTime } from "../review/timeline";
 import type { PrototypeRecord } from "../store/project-file";
+import { BudgetFigure, CapMeterView, PageTypeFigure, RuleFigure, SlotLegend, glyphNote } from "../visual/project-figures";
+import { RULE_GROUPS, budgetMeter, capReaders, capsRead, groupRules, projectTimeline, ruleBound, ruleGlyph, ruleGroup, ruleSource, type RuleGroupId } from "../visual/project-model";
 import { TaskMaps } from "./ChecksPanel";
 import { LayoutsView } from "./LayoutsView";
 import { LibraryVersionSection } from "./LibraryVersion";
+import { Palette } from "./Palette";
+import { StatusBadge } from "./proposal-parts";
+import { exampleLabel, humanize } from "./words";
 
 /**
- * The project, read-only, for a designer first: what a prototype here can
- * use, the open spec prototype's layouts drawn before their data, the rules
- * in plain words, and the tasks and limits they read. The library's role
- * mapping, the views and the raw rules sit one step away under their
- * details. Every adopted proposal's examples re-run on demand.
+ * The project, read-only, for a designer first, and mostly as pictures:
+ * the components a prototype can build with drawn by the project's own
+ * library, with the roles the rules know them by; each page type as its
+ * slots; the rules in force as cards grouped by what they look at; the
+ * tasks' step budgets and the caps as meters. Every picture is drawn from
+ * the config or from core's facts, with the same words beside it. The
+ * library's role mapping as data, the views and the raw rules sit one step
+ * away under their details. Every adopted proposal's examples re-run on
+ * demand.
+ *
+ * The page is about the project. A line about the open prototype is named
+ * for it, and is absent when none is open.
  */
 export function ProjectView({
   config,
   onOpenProposal,
+  onOpenProposals,
   prototype,
   onGoToState,
   prototypes = [],
@@ -25,6 +38,8 @@ export function ProjectView({
 }: {
   readonly config: ProjectConfig;
   readonly onOpenProposal: (id: string) => void;
+  /** Opens the Proposals tab. */
+  readonly onOpenProposals?: (() => void) | undefined;
   readonly prototype?: PrototypeRecord | undefined;
   /** Goes to a flow state's artboard on the canvas, from a flow map. */
   readonly onGoToState?: ((state: string) => void) | undefined;
@@ -39,6 +54,8 @@ export function ProjectView({
   const flow = prototype ? flowFacts(config, prototype.prototype) : null;
   const { library, inventories, inputs } = config;
   const open = config.proposals.filter((proposal) => proposal.status === "open").length;
+  const ranking = [...inputs.ranking].sort((a, b) => a.rank - b.rank);
+  const caps = Object.entries(inputs.caps).sort(([a], [b]) => (a < b ? -1 : 1));
   return (
     <Stack.Root gap="spacious" className="project">
       <div className="project-intro">
@@ -63,80 +80,137 @@ export function ProjectView({
       {prototype?.prototype.format === "spec" && <LayoutsView config={config} record={prototype} />}
 
       <section aria-labelledby="project-inventories">
-        <SectionHead id="project-inventories" title="What a prototype can use" text="A prototype draws only these. Anything else is a proposal: the agent drafts one when the work needs it." />
+        <SectionHead
+          id="project-inventories"
+          title="What a prototype can build with"
+          text={`${inventories.components.length} ${inventories.components.length === 1 ? "component" : "components"} from ${library.package} ${library.version}, each drawn by the library itself. A tag points at a part the rules know by a role. Anything else is a proposal: the agent drafts one when the work needs it.`}
+        />
+        <Palette config={config} />
         <DataList.Root orientation="horizontal" className="project-facts">
-          <Chips term="Components" items={inventories.components} />
           <Chips term="Layouts" items={inventories.layouts} />
           <Chips term="Flow states" items={inventories.flowStates} />
         </DataList.Root>
-        <Text.Root as="h3">Page types</Text.Root>
-        <Table.Root className="project-table">
-          <Table.Head>
-            <Table.Row>
-              <Table.HeaderCell>Page type</Table.HeaderCell>
-              <Table.HeaderCell>Kind</Table.HeaderCell>
-              <Table.HeaderCell>Slots</Table.HeaderCell>
-              <Table.HeaderCell>Chrome</Table.HeaderCell>
-              <Table.HeaderCell>Primary slot</Table.HeaderCell>
-            </Table.Row>
-          </Table.Head>
-          <Table.Body>
-            {inventories.pageTypes.map((type) => (
-              <Table.Row key={type.id}>
-                <Table.Cell>
-                  <Code.Root>{type.id}</Code.Root>
-                </Table.Cell>
-                <Table.Cell>{type.kind}</Table.Cell>
-                <Table.Cell>{type.slots.join(", ")}</Table.Cell>
-                <Table.Cell>{type.chrome.join(", ") || "none"}</Table.Cell>
-                <Table.Cell>{type.kind === "action" ? type.primarySlot : "none"}</Table.Cell>
-              </Table.Row>
-            ))}
-          </Table.Body>
-        </Table.Root>
-      </section>
-
-      <section aria-labelledby="project-rules">
-        <SectionHead id="project-rules" title={`Rules in force (${config.rules.length})`} text="Each rule is checked on every change, by code, the same way every time. Open one for its id, type and data." />
-        <ul className="project-rules">
-          {config.rules.map((rule) => (
-            <li key={rule.id}>
-              <Disclosure.Root>
-                <Disclosure.Summary>{rule.description ?? describeRule(rule, config)}</Disclosure.Summary>
-                <Stack.Root gap="condensed" className="project-rule-detail">
+        <div className="section-head">
+          <Text.Root as="h3">Page types</Text.Root>
+          <Text.Root as="p" tone="muted">
+            Every page is one of these. A page fills each slot once and puts nothing outside them. The slots are in the order the project lists them, which is not a promise about where each one renders.
+          </Text.Root>
+        </div>
+        <SlotLegend />
+        <ul className="page-types" aria-label="Page types">
+          {inventories.pageTypes.map((type) => (
+            <li key={type.id}>
+              <Card.Root className="figure-card">
+                <PageTypeFigure type={type}>
                   <Text.Root as="p" tone="muted">
-                    <Code.Root>{rule.id}</Code.Root> {rule.type}
+                    <Code.Root>{type.id}</Code.Root>
                   </Text.Root>
-                  <pre className="project-json">{JSON.stringify(rule, null, 2)}</pre>
-                </Stack.Root>
-              </Disclosure.Root>
+                </PageTypeFigure>
+              </Card.Root>
             </li>
           ))}
         </ul>
       </section>
 
+      <Rules config={config} onOpenProposal={onOpenProposal} />
+
       <section aria-labelledby="project-inputs">
-        <SectionHead id="project-inputs" title="Tasks and limits" text="What the rules read: the tasks people do and how many steps each may take, which action matters most, and the project's caps." />
-        <Table.Root className="project-table">
-          <Table.Head>
-            <Table.Row>
-              <Table.HeaderCell>Task</Table.HeaderCell>
-              <Table.HeaderCell>Done when</Table.HeaderCell>
-              <Table.HeaderCell>Max steps</Table.HeaderCell>
-            </Table.Row>
-          </Table.Head>
-          <Table.Body>
-            {inputs.tasks.map((task) => (
-              <Table.Row key={task.id}>
-                <Table.Cell>
-                  {task.description ?? task.id} <Code.Root>{task.id}</Code.Root>
-                </Table.Cell>
-                <Table.Cell>{task.successState}</Table.Cell>
-                <Table.Cell>{task.maxSteps}</Table.Cell>
-              </Table.Row>
-            ))}
-          </Table.Body>
-        </Table.Root>
+        <SectionHead id="project-inputs" title="Tasks and limits" text={`The numbers the rules read: how many steps each task may take, which action matters most, and the project's caps.${prototype && flow ? ` A filled step is one ${prototype.name} takes today; the dashed line is the limit.` : " The dashed line is the limit."}`} />
+        <div className="limits">
+          <Card.Root className="figure-card" data-testid="project-tasks">
+            <Text.Root as="h3" className="figure-title">
+              Tasks and their step budgets
+            </Text.Root>
+            {inputs.tasks.length === 0 && (
+              <Text.Root as="p" tone="muted">
+                No tasks.
+              </Text.Root>
+            )}
+            <ul className="limit-list">
+              {inputs.tasks.map((task) => (
+                <li key={task.id} data-task={task.id}>
+                  <Text.Root as="h4" className="figure-title">
+                    {task.description ?? humanize(task.id)}
+                  </Text.Root>
+                  <BudgetFigure meter={budgetMeter(task, flow?.tasks.find((item) => item.task === task.id), prototype?.name)} />
+                  <Text.Root as="p" tone="muted">
+                    Done at <Badge.Root tone="neutral">{humanize(task.successState)}</Badge.Root> <Code.Root>{task.id}</Code.Root>
+                  </Text.Root>
+                </li>
+              ))}
+            </ul>
+          </Card.Root>
+          <Card.Root className="figure-card" data-testid="project-ranking">
+            <Text.Root as="h3" className="figure-title">
+              Actions, in rank order
+            </Text.Root>
+            {ranking.length === 0 ? (
+              <Text.Root as="p" tone="muted">
+                No ranked actions.
+              </Text.Root>
+            ) : (
+              <ol className="ranking">
+                {ranking.map((item) => (
+                  <li key={item.rank}>
+                    <span className="rank" aria-hidden="true">
+                      {item.rank}
+                    </span>
+                    <span>
+                      <VisuallyHidden.Root>{item.rank}. </VisuallyHidden.Root>
+                      <Text.Root as="span" weight="medium">
+                        {item.action}
+                      </Text.Root>{" "}
+                      <Text.Root as="span" tone="muted">
+                        ({item.level})
+                      </Text.Root>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            )}
+            <Text.Root as="p" tone="muted">
+              Rank 1 is the one primary action on a page. Each is drawn by the library on the tile of the part that carries its role, above.
+            </Text.Root>
+            <Text.Root as="h4" className="figure-title">
+              Always behind a disclosure
+            </Text.Root>
+            {inputs.disclosedSections.length === 0 ? (
+              <Text.Root as="p" tone="muted">
+                No section.
+              </Text.Root>
+            ) : (
+              <ul className="disclosed">
+                {inputs.disclosedSections.map((section) => (
+                  <li key={section}>{section}</li>
+                ))}
+              </ul>
+            )}
+          </Card.Root>
+          <Card.Root className="figure-card" data-testid="project-caps">
+            <Text.Root as="h3" className="figure-title">
+              Caps
+            </Text.Root>
+            {caps.length === 0 && (
+              <Text.Root as="p" tone="muted">
+                No caps.
+              </Text.Root>
+            )}
+            <ul className="limit-list">
+              {caps.map(([name, cap]) => {
+                const readers = capReaders(config, name);
+                return (
+                  <li key={name}>
+                    <CapMeterView name={name} cap={cap}>
+                      <Text.Root as="p" tone="muted">
+                        <Code.Root>{name}</Code.Root> {readers.length === 0 ? "No rule reads it." : `Read by ${readers.length === 1 ? "the rule" : `${readers.length} rules:`} ${readers.map((rule) => rule.id).join(", ")}.`}
+                      </Text.Root>
+                    </CapMeterView>
+                  </li>
+                );
+              })}
+            </ul>
+          </Card.Root>
+        </div>
         {flow && prototype && flow.tasks.length > 0 && (
           <div className="project-flow" data-testid="project-flow">
             <Text.Root as="h3" className="project-flow-title">
@@ -148,31 +222,9 @@ export function ProjectView({
             <TaskMaps flow={flow} onGoToState={onGoToState} />
           </div>
         )}
-        <DataList.Root orientation="horizontal" className="project-facts">
-          <Fact term="Ranking" value={[...inputs.ranking].sort((a, b) => a.rank - b.rank).map((item) => `${item.rank}. ${item.action} (${item.level})`).join("; ") || "none"} />
-          <Fact term="Disclosed sections" value={inputs.disclosedSections.join(", ") || "none"} />
-          {Object.entries(inputs.caps)
-            .sort(([a], [b]) => (a < b ? -1 : 1))
-            .map(([name, cap]) => (
-              <Fact key={name} term={name} value={`${cap.value} (stricter when ${cap.stricter})${cap.description ? `. ${cap.description}` : ""}`} />
-            ))}
-        </DataList.Root>
       </section>
 
-      <section aria-labelledby="project-proposals">
-        <SectionHead id="project-proposals" title={`Proposals (${config.proposals.length})`} text="Changes the agent asked for. Open the Proposals tab to review them." />
-        {config.proposals.length === 0 ? (
-          <Text.Root as="p" tone="muted">
-            No proposals yet. A proposal carries an inventory change, the rule that governs it, and examples that must pass and fail; it is adopted only when its rules prove themselves on its examples.
-          </Text.Root>
-        ) : (
-          <ul className="project-rules">
-            {config.proposals.map((proposal) => (
-              <ProposalItem key={proposal.id} proposal={proposal} onOpen={() => onOpenProposal(proposal.id)} />
-            ))}
-          </ul>
-        )}
-      </section>
+      <History config={config} onOpenProposal={onOpenProposal} onOpenProposals={onOpenProposals} />
 
       <Regression config={config} onOpenProposal={onOpenProposal} />
 
@@ -191,6 +243,7 @@ export function ProjectView({
               <Fact term="React" value={library.react} />
               <Fact term="Stylesheets" value={(library.stylesheets ?? []).join(", ") || "none"} />
               <Fact term="Scheme attribute" value={library.schemeAttribute ?? "none (color-scheme only)"} />
+              <Fact term="Components" value={inventories.components.join(", ") || "none"} />
             </DataList.Root>
             <Table.Root className="project-table">
               <Table.Head>
@@ -235,6 +288,145 @@ export function ProjectView({
         </Stack.Root>
       </Disclosure.Root>
     </Stack.Root>
+  );
+}
+
+/**
+ * The rules in force as cards, grouped by what a rule looks at. The group
+ * and the glyph come from the rule's type and check, so a rule a proposal
+ * adds is grouped and drawn the day it is adopted. A glyph shows the rule's
+ * shape, not this prototype's page; core's words for the rule are beside it.
+ */
+function Rules({ config, onOpenProposal }: { readonly config: ProjectConfig; readonly onOpenProposal: (id: string) => void }) {
+  const [filter, setFilter] = useState<"all" | RuleGroupId>("all");
+  const groups = useMemo(() => groupRules(config.rules), [config.rules]);
+  const shown = groups.filter((item) => filter === "all" || item.group.id === filter);
+  return (
+    <section aria-labelledby="project-rules" data-testid="project-rules">
+      <SectionHead id="project-rules" title={`Rules in force (${config.rules.length})`} text="Each rule is checked on every change, by code, the same way every time. A picture shows the kind of thing a rule checks, not a page of yours; open a rule for its id, type and data." />
+      <ToggleGroup.Root aria-label="Show rules" value={filter} onValueChange={(value) => setFilter((value ?? "all") as "all" | RuleGroupId)} className="proposals-filter rule-filter">
+        <ToggleGroup.Item value="all">{`All (${config.rules.length})`}</ToggleGroup.Item>
+        {RULE_GROUPS.map((group) => {
+          const count = config.rules.filter((rule) => ruleGroup(rule) === group.id).length;
+          return count === 0 ? null : (
+            <ToggleGroup.Item key={group.id} value={group.id}>
+              {`${group.title} (${count})`}
+            </ToggleGroup.Item>
+          );
+        })}
+      </ToggleGroup.Root>
+      {shown.map(({ group, rules }) => (
+        <div key={group.id} className="rule-group" data-group={group.id}>
+          <Text.Root as="h3" className="figure-title">
+            {group.title}{" "}
+            <Text.Root as="span" tone="muted" className="rule-group-about">
+              {rules.length} · {group.about}
+            </Text.Root>
+          </Text.Root>
+          <ul className="rule-cards" aria-label={group.title}>
+            {rules.map((rule) => (
+              <li key={rule.id}>
+                <RuleCard rule={rule} config={config} onOpenProposal={onOpenProposal} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function RuleCard({ rule, config, onOpenProposal }: { readonly rule: RuleSpec; readonly config: ProjectConfig; readonly onOpenProposal: (id: string) => void }) {
+  const words = describeRule(rule, config);
+  const source = ruleSource(config, rule.id);
+  const caps = capsRead(rule);
+  return (
+    <Card.Root className="rule-card" data-rule={rule.id} data-glyph-note={glyphNote(rule)}>
+      <RuleFigure rule={rule} label={ruleGlyph(rule) === "count" || ruleGlyph(rule) === "count-min" ? ruleBound(rule, config) : undefined} />
+      <div className="rule-card-body">
+        <Text.Root as="p" weight="medium" className="rule-card-lead">
+          {rule.description ?? words}
+        </Text.Root>
+        {rule.description && (
+          <Text.Root as="p" tone="muted" className="rule-card-words">
+            {words}
+          </Text.Root>
+        )}
+        {caps.map((cap) => (
+          <Text.Root as="p" tone="muted" key={cap}>
+            Reads the cap <Code.Root>{cap}</Code.Root>, now {config.inputs.caps[cap]?.value ?? "not set"}.
+          </Text.Root>
+        ))}
+        {source && (
+          <div className="rule-card-source" data-testid="rule-source">
+            <Badge.Root tone="success">From a proposal</Badge.Root>
+            <Text.Root as="p" tone="muted">
+              Its examples are kept as tests: {[...source.examples.pass.map((example) => `${exampleLabel(example.name)} must pass`), ...source.examples.fail.filter((example) => example.flaggedBy.rule === rule.id).map((example) => `${exampleLabel(example.name)} must fail`)].join("; ")}.
+            </Text.Root>
+            <Button.Root variant="ghost" onClick={() => onOpenProposal(source.id)}>
+              {`Open ${source.title}`}
+            </Button.Root>
+          </div>
+        )}
+        <Disclosure.Root className="rule-card-data">
+          <Disclosure.Summary>
+            <Code.Root>{rule.id}</Code.Root>
+          </Disclosure.Summary>
+          <Stack.Root gap="condensed" className="project-rule-detail">
+            <Text.Root as="p" tone="muted">
+              {rule.type}. {glyphNote(rule)}.
+            </Text.Root>
+            <pre className="project-json">{JSON.stringify(rule, null, 2)}</pre>
+          </Stack.Root>
+        </Disclosure.Root>
+      </div>
+    </Card.Root>
+  );
+}
+
+/** How the project got like this, in five lines: the newest proposals, open ones waiting. The Proposals tab is their home. */
+function History({ config, onOpenProposal, onOpenProposals }: { readonly config: ProjectConfig; readonly onOpenProposal: (id: string) => void; readonly onOpenProposals?: (() => void) | undefined }) {
+  const { items, more } = projectTimeline(config);
+  return (
+    <section aria-labelledby="project-proposals" data-testid="project-history">
+      <SectionHead id="project-proposals" title={`Proposals (${config.proposals.length})`} text="How the project got like this: the newest changes the agent asked for. The Proposals tab is where you review them." />
+      {items.length === 0 ? (
+        <Text.Root as="p" tone="muted">
+          No proposals yet. A proposal carries an inventory change, the rule that governs it, and examples that must pass and fail; it is adopted only when its rules prove themselves on its examples.
+        </Text.Root>
+      ) : (
+        <ol className="history-line">
+          {items.map((item) => (
+            <li key={item.id} data-proposal={item.id} data-status={item.status} data-waiting={item.waiting ? "" : undefined}>
+              <i className="track-dot" aria-hidden="true" />
+              <div className="history-line-body">
+                <Stack.Root direction="row" align="center" gap="condensed" wrap>
+                  <Button.Root variant="ghost" className="proposals-title" onClick={() => onOpenProposal(item.id)}>
+                    {item.title}
+                  </Button.Root>
+                  <StatusBadge status={item.status} />
+                  {item.status === "open" && (
+                    <Text.Root as="span" weight="medium">
+                      Waiting for you
+                    </Text.Root>
+                  )}
+                </Stack.Root>
+                <Text.Root as="p" tone="muted">
+                  {item.what} <time dateTime={item.at}>{formatTime(item.at)}</time>
+                </Text.Root>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+      {(more > 0 || items.length > 0) && onOpenProposals && (
+        <div>
+          <Button.Root variant="secondary" onClick={onOpenProposals}>
+            {more > 0 ? `All ${config.proposals.length} proposals` : "Open the Proposals tab"}
+          </Button.Root>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -302,29 +494,6 @@ function propText(mapping: RoleMapping): string {
   if (!mapping.prop) return "any";
   const values = mapping.prop.values.map((value) => JSON.stringify(value)).join(" or ");
   return `${mapping.prop.name} = ${values}${mapping.prop.whenMissing ? ", or none" : ""}`;
-}
-
-function ProposalItem({ proposal, onOpen }: { readonly proposal: Proposal; readonly onOpen: () => void }) {
-  const tone = proposal.status === "adopted" ? "success" : proposal.status === "declined" ? "critical" : proposal.status === "approved" ? "info" : "neutral";
-  return (
-    <li>
-      <Disclosure.Root>
-        <Disclosure.Summary>
-          <Badge.Root tone={tone}>{proposal.status}</Badge.Root> {proposal.title} <Code.Root>{proposal.id}</Code.Root>
-        </Disclosure.Summary>
-        <Text.Root as="p">{proposal.reason}</Text.Root>
-        <Text.Root as="p" tone="muted">
-          {proposal.history.map((entry) => `${entry.status} ${entry.at}${entry.by ? ` by ${entry.by}` : ""}`).join(" → ")}
-        </Text.Root>
-        <Text.Root as="p" tone="muted">
-          {proposal.inventory.length} inventory changes, {proposal.rules.add.length} rules added, {proposal.rules.remove.length} removed, {proposal.examples.pass.length} passing and {proposal.examples.fail.length} failing examples.
-        </Text.Root>
-        <Button.Root variant="secondary" onClick={onOpen}>
-          {`Review ${proposal.id}`}
-        </Button.Root>
-      </Disclosure.Root>
-    </li>
-  );
 }
 
 /**
