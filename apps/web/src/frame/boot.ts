@@ -188,6 +188,7 @@ async function render(request: RenderRequest): Promise<void> {
     // Read after measuring, and from React's tree, not the DOM: finding them changes nothing that was measured.
     const tags = tagging ? [...tagsIn(container).keys()].sort().slice(0, MAX_FRAME_TAGS) : [];
     post({ protocol: PROTOCOL, type: "snapshot", channel, generation, snapshot: collected.snapshot, tags });
+    reportScroll();
   } catch (error) {
     fail("measure", error);
   }
@@ -244,6 +245,33 @@ function outline(target: Element): void {
     boxSizing: "border-box",
   });
   document.body.append(overlay);
+}
+
+/**
+ * After the snapshot, tells the app where the page is scrolled to whenever
+ * that changes, at most once every 50 ms, so what the app draws over the
+ * artboard follows the page. Nothing is measured again.
+ */
+function reportScroll(): void {
+  let pending = false;
+  let last = "0,0";
+  const send = () => {
+    pending = false;
+    const x = Math.max(0, Math.round(window.scrollX));
+    const y = Math.max(0, Math.round(window.scrollY));
+    if (`${x},${y}` === last) return;
+    last = `${x},${y}`;
+    post({ protocol: PROTOCOL, type: "scroll", channel, generation, x, y });
+  };
+  window.addEventListener(
+    "scroll",
+    () => {
+      if (pending) return;
+      pending = true;
+      setTimeout(send, 50);
+    },
+    { passive: true },
+  );
 }
 
 window.addEventListener("error", (event) => {

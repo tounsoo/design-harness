@@ -269,6 +269,8 @@ export function collectSnapshot(doc: Document, scenario: string, view: string): 
     view,
     scrollWidth: doc.documentElement.scrollWidth,
     viewportWidth: doc.documentElement.clientWidth,
+    // Evidence only: how far the page runs down. No rule reads it.
+    scrollHeight: doc.documentElement.scrollHeight,
     canvas: canvasColor(doc, win),
     elements,
   };

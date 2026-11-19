@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { legalSnapshots } from "../../../../packages/core/examples/nook/snapshots";
-import { MAX_ERROR_LENGTH, PROTOCOL, clip, readFrameMessage, readParentMessage, type RenderRequest } from "./protocol";
+import { MAX_ERROR_LENGTH, MAX_SCROLL, PROTOCOL, clip, readFrameMessage, readParentMessage, type RenderRequest } from "./protocol";
 import { MAX_FRAME_TAGS, MAX_OUTLINE_TAGS, MAX_TAG_LENGTH } from "./tags";
 
 const channel = "c-1";
@@ -118,5 +118,23 @@ describe("the app's reader of a frame's messages", () => {
     expect(readFrameMessage({ ...base, stage: "parent", message: "x" }, channel, expectFrame)).toBeNull();
     expect(readFrameMessage({ ...base, stage: "load", message: "x".repeat(MAX_ERROR_LENGTH + 1) }, channel, expectFrame)).toBeNull();
     expect(clip("x".repeat(MAX_ERROR_LENGTH + 10))).toHaveLength(MAX_ERROR_LENGTH);
+  });
+
+  it("takes where a frame is scrolled to as whole CSS px, and drops an offset that is not a number, negative, too far or with an extra field", () => {
+    const base = { protocol: PROTOCOL, type: "scroll", channel, generation: 1 };
+    expect(readFrameMessage({ ...base, x: 0, y: 120.4 }, channel, expectFrame)).toEqual({ protocol: PROTOCOL, type: "scroll", channel, generation: 1, x: 0, y: 120 });
+    expect(readFrameMessage({ ...base, x: 0 }, channel, expectFrame)).toBeNull();
+    expect(readFrameMessage({ ...base, x: 0, y: "12" }, channel, expectFrame)).toBeNull();
+    expect(readFrameMessage({ ...base, x: -1, y: 0 }, channel, expectFrame)).toBeNull();
+    expect(readFrameMessage({ ...base, x: 0, y: Number.NaN }, channel, expectFrame)).toBeNull();
+    expect(readFrameMessage({ ...base, x: 0, y: MAX_SCROLL + 1 }, channel, expectFrame)).toBeNull();
+    expect(readFrameMessage({ ...base, x: 0, y: 0, snapshot }, channel, expectFrame)).toBeNull();
+    expect(readFrameMessage({ ...base, x: 0, y: 0, generation: -1 }, channel, expectFrame)).toBeNull();
+  });
+
+  it("carries a snapshot's page height through, and drops a negative one", () => {
+    const base = { protocol: PROTOCOL, type: "snapshot", channel, generation: 1, tags: [] };
+    expect(readFrameMessage({ ...base, snapshot: { ...snapshot, scrollHeight: 1200 } }, channel, expectFrame)).toMatchObject({ snapshot: { scrollHeight: 1200 } });
+    expect(readFrameMessage({ ...base, snapshot: { ...snapshot, scrollHeight: -1 } }, channel, expectFrame)).toBeNull();
   });
 });

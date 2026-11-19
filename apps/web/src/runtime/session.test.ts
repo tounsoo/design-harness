@@ -110,6 +110,35 @@ describe("a session", () => {
     expect(frames.size).toBe(8);
   });
 
+  it("keeps where a measured frame is scrolled to, tells its listeners, and changes no state, snapshot or report by it", async () => {
+    const { session, mount, send } = harness();
+    session.update(nook, legal);
+    mount();
+    await flush();
+    const key = frameKey("rooms-list", "desktop");
+    send(key, { type: "ready" });
+    // Before its snapshot a frame has nowhere to be scrolled to.
+    send(key, { type: "scroll", generation: 1, x: 0, y: 40 });
+    expect(session.scrollOf(key)).toEqual({ x: 0, y: 0 });
+    send(key, { type: "snapshot", generation: 1, snapshot: snapshotOf("rooms-list", "desktop"), tags: [] });
+    const before = session.getState();
+    const heard = vi.fn();
+    const stateHeard = vi.fn();
+    session.subscribeScroll(heard);
+    session.subscribe(stateHeard);
+    send(key, { type: "scroll", generation: 1, x: 0, y: 240 });
+    send(key, { type: "scroll", generation: 1, x: 0, y: 240 });
+    send(key, { type: "scroll", generation: 2, x: 0, y: 900 });
+    send(key, { type: "scroll", generation: 1, x: 0, y: 300 }, { postMessage: vi.fn() });
+    expect(session.scrollOf(key)).toEqual({ x: 0, y: 240 });
+    expect(heard).toHaveBeenCalledTimes(1);
+    expect(stateHeard).not.toHaveBeenCalled();
+    expect(session.getState()).toBe(before);
+    // A new revision starts every frame at the top again.
+    session.update(nook, { ...legal });
+    expect(session.scrollOf(key)).toEqual({ x: 0, y: 0 });
+  });
+
   it("fails every frame when packages cannot load, and core then reports each scenario and view unmeasured", async () => {
     const { session } = harness(fakeSource(true));
     session.update(nook, legal);

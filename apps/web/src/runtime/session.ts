@@ -95,6 +95,7 @@ function tagsByDefault(): boolean {
 type Attached = { readonly frame: HTMLIFrameElement; readonly generation: number; readonly channel: string; ready: boolean; timer?: ReturnType<typeof setTimeout> };
 
 const PAGE_KIT = "@design-harness/page";
+const TOP = { x: 0, y: 0 } as const;
 
 export class Session {
   private state: SessionState = { revision: 0, frames: [], frameStates: {}, packages: { state: "loading" }, compileProblems: [], report: null, measured: false };
@@ -109,6 +110,9 @@ export class Session {
   private packages: { key: string; value: Promise<RuntimePackages> } | null = null;
   private resolved: RuntimePackages | null = null;
   private readonly channels = new Map<string, FrameKey>();
+  /** Where each measured frame's page is scrolled to, and who is listening. Kept out of the state: a scroll re-renders one overlay, not the board. */
+  private readonly scrolls = new Map<FrameKey, { readonly x: number; readonly y: number }>();
+  private readonly scrollListeners = new Set<() => void>();
   /** A draft was drawn into the current revision's frames by `redraw`. */
   private redrawn = false;
 
@@ -135,6 +139,14 @@ export class Session {
     for (const listener of this.listeners) listener();
   }
 
+  /** Where a frame's page is scrolled to, as the frame last said; the top when it has said nothing. */
+  scrollOf = (key: FrameKey): { readonly x: number; readonly y: number } => this.scrolls.get(key) ?? TOP;
+
+  subscribeScroll = (listener: () => void): (() => void) => {
+    this.scrollListeners.add(listener);
+    return () => this.scrollListeners.delete(listener);
+  };
+
   /** The config and prototype of the current revision, or null before the first. */
   current(): { readonly config: ProjectConfig; readonly prototype: Prototype; readonly revision: number } | null {
     return this.config && this.prototype ? { config: this.config, prototype: this.prototype, revision: this.state.revision } : null;
@@ -157,6 +169,7 @@ export class Session {
     for (const frame of frames) frameStates[frame.key] = frame.blocked ? { state: "failed", stage: "setup", message: frame.blocked } : { state: "waiting" };
     for (const attached of this.attached.values()) clearTimeout(attached.timer);
     this.redrawn = false;
+    this.scrolls.clear();
     this.set({ revision, frames, frameStates, compileProblems: compiled.problems, report: checkPrototype({ config, prototype, model }), measured: false });
 
     const libraryKey = JSON.stringify([config.library.package, config.library.version, config.library.react, config.library.stylesheets ?? [], spec]);
@@ -293,6 +306,15 @@ export class Session {
     if (message.type === "ready") {
       attached.ready = true;
       this.sendIfReady(key);
+      return;
+    }
+    if (message.type === "scroll") {
+      // Only a measured frame of this revision says where it is scrolled to; it changes no snapshot and no report.
+      if (message.generation !== attached.generation || this.state.frameStates[key]?.state !== "measured") return;
+      const previous = this.scrolls.get(key) ?? TOP;
+      if (previous.x === message.x && previous.y === message.y) return;
+      this.scrolls.set(key, { x: message.x, y: message.y });
+      for (const listener of this.scrollListeners) listener();
       return;
     }
     // A frame answers once, for the generation it was rendered at; anything else is stale or a second word.
