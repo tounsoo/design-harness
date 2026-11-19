@@ -109,6 +109,16 @@ describe("the other kinds of part", () => {
   });
 });
 
+describe("where a specimen loads the library from", () => {
+  it("keeps the package source the project chose, so a tile loads what the board loads", () => {
+    const chosen = partSpecimen({ ...nook, library: { ...nook.library, source: "esm.sh" } }, "Button");
+    expect(chosen.ok && chosen.config.library.source).toBe("esm.sh");
+    expect(chosen.ok && parseProjectConfig(JSON.parse(JSON.stringify(chosen.config))).ok).toBe(true);
+    const plain = partSpecimen(nook, "Button");
+    expect(plain.ok && "source" in plain.config.library).toBe(false);
+  });
+});
+
 describe("a component that cannot be drawn", () => {
   it("has no specimen, and says why", () => {
     expect(partSpecimen(nook, "Nope")).toEqual({ ok: false, component: "Nope", parts: 0, why: "@tounsoo/todae 0.11.3 has no part named Nope." });

@@ -178,7 +178,9 @@ export function partSpecimen(config: ProjectConfig, component: string, scheme: "
   }
   // Tall enough for what it draws: an app shows as much of it as the page fills.
   const drawn = page(top, `specimen-${component.toLowerCase()}`, `${component} specimen`, setup, { width: 280, height: Math.min(720, 200 + 72 * top.length), scheme });
-  return { ok: true, component, config: drawn.config, prototype: drawn.prototype, samples, parts, ...(standIn !== undefined ? { standIn } : {}) };
+  // Drawn from where the project's own frames load the library: the source a person chose for it, when they chose one.
+  const drawnConfig: ProjectConfig = library.source ? { ...drawn.config, library: { ...drawn.config.library, source: library.source } } : drawn.config;
+  return { ok: true, component, config: drawnConfig, prototype: drawn.prototype, samples, parts, ...(standIn !== undefined ? { standIn } : {}) };
 }
 
 /** Every role the palette cannot place on a specimen: a role mapped to no part, or to a part outside the inventory. */

@@ -3,7 +3,7 @@
  * pure function of plain JSON, with no clock, randomness, network or file
  * system, so it runs unchanged in a browser and in Node.
  */
-export type { Cap, ComponentLibrary, ConfirmedExclusion, ConfirmedRole, Confidence, Inventories, LibraryRoot, PageType, PartDescription, ProjectConfig, PropSchema, RankedAction, RoleMapping, RuleInputs, SettablePropSchema, Task, View } from "./config/types";
+export type { Cap, ComponentLibrary, ConfirmedExclusion, ConfirmedRole, Confidence, Inventories, LibraryEvent, LibraryRoot, LibrarySource, PageType, PartDescription, ProjectConfig, PropSchema, RankedAction, RoleMapping, RuleInputs, SettablePropSchema, Task, View } from "./config/types";
 export { CONFIG_SCHEMA_VERSION } from "./config/types";
 export type { ComponentRef, Flow, LayoutEntry, PageEntry, Prototype, Scenario, TaskFlow, Transition } from "./prototype/types";
 export type { Rect, RenderedElement, RenderedSnapshot, Rgba, TextPaint } from "./rendered/types";
@@ -95,7 +95,9 @@ export type { ProjectExport, ProjectExportInput } from "./export/project";
 export { EXPORT_PROTOTYPE_DIR, EXPORT_TOOLING, exportReactProject } from "./export/project";
 
 export type { ConfirmedRoles, ExclusionGuess, LibraryDescription, MissingRole, MissingRoleEffect, RoleConfirmation, RoleDraft, RoleGuess } from "./library/roles";
-export { confirmRoles, describeMapping, draftRoles, missingRoleEffects, sameMapping } from "./library/roles";
+export { confirmRoles, describeMapping, draftRoles, mappingProblems, missingRoleEffects, sameMapping } from "./library/roles";
+export type { LibraryDiff, LibraryMovePlan, MoveOptions, PartChange, ProjectPrototype, PrototypeChange, RoleCheck } from "./library/move";
+export { chooseLibrarySource, compareLibraries, moveLibrary, planLibraryMove, reportChanges } from "./library/move";
 export type { BuiltProject, ExclusionChoice, LibrarySetup, ProjectAnswers, RoleChoice, RoleOptions, RolePreview, StarterCap, StarterRules, StarterTask, TextParts } from "./library/project";
 export { STARTER_CAPS, STARTER_CAP_NOTES, STARTER_LAYOUT, STARTER_PAGE_TYPES, STARTER_STATE, STARTER_VIEWS, buildProject, confirmationFrom, defaultStarterRules, isExcluded, projectId, projectNameIssues, roleComponents, roleOptions, rolePreview, slugOf, starterInventory, starterPrototype, textParts } from "./library/project";
 export type { PartSpecimen, SpecimenSample } from "./library/specimen";

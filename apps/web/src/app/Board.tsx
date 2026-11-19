@@ -3,6 +3,7 @@ import { ArrowLeft, Grid3x3, Maximize2, PanelBottomDashed, Pointer, ZoomIn, Zoom
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import { flowFacts, viewFacts, type Finding, type ProjectConfig } from "@design-harness/core";
 import { FRAME_SANDBOX } from "../runtime/frame-document";
+import { PACKAGES_UNAVAILABLE } from "../runtime/package-source";
 import { frameKey, type FrameSpec, type FrameState, type Session, type SessionState } from "../runtime/session";
 import { planOutline } from "../runtime/tags";
 import { cameraMove } from "../visual/camera";
@@ -293,6 +294,7 @@ export function Board({
                       key={spec.key}
                       session={session}
                       spec={spec}
+                      packagesHint="What you can do is above the canvas."
                       revision={state.revision}
                       frameState={state.frameStates[spec.key] ?? { state: "waiting" }}
                       scale={focused === spec.key ? 1 : scale}
@@ -357,6 +359,8 @@ export type CardProps = {
   /** The lens drawn over the artboard once it is measured, and the config its facts are read with. */
   readonly lens?: LensId | null;
   readonly config?: ProjectConfig | undefined;
+  /** Shown under a failure to load packages: where the person finds what to do about it. */
+  readonly packagesHint?: string;
 };
 
 /**
@@ -364,7 +368,7 @@ export type CardProps = {
  * view and size above it, quiet unless it is still measuring or failed. The
  * review page shows examples with it too.
  */
-export function FrameCard({ session, spec, revision, frameState, scale, focused, hidden, selected, onOpen, label, caption, pointed, lens, config }: CardProps) {
+export function FrameCard({ session, spec, revision, frameState, scale, focused, hidden, selected, onOpen, label, caption, pointed, lens, config, packagesHint }: CardProps) {
   const name = `${label ? `${label}: ` : ""}${spec.scenario.id} at ${spec.view.name}`;
   const status = statusOf(frameState);
   const { width, height } = spec.view;
@@ -410,7 +414,7 @@ export function FrameCard({ session, spec, revision, frameState, scale, focused,
         )}
       </figcaption>
       <div className="frame-stage" style={{ paddingBlockEnd: placed ? placed.below : 0 }}>
-        <FrameViewport session={session} spec={spec} revision={revision} frameState={frameState} scale={scale} hidden={hidden} name={name} />
+        <FrameViewport session={session} spec={spec} revision={revision} frameState={frameState} scale={scale} hidden={hidden} name={name} {...(packagesHint ? { packagesHint } : {})} />
         {placed && !hidden && <LensLayer session={session} frame={spec.key} placed={placed} scale={scale} scheme={spec.view.scheme} />}
       </div>
       {drawing && !hidden && <LensWords drawing={drawing} />}
@@ -423,7 +427,7 @@ export function FrameCard({ session, spec, revision, frameState, scale, focused,
  * the artboard without its label, for where the frame is a picture inside
  * something else, as a role's preview is.
  */
-export function FrameViewport({ session, spec, revision, frameState, scale, hidden, name, fit }: Pick<CardProps, "session" | "spec" | "revision" | "frameState" | "scale" | "hidden"> & { readonly name: string; /** Show only as much of the view as the page fills, once it is measured. */ readonly fit?: boolean }) {
+export function FrameViewport({ session, spec, revision, frameState, scale, hidden, name, fit, packagesHint }: Pick<CardProps, "session" | "spec" | "revision" | "frameState" | "scale" | "hidden" | "packagesHint"> & { readonly name: string; /** Show only as much of the view as the page fills, once it is measured. */ readonly fit?: boolean }) {
   // A fresh document, on a fresh channel, for every revision.
   const doc = useMemo(() => (spec.blocked ? null : session.documentFor(spec.key)), [session, spec.key, spec.blocked, revision]);
   // One stable ref per document: a new callback on each render would detach and re-attach the frame.
@@ -465,6 +469,11 @@ export function FrameViewport({ session, spec, revision, frameState, scale, hidd
           <Text.Root as="p" className="pre">
             {frameState.message}
           </Text.Root>
+          {packagesHint && frameState.stage === "setup" && frameState.message.startsWith(PACKAGES_UNAVAILABLE) && (
+            <Text.Root as="p" weight="medium" data-testid="frame-packages-hint">
+              {packagesHint}
+            </Text.Root>
+          )}
         </div>
       )}
     </div>

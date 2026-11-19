@@ -44,7 +44,8 @@ export function useSeen<T extends Element>(): [(element: T | null) => void, bool
 
 /** Props this deployment gives a shipped library's parts beside their own, as the New project wizard does. */
 function partPropsOf(config: ProjectConfig) {
-  return SHIPPED_LIBRARIES.find((library) => library.package === config.library.package && library.version === config.library.version)?.setup.partProps;
+  // By package: a project may have moved to another version of a library this deployment ships.
+  return SHIPPED_LIBRARIES.find((library) => library.package === config.library.package)?.setup.partProps;
 }
 
 /** A component's specimen in the app's own colour scheme, so the tile reads as part of the page. */
