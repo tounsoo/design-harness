@@ -1,7 +1,7 @@
 import { Alert, Badge, Button, Card, Code, Disclosure, EmptyState, Field, Label, RadioGroup, Stack, Table, Text } from "@tounsoo/todae";
 import { Layers, MessageSquarePlus, RotateCcw, Sparkles, Wand2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { CURRENT, formatSpec, parseJson, pickScope, recombine, variantLabel, variantPrototype, type CheckReport, type Finding, type PickRecord, type PickScope, type ProjectConfig, type Prototype, type Recombination, type Variant } from "@design-harness/core";
+import { CURRENT, formatSpec, parseJson, pickScope, recombine, recombinedKey, variantLabel, variantPrototype, type CheckReport, type Finding, type PickRecord, type PickScope, type ProjectConfig, type Prototype, type Recombination, type Variant } from "@design-harness/core";
 import { fingerprint, reanchor, type FrameMeasure } from "../pins/anchor";
 import type { PinState } from "../pins/model";
 import { NoPins, PinContext, PinSurface, cardOf, usePinBoard, type BoardPins } from "../pins/PinLayer";
@@ -36,10 +36,22 @@ import { humanize, ruleLead, scenarioName, viewLabel } from "./words";
  * on what the variant draws after the agent revises it, and it stays in the
  * list if the variant is dismissed. The combination being picked takes no
  * note: it is not kept anywhere until it is applied, and then it is the
- * prototype. A note is never read by `pickScope` or by any standing here.
+ * prototype. When it is applied, the notes on what it took from a variant
+ * go with it onto the prototype, and undoing the pick puts them back
+ * (`pins/pick.ts`). A note is never read by `pickScope` or by any standing
+ * here.
  */
 
-export type ApplyPick = { readonly page: string; readonly slots: Readonly<Record<string, string>>; readonly notes: Readonly<Record<string, string>>; readonly before: string; readonly after: string; readonly prototype: Prototype };
+export type ApplyPick = {
+  readonly page: string;
+  readonly slots: Readonly<Record<string, string>>;
+  readonly notes: Readonly<Record<string, string>>;
+  readonly before: string;
+  readonly after: string;
+  readonly prototype: Prototype;
+  /** Where an element of one source is in the combination: core's `recombinedKey`. The notes pinned on a variant follow it (`pins/pick.ts`). */
+  readonly keyOf: (source: string, key: string) => string | null;
+};
 
 type Props = {
   readonly config: ProjectConfig;
@@ -469,7 +481,7 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
                 data-testid="apply-pick"
                 onClick={() => {
                   if (applyWhy !== null || !combined || currentText === undefined || !page) return;
-                  onApply({ page, slots: combined.slots, notes: usedNotes, before: currentText, after: combined.spec, prototype: combined.prototype });
+                  onApply({ page, slots: combined.slots, notes: usedNotes, before: currentText, after: combined.spec, prototype: combined.prototype, keyOf: (source, key) => recombinedKey(combined, source, key) });
                   setPicks({});
                 }}
               >
