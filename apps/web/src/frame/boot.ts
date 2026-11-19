@@ -10,12 +10,12 @@ import type { SpecPage, specPage } from "./spec";
  * The frame's boot script: a classic script inlined in every frame's
  * document. It listens only to its parent and only on its channel, builds an
  * import map from the modules the app sends (blob URLs for code, URLs as
- * they are), imports the page kit and the page, renders the page in the
+ * they are: React, the library, the page kit and the spec renderer, never
+ * prototype code), draws the page's spec with the spec renderer in the
  * default shell, waits for the layout to settle, and sends back a snapshot of
  * what was painted. The frame renders once: a new prototype revision gets a
- * new document, so no state, module or import map carries over. A spec page
- * may be redrawn in place with a draft spec, which is shown and never
- * measured. When asked, it also says which element tags it drew
+ * new document, so no state, module or import map carries over. A page may
+ * be redrawn in place with a draft spec, which is shown and never measured. When asked, it also says which element tags it drew
  * (`runtime/tags.ts`), and outlines a finding's elements by their tags.
  */
 
@@ -25,7 +25,7 @@ type Kit = {
 };
 
 const PAGE_KIT = "@design-harness/page";
-/** The spec renderer: json-render's Renderer with a registry built from the library. Only a spec page imports it. */
+/** The spec renderer: json-render's Renderer with a registry built from the library. */
 const SPEC_RENDERER = "@design-harness/spec";
 // Real time for the boot script's own waiting, taken before the page's clock is fixed.
 const now = performance.now.bind(performance);
@@ -33,15 +33,15 @@ installDeterminism(globalThis);
 const root = document.documentElement;
 const channel = root.dataset.channel ?? "";
 const parentOrigin = root.dataset.parentOrigin ?? "";
-// The import map is an inline script, so it needs the document's nonce. Read before any prototype code runs.
+// The import map is an inline script, so it needs the document's nonce. Read before any other code runs.
 const nonce = (document.currentScript as HTMLScriptElement | null)?.nonce ?? "";
-// The channel lives on only in this closure: prototype code cannot read it from the DOM to speak for the frame.
+// The channel lives on only in this closure: no other code in the frame (the library, json-render) can read it from the DOM to speak for the frame.
 root.removeAttribute("data-channel");
 root.removeAttribute("data-parent-origin");
 
 let started = false;
 let generation = -1;
-/** A spec page's in-place redraw, once it has rendered; null for a TSX page. */
+/** The page's in-place redraw, once it has rendered. */
 let redraw: ((payload: RedrawRequest["spec"]) => void) | null = null;
 let nodes: readonly Element[] = [];
 /** Whether this frame finds element tags: the render request says. */
@@ -132,23 +132,17 @@ async function render(request: RenderRequest): Promise<void> {
     await addStyles(request);
     addImportMap(request);
     kit = (await import(/* @vite-ignore */ PAGE_KIT)) as Kit;
-    if ("spec" in request.page) {
-      // A spec page: the library and the spec renderer, and the spec as data. No prototype module exists to load.
-      const payload = request.page.spec;
-      const [renderer, library] = await Promise.all([import(/* @vite-ignore */ SPEC_RENDERER) as Promise<{ specPage: typeof specPage }>, import(/* @vite-ignore */ payload.library) as Promise<Record<string, unknown>>]);
-      const page: SpecPage = renderer.specPage(library, kit.Slot, payload, request.pageType.slots, {
-        tags: request.tags,
-        onError: (error) => {
-          runtimeError ??= error;
-        },
-      });
-      Page = page;
-      pendingRedraw = page.redraw;
-    } else {
-      const module = (await import(/* @vite-ignore */ request.page.module)) as Record<string, unknown>;
-      Page = module[request.page.export];
-      if (typeof Page !== "function") throw new Error(`${request.page.module.replace(/^@prototype\//, "")} has no function export "${request.page.export}"`);
-    }
+    // The library and the spec renderer, and the spec as data. No prototype module exists to load.
+    const payload = request.page.spec;
+    const [renderer, library] = await Promise.all([import(/* @vite-ignore */ SPEC_RENDERER) as Promise<{ specPage: typeof specPage }>, import(/* @vite-ignore */ payload.library) as Promise<Record<string, unknown>>]);
+    const page: SpecPage = renderer.specPage(library, kit.Slot, payload, request.pageType.slots, {
+      tags: request.tags,
+      onError: (error) => {
+        runtimeError ??= error;
+      },
+    });
+    Page = page;
+    pendingRedraw = page.redraw;
     if (request.root) {
       // The library's provider or theme root, which the page renders inside: the library's own export, never prototype code.
       const library = (await import(/* @vite-ignore */ request.root.module)) as Record<string, unknown>;

@@ -7,15 +7,15 @@ import { PRIORITY, RENDER_SLOTS, type RenderSlots } from "./render-slots";
 import { PROTOCOL, readFrameMessage, type FrameMessage, type FrameStage, type ModuleSource, type PageRef, type RenderRequest, type RootRef, type SpecPart, type SpecPayload } from "./protocol";
 import { SPEC_RENDERER, specParts, specPayload } from "./spec-payload";
 import type { TagPlace } from "./tags";
-import { moduleSpecifier, type CompileProblem } from "./transform";
 
 /**
  * One prototype's check loop. Each change to the config or the prototype is
  * a new revision: core checks it at once without snapshots (rendered rules
  * report not-run) in the check engine (`check-engine.ts`, a module worker in
- * the app), which also compiles a TSX prototype or resolves a spec
- * prototype's pages; every frame gets a fresh document for the revision, and
- * once every frame has answered, core checks it again with their snapshots.
+ * the app), which also resolves each page's spec for the spec renderer, so
+ * no prototype code runs; every frame gets a fresh document for the
+ * revision, and once every frame has answered, core checks it again with
+ * their snapshots.
  * A message is only ever counted toward the revision it was rendered for,
  * so a slow frame from an earlier revision can never put its snapshot into
  * a later report.
@@ -53,7 +53,7 @@ export type FrameSpec = {
   /** Why the frame cannot render, before it tries: its page or page type is missing. */
   readonly blocked?: string;
   readonly pageType?: PageType;
-  /** A TSX page's module and export, or a spec page's resolved spec for this frame's scenario. */
+  /** The page's resolved spec for this frame's scenario. */
   readonly page?: PageRef;
 };
 
@@ -69,7 +69,6 @@ export type SessionState = {
   readonly frames: readonly FrameSpec[];
   readonly frameStates: Readonly<Record<FrameKey, FrameState>>;
   readonly packages: { readonly state: "loading" } | { readonly state: "ready"; readonly source: string } | { readonly state: "failed"; readonly message: string };
-  readonly compileProblems: readonly CompileProblem[];
   /** Core's report for `revision`. `measured` is true once it includes every frame's answer. */
   readonly report: CheckReport | null;
   readonly measured: boolean;
@@ -135,14 +134,14 @@ const TOP = { x: 0, y: 0 } as const;
 let sessions = 0;
 
 export class Session {
-  private state: SessionState = { revision: 0, frames: [], frameStates: {}, packages: { state: "loading" }, compileProblems: [], report: null, measured: false };
+  private state: SessionState = { revision: 0, frames: [], frameStates: {}, packages: { state: "loading" }, report: null, measured: false };
   private readonly listeners = new Set<() => void>();
   private readonly attached = new Map<FrameKey, Attached>();
   private config: ProjectConfig | null = null;
   private prototype: Prototype | null = null;
   private readonly tags: boolean;
   private modules: Readonly<Record<string, ModuleSource>> = {};
-  /** The current revision's modules (TSX) or pages (spec) have come back from the engine. */
+  /** The current revision's pages have come back from the engine. */
   private prepared = false;
   /** The revision whose last check has been asked for, so it is asked once. */
   private finishing = 0;
@@ -295,38 +294,36 @@ export class Session {
 
   /**
    * Starts a new revision for this config and prototype. Core checks it at
-   * once without snapshots, in the engine, which also gives back what the
-   * frames need (a TSX prototype's modules, a spec prototype's pages); the
-   * report is null until it answers.
+   * once without snapshots, in the engine, which also gives back each
+   * scenario's page; the report is null until it answers.
    */
   update(config: ProjectConfig, prototype: Prototype): void {
     this.config = config;
     this.prototype = prototype;
     const revision = this.state.revision + 1;
-    const spec = prototype.format === "spec";
-    // A spec prototype has no code to compile: its frames load the spec renderer and get each page's spec as data, once the engine has resolved it.
-    this.modules = spec ? { [SPEC_RENDERER]: { code: this.options.spec ?? "throw new Error('this app has no spec renderer');" } } : {};
+    // No prototype code exists: the frames load the spec renderer and get each page's spec as data, once the engine has resolved it.
+    this.modules = { [SPEC_RENDERER]: { code: this.options.spec ?? "throw new Error('this app has no spec renderer');" } };
     this.prepared = false;
-    const frames = frameSpecs(config, prototype, spec ? null : undefined);
+    const frames = frameSpecs(config, prototype, null);
     const frameStates: Record<FrameKey, FrameState> = {};
     for (const frame of frames) frameStates[frame.key] = frame.blocked ? { state: "failed", stage: "setup", message: frame.blocked } : { state: "waiting" };
     // No frame of the last revision renders or stays live any more: its slots and holds go to this one's.
     this.endAll();
     this.marks.clear();
     this.draft = null;
-    this.set({ revision, frames, frameStates, compileProblems: [], report: null, measured: false });
+    this.set({ revision, frames, frameStates, report: null, measured: false });
 
-    this.engine.run({ kind: "prepare", session: this.id, revision, config, prototype, tags: this.tags }).then(
+    this.engine.run({ kind: "prepare", session: this.id, revision, config, prototype }).then(
       (prepared) => this.onPrepared(revision, prepared),
       (error: unknown) => console.error("design-harness: core's check failed", error),
     );
 
-    const libraryKey = JSON.stringify([config.library.package, config.library.version, config.library.react, config.library.stylesheets ?? [], spec, config.library.source ?? null]);
+    const libraryKey = JSON.stringify([config.library.package, config.library.version, config.library.react, config.library.stylesheets ?? [], config.library.source ?? null]);
     if (this.packages?.key !== libraryKey) {
       this.resolved = null;
       const source = sourceFor(config.library, { page: this.options.source, esm: this.options.esm ?? null });
       this.source = source;
-      const value = resolvePackages(config.library, source, { spec });
+      const value = resolvePackages(config.library, source, { spec: true });
       this.packages = { key: libraryKey, value };
       this.set({ packages: { state: "loading" } });
       value.then(
@@ -350,21 +347,30 @@ export class Session {
     this.finishIfDone();
   }
 
+  /**
+   * Ends the current revision with nothing in its place: no frames, no
+   * report, nothing for the engine to answer. The app does this for a stored
+   * TSX prototype, which nothing renders or checks. The next `update` starts
+   * a revision as usual.
+   */
+  clear(): void {
+    this.config = null;
+    this.prototype = null;
+    this.endAll();
+    this.marks.clear();
+    this.draft = null;
+    this.set({ revision: this.state.revision + 1, frames: [], frameStates: {}, report: null, measured: false });
+  }
+
   private onPrepared(revision: number, prepared: Prepared): void {
     if (revision !== this.state.revision || !this.config || !this.prototype) return;
     this.prepared = true;
-    const patch: { -readonly [K in keyof SessionState]?: SessionState[K] } = { compileProblems: prepared.problems };
+    const frames = frameSpecs(this.config, this.prototype, prepared.payloads);
+    const frameStates: Record<FrameKey, FrameState> = { ...this.state.frameStates };
+    for (const frame of frames) if (frame.blocked && frameStates[frame.key]?.state === "waiting") frameStates[frame.key] = { state: "failed", stage: "setup", message: frame.blocked };
+    const patch: { -readonly [K in keyof SessionState]?: SessionState[K] } = { frames, frameStates };
     // The last check may already be in: it is the revision's report from then on.
     if (!this.state.measured) patch.report = prepared.report;
-    if (this.prototype.format === "spec") {
-      const frames = frameSpecs(this.config, this.prototype, prepared.payloads ?? {});
-      const frameStates: Record<FrameKey, FrameState> = { ...this.state.frameStates };
-      for (const frame of frames) if (frame.blocked && frameStates[frame.key]?.state === "waiting") frameStates[frame.key] = { state: "failed", stage: "setup", message: frame.blocked };
-      patch.frames = frames;
-      patch.frameStates = frameStates;
-    } else {
-      this.modules = Object.fromEntries(Object.entries(prepared.modules).map(([specifier, code]) => [specifier, { code }]));
-    }
     this.set(patch);
     this.scheduleAll();
     this.finishIfDone();
@@ -423,12 +429,12 @@ export class Session {
    * patch does not take every frame back to blank. A frame parked away from
    * the screen draws the draft when it is drawn again. The revision, its
    * report and its snapshots stay those of the prototype it was made for.
-   * Returns false, drawing nothing, when the current revision is not a spec
-   * prototype whose frames have all rendered: the caller then starts a
-   * revision for the draft instead.
+   * Returns false, drawing nothing, when the current revision's frames have
+   * not all rendered: the caller then starts a revision for the draft
+   * instead.
    */
   redraw(config: ProjectConfig, draft: Prototype): boolean {
-    if (this.prototype?.format !== "spec" || draft.format !== "spec") return false;
+    if (!this.prototype) return false;
     const rendered = this.state.frames.filter((frame) => this.state.frameStates[frame.key]?.state === "measured");
     if (rendered.length === 0 || rendered.length !== this.state.frames.length) return false;
     this.draft = { config, prototype: draft };
@@ -808,20 +814,20 @@ function sameSnapshot(a: RenderedSnapshot, b: RenderedSnapshot): boolean {
 
 /**
  * One frame per scenario and view, in the prototype's scenario order and the
- * config's view order. A spec prototype's pages are core's resolved specs:
- * given in `payloads` by scenario id (as the engine returns them), worked
- * out here when it is undefined, or not known yet when it is null, which
- * leaves such a frame without its page and not blocked until they are.
+ * config's view order. Its pages are core's resolved specs: given in
+ * `payloads` by scenario id (as the engine returns them), worked out here
+ * when it is undefined, or not known yet when it is null, which leaves such
+ * a frame without its page and not blocked until they are.
  */
 export function frameSpecs(config: ProjectConfig, prototype: Prototype, payloads?: Readonly<Record<string, SpecPayload | null>> | null): FrameSpec[] {
   const pageTypes = new Map(config.inventories.pageTypes.map((type) => [type.id, type]));
-  const parts = prototype.format === "spec" && payloads === undefined ? specParts(config) : {};
+  const parts = payloads === undefined ? specParts(config) : {};
   return prototype.scenarios.flatMap((scenario) => {
     const page = prototype.pages.find((item) => item.id === scenario.page);
     const pageType = page ? pageTypes.get(page.pageType) : undefined;
-    const pending = prototype.format === "spec" && payloads === null;
-    const payload = page && prototype.format === "spec" && !pending ? (payloads ? (payloads[scenario.id] ?? null) : specPayload(config, prototype, scenario, parts)) : null;
-    const ref: PageRef | undefined = !page ? undefined : prototype.format === "spec" ? (payload ? { spec: payload } : undefined) : { module: moduleSpecifier(page.component.file), export: page.component.export };
+    const pending = payloads === null;
+    const payload = page && !pending ? (payloads ? (payloads[scenario.id] ?? null) : specPayload(config, prototype, scenario, parts)) : null;
+    const ref: PageRef | undefined = page && payload ? { spec: payload } : undefined;
     const blocked = !page
       ? `Scenario "${scenario.id}" names page "${scenario.page}", which is not in the prototype's manifest.`
       : !pageType

@@ -158,7 +158,6 @@ function readSource(name: string, text: string): Result<Source, string> {
  * given, or a source used is not a page spec.
  */
 export function recombine(prototype: Prototype, config: ProjectConfig, page: string, sources: Readonly<Record<string, string>>, picks: Readonly<Record<string, string>>): Result<Recombination, string> {
-  if (prototype.format !== "spec") return { ok: false, error: "Only a spec prototype's pages can be recombined." };
   const entry = prototype.pages.find((item) => item.id === page);
   const type = entry ? config.inventories.pageTypes.find((item) => item.id === entry.pageType) : undefined;
   if (!entry || !type) return { ok: false, error: `There is no page "${page}" of an inventoried page type.` };

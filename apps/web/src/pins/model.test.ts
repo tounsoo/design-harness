@@ -107,7 +107,7 @@ describe("undoing the agent's turn", () => {
 });
 
 describe("reading stored pins", () => {
-  it("reads a note on a variant, and what a TSX pin keeps of its frame, and refuses either out of shape", () => {
+  it("reads a note on a variant, and a pin stored on a place in a TSX file, and refuses either out of shape", () => {
     const box = { rect: { x: 0, y: 0, width: 10, height: 10 }, within: { x: 0.5, y: 0.5 } };
     const withAnchor = (anchor: unknown) => parsePinState({ version: 1, next: 2, pins: [{ number: 1, note: "n", status: "open", anchor, history: [{ kind: "created", at: AT, by: "you", note: "n" }] }] });
     const tsx = { ...ANCHOR, element: { source: { tag: "pages/a.tsx:1:1", kind: "source", nth: 0, ...box, elsewhere: ["0a1b2c3d", "ffffffff"] } } };
@@ -115,6 +115,7 @@ describe("reading stored pins", () => {
     expect(withAnchor(tsx)).toMatchObject({ ok: true });
     expect(withAnchor({ ...tsx, element: { source: { ...tsx.element.source, elsewhere: [] } } })).toMatchObject({ ok: true });
     expect(withAnchor(key)).toMatchObject({ ok: true });
+    expect(withAnchor(key)).toMatchObject({ ok: true, value: { pins: [{ anchor: key }] } });
     // Prints are 8 hex digits, a list, and at most 256 of them; a spec key keeps none.
     for (const elsewhere of [["xyz"], ["0A1B2C3D"], ["0a1b2c3d9"], [12345678], "0a1b2c3d", Array.from({ length: 257 }, () => "0a1b2c3d")]) {
       expect(withAnchor({ ...tsx, element: { source: { ...tsx.element.source, elsewhere } } })).toMatchObject({ ok: false, error: [expect.stringContaining("$.pins[0].anchor")] });
@@ -124,6 +125,25 @@ describe("reading stored pins", () => {
     // A variant's id is core's, and a variant is a spec page, so its note is never on a place in a TSX file.
     for (const variant of ["B", "", "abcd", "current", 2]) expect(withAnchor({ ...key, variant })).toMatchObject({ ok: false });
     expect(withAnchor({ ...tsx, variant: "b" })).toMatchObject({ ok: false });
+  });
+
+  it("keeps a pin stored on a place in a TSX file, its note, label, point and history, without the place, marked moved or gone", () => {
+    const box = { rect: { x: 0, y: 0, width: 10, height: 10 }, within: { x: 0.5, y: 0.5 } };
+    const label = { role: "button", name: "Book room", html: "button", ...box };
+    const history = [{ kind: "created", at: AT, by: "you", note: "Bigger?" }];
+    const stored = { version: 1, next: 3, pins: [
+      { number: 1, note: "Bigger?", status: "open", anchor: { ...ANCHOR, element: { source: { tag: "pages/booking.tsx:15:9", kind: "source", nth: 0, ...box, elsewhere: ["0a1b2c3d"] }, label } }, history },
+      { number: 2, note: "Bigger?", status: "open", anchor: { ...ANCHOR, element: { source: { tag: "pages/booking.tsx:15:9", kind: "source", nth: 0, ...box } } }, history },
+    ] };
+    const read = parsePinState(JSON.parse(JSON.stringify(stored)));
+    if (!read.ok) throw new Error(read.error.join("\n"));
+    const { element: _element, ...bare } = ANCHOR;
+    expect(read.value.pins.map((pin) => pin.anchor)).toEqual([
+      { ...bare, element: { label }, lost: true },
+      { ...bare, lost: true },
+    ]);
+    expect(read.value.pins.map((pin) => [pin.number, pin.note, pin.status, pin.history])).toEqual([[1, "Bigger?", "open", history], [2, "Bigger?", "open", history]]);
+    expect(read.value.next).toBe(3);
   });
 
   it("refuses an undone entry that does not follow the agent's reply", () => {

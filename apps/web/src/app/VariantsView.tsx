@@ -6,7 +6,7 @@ import { fingerprint, reanchor, type FrameMeasure } from "../pins/anchor";
 import type { PinState } from "../pins/model";
 import { NoPins, PinContext, PinSurface, cardOf, usePinBoard, type BoardPins } from "../pins/PinLayer";
 import { frameKey } from "../runtime/session";
-import type { PrototypeRecord } from "../store/project-file";
+import { isSpecRecord, type PrototypeRecord } from "../store/project-file";
 import { FrameCard } from "./Board";
 import { SHORTCUTS, ariaKeys } from "./shortcuts";
 import { MIN_SCALE, rowScale, type RowBox } from "./frame-row";
@@ -169,7 +169,8 @@ function FrameRow({ item, label, scenario, viewName }: { readonly item: Measured
 }
 
 export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss, onSend, onPrefill, pins, onReanchor, show }: Props) {
-  const prototype = record?.prototype;
+  // A stored TSX prototype has no variants: core reads no page of it.
+  const prototype = record && isSpecRecord(record) ? record.prototype : undefined;
   const state = record?.variants;
   const variants = useMemo(() => state?.variants ?? [], [state]);
   const pages = useMemo(() => [...new Set(variants.map((variant) => variant.page))].filter((page) => prototype?.pages.some((item) => item.id === page)), [variants, prototype]);
@@ -209,7 +210,7 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
 
   // Pinned notes on these frames: which card is open, the note being written, and Escape.
   const root = useRef<HTMLDivElement>(null);
-  const { context: pinBoard, setOpen: setOpenPin, dropDraft } = usePinBoard(prototype?.format === "spec" ? pins : undefined, root);
+  const { context: pinBoard, setOpen: setOpenPin, dropDraft } = usePinBoard(prototype ? pins : undefined, root);
   const pinning = pinBoard?.pinning ?? false;
   // Each time a variant's frames are measured, the notes pinned on it are placed again, as the board's are on the prototype's.
   const noted = pins?.state.pins.some((pin) => pin.anchor.variant !== undefined) ?? false;
@@ -224,7 +225,7 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
       }
       const revision = fingerprint(item.prototype);
       // The same state comes back when no anchor moved, and then nothing is saved.
-      onReanchor((state) => reanchor(state, frames, revision, "key", item.id));
+      onReanchor((state) => reanchor(state, frames, revision, item.id));
     }
   });
   // "Show me" on a note pinned to a variant: its page and scenario, then its frame and its card.
@@ -252,8 +253,8 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
     // Only a new request moves the view: what the person chooses afterwards is theirs.
   }, [showNonce]);
 
-  if (!record || !prototype) return null;
-  if (prototype.format !== "spec") {
+  if (!record) return null;
+  if (!prototype) {
     return (
       <Stack.Root gap="normal" className="variants" data-testid="variants">
         <Text.Root as="h2" className="variants-title">
@@ -262,7 +263,7 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
         <Alert.Root tone="info" data-testid="variants-tsx">
           <Alert.Title>Variants are for spec prototypes</Alert.Title>
           <Alert.Description>
-            This prototype is TSX, which is read-only here: it takes no variants and no picks. Variants need each page as data, which a spec is and code is not. Start a spec version of it from the canvas to compare variants.
+            This prototype is TSX, which is no longer edited or checked here: it takes no variants and no picks. Variants need each page as data, which a spec is and code is not. Start a spec version of it from the canvas to compare variants.
           </Alert.Description>
         </Alert.Root>
       </Stack.Root>
@@ -303,7 +304,7 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
     const row = <FrameRow item={item} label={label} scenario={scenario} viewName={viewName} />;
     if (item.id === "combination") return <NoPins>{row}</NoPins>;
     return (
-      <PinSurface {...(item.id === CURRENT ? {} : { variant: item.id })} revision={fingerprint(item.prototype)} kind="key">
+      <PinSurface {...(item.id === CURRENT ? {} : { variant: item.id })} revision={fingerprint(item.prototype)}>
         {row}
       </PinSurface>
     );

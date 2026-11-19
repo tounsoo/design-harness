@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { carryWithPick, returnFromPick } from "../pins/pick";
 import { nook } from "../../../../packages/core/examples/nook/project";
-import { seedLegal, seedSpec } from "../../test/nook";
+import { seedSpec, seedTsx } from "../../test/nook";
 import { NO_PINS, addPin, addressPin, closePin, type PinState } from "../pins/model";
 import { PROJECT_FILE_FORMAT, exportFileName, exportProject, importProject, type PrototypeRecord } from "./project-file";
 
-const records: PrototypeRecord[] = [{ projectId: "nook", id: "booking", name: "Booking", prototype: seedLegal() }];
+const records: PrototypeRecord[] = [{ projectId: "nook", id: "booking", name: "Booking", prototype: seedSpec() }];
 
 describe("a project file", () => {
   it("round-trips a project and its prototypes through export and import", () => {
     const text = exportProject(nook, records);
     expect(JSON.parse(text)).toMatchObject({ format: PROJECT_FILE_FORMAT, version: 1, project: { id: "nook" } });
     const imported = importProject(text);
-    expect(imported).toEqual({ ok: true, value: { config: nook, prototypes: records } });
+    expect(imported).toEqual({ ok: true, value: { config: nook, prototypes: records, removed: [] } });
     expect(exportProject(nook, [...records].reverse())).toBe(text);
     expect(exportFileName(nook)).toBe("nook.design-harness.json");
   });
@@ -47,7 +47,7 @@ describe("a project file", () => {
     const variants = { variants: [{ id: "b", page: "booking", note: "Asks for how long first", spec: seedSpec().files["pages/booking.json"] as string, like: "a" }], picks: [{ at: "2026-11-18T12:00:00.000Z", page: "booking", slots: { body: "b" }, notes: { b: "Asks for how long first" }, before: "{}", after: "{}" }] };
     const withVariants: PrototypeRecord[] = [{ projectId: "nook", id: "booking-spec", name: "Booking (spec)", prototype: seedSpec(), variants }];
     const text = exportProject(nook, withVariants);
-    expect(importProject(text)).toEqual({ ok: true, value: { config: nook, prototypes: withVariants } });
+    expect(importProject(text)).toEqual({ ok: true, value: { config: nook, prototypes: withVariants, removed: [] } });
     const file = JSON.parse(text) as { prototypes: { variants: { variants: Record<string, unknown>[] } }[] };
     (file.prototypes[0] as { variants: { variants: Record<string, unknown>[] } }).variants.variants[0] = { id: "B!", page: "booking", note: "", spec: "{}" };
     expect(importProject(JSON.stringify(file))).toEqual({ ok: false, error: ['$.prototypes[0].variants.variants[0].id: expected a variant id such as "b", got "B!"', "$.prototypes[0].variants.variants[0].note: expected a non-empty string"] });
@@ -65,7 +65,7 @@ describe("a project file", () => {
     const pinned: PrototypeRecord[] = [{ ...(records[0] as PrototypeRecord), pins }];
     const text = exportProject(nook, pinned);
     expect((JSON.parse(text) as { prototypes: { pins: unknown }[] }).prototypes[0]?.pins).toEqual(pins);
-    expect(importProject(text)).toEqual({ ok: true, value: { config: nook, prototypes: pinned } });
+    expect(importProject(text)).toEqual({ ok: true, value: { config: nook, prototypes: pinned, removed: [] } });
     // A second trip gives the same file.
     const again = importProject(text);
     expect(again.ok && JSON.parse(exportProject(again.value.config, again.value.prototypes))).toEqual(JSON.parse(text));
@@ -89,11 +89,31 @@ describe("a project file", () => {
     for (const pins of [moved, back]) {
       const kept: PrototypeRecord[] = [{ ...(records[0] as PrototypeRecord), pins }];
       const text = exportProject(nook, kept);
-      expect(importProject(text)).toEqual({ ok: true, value: { config: nook, prototypes: kept } });
+      expect(importProject(text)).toEqual({ ok: true, value: { config: nook, prototypes: kept, removed: [] } });
     }
     // A moved note that says it is still on its variant is refused, with where.
     const file = JSON.parse(exportProject(nook, [{ ...(records[0] as PrototypeRecord), pins: moved }])) as { prototypes: { pins: { pins: { anchor: Record<string, unknown> }[] } }[] };
     (file.prototypes[0]?.pins.pins[0] as { anchor: Record<string, unknown> }).anchor.variant = "b";
     expect(importProject(JSON.stringify(file))).toEqual({ ok: false, error: ["$.prototypes[0].pins.pins[0].anchor: a note that came with a pick is on the prototype, not on a variant"] });
+  });
+
+  it("imports a TSX prototype as it was stored, for its files alone, and takes rules only TSX had out of the config, saying which", () => {
+    const tsx = seedTsx();
+    const { format: _format, ...unformatted } = tsx;
+    const legacy = {
+      ...nook,
+      rules: [...nook.rules, { type: "isolation", id: "no-ambient-globals" }, { type: "style-props", id: "no-inline-styles" }, { type: "membership", id: "imports-from-library", of: "imports" }],
+    };
+    const file = { format: PROJECT_FILE_FORMAT, version: 1, project: legacy, prototypes: [{ id: "booking", name: "Booking", prototype: seedSpec() }, { id: "old", name: "Old", prototype: unformatted }] };
+    const imported = importProject(JSON.stringify(file));
+    if (!imported.ok) throw new Error(imported.error.join("\n"));
+    expect(imported.value.config).toEqual(nook);
+    expect(imported.value.removed).toEqual(['rule "no-ambient-globals", which only TSX had', 'rule "no-inline-styles", which only TSX had', 'rule "imports-from-library", which only TSX had']);
+    // A prototype with no format was TSX: it comes back said so, with its files as they were.
+    expect(imported.value.prototypes.map((record) => [record.id, record.prototype.format])).toEqual([["booking", "spec"], ["old", "tsx"]]);
+    expect(imported.value.prototypes[1]?.prototype).toEqual(tsx);
+    // A TSX prototype that is not whole is refused, with core's words for why.
+    const broken = importProject(JSON.stringify({ ...file, prototypes: [{ id: "old", name: "Old", prototype: { ...tsx, pages: "none" } }] }));
+    expect(broken).toMatchObject({ ok: false, error: [expect.stringContaining("$.prototypes[0].prototype.format: says the prototype is TSX"), "$.prototypes[0].prototype.pages: expected an array, got a string"] });
   });
 });

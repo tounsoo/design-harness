@@ -1,1 +1,0 @@
-{ "what": "The room details layout renders the rooms page inside the booking page", "expect": [{ "rule": "no-page-inside-a-page", "message": "Page \"booking\" has 1 page, more than 0: RoomsPage at layouts/room-details.tsx" }] }

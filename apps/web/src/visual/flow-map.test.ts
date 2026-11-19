@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { flowFacts, type FlowFacts } from "@design-harness/core";
 import { nook } from "../../../../packages/core/examples/nook/project";
-import { seedLegal } from "../../test/nook";
+import { seedSpec } from "../../test/nook";
 import { MAX_MAP_STATES, NODE, flowMap, type FlowInput } from "./flow-map";
 
 const over: FlowInput = {
@@ -100,7 +100,7 @@ describe("the flow map", () => {
   });
 
   it("draws Nook's own tasks from core's facts", () => {
-    const facts: FlowFacts = flowFacts(nook, seedLegal());
+    const facts: FlowFacts = flowFacts(nook, seedSpec());
     for (const task of facts.tasks) {
       const map = flowMap({ start: task.start ?? "", success: task.success, budget: task.budget, transitions: task.transitions, ...(task.longest ? { longest: task.longest } : {}) });
       expect(map?.edges.filter((edge) => edge.step !== undefined)).toHaveLength(task.longest?.length ?? 0);

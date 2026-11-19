@@ -114,7 +114,7 @@ export type SpecPage = ComponentType & { readonly redraw: (payload: SpecPayload)
 /**
  * The page component a frame mounts in the default shell: the spec, drawn by
  * json-render with a registry built from the library. A Page puts its slots
- * in the DOM in the page type's order (`slotOrder`), as a TSX page writes
+ * in the DOM in the page type's order (`slotOrder`), as code export writes
  * them, so headings and focus follow it; a slot the type lacks goes last.
  * `redraw` draws another spec of the same catalog in place, as React
  * updates: elements that stay keep their DOM. A change of the spec's

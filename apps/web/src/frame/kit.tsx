@@ -5,9 +5,9 @@ import type { PageType } from "@design-harness/core";
 import { slotPlaces, type SlotPlace } from "./slots";
 
 /**
- * The page kit, `@design-harness/page`, as a prototype imports it inside a
- * frame. A page fills its page type's slots with `Slot`; the default shell
- * arranges them. The kit knows nothing about the component library: it lays
+ * The page kit, `@design-harness/page`, as the frame's boot script imports
+ * it: the spec renderer fills a page type's slots with `Slot`, and the
+ * default shell arranges them. The kit knows nothing about the component library: it lays
  * out slots and renders whatever the page put in them.
  *
  * The shell reads only the page type. Its slots keep their order, and fall

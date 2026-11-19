@@ -1,1 +1,0 @@
-{ "what": "A note rendered beside the slots, in none of them", "expect": [{ "rule": "page-structure", "message": "Text.Root \"Prices include tax\" at pages/booking.tsx" }] }

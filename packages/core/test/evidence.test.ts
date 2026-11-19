@@ -10,13 +10,13 @@ import type { Finding } from "../src/engine/report";
 import type { RenderedSnapshot } from "../src/rendered/types";
 import type { RuleSpec } from "../src/rules/types";
 import { EXAMPLES, loadCases, loadPrototype } from "./fixtures";
-import { HEADER, check, configWith, prototype } from "./helpers";
+import { check, configWith, home, prototype } from "./helpers";
 
-const legal = loadPrototype(join(EXAMPLES, "legal", "booking"));
-const cases = loadCases(legal, join(EXAMPLES, "illegal"));
+const legal = loadPrototype(join(EXAMPLES, "spec", "legal", "booking"));
+const cases = loadCases(legal, join(EXAMPLES, "spec", "illegal"));
 
 const ONE_ACTION: RuleSpec = { type: "slot", id: "one-action", slot: "action", holds: { role: "action" }, max: 1 };
-const TWO_ACTIONS = { "pages/home.tsx": `${HEADER}export function Home() { return <Slot name="action"><Button.Root>A</Button.Root><Button.Root>B</Button.Root></Slot>; }` };
+const TWO_ACTIONS = home({ action: ["a", "b"] }, { a: { type: "Button.Root", props: { text: "A" } }, b: { type: "Button.Root", props: { text: "B" } } });
 
 /** Every finding the Nook fixtures produce, each with its rule's spec. */
 function fixtureFindings(): { finding: Finding; rule: RuleSpec }[] {
@@ -32,7 +32,7 @@ function fixtureFindings(): { finding: Finding; rule: RuleSpec }[] {
     add(checkPrototype({ config, prototype: item.prototype }).findings, config.rules);
   }
   for (const item of renderedCases) add(checkPrototype({ config: nook, prototype: legal, snapshots: item.snapshots() }).findings, nook.rules);
-  // No TSX fixture overfills a slot by count alone, so one is written here.
+  // No fixture overfills a slot by count alone, so one is written here.
   add(check([ONE_ACTION], TWO_ACTIONS).findings, [ONE_ACTION]);
   return out;
 }
@@ -84,7 +84,7 @@ describe("the evidence contract", () => {
 
   it("a rule a proposal could add gets its type's evidence with no code of its own", () => {
     const rule: RuleSpec = { type: "count", id: "one-toast", scope: "page", select: { component: "Text.Root" }, max: 1 };
-    const report = check([rule], { "pages/home.tsx": `${HEADER}export function Home() { return <Slot name="body"><Text.Root as="p">a</Text.Root><Text.Root as="p">b</Text.Root></Slot>; }` });
+    const report = check([rule], home({ body: ["a", "b"] }, { a: { type: "Text.Root", props: { as: "p", text: "a" } }, b: { type: "Text.Root", props: { as: "p", text: "b" } } }));
     expect(report.findings[0]?.evidence).toEqual({ kind: "count-vs-cap", count: 2, cap: 1, bound: "max", unit: expect.any(String) });
   });
 });

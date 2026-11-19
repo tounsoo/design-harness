@@ -5,7 +5,7 @@ import { proposeByPerson, removalDraft } from "../review/rule-change";
 import { fakeHost } from "../../test/agent-host";
 import { withPrimaries, withTwoQuestions } from "../../test/rule-change";
 import { SYSTEM_PROMPT } from "./request";
-import { seedLegal, seedSpec } from "../../test/nook";
+import { seedSpec } from "../../test/nook";
 import { drafted, specToastDraft, withSpecToasts } from "../../test/proposals";
 import { MANIFEST, TOOL_DEFINITIONS, runTool } from "./tools";
 
@@ -46,7 +46,7 @@ describe("the agent's tools", () => {
   });
 
   it("refuse every call on a TSX prototype, which is read-only, and change nothing", async () => {
-    const { host, applied, saved, savedVariants } = fakeHost(seedLegal());
+    const { host, applied, saved, savedVariants } = fakeHost(seedSpec(), undefined, undefined, { tsx: true });
     for (const [name, input] of [
       ["read_project", {}],
       ["list_files", {}],
@@ -61,9 +61,9 @@ describe("the agent's tools", () => {
     ] as const) {
       const outcome = await runTool(call(name, input), host, signal);
       expect(outcome).toMatchObject({ isError: true, changed: false, title: `${name} not run: TSX is read-only` });
-      expect(outcome.content).toMatch(/^This prototype is TSX\. TSX prototypes are no longer edited here: the agent writes specs only\. .* Nothing ran\.$/);
+      expect(outcome.content).toMatch(/^This prototype is TSX\. TSX prototypes are no longer edited or checked here: the agent writes specs only\. .* Nothing ran\.$/);
     }
-    expect(host.prototype()).toEqual(seedLegal());
+    expect(host.prototype()).toEqual(seedSpec());
     expect([applied, saved, savedVariants]).toEqual([[], [], []]);
   });
 

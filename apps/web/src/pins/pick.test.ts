@@ -135,8 +135,8 @@ describe("a variant's notes when a pick is applied", () => {
     };
     const frames = { [`${SCENARIO}@desktop`]: measure };
     // Still on the variant, the board's placing would not touch it.
-    expect(reanchor(pinned(on("ask", "b")), frames, "rev-new", "key")).toEqual(pinned(on("ask", "b")));
-    const placed = reanchor(next, frames, "rev-new", "key");
+    expect(reanchor(pinned(on("ask", "b")), frames, "rev-new")).toEqual(pinned(on("ask", "b")));
+    const placed = reanchor(next, frames, "rev-new");
     expect(placed.pins[0]?.anchor).toMatchObject({ point: { x: 500, y: 620 }, seen: "rev-new", revision: "rev-b" });
     expect(placed.pins[0]?.anchor.lost).toBeUndefined();
     expect(placed.pins[0]?.anchor.variant).toBeUndefined();

@@ -39,9 +39,8 @@ export type PinBoard = {
   readonly state: PinState;
   readonly pinning: boolean;
   readonly actions: PinActions;
-  /** The revision (`fingerprint`) of what these frames draw, and what its element tags are. */
+  /** The revision (`fingerprint`) of what these frames draw. */
   readonly revision: string;
-  readonly kind: "source" | "key";
   /** The variant these frames draw, for the Variants view's variants; absent for the prototype's own frames. */
   readonly variant?: string;
   /** The spot whose list of notes is open: several notes pinned on one spot are picked from it. */
@@ -67,9 +66,8 @@ export type BoardPins = {
   readonly actions: PinActions;
   /** The open prototype's id: another prototype's notes are other notes. */
   readonly prototype: string;
-  /** The open prototype's revision, and what its element tags are (`pins/anchor.ts`). */
+  /** The open prototype's revision (`pins/anchor.ts`). */
   readonly revision: string;
-  readonly kind: "source" | "key";
   /** Says whether Escape is the view's now: pin mode is on, a note's card is open, or a spot's list is. */
   readonly onHold?: (held: boolean) => void;
 };
@@ -125,7 +123,7 @@ export function usePinBoard(pins: BoardPins | undefined, root: RefObject<HTMLEle
   );
   const focused = useCallback(() => setFocus(null), []);
   const context = useMemo(
-    (): PinBoard | null => (pins && actions ? { state: pins.state, pinning: pins.pinning, actions, revision: pins.revision, kind: pins.kind, picking, setPicking, open, setOpen, draft, setDraft, focus, focused } : null),
+    (): PinBoard | null => (pins && actions ? { state: pins.state, pinning: pins.pinning, actions, revision: pins.revision, picking, setPicking, open, setOpen, draft, setDraft, focus, focused } : null),
     [pins, actions, picking, open, draft, setDraft, focus, focused],
   );
   // Another prototype: no card of the last one stays open, and no note half written for it.
@@ -154,13 +152,13 @@ export function usePinBoard(pins: BoardPins | undefined, root: RefObject<HTMLEle
 }
 
 /** The frames under it draw one variant, or, with `variant` absent, the prototype as it is: their pins are that surface's, placed on its revision. */
-export function PinSurface({ variant, revision, kind, children }: { readonly variant?: string; readonly revision: string; readonly kind: "source" | "key"; readonly children: ReactNode }) {
+export function PinSurface({ variant, revision, children }: { readonly variant?: string; readonly revision: string; readonly children: ReactNode }) {
   const board = useContext(PinContext);
   const value = useMemo((): PinBoard | null => {
     if (!board) return null;
     const { variant: _other, ...rest } = board;
-    return { ...rest, revision, kind, ...(variant !== undefined ? { variant } : {}) };
-  }, [board, variant, revision, kind]);
+    return { ...rest, revision, ...(variant !== undefined ? { variant } : {}) };
+  }, [board, variant, revision]);
   return <PinContext value={value}>{children}</PinContext>;
 }
 
@@ -225,7 +223,7 @@ export function PinLayer({ session, spec, scale, measure, name }: { readonly ses
     const box = event.currentTarget.getBoundingClientRect();
     const point = toPage({ x: event.clientX - box.left, y: event.clientY - box.top }, scale, scroll);
     board.setOpen(null);
-    board.setDraft({ frame: spec.key, anchor: anchorAt(measure, frame, point, board.revision, board.kind), list: false });
+    board.setDraft({ frame: spec.key, anchor: anchorAt(measure, frame, point, board.revision), list: false });
   };
   return (
     <div className="pin-layer" ref={layer} data-scheme={scheme} data-pinning={board.pinning ? "" : undefined} style={{ width: width * scale, height: height * scale }} data-testid="pin-layer">
@@ -283,7 +281,7 @@ export function PinLayer({ session, spec, scale, measure, name }: { readonly ses
             measure={measure}
             frame={name}
             onMove={(index) => {
-              const anchor = measure ? anchorOn(measure, frame, index, board.revision, board.kind) : null;
+              const anchor = measure ? anchorOn(measure, frame, index, board.revision) : null;
               if (anchor) board.setDraft({ ...draft, anchor });
             }}
             onCancel={() => board.setDraft(null)}

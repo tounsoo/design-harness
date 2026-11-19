@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Proposal } from "@design-harness/core";
 import { nook } from "../../../../packages/core/examples/nook/project";
-import { seedLegal } from "../../test/nook";
+import { seedSpec } from "../../test/nook";
 import type { Turn, TurnItem } from "./controller";
 import { NO_USAGE } from "./models";
 import { ASKS, FIX_TURNS, NOTES, SHARED_WORDS, contentWords, detectPatterns, evidenceLines, fixedIn, patternMessage, patternSummary, suggestion, type LoopEvent } from "./patterns";
 
-const legal = seedLegal();
+const legal = seedSpec();
 const checks = (failing: string[], notRun: string[] = []): TurnItem => ({ kind: "checks", revision: 2, status: failing.length > 0 ? "fail" : "pass", title: "", text: "", failing, notRun });
 
 function turn(id: string, at: string, items: TurnItem[], extra: Partial<Turn> = {}): Turn {

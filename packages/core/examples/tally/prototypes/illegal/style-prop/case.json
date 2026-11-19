@@ -1,9 +1,0 @@
-{
-  "what": "Submit expense given Mantine's bg style prop in TSX, which Tally excludes: its colour must come from Mantine's variants and tokens",
-  "expect": [
-    {
-      "rule": "no-inline-styles",
-      "message": "Button \"Submit expense\" at pages/expense.tsx:30:9 sets \"bg\", a style prop the project excludes (\"bg\" in library.excludedProps): a Button's styling must come from the library's own variants and tokens"
-    }
-  ]
-}
