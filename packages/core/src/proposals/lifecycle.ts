@@ -1,7 +1,7 @@
 import { configReferenceIssues } from "../config/references";
 import type { ProjectConfig } from "../config/types";
 import { checkPrototype } from "../engine/check";
-import { compareStrings, type CheckReport, type Finding } from "../engine/report";
+import { compareStrings, type CheckReport, type CheckStatus, type Finding, type RuleStatus } from "../engine/report";
 import { prototypeIssues } from "../parse";
 import type { Prototype } from "../prototype/types";
 import { snapshotSchema } from "../rendered/schema";
@@ -462,6 +462,68 @@ export function dryRunAdoption(config: ProjectConfig, id: string, stamp: Stamp, 
   const approved = proposal.status === "open" ? approve(config, id, stamp) : { ok: true as const, value: config };
   if (!approved.ok) return approved;
   return adopt(approved.value, id, stamp, existing);
+}
+
+/** How one of the caller's prototypes reads before a change and after it. */
+export type PrototypeImpact = {
+  readonly name: string;
+  readonly before: CheckStatus;
+  readonly after: CheckStatus;
+  /** Rules whose status differs, by rule id; a rule on one side only reads "not in force" on the other. */
+  readonly rules: readonly { readonly rule: string; readonly before: RuleStatus | "not in force"; readonly after: RuleStatus | "not in force" }[];
+  /** Findings it carries after and not before. */
+  readonly added: readonly Finding[];
+  /** Findings it carries before and not after. */
+  readonly removed: readonly Finding[];
+};
+
+export type ProposalImpact = {
+  /** The config with the draft's changes applied. */
+  readonly config: ProjectConfig;
+  /** Every prototype given, in name order, whether its report changes or not. */
+  readonly prototypes: readonly PrototypeImpact[];
+  /** Failing examples of adopted proposals the draft would retire: it removes the rule they prove. */
+  readonly retired: readonly ExampleRun[];
+  /** Examples of adopted proposals that would stop behaving, each of which makes `adopt` refuse. */
+  readonly broken: readonly ExampleRun[];
+};
+
+/**
+ * What a draft's changes would do, before it is a proposal and whether or
+ * not it has examples yet: the config with them applied, how each of the
+ * caller's prototypes reads under both configs, rule by rule and finding by
+ * finding, and what happens to the examples adopted proposals keep, by the
+ * code `adopt` and `rerunExamples` run. It judges nothing about the draft's
+ * own examples and changes nothing. Refuses what cannot apply or would leave
+ * the config invalid, in `adopt`'s words.
+ */
+export function proposalImpact(config: ProjectConfig, draft: ProposalDraft, existing: readonly ExistingPrototype[] = []): Result<ProposalImpact, Refusal> {
+  const proposal: Proposal = { ...draft, status: "open", history: [{ status: "open", at: "" }] };
+  const applied = candidateFor(config, proposal);
+  if (!applied.ok) return applied;
+  const candidate = applied.value;
+  const prototypes: PrototypeImpact[] = [];
+  for (const item of [...existing].sort((a, b) => compareStrings(a.name, b.name))) {
+    const snapshots = item.snapshots ? { snapshots: item.snapshots } : {};
+    const was = checkPrototype({ config, prototype: item.prototype, ...snapshots });
+    const now = checkPrototype({ config: candidate, prototype: item.prototype, ...snapshots });
+    const statusOf = (report: CheckReport, rule: string) => report.rules.find((entry) => entry.rule === rule)?.status ?? "not in force";
+    const ids = [...new Set([...was.rules, ...now.rules].map((entry) => entry.rule))].sort(compareStrings);
+    const known = new Set(was.findings.map((finding) => JSON.stringify(finding)));
+    const kept = new Set(now.findings.map((finding) => JSON.stringify(finding)));
+    prototypes.push({
+      name: item.name,
+      before: was.status,
+      after: now.status,
+      rules: ids.filter((rule) => statusOf(was, rule) !== statusOf(now, rule)).map((rule) => ({ rule, before: statusOf(was, rule), after: statusOf(now, rule) })),
+      added: now.findings.filter((finding) => !known.has(JSON.stringify(finding))),
+      removed: was.findings.filter((finding) => !kept.has(JSON.stringify(finding))),
+    });
+  }
+  // The earlier examples as they would re-run with the draft adopted.
+  const adopted: Proposal = { ...proposal, status: "adopted", history: [...proposal.history, { status: "adopted", at: "" }] };
+  const earlier = rerunExamples({ ...candidate, proposals: [...candidate.proposals.filter((item) => item.id !== draft.id), adopted] }).filter((item) => item.proposal !== draft.id);
+  return { ok: true, value: { config: candidate, prototypes, retired: earlier.filter((item) => item.retiredBy === draft.id), broken: earlier.filter((item) => !item.ok) } };
 }
 
 /**
