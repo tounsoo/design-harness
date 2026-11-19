@@ -35,6 +35,8 @@ export type BoardPins = {
   readonly pinning: boolean;
   readonly onPinning: (next: boolean) => void;
   readonly actions: PinActions;
+  /** The open prototype's id: another prototype's notes are other notes. */
+  readonly prototype: string;
   /** The open prototype's revision, and what its element tags are (`pins/anchor.ts`). */
   readonly revision: string;
   readonly kind: "source" | "key";
@@ -171,6 +173,13 @@ export function Board({
     (): PinBoard | null => (pins && actions ? { state: pins.state, pinning: pins.pinning, actions, revision: pins.revision, kind: pins.kind, open: openPin, setOpen: setOpenPin, draft, setDraft, focus: focusPin, focused: focusedPin } : null),
     [pins, actions, openPin, draft, setDraft, focusPin, focusedPin],
   );
+  // Another prototype: no card of the last one stays open, and no note half written for it.
+  const pinsOf = pins?.prototype;
+  useEffect(() => {
+    setOpenPin(null);
+    setDraftState(null);
+    setFocusPin(null);
+  }, [pinsOf]);
   // Leaving pin mode puts down a note not yet pinned.
   useEffect(() => {
     if (!pinning) setDraftState(null);

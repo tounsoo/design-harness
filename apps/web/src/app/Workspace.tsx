@@ -528,7 +528,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     const next = reanchor(record.pins, frames, revision, kind, before);
     if (next !== record.pins) updatePins((latest) => reanchor(latest, frames, revision, kind, before));
   }, [state.frames, state.frameStates, session, recordOf, updatePins, pinState]);
-  const boardPins = useMemo((): BoardPins => ({ state: pinState, pinning, onPinning: setPinning, actions: pinActions, revision: pinRevision, kind: tagKind, onHold: setBoardHolds }), [pinState, pinning, setPinning, pinActions, pinRevision, tagKind]);
+  const boardPins = useMemo((): BoardPins => ({ prototype: current?.id ?? "", state: pinState, pinning, onPinning: setPinning, actions: pinActions, revision: pinRevision, kind: tagKind, onHold: setBoardHolds }), [current?.id, pinState, pinning, setPinning, pinActions, pinRevision, tagKind]);
   const pinFrame = useCallback(
     (pin: Pin) => {
       const frame = state.frames.find((item) => item.scenario.id === pin.anchor.scenario && item.view.name === pin.anchor.view);
