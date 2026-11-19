@@ -3,14 +3,14 @@ import { ArrowDown, ArrowRight, ArrowUp } from "lucide-react";
 import { useId, type ReactNode } from "react";
 import type { Cap, ChangeClass, PageType, Proposal, RuleSpec } from "@design-harness/core";
 import { humanize } from "../app/words";
-import { Bar } from "./parts";
 import { CLASS_STOPS, capMeter, pageTypeWords, proposalTrack, ruleGlyph, slotRows, type BudgetMeter } from "./project-model";
 
 /**
  * The Project and Proposals tabs' own figures, drawn from the config and
- * from core's facts (`project-model.ts`): a page type as its slots, a cap
- * as a meter, a step budget as pips, a rule's shape as a glyph, a
- * proposal's class on a scale and its status on a track. Each is either a
+ * from core's facts (`project-model.ts`): a page type as its slots, a
+ * length cap as a square at its actual size, a rule's shape as a glyph, a
+ * proposal's class on a scale and its status on a track. A count cap and a
+ * step budget are numbers and stand as their words, with no picture. Each is either a
  * list a screen reader reads as it is, or a picture hidden from it with the
  * same words beside it. None decides anything.
  */
@@ -81,7 +81,7 @@ function Direction({ cap }: { readonly cap: Pick<Cap, "stricter"> }) {
   );
 }
 
-/** The limit itself: pips to a dashed line for a count, a square at its actual size for a length in px. */
+/** The limit itself: a square at its actual size for a length in px, which words cannot show; a count is its words alone. */
 export function CapFigure({ name, cap }: { readonly name: string; readonly cap: Cap }) {
   const meter = capMeter(name, cap);
   return (
@@ -89,16 +89,21 @@ export function CapFigure({ name, cap }: { readonly name: string; readonly cap: 
       {meter.kind === "size" && (
         <>
           <span className="cap-size" role="img" aria-label={`A ${meter.value} px square, at its actual size`} style={{ inlineSize: meter.value, blockSize: meter.value }} data-testid="cap-size" />
-          <span className="count-words">{meter.words}, shown at its actual size</span>
+          <span className="count-words" data-testid="cap-words">
+            {meter.words}, shown at its actual size
+          </span>
         </>
       )}
-      {meter.kind === "pips" && <Bar bar={{ pips: Array.from({ length: meter.value }, () => "missing" as const), limitAfter: meter.value, more: 0, words: meter.words }} />}
-      {meter.kind === "number" && <span className="count-words">{meter.words}</span>}
+      {meter.kind === "number" && (
+        <span className="count-words" data-testid="cap-words">
+          {meter.words}
+        </span>
+      )}
     </span>
   );
 }
 
-/** A cap as a meter: its name in words, the limit drawn, which way is stricter, and the constant in code. */
+/** A cap: its name in words, its limit, which way is stricter, and the constant in code. */
 export function CapMeterView({ name, cap, children }: { readonly name: string; readonly cap: Cap; readonly children?: ReactNode }) {
   const meter = capMeter(name, cap);
   return (
@@ -120,7 +125,7 @@ export function CapMeterView({ name, cap, children }: { readonly name: string; r
   );
 }
 
-/** A cap before and after a proposal: two meters with an arrow, and the direction in words. */
+/** A cap before and after a proposal: the two limits with an arrow between, and the direction in words. */
 export function CapChange({ name, cap, before, moved }: { readonly name: string; readonly cap: Cap; readonly before?: number | undefined; readonly moved: string }) {
   return (
     <div className="cap-change" data-testid="cap-change" data-moved={moved}>
@@ -138,11 +143,13 @@ export function CapChange({ name, cap, before, moved }: { readonly name: string;
   );
 }
 
-/** A task's step budget: pips to the limit, filled for what core says the open prototype's longest route takes. */
+/** A task's step budget in words, and what core says the open prototype's longest route takes today. */
 export function BudgetFigure({ meter }: { readonly meter: BudgetMeter }) {
   return (
     <div className="budget" data-testid="budget-meter" data-over={meter.today?.over ? "" : undefined}>
-      <Bar bar={meter.bar} />
+      <Text.Root as="p" weight="medium" className="count-words" data-testid="budget-limit">
+        {meter.words}
+      </Text.Root>
       {meter.today && (
         <Text.Root as="p" tone="muted" className="budget-today" data-testid="budget-today">
           {meter.today.text}
@@ -153,16 +160,16 @@ export function BudgetFigure({ meter }: { readonly meter: BudgetMeter }) {
 }
 
 /** Core's three classes as an ordered scale, with a marker on this one. It reads as how far the project moves, not as good to bad: position and weight carry it, never tone. */
-export function ClassScale({ value, small }: { readonly value: ChangeClass; readonly small?: boolean }) {
+export function ClassScale({ value }: { readonly value: ChangeClass }) {
   return (
-    <ol className="class-scale" data-class={value} data-small={small ? "" : undefined} data-testid="class-scale" aria-label="How far it moves the project">
+    <ol className="class-scale" data-class={value} data-testid="class-scale" aria-label="How far it moves the project">
       {CLASS_STOPS.map((stop) => (
         <li key={stop.value} className="class-stop" data-current={stop.value === value ? "" : undefined} aria-current={stop.value === value ? "true" : undefined}>
           <i className="class-stop-line" aria-hidden="true" />
           <span className="class-stop-title" {...(stop.value === value ? { "data-testid": "proposal-class" } : {})}>
             {stop.title}
           </span>
-          {!small && <span className="class-stop-about">{stop.about}</span>}
+          <span className="class-stop-about">{stop.about}</span>
         </li>
       ))}
     </ol>

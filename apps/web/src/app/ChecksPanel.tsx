@@ -1,9 +1,8 @@
 import { Badge, Button, Card, Code, DataList, Disclosure, Loader, Stack, Text } from "@tounsoo/todae";
 import { CircleAlert, CircleCheck, CodeXml, Crosshair, Sparkles, TriangleAlert } from "lucide-react";
 import { useContext, useMemo } from "react";
-import { describeRule, type Finding, type FlowFacts, type ProjectConfig, type RenderedSnapshot, type RuleReport, type View } from "@design-harness/core";
+import { describeRule, type Finding, type FlowFacts, type ProjectConfig, type RuleReport } from "@design-harness/core";
 import type { SessionState } from "../runtime/session";
-import { frameKey } from "../runtime/session";
 import { planOutline } from "../runtime/tags";
 import { EvidenceFigure } from "../visual/figures";
 import { FlowMap } from "../visual/FlowMap";
@@ -92,7 +91,7 @@ export function ChecksPanel({ state, measuredCount, selected, onSelect, onShowCo
       {failing.length > 0 && (
         <ol className="fixes" aria-label="Things to fix">
           {[...toFix, ...unknown].map((rule) => (
-            <FixItem key={rule.rule} rule={rule} config={config} state={state} selected={selected} onSelect={onSelect} outline={outline} {...(onShowCode ? { onShowCode } : {})} {...(onFix ? { onFix } : {})} {...(onAsk && proposable ? { onAsk, proposable } : {})} />
+            <FixItem key={rule.rule} rule={rule} config={config} selected={selected} onSelect={onSelect} outline={outline} {...(onShowCode ? { onShowCode } : {})} {...(onFix ? { onFix } : {})} {...(onAsk && proposable ? { onAsk, proposable } : {})} />
           ))}
         </ol>
       )}
@@ -135,15 +134,6 @@ function stepBudget(rule: RuleReport, config: ProjectConfig | undefined): boolea
   return spec?.type === "flow" && spec.check === "step-budget";
 }
 
-/** The measured snapshot a finding points into, and its view, when its frame has one. */
-function measuredFor(finding: Finding, state: SessionState): { readonly snapshot?: RenderedSnapshot; readonly view?: View } {
-  if (finding.scenario === undefined || finding.view === undefined) return {};
-  const key = frameKey(finding.scenario, finding.view);
-  const frame = state.frameStates[key];
-  const view = state.frames.find((item) => item.key === key)?.view;
-  return { ...(frame?.state === "measured" ? { snapshot: frame.snapshot } : {}), ...(view ? { view } : {}) };
-}
-
 /** Every finding of a failing rule says the rule cannot tell: the prototype is not shown to break it, but it cannot pass. */
 function cannotTell(rule: RuleReport): boolean {
   return rule.status === "fail" && rule.findings.length > 0 && rule.findings.every((finding) => finding.kind === "unverifiable");
@@ -162,7 +152,6 @@ function locatable(finding: Finding): boolean {
 function FixItem({
   rule,
   config,
-  state,
   selected,
   onSelect,
   outline,
@@ -173,7 +162,6 @@ function FixItem({
 }: {
   readonly rule: RuleReport;
   readonly config: ProjectConfig | undefined;
-  readonly state: SessionState;
   /** Where the selected finding is outlined, in words. */
   readonly outline: string | null;
   readonly onShowCode?: (finding: Finding) => void;
@@ -198,8 +186,8 @@ function FixItem({
           <Text.Root as="h3" id={headingId} className="fix-lead" data-testid="fix-lead">
             {unknown ? `Could not be checked: ${lowerFirst(ruleLead(rule, config))}` : ruleLead(rule, config)}
           </Text.Root>
-          {/* What the rule measured, drawn from core's evidence, with core's message word for word as its caption. */}
-          <EvidenceFigure finding={shown} findings={rule.findings} {...measuredFor(shown, state)}>
+          {/* Core's message word for word: the caption of the rule's figure when its evidence draws one, alone when it does not. */}
+          <EvidenceFigure finding={shown} findings={rule.findings}>
             <Text.Root as="p" className="fix-message" data-testid="fix-message">
               {shown.message}
             </Text.Root>

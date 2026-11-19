@@ -33,7 +33,7 @@ import { adoptProposal, approveProposal, declineProposal, sendBackProposal, type
 import { inventoryDiff, type DiffSection } from "../review/diff";
 import { REVIEWER, draftedBy, formatTime, proposalTimeline, timelineTitle, type TimelineEntry } from "../review/timeline";
 import { FrameCard, FrameViewport } from "./Board";
-import { EvidenceFigure } from "../visual/figures";
+import { EvidenceFigure, drawsFigure } from "../visual/figures";
 import { ClassScale, ProposalTrack, RuleFigure } from "../visual/project-figures";
 import { proofPair, proposalPreview, ruleBound } from "../visual/project-model";
 import { FindingButton } from "./ChecksPanel";
@@ -1235,9 +1235,6 @@ function ExampleCard({ view, scenario, views, status }: { readonly view: Example
   const rule = view.expect === "fail" ? (view.example as FailingExample).flaggedBy : null;
   // A failing example's figure: what its rule measured on the scenario shown, or on the first it flags.
   const pictured = view.expect === "fail" && status !== "declined" ? (view.findings.find((finding) => finding.scenario === scenario) ?? view.findings[0]) : undefined;
-  const picturedFrame = pictured?.scenario !== undefined && pictured.view !== undefined ? frameKey(pictured.scenario, pictured.view) : undefined;
-  const picturedState = picturedFrame ? frames.state.frameStates[picturedFrame] : undefined;
-  const picturedView = picturedFrame ? frames.state.frames.find((spec) => spec.key === picturedFrame)?.view : undefined;
 
   return (
     <Card.Root className="example" data-example={view.name} data-expect={view.expect} data-verdict={view.verdict.state}>
@@ -1287,8 +1284,9 @@ function ExampleCard({ view, scenario, views, status }: { readonly view: Example
           <Text.Root as="p" className="pre review-small example-detail" data-testid="example-detail">
             {view.verdict.text}
           </Text.Root>
-          {pictured && (
-            <EvidenceFigure finding={pictured} findings={view.findings} {...(picturedState?.state === "measured" ? { snapshot: picturedState.snapshot } : {})} {...(picturedView ? { view: picturedView } : {})}>
+          {/* Only a finding whose evidence draws: any other reads whole in core's message, in the list below. */}
+          {pictured && drawsFigure(pictured) && (
+            <EvidenceFigure finding={pictured} findings={view.findings}>
               <Text.Root as="p" className="fix-message" data-testid="example-figure-message">
                 {pictured.message}
               </Text.Root>
@@ -1386,7 +1384,7 @@ function Impact({ impact, measuring, dryRun, prototypes, existing, views, onOpen
             {existing.map((item) => {
               const failing = impact.find((entry) => entry.name === item.name);
               const record = prototypes.find((entry) => entry.name === item.name);
-              const flagged = failing ? flaggedIn(failing.findings, item.snapshots ?? [], item.prototype.scenarios) : null;
+              const flagged = failing ? flaggedIn(failing.findings, item.snapshots ?? []) : null;
               const view = flagged ? views.find((entry) => entry.name === flagged.snapshot.view) : undefined;
               return (
                 <li key={item.name} data-prototype={record?.id ?? item.name} data-impact={failing ? "fails" : "holds"}>
@@ -1395,7 +1393,7 @@ function Impact({ impact, measuring, dryRun, prototypes, existing, views, onOpen
                       <figure className="impact-thumb">
                         <SnapshotThumb snapshot={flagged.snapshot} view={view} flagged={flagged.elements} />
                         <figcaption className="review-small">
-                          {scenarioNameOf(flagged.snapshot.scenario, item.prototype.scenarios)}, {viewLabel(flagged.snapshot.view).toLowerCase()}, in miniature from measured boxes{flagged.elements.length > 0 ? "; what core flags is hatched" : ""}.
+                          {scenarioNameOf(flagged.snapshot.scenario, item.prototype.scenarios)}, {viewLabel(flagged.snapshot.view).toLowerCase()}, in miniature from measured boxes; what core flags is hatched.
                         </figcaption>
                       </figure>
                     )}

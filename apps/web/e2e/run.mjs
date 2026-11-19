@@ -1081,12 +1081,10 @@ test("a drafted proposal opens to its review page: examples side by side in fram
   // The flagged line, marked as the code view marks a finding's line.
   const finding = await example(page, "two-toasts").locator(".finding-message").first().textContent();
   assert.match(finding, /^Page "booking" has 2 Toast.Root, more than 1: Toast.Root "Booked" at pages\/booking.tsx:\d+:\d+/);
-  // The failing example's figure: a rule a proposal adds is drawn by its type, a count against its cap, with core's message as the caption.
-  const figure = example(page, "two-toasts").getByTestId("evidence");
-  assert.equal(await figure.getAttribute("data-evidence"), "count-vs-cap");
-  assert.match(await figure.getByTestId("figure-count-words").textContent(), /^2, at most 1 /);
-  assert.equal(await figure.locator('.pip[data-pip="over"]').count(), 1, "the one toast past the cap is marked");
-  assert.equal(await figure.getByTestId("example-figure-message").textContent(), finding);
+  // A count against its cap reads whole in core's message, so the failing example draws no figure of it: core carries the evidence, and the message stands alone, once.
+  assert.equal(await example(page, "two-toasts").getByTestId("evidence").count(), 0, "no figure for a count");
+  assert.equal(await example(page, "two-toasts").locator(".pip").count(), 0, "no pips");
+  assert.equal(await example(page, "two-toasts").getByTestId("example-figure-message").count(), 0, "the message is not said twice");
   const marked = await example(page, "two-toasts").locator('.example-source [data-kind="finding"]').textContent();
   assert.ok(marked.includes("<Toast.Root>Booked</Toast.Root><Toast.Root>Booked</Toast.Root>"), `the marked line holds both toasts: ${marked}`);
   assert.match(await page.getByTestId("review-verdict").textContent(), /^Core's adoption dry run: it would be adopted, classified tightens, and no prototype would newly fail\./);
@@ -1112,11 +1110,13 @@ test("a drafted proposal opens to its review page: examples side by side in fram
 
   await page.getByRole("button", { name: "← All proposals" }).click();
   const row = page.locator('.proposal-cards [data-proposal="booking-toast"]');
-  assert.match(await row.textContent(), /\+ component.*Toast.*\+1 more change.*A toast that confirms a booking.*open.*Waiting for you.*Tightens.*Adds 1 component and 1 rule\..*1 must pass.*1 must fail.*By agent.*booking-toast/);
+  assert.match(await row.textContent(), /\+ component.*Toast.*\+1 more change.*A toast that confirms a booking.*open.*Waiting for you.*tightens.*Adds 1 component and 1 rule\..*1 must pass.*1 must fail.*By agent.*booking-toast/);
   // The card leads with the part it adds, drawn by Todae itself in a sandboxed frame.
   assert.equal(await row.getByTestId("proposal-preview").getAttribute("data-preview"), "component");
   await row.locator('[data-testid="specimen-stage"][data-state="measured"]').waitFor({ timeout: 60000 });
-  assert.equal(await row.getByTestId("class-scale").getAttribute("data-class"), "tightens");
+  // Core's class is a word on the card; the scale with all three classes is on the review page.
+  assert.equal(await row.getByTestId("proposal-class").getAttribute("data-class"), "tightens");
+  assert.equal(await row.getByTestId("class-scale").count(), 0);
   await page.getByRole("button", { name: "Adopted (0)" }).click();
   await page.getByText("No adopted proposals").waitFor();
   await page.getByRole("button", { name: "Open (1)" }).click();
@@ -1272,10 +1272,10 @@ test("the impact list names a prototype that would newly fail, and opens it on t
   await impact.locator('[data-prototype="booking-spec"]').waitFor({ timeout: 60000 });
   assert.match(await impact.locator('[data-prototype="booking-spec"]').textContent(), /Booking \(spec\).*would newly fail no-secondary-on-booking.*Page "booking" has 1 secondary action, more than 0: Button.Root "Hold room" at pages\/booking.json/);
   assert.match(await page.getByTestId("review-verdict").textContent(), /2 prototypes would newly fail/);
-  // The grid holds every prototype; the newly failing ones are marked, and show their page in miniature from measured boxes.
+  // The grid holds every prototype; the newly failing ones are marked. This finding is about a line of code and names no element in a frame, so there is nothing to mark on a miniature, and none is drawn.
   assert.deepEqual(await impact.locator(".impact-grid > li").evaluateAll((items) => items.map((item) => [item.dataset.prototype, item.dataset.impact])), [["booking", "fails"], ["booking-spec", "fails"]]);
   assert.equal(await page.getByTestId("impact-some").textContent(), "2 of 2 prototypes would newly fail.");
-  assert.equal(await impact.locator('[data-prototype="booking"] [data-testid="snapshot-thumb"]').count(), 1);
+  assert.equal(await impact.locator('[data-prototype="booking"] [data-testid="snapshot-thumb"]').count(), 0);
   await page.locator("#review-impact").evaluate((element) => element.scrollIntoView({ block: "start" }));
   await page.waitForTimeout(300);
   await shot(page, "review-impact-light");
@@ -2228,6 +2228,11 @@ test("the checks lead with plain words: a summary, each thing to fix with core's
   const finding = value.findings.find((item) => item.rule === "one-primary-per-page");
   assert.equal(await primary.getByTestId("fix-lead").textContent(), "A page holds at most one primary action.", "the rule's plain words lead");
   assert.equal(await primary.getByTestId("fix-message").textContent(), finding.message, "core's message stays beside them, word for word");
+  // A count against its cap is two numbers the message already says: core still carries the evidence, and the card draws no figure above the words.
+  assert.equal(finding.evidence.kind, "count-vs-cap");
+  assert.equal(await primary.getByTestId("evidence").count(), 0, "no figure for a count");
+  assert.equal(await primary.locator(".pip").count(), 0);
+  assert.equal(await primary.getByTestId("fix-lead").evaluate((lead) => lead.nextElementSibling?.getAttribute("data-testid")), "fix-message", "the message follows the lead with nothing between");
   const details = primary.locator(".fix-details");
   assert.equal(await details.evaluate((element) => element.open), false);
   assert.match(await details.textContent(), /Ruleone-primary-per-page \(count\)/, "the rule's id and type are in its details");
@@ -2859,10 +2864,9 @@ test("the contrast figure shows the ratio in light and dark", async ({ browser, 
     assert.ok(evidence.ratio < 4.5);
   }
   assert.notEqual(bySchemeFrom("light").background, bySchemeFrom("dark").background);
-  // The scale carries the AA mark and one mark per scheme; it is for the eye, and the rows say the same in words.
-  assert.equal(await figure.getByTestId("figure-aa").textContent(), "AA 4.5:1");
-  assert.equal(await figure.locator(".contrast-scale > .contrast-mark").count(), 2);
-  assert.equal(await figure.getByTestId("figure-scale").getAttribute("aria-hidden"), "true");
+  // The picture is the text in its colours. The ratios are numbers beside it, with what the text needs, and no scale repeats them.
+  assert.match(await figure.locator(".evidence-legend").textContent(), /^\d+ px: needs 4\.5:1$/);
+  assert.equal(await figure.getByTestId("figure-scale").count(), 0);
   assert.equal(await figure.locator("ul.contrast").getAttribute("aria-label"), "Measured contrast, by colour scheme");
   assert.equal(await figure.locator("figcaption").getByTestId("fix-message").textContent(), findings[0].message);
   await fixCard(page, "text-contrast").scrollIntoViewIfNeeded();
@@ -3106,6 +3110,15 @@ test("the coverage grid shows states against views and navigates to an artboard"
   assert.equal(await grid.locator('[data-testid="coverage-row"][data-state="pick-time"]').getByTestId("coverage-never").textContent(), "Never drawn: add a scenario");
   assert.equal(await grid.locator('[data-testid="coverage-row"][data-state="pick-time"] button').count(), 0);
   assert.match(await grid.locator("caption").textContent(), /4 of 5 flow states have a scenario/);
+  // The grid is the picture of coverage; the state-coverage card says the state in core's words and draws no pips.
+  await page.keyboard.press("Escape");
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  const coverage = fixCard(page, "state-coverage");
+  assert.match(await coverage.getByTestId("fix-message").textContent(), /^Flow state "pick-time" has no scenario/);
+  assert.equal(await coverage.getByTestId("evidence").count(), 0);
+  await page.getByRole("tab", { name: "Code" }).click();
+  await page.getByTestId("board-summary").click();
+  await grid.waitFor();
   await shot(page, "visual-coverage-grid-failing-light");
   await shotDark(page, "visual-coverage-grid-failing-dark");
   assert.deepEqual(errors, []);
@@ -3135,7 +3148,10 @@ test("the flow map numbers the longest route against the budget, on the step-bud
   assert.equal(await figure.getByTestId("flow-limit").locator("text").textContent(), "budget 3");
   assert.equal(await figure.getByTestId("flow-other").count(), found.evidence.transitions.length - found.evidence.route.length);
   assert.deepEqual(await figure.getByTestId("flow-node").evaluateAll((nodes) => nodes.map((node) => [node.dataset.state, node.dataset.role, node.hasAttribute("data-drawn")])), [["rooms", "start", true], ["room-open", "state", true], ["pick-time", "state", false], ["held", "state", true], ["booked", "success", true]]);
-  assert.equal(await figure.getByTestId("figure-count-words").textContent(), "4 steps on the longest route, budget 3");
+  // The count is words under the map, marked as over; the map already draws each step, so there are no pips.
+  assert.equal(await figure.getByTestId("flow-count").textContent(), "4 steps on the longest route, budget 3");
+  assert.equal(await figure.getByTestId("flow-count").getAttribute("data-over"), "");
+  assert.equal(await figure.locator(".pip").count(), 0);
   // The same route as an ordered list, for a screen reader; the map itself is hidden from it.
   assert.equal(await figure.getByTestId("flow-svg").getAttribute("aria-hidden"), "true");
   const steps = await figure.getByTestId("flow-steps").locator("li").evaluateAll((items) => items.map((item) => item.textContent.replace(/\s+/g, " ").trim()));
@@ -3152,7 +3168,7 @@ test("the flow map numbers the longest route against the budget, on the step-bud
   await page.getByRole("tab", { name: "Project" }).click();
   const project = page.getByTestId("project-flow");
   assert.deepEqual(await project.getByTestId("flow-map").evaluateAll((maps) => maps.map((map) => [map.dataset.task, map.dataset.status])), [["book-room", "over"], ["hold-room", "fits"]]);
-  assert.equal(await project.locator('[data-task="hold-room"] [data-testid="figure-count-words"]').textContent(), "2 steps on the longest route, budget 2");
+  assert.equal(await project.locator('[data-task="hold-room"] [data-testid="flow-count"]').textContent(), "2 steps on the longest route, budget 2");
   await project.scrollIntoViewIfNeeded();
   await shot(page, "visual-project-flow-light");
   await project.locator('[data-task="hold-room"]').getByRole("button", { name: "Show Room open on the canvas" }).click();
@@ -3788,7 +3804,7 @@ if (process.env.E2E_LIBRARY) {
   });
 }
 
-test("the Project tab draws page types as slot diagrams, caps as meters, budgets against today's routes, and rules as grouped cards", async ({ browser, base }) => {
+test("the Project tab draws page types as slot diagrams, a length cap at its size, count caps and budgets in words with today's routes, and rules as grouped cards", async ({ browser, base }) => {
   const { page, errors, context } = await openApp(browser, base);
   await measured(page, 1);
   await page.getByRole("tab", { name: "Project" }).click();
@@ -3799,22 +3815,23 @@ test("the Project tab draws page types as slot diagrams, caps as meters, budgets
   assert.match(await page.locator('.page-type[data-page-type="booking"]').textContent(), /An action page: it ends in one primary action\..*5 slots, 3 of them chrome\. Primary slot: action\./);
   assert.match(await page.locator('.page-type[data-page-type="rooms"]').textContent(), /A collection page.*No primary slot\./);
 
-  // Caps: one pip per unit to the limit line, the px cap at its actual size, the direction in words, and the rules that read each.
+  // Caps: a count cap in words with no picture, the px cap at its actual size, the direction in words, and the rules that read each.
   const caps = page.getByTestId("project-caps");
   assert.deepEqual(await caps.getByTestId("cap-meter").evaluateAll((items) => items.map((item) => item.dataset.cap)), ["MAX_DISCLOSURES_PER_PAGE", "MAX_DISCLOSURE_DEPTH", "MAX_VISIBLE_QUESTIONS", "TARGET_MIN_PX"]);
   const questions = caps.locator('[data-cap="MAX_VISIBLE_QUESTIONS"]');
-  assert.equal(await questions.locator(".pip").count(), 1, "a cap of 1 is one pip");
-  assert.equal(await questions.getByTestId("figure-limit").count(), 1);
+  assert.equal(await questions.getByTestId("cap-words").textContent(), "at most 1");
+  assert.equal(await questions.locator(".pip, svg.vis-svg").count(), 0, "a count cap reads whole in its words: no picture");
   assert.match(await questions.textContent(), /Visible questions.*at most 1.*stricter when lower.*One question per page/);
   assert.match(await caps.textContent(), /MAX_VISIBLE_QUESTIONS Read by the rule visible-questions\./);
   const size = await caps.getByTestId("cap-size").boundingBox();
   assert.deepEqual([Math.round(size.width), Math.round(size.height)], [24, 24], "the 24 px cap is drawn at 24 CSS px");
   assert.match(await caps.locator('[data-cap="TARGET_MIN_PX"]').textContent(), /at least 24 px, shown at its actual size.*stricter when higher/);
 
-  // Budgets: core's flow facts for the open prototype fill the pips, and the line is named for it.
+  // Budgets: the limit in words, and under it what core's flow facts say the open prototype's longest route takes today. No pips.
   const tasks = page.getByTestId("project-tasks");
   const book = tasks.locator('[data-task="book-room"]');
-  assert.deepEqual(await book.locator(".pip").evaluateAll((items) => items.map((item) => item.dataset.pip)), ["within", "within", "within"]);
+  assert.equal(await book.getByTestId("budget-limit").textContent(), "at most 3 steps");
+  assert.equal(await tasks.locator(".pip").count(), 0);
   assert.equal(await book.getByTestId("budget-today").textContent(), "Booking's longest route today: 3 steps, at the limit.");
   assert.equal(await tasks.locator('[data-task="hold-room"]').getByTestId("budget-today").textContent(), "Booking's longest route today: 2 steps, at the limit.");
   assert.match(await page.getByTestId("project-ranking").textContent(), /1\. Book room \(primary\).*2\. Hold room \(secondary\).*Always behind a disclosure.*Room details/s);
@@ -3868,7 +3885,7 @@ test("Tally's palette is drawn by Mantine: its buttons by variant with the ranke
   await context.close();
 });
 
-test("the proposals list is cards that lead with the change: a cap before and after with its direction, and a rule in its words", async ({ browser, base, api }) => {
+test("the proposals list is cards that lead with the change: a cap before and after in words with its direction, and a rule in its words", async ({ browser, base, api }) => {
   const { page, errors, context } = await openApp(browser, base);
   await measured(page, 1);
   await draftByAgent(page, api, {
@@ -3896,15 +3913,16 @@ test("the proposals list is cards that lead with the change: a cap before and af
   const cap = page.locator('.proposal-cards [data-proposal="two-questions"]');
   assert.equal(await cap.getByTestId("proposal-preview").getAttribute("data-preview"), "cap");
   assert.equal(await cap.getByTestId("cap-change").getAttribute("data-moved"), "looser");
-  assert.deepEqual(await cap.getByTestId("cap-change").getByTestId("figure-count-words").allTextContents(), ["at most 1", "at most 2"]);
+  assert.deepEqual(await cap.getByTestId("cap-change").getByTestId("cap-words").allTextContents(), ["at most 1", "at most 2"]);
   assert.match(await cap.getByTestId("cap-change").textContent(), /looser: this cap is stricter when lower/);
-  assert.equal(await cap.getByTestId("class-scale").getAttribute("data-class"), "loosens-or-removes");
+  assert.equal(await cap.locator(".pip").count(), 0, "a count cap before and after is two limits in words");
+  assert.equal(await cap.getByTestId("proposal-class").getAttribute("data-class"), "loosens-or-removes");
   assert.match(await cap.textContent(), /Changes 1 cap\..*1 must pass.*1 must fail/s);
   const rule = page.locator('.proposal-cards [data-proposal="book-without-hold"]');
   assert.equal(await rule.getByTestId("proposal-preview").getAttribute("data-preview"), "rule");
   assert.match(await rule.getByTestId("proposal-preview").textContent(), /^\+ rule/);
   assert.equal(await rule.locator(".rule-glyph").count(), 0, "a count rule has no picture, only its words");
-  assert.equal(await rule.getByTestId("class-scale").getAttribute("data-class"), "tightens");
+  assert.equal(await rule.getByTestId("proposal-class").getAttribute("data-class"), "tightens");
   await shot(page, "proposals-cards-light");
   await shotDark(page, "proposals-cards-dark");
   // The review page draws the moved cap too, and core's reason for the class.

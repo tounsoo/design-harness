@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { BoxWithNeighbourEvidence, RegionLineEvidence, SequenceGapEvidence } from "@design-harness/core";
 import { cameraMove, MIN_VISIBLE_PX } from "./camera";
-import { boxFigure, contrastPosition, countBar, fitScale, outlineRows, regionFigure, routeSteps } from "./geometry";
+import { boxFigure, fitScale, outlineRows, regionFigure, routeSteps } from "./geometry";
 
 const small: BoxWithNeighbourEvidence = { kind: "box-with-neighbour", name: "A", role: "button", box: { x: 280, y: 170, width: 12, height: 12 }, min: 24, neighbour: { element: 3, name: "B", role: "button", box: { x: 296, y: 170, width: 12, height: 12 }, meets: "in-circle" } };
 
@@ -60,17 +60,6 @@ describe("fitScale", () => {
   });
 });
 
-describe("the contrast scale", () => {
-  it("runs from 1:1 at the start to 21:1 at the end, logarithmically, and clamps what is outside", () => {
-    expect(contrastPosition(1)).toBe(0);
-    expect(contrastPosition(21)).toBe(1);
-    expect(contrastPosition(4.5)).toBeCloseTo(0.49, 2);
-    expect(contrastPosition(3)).toBeLessThan(contrastPosition(4.5));
-    expect(contrastPosition(0.2)).toBe(0);
-    expect(contrastPosition(40)).toBe(1);
-  });
-});
-
 describe("the heading outline", () => {
   const skipped: SequenceGapEvidence = { kind: "sequence-gap", items: [{ level: 1, text: "Rooms", shown: true }, { level: 4, text: "Lantern", shown: true }, { level: 2, text: "Harbor", shown: false }], problem: "skipped", at: 1, after: 0, missing: [2, 3] };
 
@@ -103,25 +92,6 @@ describe("the heading outline", () => {
     expect(rows.some((row) => row.kind === "gap")).toBe(true);
     const left = rows.flatMap((row) => (row.kind === "more" ? [row.count] : [])).reduce((sum, count) => sum + count, 0);
     expect(left + rows.filter((row) => row.kind !== "more").length).toBe(31);
-  });
-});
-
-describe("the count bar", () => {
-  it("a maximum: the count's pips, those past the cap marked, the limit after the cap", () => {
-    expect(countBar({ count: 3, cap: 1, bound: "max" })).toEqual({ pips: ["within", "over", "over"], limitAfter: 1, more: 0, words: "3, at most 1" });
-    expect(countBar({ count: 1, cap: 0, bound: "max" })).toMatchObject({ pips: ["over"], limitAfter: 0 });
-  });
-
-  it("a minimum: the cap's pips, those the count does not reach left empty", () => {
-    expect(countBar({ count: 0, cap: 1, bound: "min" })).toEqual({ pips: ["missing"], limitAfter: 1, more: 0, words: "0, at least 1" });
-    expect(countBar({ count: 1, cap: 3, bound: "min" }).pips).toEqual(["within", "missing", "missing"]);
-  });
-
-  it("draws at most a dozen pips and says how many more there are", () => {
-    const bar = countBar({ count: 40, cap: 3, bound: "max" });
-    expect(bar.pips).toHaveLength(12);
-    expect(bar.more).toBe(28);
-    expect(bar.limitAfter).toBe(3);
   });
 });
 
