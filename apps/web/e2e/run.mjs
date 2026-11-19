@@ -1583,6 +1583,8 @@ test("a spec Toast proposal: refused while its failing example does not fail", a
   await judged(page);
   assert.equal(await example(page, "one-toast").getAttribute("data-verdict"), "ok");
   assert.equal(await example(page, "only-one").getByTestId("example-detail").textContent(), 'failing example "only-one" is not flagged as it must be: "one-toast-per-page" passed it');
+  // The examples show one scenario at a time; frames of the others are measured out of sight and parked, so the page is asked for this one, as a person would.
+  await page.locator(".review").getByRole("combobox", { name: "Scenario" }).selectOption("lantern-open");
   const toast = (await liveFrame(page, "one-toast: lantern-open at desktop")).locator("text=Booked").first();
   await toast.waitFor({ state: "attached" });
   await page.getByRole("button", { name: "Approve", exact: true }).click();
