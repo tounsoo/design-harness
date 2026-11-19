@@ -35,7 +35,6 @@ export const THEME_OVERRIDE_TYPES = {
   'harness.figure.indent': 'dimension',
   'harness.figure.mark': 'dimension',
   'harness.figure.node': 'dimension',
-  'harness.figure.pip': 'dimension',
   'harness.figure.slot': 'dimension',
   'harness.figure.stop': 'dimension',
   'harness.figure.swatch': 'dimension',

@@ -423,13 +423,6 @@
           "unit": "rem"
         }
       },
-      "pip": {
-        "$type": "dimension",
-        "$value": {
-          "value": 1.375,
-          "unit": "rem"
-        }
-      },
       "node": {
         "$type": "dimension",
         "$value": {

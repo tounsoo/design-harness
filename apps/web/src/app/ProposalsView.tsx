@@ -3,9 +3,8 @@ import { Check, X } from "lucide-react";
 import { useState } from "react";
 import { PROPOSAL_STATUSES, type ProjectConfig, type Proposal, type ProposalStatus } from "@design-harness/core";
 import { draftedBy, formatTime } from "../review/timeline";
-import { ClassScale } from "../visual/project-figures";
 import { changeLine, sortProposals } from "../visual/project-model";
-import { RequestBadge, StatusBadge, classificationOf } from "./proposal-parts";
+import { ClassBadge, RequestBadge, StatusBadge, classificationOf } from "./proposal-parts";
 import { ProposalLead } from "./ProposalPreview";
 
 type Filter = "all" | ProposalStatus;
@@ -94,7 +93,7 @@ function ProposalCard({ proposal, config, onOpen }: { readonly proposal: Proposa
             {standing(proposal)}
           </Text.Root>
         </Stack.Root>
-        {request ? <RequestBadge /> : <ClassScale value={classificationOf(proposal, config).class} small />}
+        {request ? <RequestBadge /> : <ClassBadge value={classificationOf(proposal, config).class} />}
         <Text.Root as="p">{changeLine(proposal)}</Text.Root>
         <Text.Root as="p" className="proposal-examples" data-testid="proposal-examples">
           <span className="proposal-example" data-expect="pass">

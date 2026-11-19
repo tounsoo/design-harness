@@ -2,18 +2,18 @@ import { Text } from "@tounsoo/todae";
 import { ArrowRight } from "lucide-react";
 import { useId } from "react";
 import { describeRule, type Finding, type ProjectConfig, type Proposal, type RenderedSnapshot } from "@design-harness/core";
-import { Bar } from "../visual/parts";
 import { CapChange, RuleFigure, SlotDiagram } from "../visual/project-figures";
-import { MOST_PIPS, previewLabel, proposalPreview, ruleBound, type ProposalPreview as Preview } from "../visual/project-model";
+import { previewLabel, proposalPreview, ruleBound, type ProposalPreview as Preview } from "../visual/project-model";
 import { SpecimenStage, useSpecimen } from "./Palette";
 import { humanize } from "./words";
 
 /**
- * What a proposal would put in the project, as a picture: the part it adds
- * drawn live by the project's library, a cap before and after, a step
- * budget, a page type's slots, a new state, or its first rule's glyph. The
- * picture is chosen by the kind of its first change (`proposalPreview`),
- * and what it shows is written beside it.
+ * What a proposal would put in the project: the part it adds drawn live by
+ * the project's library, a page type's slots, a length cap at its actual
+ * size before and after, or its first rule's glyph when the rule is about
+ * how the page looks. A count cap, a step budget, a state and any other
+ * rule are words: the limit before and after with which way it moved. The
+ * lead is chosen by the kind of its first change (`proposalPreview`).
  */
 
 function LivePart({ config, component }: { readonly config: ProjectConfig; readonly component: string }) {
@@ -23,8 +23,12 @@ function LivePart({ config, component }: { readonly config: ProjectConfig; reado
 
 const steps = (count: number) => `${count} ${count === 1 ? "step" : "steps"}`;
 
-function BudgetPips({ value }: { readonly value: number }) {
-  return <Bar bar={{ pips: Array.from({ length: Math.min(value, MOST_PIPS) }, () => "missing" as const), limitAfter: Math.min(value, MOST_PIPS), more: Math.max(0, value - MOST_PIPS), words: `at most ${steps(value)}` }} />;
+function BudgetWords({ value }: { readonly value: number }) {
+  return (
+    <span className="count-words" data-testid="budget-words">
+      at most {steps(value)}
+    </span>
+  );
 }
 
 export function PreviewFigure({ preview, config }: { readonly preview: Preview; readonly config: ProjectConfig }) {
@@ -48,11 +52,11 @@ export function PreviewFigure({ preview, config }: { readonly preview: Preview; 
           </Text.Root>
           {preview.before !== undefined && (
             <>
-              <BudgetPips value={preview.before} />
+              <BudgetWords value={preview.before} />
               <ArrowRight aria-hidden="true" className="cap-arrow" />
             </>
           )}
-          <BudgetPips value={preview.after} />
+          <BudgetWords value={preview.after} />
           {preview.before !== undefined && preview.before !== preview.after && (
             <Text.Root as="span" weight="medium">
               {preview.after < preview.before ? "stricter: fewer steps" : "looser: more steps"}
@@ -126,7 +130,8 @@ export function ProposalLead({ proposal, config }: { readonly proposal: Proposal
 
 /**
  * A page in miniature, from the boxes its frame measured: text as bars,
- * controls outlined, and what a finding flags hatched. A schematic, not the
+ * controls outlined, and what a finding flags hatched, so the miniature
+ * shows where on the person's page the new failure is. A schematic, not the
  * page's pixels, and hidden from a screen reader: core's message is beside it.
  */
 export function SnapshotThumb({ snapshot, view, flagged }: { readonly snapshot: RenderedSnapshot; readonly view: { readonly width: number; readonly height: number }; readonly flagged: readonly number[] }) {
@@ -159,17 +164,15 @@ export function SnapshotThumb({ snapshot, view, flagged }: { readonly snapshot: 
 
 /**
  * The snapshot to show for a prototype's new findings, and the elements they
- * flag in it: the frame of the first finding that names one, else the first
- * measured scenario of the page a finding is about, with nothing flagged.
+ * flag in it: the frame of the first finding that names an element. When no
+ * finding names one there is nothing to mark on a miniature, so there is no
+ * miniature (`null`): core's message stands alone.
  */
-export function flaggedIn(findings: readonly Finding[], snapshots: readonly RenderedSnapshot[], scenarios: readonly { readonly id: string; readonly page: string }[]): { readonly snapshot: RenderedSnapshot; readonly elements: readonly number[] } | null {
+export function flaggedIn(findings: readonly Finding[], snapshots: readonly RenderedSnapshot[]): { readonly snapshot: RenderedSnapshot; readonly elements: readonly number[] } | null {
   const first = findings.find((finding) => finding.scenario !== undefined && finding.view !== undefined && finding.element !== undefined);
   if (first) {
     const snapshot = snapshots.find((item) => item.scenario === first.scenario && item.view === first.view);
     if (snapshot) return { snapshot, elements: findings.filter((finding) => finding.scenario === first.scenario && finding.view === first.view && finding.element !== undefined).map((finding) => finding.element as number) };
   }
-  const page = findings.find((finding) => finding.page !== undefined)?.page;
-  const ids = scenarios.filter((scenario) => scenario.page === page).map((scenario) => scenario.id);
-  const snapshot = snapshots.find((item) => ids.includes(item.scenario));
-  return snapshot ? { snapshot, elements: [] } : null;
+  return null;
 }

@@ -2,9 +2,8 @@ import { Button } from "@tounsoo/todae";
 import { useId } from "react";
 import type { Transition } from "@design-harness/core";
 import { humanize } from "../app/words";
-import { Bar } from "./parts";
 import { flowMap } from "./flow-map";
-import { countBar, routeSteps } from "./geometry";
+import { routeSteps } from "./geometry";
 
 /** One task's flow, as core measured it: from `flowFacts`, or from a step-budget finding's evidence. */
 export type FlowTask = {
@@ -116,7 +115,9 @@ export function FlowMap({ task, scenarios, onOpenState }: { readonly task: FlowT
       )}
       {task.status === "fits" || task.status === "over" ? (
         <>
-          <Bar bar={{ ...countBar({ count: longest.length, cap: task.budget, bound: "max" }), words: `${longest.length} ${longest.length === 1 ? "step" : "steps"} on the longest route, budget ${task.budget}` }} />
+          <p className="flow-count" data-over={task.status === "over" ? "" : undefined} data-testid="flow-count">
+            {longest.length} {longest.length === 1 ? "step" : "steps"} on the longest route, budget {task.budget}
+          </p>
           <ol className="flow-steps" aria-label={`The longest route of ${task.id}, step by step`} data-testid="flow-steps">
             {steps.map((step) => (
               <li key={step.number} className="flow-step" data-over={step.over ? "" : undefined}>

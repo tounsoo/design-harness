@@ -82,8 +82,8 @@ describe("page types, caps and budgets", () => {
     expect(pageTypeWords(rooms).slots).toBe("3 slots, 2 of them chrome. No primary slot.");
   });
 
-  it("draws a count cap as pips, a px cap at its size, and says which way is stricter", () => {
-    expect(capMeter("MAX_DISCLOSURES_PER_PAGE", { value: 1, stricter: "lower" })).toEqual({ kind: "pips", value: 1, words: "at most 1", direction: "stricter when lower", title: "Disclosures per page" });
+  it("draws a px cap at its size, leaves a count cap to its words, and says which way is stricter", () => {
+    expect(capMeter("MAX_DISCLOSURES_PER_PAGE", { value: 1, stricter: "lower" })).toEqual({ kind: "number", value: 1, words: "at most 1", direction: "stricter when lower", title: "Disclosures per page" });
     expect(capMeter("TARGET_MIN_PX", { value: 24, stricter: "higher" })).toEqual({ kind: "size", value: 24, words: "at least 24 px", direction: "stricter when higher", title: "Target" });
     expect(capMeter("MAX_ROWS", { value: 40, stricter: "lower" }).kind).toBe("number");
     expect(capDirection({ stricter: "lower" }, 1, 2)).toBe("looser");
@@ -92,28 +92,21 @@ describe("page types, caps and budgets", () => {
     expect(capDirection({ stricter: "higher" }, 24, 24)).toBe("the same");
   });
 
-  it("fills a budget's pips from core's flow facts for the open prototype, and says nothing of today without one", () => {
+  it("says a budget in words, with today's longest route from core's flow facts for the open prototype, and nothing of today without one", () => {
     const facts = flowFacts(nook, seedLegal());
     const [book, hold] = nook.inputs.tasks;
     if (!book || !hold) throw new Error("no tasks");
     const booked = budgetMeter(book, facts.tasks.find((item) => item.task === book.id), "Booking");
-    expect(booked.bar.pips).toEqual(["within", "within", "within"]);
-    expect(booked.bar.limitAfter).toBe(3);
-    expect(booked.today).toEqual({ text: "Booking's longest route today: 3 steps, at the limit.", over: false });
-    // A shorter route leaves the rest of the budget hollow.
-    expect(budgetMeter({ ...book, maxSteps: 5 }, facts.tasks.find((item) => item.task === book.id), "Booking").bar.pips).toEqual(["within", "within", "within", "missing", "missing"]);
+    expect(booked).toEqual({ words: "at most 3 steps", today: { text: "Booking's longest route today: 3 steps, at the limit.", over: false } });
     expect(budgetMeter({ ...book, maxSteps: 5 }, facts.tasks.find((item) => item.task === book.id), "Booking").today?.text).toBe("Booking's longest route today: 3 steps.");
     const held = budgetMeter(hold, facts.tasks.find((item) => item.task === hold.id), "Booking");
-    expect(held.bar.pips).toEqual(["within", "within"]);
     expect(held.today?.text).toBe("Booking's longest route today: 2 steps, at the limit.");
-    const none = budgetMeter(book, undefined, undefined);
-    expect(none.today).toBeUndefined();
-    expect(none.bar.pips).toEqual(["missing", "missing", "missing"]);
-    expect(none.bar.words).toBe("at most 3 steps");
-    // Over the budget: the step past the limit is drawn past it, in core's own count.
+    // No picture of a count: a budget is its words alone.
+    expect(Object.keys(booked).sort()).toEqual(["today", "words"]);
+    expect(budgetMeter(book, undefined, undefined)).toEqual({ words: "at most 3 steps" });
+    // Over the budget, in core's own count.
     const over = budgetMeter({ ...hold, maxSteps: 1 }, { ...(facts.tasks.find((item) => item.task === hold.id) as (typeof facts.tasks)[number]), status: "over" }, "Booking");
-    expect(over.bar.pips).toEqual(["within", "over"]);
-    expect(over.today).toEqual({ text: "Booking's longest route today: 2 steps, 1 over the limit.", over: true });
+    expect(over).toEqual({ words: "at most 1 step", today: { text: "Booking's longest route today: 2 steps, 1 over the limit.", over: true } });
   });
 });
 
