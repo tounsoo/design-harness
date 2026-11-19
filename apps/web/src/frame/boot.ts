@@ -211,9 +211,23 @@ function highlight(request: { readonly element: number | null } | { readonly tag
     targets = one ? [one] : [];
   }
   targets = targets.filter((target) => target.isConnected);
-  targets[0]?.scrollIntoView({ block: "center", inline: "nearest" });
+  const first = targets[0];
+  if (first) scrollToward(drawnBox(first));
   // An element that is not drawn, such as one in a closed disclosure, is outlined where it would show: its nearest drawn ancestor.
   for (const target of targets) outline(target);
+}
+
+/**
+ * Scrolls this frame's own page so a box is in view: centred down the page,
+ * and across only as far as it must be. Never `scrollIntoView`, which also
+ * scrolls every ancestor that scrolls, the app's board included, across the
+ * frame's boundary: the board moves only by the app's own camera, and a
+ * frame drawn again outlines its finding without moving the board under
+ * whatever the person is looking at.
+ */
+function scrollToward(box: DOMRect): void {
+  const left = box.left < 0 ? window.scrollX + box.left : box.right > window.innerWidth ? window.scrollX + box.right - window.innerWidth : window.scrollX;
+  window.scrollTo({ left, top: window.scrollY + box.top + box.height / 2 - window.innerHeight / 2, behavior: "instant" });
 }
 
 /** The element itself when it is drawn, or else its nearest drawn ancestor, such as the closed `<details>` it is in. */

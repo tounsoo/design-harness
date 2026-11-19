@@ -271,6 +271,28 @@ test("a second primary action brings core's finding: selecting it outlines both 
   await shot(page, "failing-source-light");
 });
 
+test("a frame drawn again outlines its finding without moving the board", async ({ browser, base }) => {
+  const { page } = await openApp(browser, base);
+  await measured(page, 1);
+  await editFile(page, "pages/booking.tsx", SECOND_PRIMARY);
+  await measured(page, 2);
+  await showAllRules(page);
+  await page.locator('.rule[data-rule="one-primary-per-page"] .finding').first().click();
+  // The camera has moved to the finding's first artboard; from here only the test moves the board.
+  await (await liveFrame(page, "lantern-open at desktop")).locator("[data-design-harness-overlay]").nth(1).waitFor({ state: "attached" });
+  const area = page.locator(".board-area");
+  const bottom = await area.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    return element.scrollTop;
+  });
+  // The last row's frames were parked out of sight: they are drawn again, and outline both actions in their own page.
+  const last = "lantern-held at phone-dark";
+  await page.locator(`.frame-viewport[data-frame-name="${last}"][data-drawn]`).waitFor({ state: "attached", timeout: 60000 });
+  await page.frameLocator(`iframe[title="${last}"]`).locator("[data-design-harness-overlay]").nth(1).waitFor({ state: "attached" });
+  await page.waitForTimeout(500);
+  assert.equal(await area.evaluate((element) => element.scrollTop), bottom, "an outline scrolls only its own frame's page, never the board");
+});
+
 test("an undersized control brings the rendered target-size finding, highlighted in its frame", async ({ browser, base }) => {
   const { page } = await openApp(browser, base);
   await measured(page, 1);
