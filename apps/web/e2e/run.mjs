@@ -3938,7 +3938,10 @@ async function pinModeOn(page) {
  */
 async function pinOn(page, scenario, view, role, name, note) {
   const title = `${scenario} at ${view}`;
-  const frame = await liveFrame(page, title);
+  // A frame already drawn is read where it stands: centring it again would
+  // scroll the board itself, as pin mode's hint makes the board shorter.
+  const drawn = page.locator(`.frame-viewport[data-frame-name="${title}"][data-drawn] iframe[title="${title}"]`).first();
+  const frame = (await drawn.count()) ? page.frameLocator(`iframe[title="${title}"]`).first() : await liveFrame(page, title);
   const target = await frame.getByRole(role, { name, exact: true }).first().evaluate((element) => {
     const box = element.getBoundingClientRect();
     return { x: box.left + window.scrollX + box.width / 2, y: box.top + window.scrollY + box.height / 2 };
