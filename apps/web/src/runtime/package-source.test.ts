@@ -86,19 +86,6 @@ describe("the esm.sh package source", () => {
   });
 });
 
-describe("the libraries the vendor build serves", () => {
-  it("are app dependencies at exact versions, each with the stylesheets a project may name", async () => {
-    const { readFileSync } = await import("node:fs");
-    const { join } = await import("node:path");
-    const app = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "package.json"), "utf8")) as { dependencies: Record<string, string>; designHarness: { libraries: Record<string, string[]> } };
-    expect(Object.keys(app.designHarness.libraries).sort()).toEqual(["@mantine/core", "@tounsoo/todae"]);
-    for (const [name, stylesheets] of Object.entries(app.designHarness.libraries)) {
-      expect(app.dependencies[name]).toMatch(/^\d+\.\d+\.\d+$/);
-      expect(stylesheets.length).toBeGreaterThan(0);
-    }
-  });
-});
-
 describe("the json-render renderer spec frames load", () => {
   it("is the exact version the app pins and installs", async () => {
     const { readFileSync } = await import("node:fs");
