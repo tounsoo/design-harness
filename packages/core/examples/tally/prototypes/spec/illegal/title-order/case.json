@@ -1,0 +1,9 @@
+{
+  "what": "Each expense card's name a Title of order 4, a level Tally's title-order rule does not allow",
+  "expect": [
+    {
+      "rule": "title-order",
+      "message": "Title"
+    }
+  ]
+}

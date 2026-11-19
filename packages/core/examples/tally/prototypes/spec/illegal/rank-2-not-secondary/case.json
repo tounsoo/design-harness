@@ -1,0 +1,9 @@
+{
+  "what": "Save draft drawn light, a quiet style the confirmed roles do not call secondary",
+  "expect": [
+    {
+      "rule": "rank-2-secondary",
+      "message": "Button \"Save draft\" at pages/expense.json"
+    }
+  ]
+}

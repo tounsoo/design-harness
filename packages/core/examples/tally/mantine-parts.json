@@ -1,0 +1,7408 @@
+{
+ "package": "@mantine/core",
+ "version": "9.7.4",
+ "parts": {
+  "Accordion": {
+   "props": {
+    "__size": {
+     "type": "string",
+     "required": false
+    },
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "attributes": {
+     "type": "unknown",
+     "required": false
+    },
+    "bd": {
+     "type": "string",
+     "required": false
+    },
+    "bdrs": {
+     "type": "unknown",
+     "required": false
+    },
+    "bg": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "bga": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "fixed",
+      "inherit",
+      "initial",
+      "local",
+      "revert",
+      "revert-layer",
+      "scroll",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgp": {
+     "type": "string",
+     "required": false
+    },
+    "bgr": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "no-repeat",
+      "repeat",
+      "repeat-x",
+      "repeat-y",
+      "revert",
+      "revert-layer",
+      "round",
+      "space",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgsz": {
+     "type": "string",
+     "required": false
+    },
+    "bottom": {
+     "type": "string",
+     "required": false
+    },
+    "c": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "chevron": {
+     "type": "string",
+     "required": false
+    },
+    "chevronIconSize": {
+     "type": "string",
+     "required": false
+    },
+    "chevronPosition": {
+     "type": "enum",
+     "values": [
+      "left",
+      "right"
+     ],
+     "required": false
+    },
+    "chevronSize": {
+     "type": "string",
+     "required": false
+    },
+    "darkHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "defaultValue": {
+     "type": "string",
+     "required": false
+    },
+    "disableChevronRotation": {
+     "type": "boolean",
+     "required": false
+    },
+    "disableCollapse": {
+     "type": "boolean",
+     "required": false
+    },
+    "display": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-ms-flexbox",
+      "-ms-grid",
+      "-ms-inline-flexbox",
+      "-ms-inline-grid",
+      "-webkit-flex",
+      "-webkit-inline-flex",
+      "block",
+      "contents",
+      "flex",
+      "flow",
+      "flow-root",
+      "grid",
+      "inherit",
+      "initial",
+      "inline",
+      "inline-block",
+      "inline-flex",
+      "inline-grid",
+      "inline-list-item",
+      "inline-table",
+      "list-item",
+      "none",
+      "revert",
+      "revert-layer",
+      "ruby",
+      "ruby-base",
+      "ruby-base-container",
+      "ruby-text",
+      "ruby-text-container",
+      "run-in",
+      "table",
+      "table-caption",
+      "table-cell",
+      "table-column",
+      "table-column-group",
+      "table-footer-group",
+      "table-header-group",
+      "table-row",
+      "table-row-group",
+      "unset"
+     ],
+     "required": false
+    },
+    "ff": {
+     "type": "enum",
+     "values": [
+      "heading",
+      "monospace",
+      "text"
+     ],
+     "required": false
+    },
+    "flex": {
+     "type": "string",
+     "required": false
+    },
+    "fs": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "italic",
+      "normal",
+      "oblique",
+      "revert",
+      "revert-layer",
+      "unset"
+     ],
+     "required": false
+    },
+    "fw": {
+     "type": "unknown",
+     "required": false
+    },
+    "fz": {
+     "type": "unknown",
+     "required": false
+    },
+    "h": {
+     "type": "string",
+     "required": false
+    },
+    "hiddenFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "inset": {
+     "type": "string",
+     "required": false
+    },
+    "keepMounted": {
+     "type": "boolean",
+     "required": false
+    },
+    "keepMountedMode": {
+     "type": "enum",
+     "values": [
+      "activity",
+      "display-none"
+     ],
+     "required": false
+    },
+    "left": {
+     "type": "string",
+     "required": false
+    },
+    "lh": {
+     "type": "unknown",
+     "required": false
+    },
+    "lightHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "loop": {
+     "type": "boolean",
+     "required": false
+    },
+    "lts": {
+     "type": "string",
+     "required": false
+    },
+    "m": {
+     "type": "unknown",
+     "required": false
+    },
+    "mah": {
+     "type": "string",
+     "required": false
+    },
+    "maw": {
+     "type": "string",
+     "required": false
+    },
+    "mb": {
+     "type": "unknown",
+     "required": false
+    },
+    "me": {
+     "type": "unknown",
+     "required": false
+    },
+    "mie": {
+     "type": "unknown",
+     "required": false
+    },
+    "mih": {
+     "type": "string",
+     "required": false
+    },
+    "mis": {
+     "type": "unknown",
+     "required": false
+    },
+    "miw": {
+     "type": "string",
+     "required": false
+    },
+    "ml": {
+     "type": "unknown",
+     "required": false
+    },
+    "mod": {
+     "type": "string",
+     "required": false
+    },
+    "mr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ms": {
+     "type": "unknown",
+     "required": false
+    },
+    "mt": {
+     "type": "unknown",
+     "required": false
+    },
+    "multiple": {
+     "type": "boolean",
+     "required": false
+    },
+    "mx": {
+     "type": "unknown",
+     "required": false
+    },
+    "my": {
+     "type": "unknown",
+     "required": false
+    },
+    "opacity": {
+     "type": "unknown",
+     "required": false
+    },
+    "order": {
+     "type": "number",
+     "required": false
+    },
+    "p": {
+     "type": "unknown",
+     "required": false
+    },
+    "pb": {
+     "type": "unknown",
+     "required": false
+    },
+    "pe": {
+     "type": "unknown",
+     "required": false
+    },
+    "pie": {
+     "type": "unknown",
+     "required": false
+    },
+    "pis": {
+     "type": "unknown",
+     "required": false
+    },
+    "pl": {
+     "type": "unknown",
+     "required": false
+    },
+    "pos": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-webkit-sticky",
+      "absolute",
+      "fixed",
+      "inherit",
+      "initial",
+      "relative",
+      "revert",
+      "revert-layer",
+      "static",
+      "sticky",
+      "unset"
+     ],
+     "required": false
+    },
+    "pr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ps": {
+     "type": "unknown",
+     "required": false
+    },
+    "pt": {
+     "type": "unknown",
+     "required": false
+    },
+    "px": {
+     "type": "unknown",
+     "required": false
+    },
+    "py": {
+     "type": "unknown",
+     "required": false
+    },
+    "radius": {
+     "type": "unknown",
+     "required": false
+    },
+    "right": {
+     "type": "string",
+     "required": false
+    },
+    "ta": {
+     "type": "enum",
+     "values": [
+      "-khtml-center",
+      "-khtml-left",
+      "-khtml-right",
+      "-moz-center",
+      "-moz-initial",
+      "-moz-left",
+      "-moz-right",
+      "-webkit-center",
+      "-webkit-left",
+      "-webkit-match-parent",
+      "-webkit-right",
+      "center",
+      "end",
+      "inherit",
+      "initial",
+      "justify",
+      "left",
+      "match-parent",
+      "revert",
+      "revert-layer",
+      "right",
+      "start",
+      "unset"
+     ],
+     "required": false
+    },
+    "td": {
+     "type": "string",
+     "required": false
+    },
+    "top": {
+     "type": "string",
+     "required": false
+    },
+    "transitionDuration": {
+     "type": "number",
+     "required": false
+    },
+    "tt": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "capitalize",
+      "full-size-kana",
+      "full-width",
+      "inherit",
+      "initial",
+      "lowercase",
+      "math-auto",
+      "none",
+      "revert",
+      "revert-layer",
+      "unset",
+      "uppercase"
+     ],
+     "required": false
+    },
+    "unstyled": {
+     "type": "boolean",
+     "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "contained",
+      "default",
+      "filled",
+      "separated"
+     ],
+     "required": false
+    },
+    "visibleFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "w": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Accordion.Chevron": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "size": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Accordion.Control": {
+   "props": {
+    "__size": {
+     "type": "string",
+     "required": false
+    },
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "bd": {
+     "type": "string",
+     "required": false
+    },
+    "bdrs": {
+     "type": "unknown",
+     "required": false
+    },
+    "bg": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "bga": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "fixed",
+      "inherit",
+      "initial",
+      "local",
+      "revert",
+      "revert-layer",
+      "scroll",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgp": {
+     "type": "string",
+     "required": false
+    },
+    "bgr": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "no-repeat",
+      "repeat",
+      "repeat-x",
+      "repeat-y",
+      "revert",
+      "revert-layer",
+      "round",
+      "space",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgsz": {
+     "type": "string",
+     "required": false
+    },
+    "bottom": {
+     "type": "string",
+     "required": false
+    },
+    "c": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "chevron": {
+     "type": "string",
+     "required": false
+    },
+    "classNames": {
+     "type": "unknown",
+     "required": false
+    },
+    "component": {
+     "type": "unknown",
+     "required": false
+    },
+    "darkHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "display": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-ms-flexbox",
+      "-ms-grid",
+      "-ms-inline-flexbox",
+      "-ms-inline-grid",
+      "-webkit-flex",
+      "-webkit-inline-flex",
+      "block",
+      "contents",
+      "flex",
+      "flow",
+      "flow-root",
+      "grid",
+      "inherit",
+      "initial",
+      "inline",
+      "inline-block",
+      "inline-flex",
+      "inline-grid",
+      "inline-list-item",
+      "inline-table",
+      "list-item",
+      "none",
+      "revert",
+      "revert-layer",
+      "ruby",
+      "ruby-base",
+      "ruby-base-container",
+      "ruby-text",
+      "ruby-text-container",
+      "run-in",
+      "table",
+      "table-caption",
+      "table-cell",
+      "table-column",
+      "table-column-group",
+      "table-footer-group",
+      "table-header-group",
+      "table-row",
+      "table-row-group",
+      "unset"
+     ],
+     "required": false
+    },
+    "ff": {
+     "type": "enum",
+     "values": [
+      "heading",
+      "monospace",
+      "text"
+     ],
+     "required": false
+    },
+    "flex": {
+     "type": "string",
+     "required": false
+    },
+    "fs": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "italic",
+      "normal",
+      "oblique",
+      "revert",
+      "revert-layer",
+      "unset"
+     ],
+     "required": false
+    },
+    "fw": {
+     "type": "unknown",
+     "required": false
+    },
+    "fz": {
+     "type": "unknown",
+     "required": false
+    },
+    "h": {
+     "type": "string",
+     "required": false
+    },
+    "hiddenFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "icon": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "inset": {
+     "type": "string",
+     "required": false
+    },
+    "left": {
+     "type": "string",
+     "required": false
+    },
+    "lh": {
+     "type": "unknown",
+     "required": false
+    },
+    "lightHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "lts": {
+     "type": "string",
+     "required": false
+    },
+    "m": {
+     "type": "unknown",
+     "required": false
+    },
+    "mah": {
+     "type": "string",
+     "required": false
+    },
+    "maw": {
+     "type": "string",
+     "required": false
+    },
+    "mb": {
+     "type": "unknown",
+     "required": false
+    },
+    "me": {
+     "type": "unknown",
+     "required": false
+    },
+    "mie": {
+     "type": "unknown",
+     "required": false
+    },
+    "mih": {
+     "type": "string",
+     "required": false
+    },
+    "mis": {
+     "type": "unknown",
+     "required": false
+    },
+    "miw": {
+     "type": "string",
+     "required": false
+    },
+    "ml": {
+     "type": "unknown",
+     "required": false
+    },
+    "mod": {
+     "type": "string",
+     "required": false
+    },
+    "mr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ms": {
+     "type": "unknown",
+     "required": false
+    },
+    "mt": {
+     "type": "unknown",
+     "required": false
+    },
+    "mx": {
+     "type": "unknown",
+     "required": false
+    },
+    "my": {
+     "type": "unknown",
+     "required": false
+    },
+    "opacity": {
+     "type": "unknown",
+     "required": false
+    },
+    "p": {
+     "type": "unknown",
+     "required": false
+    },
+    "pb": {
+     "type": "unknown",
+     "required": false
+    },
+    "pe": {
+     "type": "unknown",
+     "required": false
+    },
+    "pie": {
+     "type": "unknown",
+     "required": false
+    },
+    "pis": {
+     "type": "unknown",
+     "required": false
+    },
+    "pl": {
+     "type": "unknown",
+     "required": false
+    },
+    "pos": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-webkit-sticky",
+      "absolute",
+      "fixed",
+      "inherit",
+      "initial",
+      "relative",
+      "revert",
+      "revert-layer",
+      "static",
+      "sticky",
+      "unset"
+     ],
+     "required": false
+    },
+    "pr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ps": {
+     "type": "unknown",
+     "required": false
+    },
+    "pt": {
+     "type": "unknown",
+     "required": false
+    },
+    "px": {
+     "type": "unknown",
+     "required": false
+    },
+    "py": {
+     "type": "unknown",
+     "required": false
+    },
+    "right": {
+     "type": "string",
+     "required": false
+    },
+    "styles": {
+     "type": "unknown",
+     "required": false
+    },
+    "ta": {
+     "type": "enum",
+     "values": [
+      "-khtml-center",
+      "-khtml-left",
+      "-khtml-right",
+      "-moz-center",
+      "-moz-initial",
+      "-moz-left",
+      "-moz-right",
+      "-webkit-center",
+      "-webkit-left",
+      "-webkit-match-parent",
+      "-webkit-right",
+      "center",
+      "end",
+      "inherit",
+      "initial",
+      "justify",
+      "left",
+      "match-parent",
+      "revert",
+      "revert-layer",
+      "right",
+      "start",
+      "unset"
+     ],
+     "required": false
+    },
+    "td": {
+     "type": "string",
+     "required": false
+    },
+    "top": {
+     "type": "string",
+     "required": false
+    },
+    "tt": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "capitalize",
+      "full-size-kana",
+      "full-width",
+      "inherit",
+      "initial",
+      "lowercase",
+      "math-auto",
+      "none",
+      "revert",
+      "revert-layer",
+      "unset",
+      "uppercase"
+     ],
+     "required": false
+    },
+    "variant": {
+     "type": "string",
+     "required": false
+    },
+    "visibleFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "w": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Accordion.Item": {
+   "props": {
+    "__size": {
+     "type": "string",
+     "required": false
+    },
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "bd": {
+     "type": "string",
+     "required": false
+    },
+    "bdrs": {
+     "type": "unknown",
+     "required": false
+    },
+    "bg": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "bga": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "fixed",
+      "inherit",
+      "initial",
+      "local",
+      "revert",
+      "revert-layer",
+      "scroll",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgp": {
+     "type": "string",
+     "required": false
+    },
+    "bgr": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "no-repeat",
+      "repeat",
+      "repeat-x",
+      "repeat-y",
+      "revert",
+      "revert-layer",
+      "round",
+      "space",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgsz": {
+     "type": "string",
+     "required": false
+    },
+    "bottom": {
+     "type": "string",
+     "required": false
+    },
+    "c": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "classNames": {
+     "type": "unknown",
+     "required": false
+    },
+    "component": {
+     "type": "unknown",
+     "required": false
+    },
+    "darkHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "display": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-ms-flexbox",
+      "-ms-grid",
+      "-ms-inline-flexbox",
+      "-ms-inline-grid",
+      "-webkit-flex",
+      "-webkit-inline-flex",
+      "block",
+      "contents",
+      "flex",
+      "flow",
+      "flow-root",
+      "grid",
+      "inherit",
+      "initial",
+      "inline",
+      "inline-block",
+      "inline-flex",
+      "inline-grid",
+      "inline-list-item",
+      "inline-table",
+      "list-item",
+      "none",
+      "revert",
+      "revert-layer",
+      "ruby",
+      "ruby-base",
+      "ruby-base-container",
+      "ruby-text",
+      "ruby-text-container",
+      "run-in",
+      "table",
+      "table-caption",
+      "table-cell",
+      "table-column",
+      "table-column-group",
+      "table-footer-group",
+      "table-header-group",
+      "table-row",
+      "table-row-group",
+      "unset"
+     ],
+     "required": false
+    },
+    "ff": {
+     "type": "enum",
+     "values": [
+      "heading",
+      "monospace",
+      "text"
+     ],
+     "required": false
+    },
+    "flex": {
+     "type": "string",
+     "required": false
+    },
+    "fs": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "italic",
+      "normal",
+      "oblique",
+      "revert",
+      "revert-layer",
+      "unset"
+     ],
+     "required": false
+    },
+    "fw": {
+     "type": "unknown",
+     "required": false
+    },
+    "fz": {
+     "type": "unknown",
+     "required": false
+    },
+    "h": {
+     "type": "string",
+     "required": false
+    },
+    "hiddenFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "inset": {
+     "type": "string",
+     "required": false
+    },
+    "left": {
+     "type": "string",
+     "required": false
+    },
+    "lh": {
+     "type": "unknown",
+     "required": false
+    },
+    "lightHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "lts": {
+     "type": "string",
+     "required": false
+    },
+    "m": {
+     "type": "unknown",
+     "required": false
+    },
+    "mah": {
+     "type": "string",
+     "required": false
+    },
+    "maw": {
+     "type": "string",
+     "required": false
+    },
+    "mb": {
+     "type": "unknown",
+     "required": false
+    },
+    "me": {
+     "type": "unknown",
+     "required": false
+    },
+    "mie": {
+     "type": "unknown",
+     "required": false
+    },
+    "mih": {
+     "type": "string",
+     "required": false
+    },
+    "mis": {
+     "type": "unknown",
+     "required": false
+    },
+    "miw": {
+     "type": "string",
+     "required": false
+    },
+    "ml": {
+     "type": "unknown",
+     "required": false
+    },
+    "mod": {
+     "type": "string",
+     "required": false
+    },
+    "mr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ms": {
+     "type": "unknown",
+     "required": false
+    },
+    "mt": {
+     "type": "unknown",
+     "required": false
+    },
+    "mx": {
+     "type": "unknown",
+     "required": false
+    },
+    "my": {
+     "type": "unknown",
+     "required": false
+    },
+    "opacity": {
+     "type": "unknown",
+     "required": false
+    },
+    "p": {
+     "type": "unknown",
+     "required": false
+    },
+    "pb": {
+     "type": "unknown",
+     "required": false
+    },
+    "pe": {
+     "type": "unknown",
+     "required": false
+    },
+    "pie": {
+     "type": "unknown",
+     "required": false
+    },
+    "pis": {
+     "type": "unknown",
+     "required": false
+    },
+    "pl": {
+     "type": "unknown",
+     "required": false
+    },
+    "pos": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-webkit-sticky",
+      "absolute",
+      "fixed",
+      "inherit",
+      "initial",
+      "relative",
+      "revert",
+      "revert-layer",
+      "static",
+      "sticky",
+      "unset"
+     ],
+     "required": false
+    },
+    "pr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ps": {
+     "type": "unknown",
+     "required": false
+    },
+    "pt": {
+     "type": "unknown",
+     "required": false
+    },
+    "px": {
+     "type": "unknown",
+     "required": false
+    },
+    "py": {
+     "type": "unknown",
+     "required": false
+    },
+    "right": {
+     "type": "string",
+     "required": false
+    },
+    "styles": {
+     "type": "unknown",
+     "required": false
+    },
+    "ta": {
+     "type": "enum",
+     "values": [
+      "-khtml-center",
+      "-khtml-left",
+      "-khtml-right",
+      "-moz-center",
+      "-moz-initial",
+      "-moz-left",
+      "-moz-right",
+      "-webkit-center",
+      "-webkit-left",
+      "-webkit-match-parent",
+      "-webkit-right",
+      "center",
+      "end",
+      "inherit",
+      "initial",
+      "justify",
+      "left",
+      "match-parent",
+      "revert",
+      "revert-layer",
+      "right",
+      "start",
+      "unset"
+     ],
+     "required": false
+    },
+    "td": {
+     "type": "string",
+     "required": false
+    },
+    "top": {
+     "type": "string",
+     "required": false
+    },
+    "tt": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "capitalize",
+      "full-size-kana",
+      "full-width",
+      "inherit",
+      "initial",
+      "lowercase",
+      "math-auto",
+      "none",
+      "revert",
+      "revert-layer",
+      "unset",
+      "uppercase"
+     ],
+     "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": true
+    },
+    "variant": {
+     "type": "string",
+     "required": false
+    },
+    "visibleFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "w": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Accordion.Panel": {
+   "props": {
+    "__size": {
+     "type": "string",
+     "required": false
+    },
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "bd": {
+     "type": "string",
+     "required": false
+    },
+    "bdrs": {
+     "type": "unknown",
+     "required": false
+    },
+    "bg": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "bga": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "fixed",
+      "inherit",
+      "initial",
+      "local",
+      "revert",
+      "revert-layer",
+      "scroll",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgp": {
+     "type": "string",
+     "required": false
+    },
+    "bgr": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "no-repeat",
+      "repeat",
+      "repeat-x",
+      "repeat-y",
+      "revert",
+      "revert-layer",
+      "round",
+      "space",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgsz": {
+     "type": "string",
+     "required": false
+    },
+    "bottom": {
+     "type": "string",
+     "required": false
+    },
+    "c": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "classNames": {
+     "type": "unknown",
+     "required": false
+    },
+    "component": {
+     "type": "unknown",
+     "required": false
+    },
+    "darkHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "display": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-ms-flexbox",
+      "-ms-grid",
+      "-ms-inline-flexbox",
+      "-ms-inline-grid",
+      "-webkit-flex",
+      "-webkit-inline-flex",
+      "block",
+      "contents",
+      "flex",
+      "flow",
+      "flow-root",
+      "grid",
+      "inherit",
+      "initial",
+      "inline",
+      "inline-block",
+      "inline-flex",
+      "inline-grid",
+      "inline-list-item",
+      "inline-table",
+      "list-item",
+      "none",
+      "revert",
+      "revert-layer",
+      "ruby",
+      "ruby-base",
+      "ruby-base-container",
+      "ruby-text",
+      "ruby-text-container",
+      "run-in",
+      "table",
+      "table-caption",
+      "table-cell",
+      "table-column",
+      "table-column-group",
+      "table-footer-group",
+      "table-header-group",
+      "table-row",
+      "table-row-group",
+      "unset"
+     ],
+     "required": false
+    },
+    "ff": {
+     "type": "enum",
+     "values": [
+      "heading",
+      "monospace",
+      "text"
+     ],
+     "required": false
+    },
+    "flex": {
+     "type": "string",
+     "required": false
+    },
+    "fs": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "italic",
+      "normal",
+      "oblique",
+      "revert",
+      "revert-layer",
+      "unset"
+     ],
+     "required": false
+    },
+    "fw": {
+     "type": "unknown",
+     "required": false
+    },
+    "fz": {
+     "type": "unknown",
+     "required": false
+    },
+    "h": {
+     "type": "string",
+     "required": false
+    },
+    "hiddenFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "inset": {
+     "type": "string",
+     "required": false
+    },
+    "keepMounted": {
+     "type": "boolean",
+     "required": false
+    },
+    "keepMountedMode": {
+     "type": "enum",
+     "values": [
+      "activity",
+      "display-none"
+     ],
+     "required": false
+    },
+    "left": {
+     "type": "string",
+     "required": false
+    },
+    "lh": {
+     "type": "unknown",
+     "required": false
+    },
+    "lightHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "lts": {
+     "type": "string",
+     "required": false
+    },
+    "m": {
+     "type": "unknown",
+     "required": false
+    },
+    "mah": {
+     "type": "string",
+     "required": false
+    },
+    "maw": {
+     "type": "string",
+     "required": false
+    },
+    "mb": {
+     "type": "unknown",
+     "required": false
+    },
+    "me": {
+     "type": "unknown",
+     "required": false
+    },
+    "mie": {
+     "type": "unknown",
+     "required": false
+    },
+    "mih": {
+     "type": "string",
+     "required": false
+    },
+    "mis": {
+     "type": "unknown",
+     "required": false
+    },
+    "miw": {
+     "type": "string",
+     "required": false
+    },
+    "ml": {
+     "type": "unknown",
+     "required": false
+    },
+    "mod": {
+     "type": "string",
+     "required": false
+    },
+    "mr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ms": {
+     "type": "unknown",
+     "required": false
+    },
+    "mt": {
+     "type": "unknown",
+     "required": false
+    },
+    "mx": {
+     "type": "unknown",
+     "required": false
+    },
+    "my": {
+     "type": "unknown",
+     "required": false
+    },
+    "opacity": {
+     "type": "unknown",
+     "required": false
+    },
+    "p": {
+     "type": "unknown",
+     "required": false
+    },
+    "pb": {
+     "type": "unknown",
+     "required": false
+    },
+    "pe": {
+     "type": "unknown",
+     "required": false
+    },
+    "pie": {
+     "type": "unknown",
+     "required": false
+    },
+    "pis": {
+     "type": "unknown",
+     "required": false
+    },
+    "pl": {
+     "type": "unknown",
+     "required": false
+    },
+    "pos": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-webkit-sticky",
+      "absolute",
+      "fixed",
+      "inherit",
+      "initial",
+      "relative",
+      "revert",
+      "revert-layer",
+      "static",
+      "sticky",
+      "unset"
+     ],
+     "required": false
+    },
+    "pr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ps": {
+     "type": "unknown",
+     "required": false
+    },
+    "pt": {
+     "type": "unknown",
+     "required": false
+    },
+    "px": {
+     "type": "unknown",
+     "required": false
+    },
+    "py": {
+     "type": "unknown",
+     "required": false
+    },
+    "right": {
+     "type": "string",
+     "required": false
+    },
+    "styles": {
+     "type": "unknown",
+     "required": false
+    },
+    "ta": {
+     "type": "enum",
+     "values": [
+      "-khtml-center",
+      "-khtml-left",
+      "-khtml-right",
+      "-moz-center",
+      "-moz-initial",
+      "-moz-left",
+      "-moz-right",
+      "-webkit-center",
+      "-webkit-left",
+      "-webkit-match-parent",
+      "-webkit-right",
+      "center",
+      "end",
+      "inherit",
+      "initial",
+      "justify",
+      "left",
+      "match-parent",
+      "revert",
+      "revert-layer",
+      "right",
+      "start",
+      "unset"
+     ],
+     "required": false
+    },
+    "td": {
+     "type": "string",
+     "required": false
+    },
+    "top": {
+     "type": "string",
+     "required": false
+    },
+    "tt": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "capitalize",
+      "full-size-kana",
+      "full-width",
+      "inherit",
+      "initial",
+      "lowercase",
+      "math-auto",
+      "none",
+      "revert",
+      "revert-layer",
+      "unset",
+      "uppercase"
+     ],
+     "required": false
+    },
+    "variant": {
+     "type": "string",
+     "required": false
+    },
+    "visibleFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "w": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Button": {
+   "props": {
+    "__size": {
+     "type": "string",
+     "required": false
+    },
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "attributes": {
+     "type": "unknown",
+     "required": false
+    },
+    "autoContrast": {
+     "type": "boolean",
+     "required": false
+    },
+    "bd": {
+     "type": "string",
+     "required": false
+    },
+    "bdrs": {
+     "type": "unknown",
+     "required": false
+    },
+    "bg": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "bga": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "fixed",
+      "inherit",
+      "initial",
+      "local",
+      "revert",
+      "revert-layer",
+      "scroll",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgp": {
+     "type": "string",
+     "required": false
+    },
+    "bgr": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "no-repeat",
+      "repeat",
+      "repeat-x",
+      "repeat-y",
+      "revert",
+      "revert-layer",
+      "round",
+      "space",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgsz": {
+     "type": "string",
+     "required": false
+    },
+    "bottom": {
+     "type": "string",
+     "required": false
+    },
+    "c": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "color": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "component": {
+     "type": "enum",
+     "values": [
+      "button"
+     ],
+     "required": false
+    },
+    "darkHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "data-disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "display": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-ms-flexbox",
+      "-ms-grid",
+      "-ms-inline-flexbox",
+      "-ms-inline-grid",
+      "-webkit-flex",
+      "-webkit-inline-flex",
+      "block",
+      "contents",
+      "flex",
+      "flow",
+      "flow-root",
+      "grid",
+      "inherit",
+      "initial",
+      "inline",
+      "inline-block",
+      "inline-flex",
+      "inline-grid",
+      "inline-list-item",
+      "inline-table",
+      "list-item",
+      "none",
+      "revert",
+      "revert-layer",
+      "ruby",
+      "ruby-base",
+      "ruby-base-container",
+      "ruby-text",
+      "ruby-text-container",
+      "run-in",
+      "table",
+      "table-caption",
+      "table-cell",
+      "table-column",
+      "table-column-group",
+      "table-footer-group",
+      "table-header-group",
+      "table-row",
+      "table-row-group",
+      "unset"
+     ],
+     "required": false
+    },
+    "ff": {
+     "type": "enum",
+     "values": [
+      "heading",
+      "monospace",
+      "text"
+     ],
+     "required": false
+    },
+    "flex": {
+     "type": "string",
+     "required": false
+    },
+    "fs": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "italic",
+      "normal",
+      "oblique",
+      "revert",
+      "revert-layer",
+      "unset"
+     ],
+     "required": false
+    },
+    "fullWidth": {
+     "type": "boolean",
+     "required": false
+    },
+    "fw": {
+     "type": "unknown",
+     "required": false
+    },
+    "fz": {
+     "type": "unknown",
+     "required": false
+    },
+    "gradient": {
+     "type": "unknown",
+     "required": false
+    },
+    "h": {
+     "type": "string",
+     "required": false
+    },
+    "hiddenFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "inset": {
+     "type": "string",
+     "required": false
+    },
+    "justify": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "center",
+      "end",
+      "flex-end",
+      "flex-start",
+      "inherit",
+      "initial",
+      "left",
+      "normal",
+      "revert",
+      "revert-layer",
+      "right",
+      "space-around",
+      "space-between",
+      "space-evenly",
+      "start",
+      "stretch",
+      "unset"
+     ],
+     "required": false
+    },
+    "left": {
+     "type": "string",
+     "required": false
+    },
+    "leftSection": {
+     "type": "string",
+     "required": false
+    },
+    "lh": {
+     "type": "unknown",
+     "required": false
+    },
+    "lightHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "loaderProps": {
+     "type": "unknown",
+     "required": false
+    },
+    "loading": {
+     "type": "boolean",
+     "required": false
+    },
+    "lts": {
+     "type": "string",
+     "required": false
+    },
+    "m": {
+     "type": "unknown",
+     "required": false
+    },
+    "mah": {
+     "type": "string",
+     "required": false
+    },
+    "maw": {
+     "type": "string",
+     "required": false
+    },
+    "mb": {
+     "type": "unknown",
+     "required": false
+    },
+    "me": {
+     "type": "unknown",
+     "required": false
+    },
+    "mie": {
+     "type": "unknown",
+     "required": false
+    },
+    "mih": {
+     "type": "string",
+     "required": false
+    },
+    "mis": {
+     "type": "unknown",
+     "required": false
+    },
+    "miw": {
+     "type": "string",
+     "required": false
+    },
+    "ml": {
+     "type": "unknown",
+     "required": false
+    },
+    "mod": {
+     "type": "string",
+     "required": false
+    },
+    "mr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ms": {
+     "type": "unknown",
+     "required": false
+    },
+    "mt": {
+     "type": "unknown",
+     "required": false
+    },
+    "mx": {
+     "type": "unknown",
+     "required": false
+    },
+    "my": {
+     "type": "unknown",
+     "required": false
+    },
+    "opacity": {
+     "type": "unknown",
+     "required": false
+    },
+    "p": {
+     "type": "unknown",
+     "required": false
+    },
+    "pb": {
+     "type": "unknown",
+     "required": false
+    },
+    "pe": {
+     "type": "unknown",
+     "required": false
+    },
+    "pie": {
+     "type": "unknown",
+     "required": false
+    },
+    "pis": {
+     "type": "unknown",
+     "required": false
+    },
+    "pl": {
+     "type": "unknown",
+     "required": false
+    },
+    "pos": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-webkit-sticky",
+      "absolute",
+      "fixed",
+      "inherit",
+      "initial",
+      "relative",
+      "revert",
+      "revert-layer",
+      "static",
+      "sticky",
+      "unset"
+     ],
+     "required": false
+    },
+    "pr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ps": {
+     "type": "unknown",
+     "required": false
+    },
+    "pt": {
+     "type": "unknown",
+     "required": false
+    },
+    "px": {
+     "type": "unknown",
+     "required": false
+    },
+    "py": {
+     "type": "unknown",
+     "required": false
+    },
+    "radius": {
+     "type": "unknown",
+     "required": false
+    },
+    "right": {
+     "type": "string",
+     "required": false
+    },
+    "rightSection": {
+     "type": "string",
+     "required": false
+    },
+    "size": {
+     "type": "enum",
+     "values": [
+      "compact-lg",
+      "compact-md",
+      "compact-sm",
+      "compact-xl",
+      "compact-xs",
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "ta": {
+     "type": "enum",
+     "values": [
+      "-khtml-center",
+      "-khtml-left",
+      "-khtml-right",
+      "-moz-center",
+      "-moz-initial",
+      "-moz-left",
+      "-moz-right",
+      "-webkit-center",
+      "-webkit-left",
+      "-webkit-match-parent",
+      "-webkit-right",
+      "center",
+      "end",
+      "inherit",
+      "initial",
+      "justify",
+      "left",
+      "match-parent",
+      "revert",
+      "revert-layer",
+      "right",
+      "start",
+      "unset"
+     ],
+     "required": false
+    },
+    "td": {
+     "type": "string",
+     "required": false
+    },
+    "top": {
+     "type": "string",
+     "required": false
+    },
+    "tt": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "capitalize",
+      "full-size-kana",
+      "full-width",
+      "inherit",
+      "initial",
+      "lowercase",
+      "math-auto",
+      "none",
+      "revert",
+      "revert-layer",
+      "unset",
+      "uppercase"
+     ],
+     "required": false
+    },
+    "unstyled": {
+     "type": "boolean",
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "default",
+      "filled",
+      "gradient",
+      "light",
+      "outline",
+      "subtle",
+      "transparent",
+      "white"
+     ],
+     "required": false
+    },
+    "visibleFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "w": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Button.Group": {
+   "props": {
+    "__size": {
+     "type": "string",
+     "required": false
+    },
+    "attributes": {
+     "type": "unknown",
+     "required": false
+    },
+    "bd": {
+     "type": "string",
+     "required": false
+    },
+    "bdrs": {
+     "type": "unknown",
+     "required": false
+    },
+    "bg": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "bga": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "fixed",
+      "inherit",
+      "initial",
+      "local",
+      "revert",
+      "revert-layer",
+      "scroll",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgp": {
+     "type": "string",
+     "required": false
+    },
+    "bgr": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "no-repeat",
+      "repeat",
+      "repeat-x",
+      "repeat-y",
+      "revert",
+      "revert-layer",
+      "round",
+      "space",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgsz": {
+     "type": "string",
+     "required": false
+    },
+    "borderWidth": {
+     "type": "string",
+     "required": false
+    },
+    "bottom": {
+     "type": "string",
+     "required": false
+    },
+    "c": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "component": {
+     "type": "unknown",
+     "required": false
+    },
+    "darkHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "display": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-ms-flexbox",
+      "-ms-grid",
+      "-ms-inline-flexbox",
+      "-ms-inline-grid",
+      "-webkit-flex",
+      "-webkit-inline-flex",
+      "block",
+      "contents",
+      "flex",
+      "flow",
+      "flow-root",
+      "grid",
+      "inherit",
+      "initial",
+      "inline",
+      "inline-block",
+      "inline-flex",
+      "inline-grid",
+      "inline-list-item",
+      "inline-table",
+      "list-item",
+      "none",
+      "revert",
+      "revert-layer",
+      "ruby",
+      "ruby-base",
+      "ruby-base-container",
+      "ruby-text",
+      "ruby-text-container",
+      "run-in",
+      "table",
+      "table-caption",
+      "table-cell",
+      "table-column",
+      "table-column-group",
+      "table-footer-group",
+      "table-header-group",
+      "table-row",
+      "table-row-group",
+      "unset"
+     ],
+     "required": false
+    },
+    "ff": {
+     "type": "enum",
+     "values": [
+      "heading",
+      "monospace",
+      "text"
+     ],
+     "required": false
+    },
+    "flex": {
+     "type": "string",
+     "required": false
+    },
+    "fs": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "italic",
+      "normal",
+      "oblique",
+      "revert",
+      "revert-layer",
+      "unset"
+     ],
+     "required": false
+    },
+    "fw": {
+     "type": "unknown",
+     "required": false
+    },
+    "fz": {
+     "type": "unknown",
+     "required": false
+    },
+    "h": {
+     "type": "string",
+     "required": false
+    },
+    "hiddenFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "inset": {
+     "type": "string",
+     "required": false
+    },
+    "left": {
+     "type": "string",
+     "required": false
+    },
+    "lh": {
+     "type": "unknown",
+     "required": false
+    },
+    "lightHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "lts": {
+     "type": "string",
+     "required": false
+    },
+    "m": {
+     "type": "unknown",
+     "required": false
+    },
+    "mah": {
+     "type": "string",
+     "required": false
+    },
+    "maw": {
+     "type": "string",
+     "required": false
+    },
+    "mb": {
+     "type": "unknown",
+     "required": false
+    },
+    "me": {
+     "type": "unknown",
+     "required": false
+    },
+    "mie": {
+     "type": "unknown",
+     "required": false
+    },
+    "mih": {
+     "type": "string",
+     "required": false
+    },
+    "mis": {
+     "type": "unknown",
+     "required": false
+    },
+    "miw": {
+     "type": "string",
+     "required": false
+    },
+    "ml": {
+     "type": "unknown",
+     "required": false
+    },
+    "mod": {
+     "type": "string",
+     "required": false
+    },
+    "mr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ms": {
+     "type": "unknown",
+     "required": false
+    },
+    "mt": {
+     "type": "unknown",
+     "required": false
+    },
+    "mx": {
+     "type": "unknown",
+     "required": false
+    },
+    "my": {
+     "type": "unknown",
+     "required": false
+    },
+    "opacity": {
+     "type": "unknown",
+     "required": false
+    },
+    "orientation": {
+     "type": "enum",
+     "values": [
+      "horizontal",
+      "vertical"
+     ],
+     "required": false
+    },
+    "p": {
+     "type": "unknown",
+     "required": false
+    },
+    "pb": {
+     "type": "unknown",
+     "required": false
+    },
+    "pe": {
+     "type": "unknown",
+     "required": false
+    },
+    "pie": {
+     "type": "unknown",
+     "required": false
+    },
+    "pis": {
+     "type": "unknown",
+     "required": false
+    },
+    "pl": {
+     "type": "unknown",
+     "required": false
+    },
+    "pos": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-webkit-sticky",
+      "absolute",
+      "fixed",
+      "inherit",
+      "initial",
+      "relative",
+      "revert",
+      "revert-layer",
+      "static",
+      "sticky",
+      "unset"
+     ],
+     "required": false
+    },
+    "pr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ps": {
+     "type": "unknown",
+     "required": false
+    },
+    "pt": {
+     "type": "unknown",
+     "required": false
+    },
+    "px": {
+     "type": "unknown",
+     "required": false
+    },
+    "py": {
+     "type": "unknown",
+     "required": false
+    },
+    "right": {
+     "type": "string",
+     "required": false
+    },
+    "ta": {
+     "type": "enum",
+     "values": [
+      "-khtml-center",
+      "-khtml-left",
+      "-khtml-right",
+      "-moz-center",
+      "-moz-initial",
+      "-moz-left",
+      "-moz-right",
+      "-webkit-center",
+      "-webkit-left",
+      "-webkit-match-parent",
+      "-webkit-right",
+      "center",
+      "end",
+      "inherit",
+      "initial",
+      "justify",
+      "left",
+      "match-parent",
+      "revert",
+      "revert-layer",
+      "right",
+      "start",
+      "unset"
+     ],
+     "required": false
+    },
+    "td": {
+     "type": "string",
+     "required": false
+    },
+    "top": {
+     "type": "string",
+     "required": false
+    },
+    "tt": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "capitalize",
+      "full-size-kana",
+      "full-width",
+      "inherit",
+      "initial",
+      "lowercase",
+      "math-auto",
+      "none",
+      "revert",
+      "revert-layer",
+      "unset",
+      "uppercase"
+     ],
+     "required": false
+    },
+    "unstyled": {
+     "type": "boolean",
+     "required": false
+    },
+    "variant": {
+     "type": "string",
+     "required": false
+    },
+    "visibleFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "w": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children"
+  },
+  "Button.GroupSection": {
+   "props": {
+    "__size": {
+     "type": "string",
+     "required": false
+    },
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "attributes": {
+     "type": "unknown",
+     "required": false
+    },
+    "autoContrast": {
+     "type": "boolean",
+     "required": false
+    },
+    "bd": {
+     "type": "string",
+     "required": false
+    },
+    "bdrs": {
+     "type": "unknown",
+     "required": false
+    },
+    "bg": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "bga": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "fixed",
+      "inherit",
+      "initial",
+      "local",
+      "revert",
+      "revert-layer",
+      "scroll",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgp": {
+     "type": "string",
+     "required": false
+    },
+    "bgr": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "no-repeat",
+      "repeat",
+      "repeat-x",
+      "repeat-y",
+      "revert",
+      "revert-layer",
+      "round",
+      "space",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgsz": {
+     "type": "string",
+     "required": false
+    },
+    "bottom": {
+     "type": "string",
+     "required": false
+    },
+    "c": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "component": {
+     "type": "unknown",
+     "required": false
+    },
+    "darkHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "display": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-ms-flexbox",
+      "-ms-grid",
+      "-ms-inline-flexbox",
+      "-ms-inline-grid",
+      "-webkit-flex",
+      "-webkit-inline-flex",
+      "block",
+      "contents",
+      "flex",
+      "flow",
+      "flow-root",
+      "grid",
+      "inherit",
+      "initial",
+      "inline",
+      "inline-block",
+      "inline-flex",
+      "inline-grid",
+      "inline-list-item",
+      "inline-table",
+      "list-item",
+      "none",
+      "revert",
+      "revert-layer",
+      "ruby",
+      "ruby-base",
+      "ruby-base-container",
+      "ruby-text",
+      "ruby-text-container",
+      "run-in",
+      "table",
+      "table-caption",
+      "table-cell",
+      "table-column",
+      "table-column-group",
+      "table-footer-group",
+      "table-header-group",
+      "table-row",
+      "table-row-group",
+      "unset"
+     ],
+     "required": false
+    },
+    "ff": {
+     "type": "enum",
+     "values": [
+      "heading",
+      "monospace",
+      "text"
+     ],
+     "required": false
+    },
+    "flex": {
+     "type": "string",
+     "required": false
+    },
+    "fs": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "italic",
+      "normal",
+      "oblique",
+      "revert",
+      "revert-layer",
+      "unset"
+     ],
+     "required": false
+    },
+    "fw": {
+     "type": "unknown",
+     "required": false
+    },
+    "fz": {
+     "type": "unknown",
+     "required": false
+    },
+    "gradient": {
+     "type": "unknown",
+     "required": false
+    },
+    "h": {
+     "type": "string",
+     "required": false
+    },
+    "hiddenFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "inset": {
+     "type": "string",
+     "required": false
+    },
+    "left": {
+     "type": "string",
+     "required": false
+    },
+    "lh": {
+     "type": "unknown",
+     "required": false
+    },
+    "lightHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "lts": {
+     "type": "string",
+     "required": false
+    },
+    "m": {
+     "type": "unknown",
+     "required": false
+    },
+    "mah": {
+     "type": "string",
+     "required": false
+    },
+    "maw": {
+     "type": "string",
+     "required": false
+    },
+    "mb": {
+     "type": "unknown",
+     "required": false
+    },
+    "me": {
+     "type": "unknown",
+     "required": false
+    },
+    "mie": {
+     "type": "unknown",
+     "required": false
+    },
+    "mih": {
+     "type": "string",
+     "required": false
+    },
+    "mis": {
+     "type": "unknown",
+     "required": false
+    },
+    "miw": {
+     "type": "string",
+     "required": false
+    },
+    "ml": {
+     "type": "unknown",
+     "required": false
+    },
+    "mod": {
+     "type": "string",
+     "required": false
+    },
+    "mr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ms": {
+     "type": "unknown",
+     "required": false
+    },
+    "mt": {
+     "type": "unknown",
+     "required": false
+    },
+    "mx": {
+     "type": "unknown",
+     "required": false
+    },
+    "my": {
+     "type": "unknown",
+     "required": false
+    },
+    "opacity": {
+     "type": "unknown",
+     "required": false
+    },
+    "p": {
+     "type": "unknown",
+     "required": false
+    },
+    "pb": {
+     "type": "unknown",
+     "required": false
+    },
+    "pe": {
+     "type": "unknown",
+     "required": false
+    },
+    "pie": {
+     "type": "unknown",
+     "required": false
+    },
+    "pis": {
+     "type": "unknown",
+     "required": false
+    },
+    "pl": {
+     "type": "unknown",
+     "required": false
+    },
+    "pos": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-webkit-sticky",
+      "absolute",
+      "fixed",
+      "inherit",
+      "initial",
+      "relative",
+      "revert",
+      "revert-layer",
+      "static",
+      "sticky",
+      "unset"
+     ],
+     "required": false
+    },
+    "pr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ps": {
+     "type": "unknown",
+     "required": false
+    },
+    "pt": {
+     "type": "unknown",
+     "required": false
+    },
+    "px": {
+     "type": "unknown",
+     "required": false
+    },
+    "py": {
+     "type": "unknown",
+     "required": false
+    },
+    "radius": {
+     "type": "unknown",
+     "required": false
+    },
+    "right": {
+     "type": "string",
+     "required": false
+    },
+    "size": {
+     "type": "enum",
+     "values": [
+      "compact-lg",
+      "compact-md",
+      "compact-sm",
+      "compact-xl",
+      "compact-xs",
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "ta": {
+     "type": "enum",
+     "values": [
+      "-khtml-center",
+      "-khtml-left",
+      "-khtml-right",
+      "-moz-center",
+      "-moz-initial",
+      "-moz-left",
+      "-moz-right",
+      "-webkit-center",
+      "-webkit-left",
+      "-webkit-match-parent",
+      "-webkit-right",
+      "center",
+      "end",
+      "inherit",
+      "initial",
+      "justify",
+      "left",
+      "match-parent",
+      "revert",
+      "revert-layer",
+      "right",
+      "start",
+      "unset"
+     ],
+     "required": false
+    },
+    "td": {
+     "type": "string",
+     "required": false
+    },
+    "top": {
+     "type": "string",
+     "required": false
+    },
+    "tt": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "capitalize",
+      "full-size-kana",
+      "full-width",
+      "inherit",
+      "initial",
+      "lowercase",
+      "math-auto",
+      "none",
+      "revert",
+      "revert-layer",
+      "unset",
+      "uppercase"
+     ],
+     "required": false
+    },
+    "unstyled": {
+     "type": "boolean",
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "default",
+      "filled",
+      "gradient",
+      "light",
+      "outline",
+      "subtle",
+      "transparent",
+      "white"
+     ],
+     "required": false
+    },
+    "visibleFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "w": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Card": {
+   "props": {
+    "__size": {
+     "type": "string",
+     "required": false
+    },
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "attributes": {
+     "type": "unknown",
+     "required": false
+    },
+    "bd": {
+     "type": "string",
+     "required": false
+    },
+    "bdrs": {
+     "type": "unknown",
+     "required": false
+    },
+    "bg": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "bga": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "fixed",
+      "inherit",
+      "initial",
+      "local",
+      "revert",
+      "revert-layer",
+      "scroll",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgp": {
+     "type": "string",
+     "required": false
+    },
+    "bgr": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "no-repeat",
+      "repeat",
+      "repeat-x",
+      "repeat-y",
+      "revert",
+      "revert-layer",
+      "round",
+      "space",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgsz": {
+     "type": "string",
+     "required": false
+    },
+    "bottom": {
+     "type": "string",
+     "required": false
+    },
+    "c": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "component": {
+     "type": "enum",
+     "values": [
+      "div"
+     ],
+     "required": false
+    },
+    "darkHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "display": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-ms-flexbox",
+      "-ms-grid",
+      "-ms-inline-flexbox",
+      "-ms-inline-grid",
+      "-webkit-flex",
+      "-webkit-inline-flex",
+      "block",
+      "contents",
+      "flex",
+      "flow",
+      "flow-root",
+      "grid",
+      "inherit",
+      "initial",
+      "inline",
+      "inline-block",
+      "inline-flex",
+      "inline-grid",
+      "inline-list-item",
+      "inline-table",
+      "list-item",
+      "none",
+      "revert",
+      "revert-layer",
+      "ruby",
+      "ruby-base",
+      "ruby-base-container",
+      "ruby-text",
+      "ruby-text-container",
+      "run-in",
+      "table",
+      "table-caption",
+      "table-cell",
+      "table-column",
+      "table-column-group",
+      "table-footer-group",
+      "table-header-group",
+      "table-row",
+      "table-row-group",
+      "unset"
+     ],
+     "required": false
+    },
+    "ff": {
+     "type": "enum",
+     "values": [
+      "heading",
+      "monospace",
+      "text"
+     ],
+     "required": false
+    },
+    "flex": {
+     "type": "string",
+     "required": false
+    },
+    "fs": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "italic",
+      "normal",
+      "oblique",
+      "revert",
+      "revert-layer",
+      "unset"
+     ],
+     "required": false
+    },
+    "fw": {
+     "type": "unknown",
+     "required": false
+    },
+    "fz": {
+     "type": "unknown",
+     "required": false
+    },
+    "h": {
+     "type": "string",
+     "required": false
+    },
+    "hiddenFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "inset": {
+     "type": "string",
+     "required": false
+    },
+    "left": {
+     "type": "string",
+     "required": false
+    },
+    "lh": {
+     "type": "unknown",
+     "required": false
+    },
+    "lightHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "lts": {
+     "type": "string",
+     "required": false
+    },
+    "m": {
+     "type": "unknown",
+     "required": false
+    },
+    "mah": {
+     "type": "string",
+     "required": false
+    },
+    "maw": {
+     "type": "string",
+     "required": false
+    },
+    "mb": {
+     "type": "unknown",
+     "required": false
+    },
+    "me": {
+     "type": "unknown",
+     "required": false
+    },
+    "mie": {
+     "type": "unknown",
+     "required": false
+    },
+    "mih": {
+     "type": "string",
+     "required": false
+    },
+    "mis": {
+     "type": "unknown",
+     "required": false
+    },
+    "miw": {
+     "type": "string",
+     "required": false
+    },
+    "ml": {
+     "type": "unknown",
+     "required": false
+    },
+    "mod": {
+     "type": "string",
+     "required": false
+    },
+    "mr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ms": {
+     "type": "unknown",
+     "required": false
+    },
+    "mt": {
+     "type": "unknown",
+     "required": false
+    },
+    "mx": {
+     "type": "unknown",
+     "required": false
+    },
+    "my": {
+     "type": "unknown",
+     "required": false
+    },
+    "opacity": {
+     "type": "unknown",
+     "required": false
+    },
+    "orientation": {
+     "type": "enum",
+     "values": [
+      "horizontal",
+      "vertical"
+     ],
+     "required": false
+    },
+    "p": {
+     "type": "unknown",
+     "required": false
+    },
+    "padding": {
+     "type": "unknown",
+     "required": false
+    },
+    "pb": {
+     "type": "unknown",
+     "required": false
+    },
+    "pe": {
+     "type": "unknown",
+     "required": false
+    },
+    "pie": {
+     "type": "unknown",
+     "required": false
+    },
+    "pis": {
+     "type": "unknown",
+     "required": false
+    },
+    "pl": {
+     "type": "unknown",
+     "required": false
+    },
+    "pos": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-webkit-sticky",
+      "absolute",
+      "fixed",
+      "inherit",
+      "initial",
+      "relative",
+      "revert",
+      "revert-layer",
+      "static",
+      "sticky",
+      "unset"
+     ],
+     "required": false
+    },
+    "pr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ps": {
+     "type": "unknown",
+     "required": false
+    },
+    "pt": {
+     "type": "unknown",
+     "required": false
+    },
+    "px": {
+     "type": "unknown",
+     "required": false
+    },
+    "py": {
+     "type": "unknown",
+     "required": false
+    },
+    "radius": {
+     "type": "unknown",
+     "required": false
+    },
+    "right": {
+     "type": "string",
+     "required": false
+    },
+    "shadow": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "ta": {
+     "type": "enum",
+     "values": [
+      "-khtml-center",
+      "-khtml-left",
+      "-khtml-right",
+      "-moz-center",
+      "-moz-initial",
+      "-moz-left",
+      "-moz-right",
+      "-webkit-center",
+      "-webkit-left",
+      "-webkit-match-parent",
+      "-webkit-right",
+      "center",
+      "end",
+      "inherit",
+      "initial",
+      "justify",
+      "left",
+      "match-parent",
+      "revert",
+      "revert-layer",
+      "right",
+      "start",
+      "unset"
+     ],
+     "required": false
+    },
+    "td": {
+     "type": "string",
+     "required": false
+    },
+    "top": {
+     "type": "string",
+     "required": false
+    },
+    "tt": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "capitalize",
+      "full-size-kana",
+      "full-width",
+      "inherit",
+      "initial",
+      "lowercase",
+      "math-auto",
+      "none",
+      "revert",
+      "revert-layer",
+      "unset",
+      "uppercase"
+     ],
+     "required": false
+    },
+    "unstyled": {
+     "type": "boolean",
+     "required": false
+    },
+    "variant": {
+     "type": "string",
+     "required": false
+    },
+    "visibleFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "w": {
+     "type": "string",
+     "required": false
+    },
+    "withBorder": {
+     "type": "boolean",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Card.Section": {
+   "props": {
+    "__size": {
+     "type": "string",
+     "required": false
+    },
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "bd": {
+     "type": "string",
+     "required": false
+    },
+    "bdrs": {
+     "type": "unknown",
+     "required": false
+    },
+    "bg": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "bga": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "fixed",
+      "inherit",
+      "initial",
+      "local",
+      "revert",
+      "revert-layer",
+      "scroll",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgp": {
+     "type": "string",
+     "required": false
+    },
+    "bgr": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "no-repeat",
+      "repeat",
+      "repeat-x",
+      "repeat-y",
+      "revert",
+      "revert-layer",
+      "round",
+      "space",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgsz": {
+     "type": "string",
+     "required": false
+    },
+    "bottom": {
+     "type": "string",
+     "required": false
+    },
+    "c": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "classNames": {
+     "type": "unknown",
+     "required": false
+    },
+    "component": {
+     "type": "enum",
+     "values": [
+      "div"
+     ],
+     "required": false
+    },
+    "darkHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "display": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-ms-flexbox",
+      "-ms-grid",
+      "-ms-inline-flexbox",
+      "-ms-inline-grid",
+      "-webkit-flex",
+      "-webkit-inline-flex",
+      "block",
+      "contents",
+      "flex",
+      "flow",
+      "flow-root",
+      "grid",
+      "inherit",
+      "initial",
+      "inline",
+      "inline-block",
+      "inline-flex",
+      "inline-grid",
+      "inline-list-item",
+      "inline-table",
+      "list-item",
+      "none",
+      "revert",
+      "revert-layer",
+      "ruby",
+      "ruby-base",
+      "ruby-base-container",
+      "ruby-text",
+      "ruby-text-container",
+      "run-in",
+      "table",
+      "table-caption",
+      "table-cell",
+      "table-column",
+      "table-column-group",
+      "table-footer-group",
+      "table-header-group",
+      "table-row",
+      "table-row-group",
+      "unset"
+     ],
+     "required": false
+    },
+    "ff": {
+     "type": "enum",
+     "values": [
+      "heading",
+      "monospace",
+      "text"
+     ],
+     "required": false
+    },
+    "flex": {
+     "type": "string",
+     "required": false
+    },
+    "fs": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "italic",
+      "normal",
+      "oblique",
+      "revert",
+      "revert-layer",
+      "unset"
+     ],
+     "required": false
+    },
+    "fw": {
+     "type": "unknown",
+     "required": false
+    },
+    "fz": {
+     "type": "unknown",
+     "required": false
+    },
+    "h": {
+     "type": "string",
+     "required": false
+    },
+    "hiddenFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "inheritPadding": {
+     "type": "boolean",
+     "required": false
+    },
+    "inset": {
+     "type": "string",
+     "required": false
+    },
+    "left": {
+     "type": "string",
+     "required": false
+    },
+    "lh": {
+     "type": "unknown",
+     "required": false
+    },
+    "lightHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "lts": {
+     "type": "string",
+     "required": false
+    },
+    "m": {
+     "type": "unknown",
+     "required": false
+    },
+    "mah": {
+     "type": "string",
+     "required": false
+    },
+    "maw": {
+     "type": "string",
+     "required": false
+    },
+    "mb": {
+     "type": "unknown",
+     "required": false
+    },
+    "me": {
+     "type": "unknown",
+     "required": false
+    },
+    "mie": {
+     "type": "unknown",
+     "required": false
+    },
+    "mih": {
+     "type": "string",
+     "required": false
+    },
+    "mis": {
+     "type": "unknown",
+     "required": false
+    },
+    "miw": {
+     "type": "string",
+     "required": false
+    },
+    "ml": {
+     "type": "unknown",
+     "required": false
+    },
+    "mod": {
+     "type": "string",
+     "required": false
+    },
+    "mr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ms": {
+     "type": "unknown",
+     "required": false
+    },
+    "mt": {
+     "type": "unknown",
+     "required": false
+    },
+    "mx": {
+     "type": "unknown",
+     "required": false
+    },
+    "my": {
+     "type": "unknown",
+     "required": false
+    },
+    "opacity": {
+     "type": "unknown",
+     "required": false
+    },
+    "p": {
+     "type": "unknown",
+     "required": false
+    },
+    "pb": {
+     "type": "unknown",
+     "required": false
+    },
+    "pe": {
+     "type": "unknown",
+     "required": false
+    },
+    "pie": {
+     "type": "unknown",
+     "required": false
+    },
+    "pis": {
+     "type": "unknown",
+     "required": false
+    },
+    "pl": {
+     "type": "unknown",
+     "required": false
+    },
+    "pos": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-webkit-sticky",
+      "absolute",
+      "fixed",
+      "inherit",
+      "initial",
+      "relative",
+      "revert",
+      "revert-layer",
+      "static",
+      "sticky",
+      "unset"
+     ],
+     "required": false
+    },
+    "pr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ps": {
+     "type": "unknown",
+     "required": false
+    },
+    "pt": {
+     "type": "unknown",
+     "required": false
+    },
+    "px": {
+     "type": "unknown",
+     "required": false
+    },
+    "py": {
+     "type": "unknown",
+     "required": false
+    },
+    "right": {
+     "type": "string",
+     "required": false
+    },
+    "styles": {
+     "type": "unknown",
+     "required": false
+    },
+    "ta": {
+     "type": "enum",
+     "values": [
+      "-khtml-center",
+      "-khtml-left",
+      "-khtml-right",
+      "-moz-center",
+      "-moz-initial",
+      "-moz-left",
+      "-moz-right",
+      "-webkit-center",
+      "-webkit-left",
+      "-webkit-match-parent",
+      "-webkit-right",
+      "center",
+      "end",
+      "inherit",
+      "initial",
+      "justify",
+      "left",
+      "match-parent",
+      "revert",
+      "revert-layer",
+      "right",
+      "start",
+      "unset"
+     ],
+     "required": false
+    },
+    "td": {
+     "type": "string",
+     "required": false
+    },
+    "top": {
+     "type": "string",
+     "required": false
+    },
+    "tt": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "capitalize",
+      "full-size-kana",
+      "full-width",
+      "inherit",
+      "initial",
+      "lowercase",
+      "math-auto",
+      "none",
+      "revert",
+      "revert-layer",
+      "unset",
+      "uppercase"
+     ],
+     "required": false
+    },
+    "variant": {
+     "type": "string",
+     "required": false
+    },
+    "visibleFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "w": {
+     "type": "string",
+     "required": false
+    },
+    "withBorder": {
+     "type": "boolean",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "MantineProvider": {
+   "props": {
+    "classNamesPrefix": {
+     "type": "string",
+     "required": false
+    },
+    "colorSchemeManager": {
+     "type": "unknown",
+     "required": false
+    },
+    "cssVariablesSelector": {
+     "type": "string",
+     "required": false
+    },
+    "deduplicateCssVariables": {
+     "type": "boolean",
+     "required": false
+    },
+    "deduplicateInlineStyles": {
+     "type": "boolean",
+     "required": false
+    },
+    "defaultColorScheme": {
+     "type": "enum",
+     "values": [
+      "auto",
+      "dark",
+      "light"
+     ],
+     "required": false
+    },
+    "env": {
+     "type": "enum",
+     "values": [
+      "default",
+      "test"
+     ],
+     "required": false
+    },
+    "forceColorScheme": {
+     "type": "enum",
+     "values": [
+      "dark",
+      "light"
+     ],
+     "required": false
+    },
+    "stylesTransform": {
+     "type": "unknown",
+     "required": false
+    },
+    "theme": {
+     "type": "unknown",
+     "required": false
+    },
+    "withCssVariables": {
+     "type": "boolean",
+     "required": false
+    },
+    "withGlobalClasses": {
+     "type": "boolean",
+     "required": false
+    },
+    "withStaticClasses": {
+     "type": "boolean",
+     "required": false
+    }
+   },
+   "content": "children"
+  },
+  "NumberInput": {
+   "props": {
+    "__bottomSection": {
+     "type": "string",
+     "required": false
+    },
+    "__bottomSectionProps": {
+     "type": "unknown",
+     "required": false
+    },
+    "__clearSection": {
+     "type": "string",
+     "required": false
+    },
+    "__clearSectionMode": {
+     "type": "enum",
+     "values": [
+      "both",
+      "clear",
+      "rightSection"
+     ],
+     "required": false
+    },
+    "__clearable": {
+     "type": "boolean",
+     "required": false
+    },
+    "__defaultRightSection": {
+     "type": "string",
+     "required": false
+    },
+    "__size": {
+     "type": "string",
+     "required": false
+    },
+    "allowDecimal": {
+     "type": "boolean",
+     "required": false
+    },
+    "allowLeadingZeros": {
+     "type": "boolean",
+     "required": false
+    },
+    "allowNegative": {
+     "type": "boolean",
+     "required": false
+    },
+    "allowedDecimalSeparators": {
+     "type": "unknown",
+     "required": false
+    },
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "attributes": {
+     "type": "unknown",
+     "required": false
+    },
+    "bd": {
+     "type": "string",
+     "required": false
+    },
+    "bdrs": {
+     "type": "unknown",
+     "required": false
+    },
+    "bg": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "bga": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "fixed",
+      "inherit",
+      "initial",
+      "local",
+      "revert",
+      "revert-layer",
+      "scroll",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgp": {
+     "type": "string",
+     "required": false
+    },
+    "bgr": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "no-repeat",
+      "repeat",
+      "repeat-x",
+      "repeat-y",
+      "revert",
+      "revert-layer",
+      "round",
+      "space",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgsz": {
+     "type": "string",
+     "required": false
+    },
+    "bottom": {
+     "type": "string",
+     "required": false
+    },
+    "c": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "clampBehavior": {
+     "type": "enum",
+     "values": [
+      "blur",
+      "none",
+      "strict"
+     ],
+     "required": false
+    },
+    "darkHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "decimalScale": {
+     "type": "number",
+     "required": false
+    },
+    "decimalSeparator": {
+     "type": "string",
+     "required": false
+    },
+    "defaultValue": {
+     "type": "string",
+     "required": false
+    },
+    "description": {
+     "type": "string",
+     "required": false
+    },
+    "descriptionProps": {
+     "type": "unknown",
+     "required": false
+    },
+    "disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "display": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-ms-flexbox",
+      "-ms-grid",
+      "-ms-inline-flexbox",
+      "-ms-inline-grid",
+      "-webkit-flex",
+      "-webkit-inline-flex",
+      "block",
+      "contents",
+      "flex",
+      "flow",
+      "flow-root",
+      "grid",
+      "inherit",
+      "initial",
+      "inline",
+      "inline-block",
+      "inline-flex",
+      "inline-grid",
+      "inline-list-item",
+      "inline-table",
+      "list-item",
+      "none",
+      "revert",
+      "revert-layer",
+      "ruby",
+      "ruby-base",
+      "ruby-base-container",
+      "ruby-text",
+      "ruby-text-container",
+      "run-in",
+      "table",
+      "table-caption",
+      "table-cell",
+      "table-column",
+      "table-column-group",
+      "table-footer-group",
+      "table-header-group",
+      "table-row",
+      "table-row-group",
+      "unset"
+     ],
+     "required": false
+    },
+    "error": {
+     "type": "string",
+     "required": false
+    },
+    "errorProps": {
+     "type": "unknown",
+     "required": false
+    },
+    "ff": {
+     "type": "enum",
+     "values": [
+      "heading",
+      "monospace",
+      "text"
+     ],
+     "required": false
+    },
+    "fixedDecimalScale": {
+     "type": "boolean",
+     "required": false
+    },
+    "flex": {
+     "type": "string",
+     "required": false
+    },
+    "fs": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "italic",
+      "normal",
+      "oblique",
+      "revert",
+      "revert-layer",
+      "unset"
+     ],
+     "required": false
+    },
+    "fw": {
+     "type": "unknown",
+     "required": false
+    },
+    "fz": {
+     "type": "unknown",
+     "required": false
+    },
+    "h": {
+     "type": "string",
+     "required": false
+    },
+    "hiddenFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "hideControls": {
+     "type": "boolean",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "inputSize": {
+     "type": "string",
+     "required": false
+    },
+    "inputWrapperOrder": {
+     "type": "unknown",
+     "required": false
+    },
+    "inset": {
+     "type": "string",
+     "required": false
+    },
+    "label": {
+     "type": "string",
+     "required": false
+    },
+    "labelProps": {
+     "type": "unknown",
+     "required": false
+    },
+    "left": {
+     "type": "string",
+     "required": false
+    },
+    "leftSection": {
+     "type": "string",
+     "required": false
+    },
+    "leftSectionPointerEvents": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "all",
+      "auto",
+      "fill",
+      "inherit",
+      "initial",
+      "none",
+      "painted",
+      "revert",
+      "revert-layer",
+      "stroke",
+      "unset",
+      "visible",
+      "visibleFill",
+      "visiblePainted",
+      "visibleStroke"
+     ],
+     "required": false
+    },
+    "leftSectionProps": {
+     "type": "unknown",
+     "required": false
+    },
+    "leftSectionWidth": {
+     "type": "string",
+     "required": false
+    },
+    "lh": {
+     "type": "unknown",
+     "required": false
+    },
+    "lightHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "loading": {
+     "type": "boolean",
+     "required": false
+    },
+    "loadingPosition": {
+     "type": "enum",
+     "values": [
+      "left",
+      "right"
+     ],
+     "required": false
+    },
+    "lts": {
+     "type": "string",
+     "required": false
+    },
+    "m": {
+     "type": "unknown",
+     "required": false
+    },
+    "mah": {
+     "type": "string",
+     "required": false
+    },
+    "maw": {
+     "type": "string",
+     "required": false
+    },
+    "max": {
+     "type": "number",
+     "required": false
+    },
+    "mb": {
+     "type": "unknown",
+     "required": false
+    },
+    "me": {
+     "type": "unknown",
+     "required": false
+    },
+    "mie": {
+     "type": "unknown",
+     "required": false
+    },
+    "mih": {
+     "type": "string",
+     "required": false
+    },
+    "min": {
+     "type": "number",
+     "required": false
+    },
+    "mis": {
+     "type": "unknown",
+     "required": false
+    },
+    "miw": {
+     "type": "string",
+     "required": false
+    },
+    "ml": {
+     "type": "unknown",
+     "required": false
+    },
+    "mod": {
+     "type": "string",
+     "required": false
+    },
+    "mr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ms": {
+     "type": "unknown",
+     "required": false
+    },
+    "mt": {
+     "type": "unknown",
+     "required": false
+    },
+    "mx": {
+     "type": "unknown",
+     "required": false
+    },
+    "my": {
+     "type": "unknown",
+     "required": false
+    },
+    "opacity": {
+     "type": "unknown",
+     "required": false
+    },
+    "p": {
+     "type": "unknown",
+     "required": false
+    },
+    "pb": {
+     "type": "unknown",
+     "required": false
+    },
+    "pe": {
+     "type": "unknown",
+     "required": false
+    },
+    "pie": {
+     "type": "unknown",
+     "required": false
+    },
+    "pis": {
+     "type": "unknown",
+     "required": false
+    },
+    "pl": {
+     "type": "unknown",
+     "required": false
+    },
+    "pos": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-webkit-sticky",
+      "absolute",
+      "fixed",
+      "inherit",
+      "initial",
+      "relative",
+      "revert",
+      "revert-layer",
+      "static",
+      "sticky",
+      "unset"
+     ],
+     "required": false
+    },
+    "pr": {
+     "type": "unknown",
+     "required": false
+    },
+    "prefix": {
+     "type": "string",
+     "required": false
+    },
+    "ps": {
+     "type": "unknown",
+     "required": false
+    },
+    "pt": {
+     "type": "unknown",
+     "required": false
+    },
+    "px": {
+     "type": "unknown",
+     "required": false
+    },
+    "py": {
+     "type": "unknown",
+     "required": false
+    },
+    "radius": {
+     "type": "unknown",
+     "required": false
+    },
+    "required": {
+     "type": "boolean",
+     "required": false
+    },
+    "right": {
+     "type": "string",
+     "required": false
+    },
+    "rightSection": {
+     "type": "string",
+     "required": false
+    },
+    "rightSectionPointerEvents": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "all",
+      "auto",
+      "fill",
+      "inherit",
+      "initial",
+      "none",
+      "painted",
+      "revert",
+      "revert-layer",
+      "stroke",
+      "unset",
+      "visible",
+      "visibleFill",
+      "visiblePainted",
+      "visibleStroke"
+     ],
+     "required": false
+    },
+    "rightSectionProps": {
+     "type": "unknown",
+     "required": false
+    },
+    "rightSectionWidth": {
+     "type": "string",
+     "required": false
+    },
+    "selectAllOnFocus": {
+     "type": "boolean",
+     "required": false
+    },
+    "size": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "startValue": {
+     "type": "number",
+     "required": false
+    },
+    "step": {
+     "type": "number",
+     "required": false
+    },
+    "stepHoldDelay": {
+     "type": "number",
+     "required": false
+    },
+    "success": {
+     "type": "string",
+     "required": false
+    },
+    "successProps": {
+     "type": "unknown",
+     "required": false
+    },
+    "suffix": {
+     "type": "string",
+     "required": false
+    },
+    "ta": {
+     "type": "enum",
+     "values": [
+      "-khtml-center",
+      "-khtml-left",
+      "-khtml-right",
+      "-moz-center",
+      "-moz-initial",
+      "-moz-left",
+      "-moz-right",
+      "-webkit-center",
+      "-webkit-left",
+      "-webkit-match-parent",
+      "-webkit-right",
+      "center",
+      "end",
+      "inherit",
+      "initial",
+      "justify",
+      "left",
+      "match-parent",
+      "revert",
+      "revert-layer",
+      "right",
+      "start",
+      "unset"
+     ],
+     "required": false
+    },
+    "td": {
+     "type": "string",
+     "required": false
+    },
+    "thousandSeparator": {
+     "type": "string",
+     "required": false
+    },
+    "thousandsGroupStyle": {
+     "type": "enum",
+     "values": [
+      "lakh",
+      "none",
+      "thousand",
+      "wan"
+     ],
+     "required": false
+    },
+    "top": {
+     "type": "string",
+     "required": false
+    },
+    "trimLeadingZeroesOnBlur": {
+     "type": "boolean",
+     "required": false
+    },
+    "tt": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "capitalize",
+      "full-size-kana",
+      "full-width",
+      "inherit",
+      "initial",
+      "lowercase",
+      "math-auto",
+      "none",
+      "revert",
+      "revert-layer",
+      "unset",
+      "uppercase"
+     ],
+     "required": false
+    },
+    "type": {
+     "type": "enum",
+     "values": [
+      "password",
+      "tel",
+      "text"
+     ],
+     "required": false
+    },
+    "unstyled": {
+     "type": "boolean",
+     "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": false
+    },
+    "valueIsNumericString": {
+     "type": "boolean",
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "default",
+      "filled",
+      "unstyled"
+     ],
+     "required": false
+    },
+    "visibleFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "w": {
+     "type": "string",
+     "required": false
+    },
+    "withAsterisk": {
+     "type": "boolean",
+     "required": false
+    },
+    "withErrorStyles": {
+     "type": "boolean",
+     "required": false
+    },
+    "withKeyboardEvents": {
+     "type": "boolean",
+     "required": false
+    },
+    "withSuccessStyles": {
+     "type": "boolean",
+     "required": false
+    },
+    "wrapperProps": {
+     "type": "unknown",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Stack": {
+   "props": {
+    "__size": {
+     "type": "string",
+     "required": false
+    },
+    "align": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "anchor-center",
+      "baseline",
+      "center",
+      "end",
+      "flex-end",
+      "flex-start",
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "revert-layer",
+      "self-end",
+      "self-start",
+      "start",
+      "stretch",
+      "unset"
+     ],
+     "required": false
+    },
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "attributes": {
+     "type": "unknown",
+     "required": false
+    },
+    "bd": {
+     "type": "string",
+     "required": false
+    },
+    "bdrs": {
+     "type": "unknown",
+     "required": false
+    },
+    "bg": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "bga": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "fixed",
+      "inherit",
+      "initial",
+      "local",
+      "revert",
+      "revert-layer",
+      "scroll",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgp": {
+     "type": "string",
+     "required": false
+    },
+    "bgr": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "no-repeat",
+      "repeat",
+      "repeat-x",
+      "repeat-y",
+      "revert",
+      "revert-layer",
+      "round",
+      "space",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgsz": {
+     "type": "string",
+     "required": false
+    },
+    "bottom": {
+     "type": "string",
+     "required": false
+    },
+    "c": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "component": {
+     "type": "unknown",
+     "required": false
+    },
+    "darkHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "display": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-ms-flexbox",
+      "-ms-grid",
+      "-ms-inline-flexbox",
+      "-ms-inline-grid",
+      "-webkit-flex",
+      "-webkit-inline-flex",
+      "block",
+      "contents",
+      "flex",
+      "flow",
+      "flow-root",
+      "grid",
+      "inherit",
+      "initial",
+      "inline",
+      "inline-block",
+      "inline-flex",
+      "inline-grid",
+      "inline-list-item",
+      "inline-table",
+      "list-item",
+      "none",
+      "revert",
+      "revert-layer",
+      "ruby",
+      "ruby-base",
+      "ruby-base-container",
+      "ruby-text",
+      "ruby-text-container",
+      "run-in",
+      "table",
+      "table-caption",
+      "table-cell",
+      "table-column",
+      "table-column-group",
+      "table-footer-group",
+      "table-header-group",
+      "table-row",
+      "table-row-group",
+      "unset"
+     ],
+     "required": false
+    },
+    "ff": {
+     "type": "enum",
+     "values": [
+      "heading",
+      "monospace",
+      "text"
+     ],
+     "required": false
+    },
+    "flex": {
+     "type": "string",
+     "required": false
+    },
+    "fs": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "italic",
+      "normal",
+      "oblique",
+      "revert",
+      "revert-layer",
+      "unset"
+     ],
+     "required": false
+    },
+    "fw": {
+     "type": "unknown",
+     "required": false
+    },
+    "fz": {
+     "type": "unknown",
+     "required": false
+    },
+    "gap": {
+     "type": "unknown",
+     "required": false
+    },
+    "h": {
+     "type": "string",
+     "required": false
+    },
+    "hiddenFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "inset": {
+     "type": "string",
+     "required": false
+    },
+    "justify": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "center",
+      "end",
+      "flex-end",
+      "flex-start",
+      "inherit",
+      "initial",
+      "left",
+      "normal",
+      "revert",
+      "revert-layer",
+      "right",
+      "space-around",
+      "space-between",
+      "space-evenly",
+      "start",
+      "stretch",
+      "unset"
+     ],
+     "required": false
+    },
+    "left": {
+     "type": "string",
+     "required": false
+    },
+    "lh": {
+     "type": "unknown",
+     "required": false
+    },
+    "lightHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "lts": {
+     "type": "string",
+     "required": false
+    },
+    "m": {
+     "type": "unknown",
+     "required": false
+    },
+    "mah": {
+     "type": "string",
+     "required": false
+    },
+    "maw": {
+     "type": "string",
+     "required": false
+    },
+    "mb": {
+     "type": "unknown",
+     "required": false
+    },
+    "me": {
+     "type": "unknown",
+     "required": false
+    },
+    "mie": {
+     "type": "unknown",
+     "required": false
+    },
+    "mih": {
+     "type": "string",
+     "required": false
+    },
+    "mis": {
+     "type": "unknown",
+     "required": false
+    },
+    "miw": {
+     "type": "string",
+     "required": false
+    },
+    "ml": {
+     "type": "unknown",
+     "required": false
+    },
+    "mod": {
+     "type": "string",
+     "required": false
+    },
+    "mr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ms": {
+     "type": "unknown",
+     "required": false
+    },
+    "mt": {
+     "type": "unknown",
+     "required": false
+    },
+    "mx": {
+     "type": "unknown",
+     "required": false
+    },
+    "my": {
+     "type": "unknown",
+     "required": false
+    },
+    "opacity": {
+     "type": "unknown",
+     "required": false
+    },
+    "p": {
+     "type": "unknown",
+     "required": false
+    },
+    "pb": {
+     "type": "unknown",
+     "required": false
+    },
+    "pe": {
+     "type": "unknown",
+     "required": false
+    },
+    "pie": {
+     "type": "unknown",
+     "required": false
+    },
+    "pis": {
+     "type": "unknown",
+     "required": false
+    },
+    "pl": {
+     "type": "unknown",
+     "required": false
+    },
+    "pos": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-webkit-sticky",
+      "absolute",
+      "fixed",
+      "inherit",
+      "initial",
+      "relative",
+      "revert",
+      "revert-layer",
+      "static",
+      "sticky",
+      "unset"
+     ],
+     "required": false
+    },
+    "pr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ps": {
+     "type": "unknown",
+     "required": false
+    },
+    "pt": {
+     "type": "unknown",
+     "required": false
+    },
+    "px": {
+     "type": "unknown",
+     "required": false
+    },
+    "py": {
+     "type": "unknown",
+     "required": false
+    },
+    "right": {
+     "type": "string",
+     "required": false
+    },
+    "ta": {
+     "type": "enum",
+     "values": [
+      "-khtml-center",
+      "-khtml-left",
+      "-khtml-right",
+      "-moz-center",
+      "-moz-initial",
+      "-moz-left",
+      "-moz-right",
+      "-webkit-center",
+      "-webkit-left",
+      "-webkit-match-parent",
+      "-webkit-right",
+      "center",
+      "end",
+      "inherit",
+      "initial",
+      "justify",
+      "left",
+      "match-parent",
+      "revert",
+      "revert-layer",
+      "right",
+      "start",
+      "unset"
+     ],
+     "required": false
+    },
+    "td": {
+     "type": "string",
+     "required": false
+    },
+    "top": {
+     "type": "string",
+     "required": false
+    },
+    "tt": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "capitalize",
+      "full-size-kana",
+      "full-width",
+      "inherit",
+      "initial",
+      "lowercase",
+      "math-auto",
+      "none",
+      "revert",
+      "revert-layer",
+      "unset",
+      "uppercase"
+     ],
+     "required": false
+    },
+    "unstyled": {
+     "type": "boolean",
+     "required": false
+    },
+    "variant": {
+     "type": "string",
+     "required": false
+    },
+    "visibleFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "w": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Text": {
+   "props": {
+    "__size": {
+     "type": "string",
+     "required": false
+    },
+    "__staticSelector": {
+     "type": "string",
+     "required": false
+    },
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "attributes": {
+     "type": "unknown",
+     "required": false
+    },
+    "bd": {
+     "type": "string",
+     "required": false
+    },
+    "bdrs": {
+     "type": "unknown",
+     "required": false
+    },
+    "bg": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "bga": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "fixed",
+      "inherit",
+      "initial",
+      "local",
+      "revert",
+      "revert-layer",
+      "scroll",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgp": {
+     "type": "string",
+     "required": false
+    },
+    "bgr": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "no-repeat",
+      "repeat",
+      "repeat-x",
+      "repeat-y",
+      "revert",
+      "revert-layer",
+      "round",
+      "space",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgsz": {
+     "type": "string",
+     "required": false
+    },
+    "bottom": {
+     "type": "string",
+     "required": false
+    },
+    "c": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "component": {
+     "type": "enum",
+     "values": [
+      "p"
+     ],
+     "required": false
+    },
+    "darkHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "display": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-ms-flexbox",
+      "-ms-grid",
+      "-ms-inline-flexbox",
+      "-ms-inline-grid",
+      "-webkit-flex",
+      "-webkit-inline-flex",
+      "block",
+      "contents",
+      "flex",
+      "flow",
+      "flow-root",
+      "grid",
+      "inherit",
+      "initial",
+      "inline",
+      "inline-block",
+      "inline-flex",
+      "inline-grid",
+      "inline-list-item",
+      "inline-table",
+      "list-item",
+      "none",
+      "revert",
+      "revert-layer",
+      "ruby",
+      "ruby-base",
+      "ruby-base-container",
+      "ruby-text",
+      "ruby-text-container",
+      "run-in",
+      "table",
+      "table-caption",
+      "table-cell",
+      "table-column",
+      "table-column-group",
+      "table-footer-group",
+      "table-header-group",
+      "table-row",
+      "table-row-group",
+      "unset"
+     ],
+     "required": false
+    },
+    "ff": {
+     "type": "enum",
+     "values": [
+      "heading",
+      "monospace",
+      "text"
+     ],
+     "required": false
+    },
+    "flex": {
+     "type": "string",
+     "required": false
+    },
+    "fs": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "italic",
+      "normal",
+      "oblique",
+      "revert",
+      "revert-layer",
+      "unset"
+     ],
+     "required": false
+    },
+    "fw": {
+     "type": "unknown",
+     "required": false
+    },
+    "fz": {
+     "type": "unknown",
+     "required": false
+    },
+    "gradient": {
+     "type": "unknown",
+     "required": false
+    },
+    "h": {
+     "type": "string",
+     "required": false
+    },
+    "hiddenFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "inherit": {
+     "type": "boolean",
+     "required": false
+    },
+    "inline": {
+     "type": "boolean",
+     "required": false
+    },
+    "inset": {
+     "type": "string",
+     "required": false
+    },
+    "left": {
+     "type": "string",
+     "required": false
+    },
+    "lh": {
+     "type": "unknown",
+     "required": false
+    },
+    "lightHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "lineClamp": {
+     "type": "number",
+     "required": false
+    },
+    "lts": {
+     "type": "string",
+     "required": false
+    },
+    "m": {
+     "type": "unknown",
+     "required": false
+    },
+    "mah": {
+     "type": "string",
+     "required": false
+    },
+    "maw": {
+     "type": "string",
+     "required": false
+    },
+    "mb": {
+     "type": "unknown",
+     "required": false
+    },
+    "me": {
+     "type": "unknown",
+     "required": false
+    },
+    "mie": {
+     "type": "unknown",
+     "required": false
+    },
+    "mih": {
+     "type": "string",
+     "required": false
+    },
+    "mis": {
+     "type": "unknown",
+     "required": false
+    },
+    "miw": {
+     "type": "string",
+     "required": false
+    },
+    "ml": {
+     "type": "unknown",
+     "required": false
+    },
+    "mod": {
+     "type": "string",
+     "required": false
+    },
+    "mr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ms": {
+     "type": "unknown",
+     "required": false
+    },
+    "mt": {
+     "type": "unknown",
+     "required": false
+    },
+    "mx": {
+     "type": "unknown",
+     "required": false
+    },
+    "my": {
+     "type": "unknown",
+     "required": false
+    },
+    "opacity": {
+     "type": "unknown",
+     "required": false
+    },
+    "p": {
+     "type": "unknown",
+     "required": false
+    },
+    "pb": {
+     "type": "unknown",
+     "required": false
+    },
+    "pe": {
+     "type": "unknown",
+     "required": false
+    },
+    "pie": {
+     "type": "unknown",
+     "required": false
+    },
+    "pis": {
+     "type": "unknown",
+     "required": false
+    },
+    "pl": {
+     "type": "unknown",
+     "required": false
+    },
+    "pos": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-webkit-sticky",
+      "absolute",
+      "fixed",
+      "inherit",
+      "initial",
+      "relative",
+      "revert",
+      "revert-layer",
+      "static",
+      "sticky",
+      "unset"
+     ],
+     "required": false
+    },
+    "pr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ps": {
+     "type": "unknown",
+     "required": false
+    },
+    "pt": {
+     "type": "unknown",
+     "required": false
+    },
+    "px": {
+     "type": "unknown",
+     "required": false
+    },
+    "py": {
+     "type": "unknown",
+     "required": false
+    },
+    "right": {
+     "type": "string",
+     "required": false
+    },
+    "size": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "span": {
+     "type": "boolean",
+     "required": false
+    },
+    "ta": {
+     "type": "enum",
+     "values": [
+      "-khtml-center",
+      "-khtml-left",
+      "-khtml-right",
+      "-moz-center",
+      "-moz-initial",
+      "-moz-left",
+      "-moz-right",
+      "-webkit-center",
+      "-webkit-left",
+      "-webkit-match-parent",
+      "-webkit-right",
+      "center",
+      "end",
+      "inherit",
+      "initial",
+      "justify",
+      "left",
+      "match-parent",
+      "revert",
+      "revert-layer",
+      "right",
+      "start",
+      "unset"
+     ],
+     "required": false
+    },
+    "td": {
+     "type": "string",
+     "required": false
+    },
+    "textWrap": {
+     "type": "enum",
+     "values": [
+      "balance",
+      "nowrap",
+      "pretty",
+      "stable",
+      "wrap"
+     ],
+     "required": false
+    },
+    "top": {
+     "type": "string",
+     "required": false
+    },
+    "truncate": {
+     "type": "unknown",
+     "required": false
+    },
+    "tt": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "capitalize",
+      "full-size-kana",
+      "full-width",
+      "inherit",
+      "initial",
+      "lowercase",
+      "math-auto",
+      "none",
+      "revert",
+      "revert-layer",
+      "unset",
+      "uppercase"
+     ],
+     "required": false
+    },
+    "unstyled": {
+     "type": "boolean",
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "gradient",
+      "text"
+     ],
+     "required": false
+    },
+    "visibleFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "w": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "TextInput": {
+   "props": {
+    "__bottomSection": {
+     "type": "string",
+     "required": false
+    },
+    "__bottomSectionProps": {
+     "type": "unknown",
+     "required": false
+    },
+    "__clearSection": {
+     "type": "string",
+     "required": false
+    },
+    "__clearSectionMode": {
+     "type": "enum",
+     "values": [
+      "both",
+      "clear",
+      "rightSection"
+     ],
+     "required": false
+    },
+    "__clearable": {
+     "type": "boolean",
+     "required": false
+    },
+    "__defaultRightSection": {
+     "type": "string",
+     "required": false
+    },
+    "__size": {
+     "type": "string",
+     "required": false
+    },
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "attributes": {
+     "type": "unknown",
+     "required": false
+    },
+    "bd": {
+     "type": "string",
+     "required": false
+    },
+    "bdrs": {
+     "type": "unknown",
+     "required": false
+    },
+    "bg": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "bga": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "fixed",
+      "inherit",
+      "initial",
+      "local",
+      "revert",
+      "revert-layer",
+      "scroll",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgp": {
+     "type": "string",
+     "required": false
+    },
+    "bgr": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "no-repeat",
+      "repeat",
+      "repeat-x",
+      "repeat-y",
+      "revert",
+      "revert-layer",
+      "round",
+      "space",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgsz": {
+     "type": "string",
+     "required": false
+    },
+    "bottom": {
+     "type": "string",
+     "required": false
+    },
+    "c": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "component": {
+     "type": "unknown",
+     "required": false
+    },
+    "darkHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "description": {
+     "type": "string",
+     "required": false
+    },
+    "descriptionProps": {
+     "type": "unknown",
+     "required": false
+    },
+    "disabled": {
+     "type": "boolean",
+     "required": false
+    },
+    "display": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-ms-flexbox",
+      "-ms-grid",
+      "-ms-inline-flexbox",
+      "-ms-inline-grid",
+      "-webkit-flex",
+      "-webkit-inline-flex",
+      "block",
+      "contents",
+      "flex",
+      "flow",
+      "flow-root",
+      "grid",
+      "inherit",
+      "initial",
+      "inline",
+      "inline-block",
+      "inline-flex",
+      "inline-grid",
+      "inline-list-item",
+      "inline-table",
+      "list-item",
+      "none",
+      "revert",
+      "revert-layer",
+      "ruby",
+      "ruby-base",
+      "ruby-base-container",
+      "ruby-text",
+      "ruby-text-container",
+      "run-in",
+      "table",
+      "table-caption",
+      "table-cell",
+      "table-column",
+      "table-column-group",
+      "table-footer-group",
+      "table-header-group",
+      "table-row",
+      "table-row-group",
+      "unset"
+     ],
+     "required": false
+    },
+    "error": {
+     "type": "string",
+     "required": false
+    },
+    "errorProps": {
+     "type": "unknown",
+     "required": false
+    },
+    "ff": {
+     "type": "enum",
+     "values": [
+      "heading",
+      "monospace",
+      "text"
+     ],
+     "required": false
+    },
+    "flex": {
+     "type": "string",
+     "required": false
+    },
+    "fs": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "italic",
+      "normal",
+      "oblique",
+      "revert",
+      "revert-layer",
+      "unset"
+     ],
+     "required": false
+    },
+    "fw": {
+     "type": "unknown",
+     "required": false
+    },
+    "fz": {
+     "type": "unknown",
+     "required": false
+    },
+    "h": {
+     "type": "string",
+     "required": false
+    },
+    "hiddenFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "inputSize": {
+     "type": "string",
+     "required": false
+    },
+    "inputWrapperOrder": {
+     "type": "unknown",
+     "required": false
+    },
+    "inset": {
+     "type": "string",
+     "required": false
+    },
+    "label": {
+     "type": "string",
+     "required": false
+    },
+    "labelProps": {
+     "type": "unknown",
+     "required": false
+    },
+    "left": {
+     "type": "string",
+     "required": false
+    },
+    "leftSection": {
+     "type": "string",
+     "required": false
+    },
+    "leftSectionPointerEvents": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "all",
+      "auto",
+      "fill",
+      "inherit",
+      "initial",
+      "none",
+      "painted",
+      "revert",
+      "revert-layer",
+      "stroke",
+      "unset",
+      "visible",
+      "visibleFill",
+      "visiblePainted",
+      "visibleStroke"
+     ],
+     "required": false
+    },
+    "leftSectionProps": {
+     "type": "unknown",
+     "required": false
+    },
+    "leftSectionWidth": {
+     "type": "string",
+     "required": false
+    },
+    "lh": {
+     "type": "unknown",
+     "required": false
+    },
+    "lightHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "loading": {
+     "type": "boolean",
+     "required": false
+    },
+    "loadingPosition": {
+     "type": "enum",
+     "values": [
+      "left",
+      "right"
+     ],
+     "required": false
+    },
+    "lts": {
+     "type": "string",
+     "required": false
+    },
+    "m": {
+     "type": "unknown",
+     "required": false
+    },
+    "mah": {
+     "type": "string",
+     "required": false
+    },
+    "maw": {
+     "type": "string",
+     "required": false
+    },
+    "mb": {
+     "type": "unknown",
+     "required": false
+    },
+    "me": {
+     "type": "unknown",
+     "required": false
+    },
+    "mie": {
+     "type": "unknown",
+     "required": false
+    },
+    "mih": {
+     "type": "string",
+     "required": false
+    },
+    "mis": {
+     "type": "unknown",
+     "required": false
+    },
+    "miw": {
+     "type": "string",
+     "required": false
+    },
+    "ml": {
+     "type": "unknown",
+     "required": false
+    },
+    "mod": {
+     "type": "string",
+     "required": false
+    },
+    "mr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ms": {
+     "type": "unknown",
+     "required": false
+    },
+    "mt": {
+     "type": "unknown",
+     "required": false
+    },
+    "mx": {
+     "type": "unknown",
+     "required": false
+    },
+    "my": {
+     "type": "unknown",
+     "required": false
+    },
+    "opacity": {
+     "type": "unknown",
+     "required": false
+    },
+    "p": {
+     "type": "unknown",
+     "required": false
+    },
+    "pb": {
+     "type": "unknown",
+     "required": false
+    },
+    "pe": {
+     "type": "unknown",
+     "required": false
+    },
+    "pie": {
+     "type": "unknown",
+     "required": false
+    },
+    "pis": {
+     "type": "unknown",
+     "required": false
+    },
+    "pl": {
+     "type": "unknown",
+     "required": false
+    },
+    "pointer": {
+     "type": "boolean",
+     "required": false
+    },
+    "pos": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-webkit-sticky",
+      "absolute",
+      "fixed",
+      "inherit",
+      "initial",
+      "relative",
+      "revert",
+      "revert-layer",
+      "static",
+      "sticky",
+      "unset"
+     ],
+     "required": false
+    },
+    "pr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ps": {
+     "type": "unknown",
+     "required": false
+    },
+    "pt": {
+     "type": "unknown",
+     "required": false
+    },
+    "px": {
+     "type": "unknown",
+     "required": false
+    },
+    "py": {
+     "type": "unknown",
+     "required": false
+    },
+    "radius": {
+     "type": "unknown",
+     "required": false
+    },
+    "required": {
+     "type": "boolean",
+     "required": false
+    },
+    "right": {
+     "type": "string",
+     "required": false
+    },
+    "rightSection": {
+     "type": "string",
+     "required": false
+    },
+    "rightSectionPointerEvents": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "all",
+      "auto",
+      "fill",
+      "inherit",
+      "initial",
+      "none",
+      "painted",
+      "revert",
+      "revert-layer",
+      "stroke",
+      "unset",
+      "visible",
+      "visibleFill",
+      "visiblePainted",
+      "visibleStroke"
+     ],
+     "required": false
+    },
+    "rightSectionProps": {
+     "type": "unknown",
+     "required": false
+    },
+    "rightSectionWidth": {
+     "type": "string",
+     "required": false
+    },
+    "size": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "success": {
+     "type": "string",
+     "required": false
+    },
+    "successProps": {
+     "type": "unknown",
+     "required": false
+    },
+    "ta": {
+     "type": "enum",
+     "values": [
+      "-khtml-center",
+      "-khtml-left",
+      "-khtml-right",
+      "-moz-center",
+      "-moz-initial",
+      "-moz-left",
+      "-moz-right",
+      "-webkit-center",
+      "-webkit-left",
+      "-webkit-match-parent",
+      "-webkit-right",
+      "center",
+      "end",
+      "inherit",
+      "initial",
+      "justify",
+      "left",
+      "match-parent",
+      "revert",
+      "revert-layer",
+      "right",
+      "start",
+      "unset"
+     ],
+     "required": false
+    },
+    "td": {
+     "type": "string",
+     "required": false
+    },
+    "top": {
+     "type": "string",
+     "required": false
+    },
+    "tt": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "capitalize",
+      "full-size-kana",
+      "full-width",
+      "inherit",
+      "initial",
+      "lowercase",
+      "math-auto",
+      "none",
+      "revert",
+      "revert-layer",
+      "unset",
+      "uppercase"
+     ],
+     "required": false
+    },
+    "unstyled": {
+     "type": "boolean",
+     "required": false
+    },
+    "variant": {
+     "type": "enum",
+     "values": [
+      "default",
+      "filled",
+      "unstyled"
+     ],
+     "required": false
+    },
+    "visibleFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "w": {
+     "type": "string",
+     "required": false
+    },
+    "withAsterisk": {
+     "type": "boolean",
+     "required": false
+    },
+    "withErrorStyles": {
+     "type": "boolean",
+     "required": false
+    },
+    "withSuccessStyles": {
+     "type": "boolean",
+     "required": false
+    },
+    "wrapperProps": {
+     "type": "unknown",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
+  "Title": {
+   "props": {
+    "__size": {
+     "type": "string",
+     "required": false
+    },
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "attributes": {
+     "type": "unknown",
+     "required": false
+    },
+    "bd": {
+     "type": "string",
+     "required": false
+    },
+    "bdrs": {
+     "type": "unknown",
+     "required": false
+    },
+    "bg": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "bga": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "fixed",
+      "inherit",
+      "initial",
+      "local",
+      "revert",
+      "revert-layer",
+      "scroll",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgp": {
+     "type": "string",
+     "required": false
+    },
+    "bgr": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "no-repeat",
+      "repeat",
+      "repeat-x",
+      "repeat-y",
+      "revert",
+      "revert-layer",
+      "round",
+      "space",
+      "unset"
+     ],
+     "required": false
+    },
+    "bgsz": {
+     "type": "string",
+     "required": false
+    },
+    "bottom": {
+     "type": "string",
+     "required": false
+    },
+    "c": {
+     "type": "enum",
+     "values": [
+      "blue",
+      "cyan",
+      "dark",
+      "grape",
+      "gray",
+      "green",
+      "indigo",
+      "lime",
+      "orange",
+      "pink",
+      "red",
+      "teal",
+      "violet",
+      "yellow"
+     ],
+     "required": false
+    },
+    "component": {
+     "type": "unknown",
+     "required": false
+    },
+    "darkHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "display": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-ms-flexbox",
+      "-ms-grid",
+      "-ms-inline-flexbox",
+      "-ms-inline-grid",
+      "-webkit-flex",
+      "-webkit-inline-flex",
+      "block",
+      "contents",
+      "flex",
+      "flow",
+      "flow-root",
+      "grid",
+      "inherit",
+      "initial",
+      "inline",
+      "inline-block",
+      "inline-flex",
+      "inline-grid",
+      "inline-list-item",
+      "inline-table",
+      "list-item",
+      "none",
+      "revert",
+      "revert-layer",
+      "ruby",
+      "ruby-base",
+      "ruby-base-container",
+      "ruby-text",
+      "ruby-text-container",
+      "run-in",
+      "table",
+      "table-caption",
+      "table-cell",
+      "table-column",
+      "table-column-group",
+      "table-footer-group",
+      "table-header-group",
+      "table-row",
+      "table-row-group",
+      "unset"
+     ],
+     "required": false
+    },
+    "ff": {
+     "type": "enum",
+     "values": [
+      "heading",
+      "monospace",
+      "text"
+     ],
+     "required": false
+    },
+    "flex": {
+     "type": "string",
+     "required": false
+    },
+    "fs": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "inherit",
+      "initial",
+      "italic",
+      "normal",
+      "oblique",
+      "revert",
+      "revert-layer",
+      "unset"
+     ],
+     "required": false
+    },
+    "fw": {
+     "type": "unknown",
+     "required": false
+    },
+    "fz": {
+     "type": "unknown",
+     "required": false
+    },
+    "h": {
+     "type": "string",
+     "required": false
+    },
+    "hiddenFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "inset": {
+     "type": "string",
+     "required": false
+    },
+    "left": {
+     "type": "string",
+     "required": false
+    },
+    "lh": {
+     "type": "unknown",
+     "required": false
+    },
+    "lightHidden": {
+     "type": "boolean",
+     "required": false
+    },
+    "lineClamp": {
+     "type": "number",
+     "required": false
+    },
+    "lts": {
+     "type": "string",
+     "required": false
+    },
+    "m": {
+     "type": "unknown",
+     "required": false
+    },
+    "mah": {
+     "type": "string",
+     "required": false
+    },
+    "maw": {
+     "type": "string",
+     "required": false
+    },
+    "mb": {
+     "type": "unknown",
+     "required": false
+    },
+    "me": {
+     "type": "unknown",
+     "required": false
+    },
+    "mie": {
+     "type": "unknown",
+     "required": false
+    },
+    "mih": {
+     "type": "string",
+     "required": false
+    },
+    "mis": {
+     "type": "unknown",
+     "required": false
+    },
+    "miw": {
+     "type": "string",
+     "required": false
+    },
+    "ml": {
+     "type": "unknown",
+     "required": false
+    },
+    "mod": {
+     "type": "string",
+     "required": false
+    },
+    "mr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ms": {
+     "type": "unknown",
+     "required": false
+    },
+    "mt": {
+     "type": "unknown",
+     "required": false
+    },
+    "mx": {
+     "type": "unknown",
+     "required": false
+    },
+    "my": {
+     "type": "unknown",
+     "required": false
+    },
+    "opacity": {
+     "type": "unknown",
+     "required": false
+    },
+    "order": {
+     "type": "number",
+     "required": false
+    },
+    "p": {
+     "type": "unknown",
+     "required": false
+    },
+    "pb": {
+     "type": "unknown",
+     "required": false
+    },
+    "pe": {
+     "type": "unknown",
+     "required": false
+    },
+    "pie": {
+     "type": "unknown",
+     "required": false
+    },
+    "pis": {
+     "type": "unknown",
+     "required": false
+    },
+    "pl": {
+     "type": "unknown",
+     "required": false
+    },
+    "pos": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "-webkit-sticky",
+      "absolute",
+      "fixed",
+      "inherit",
+      "initial",
+      "relative",
+      "revert",
+      "revert-layer",
+      "static",
+      "sticky",
+      "unset"
+     ],
+     "required": false
+    },
+    "pr": {
+     "type": "unknown",
+     "required": false
+    },
+    "ps": {
+     "type": "unknown",
+     "required": false
+    },
+    "pt": {
+     "type": "unknown",
+     "required": false
+    },
+    "px": {
+     "type": "unknown",
+     "required": false
+    },
+    "py": {
+     "type": "unknown",
+     "required": false
+    },
+    "right": {
+     "type": "string",
+     "required": false
+    },
+    "size": {
+     "type": "string",
+     "required": false
+    },
+    "ta": {
+     "type": "enum",
+     "values": [
+      "-khtml-center",
+      "-khtml-left",
+      "-khtml-right",
+      "-moz-center",
+      "-moz-initial",
+      "-moz-left",
+      "-moz-right",
+      "-webkit-center",
+      "-webkit-left",
+      "-webkit-match-parent",
+      "-webkit-right",
+      "center",
+      "end",
+      "inherit",
+      "initial",
+      "justify",
+      "left",
+      "match-parent",
+      "revert",
+      "revert-layer",
+      "right",
+      "start",
+      "unset"
+     ],
+     "required": false
+    },
+    "td": {
+     "type": "string",
+     "required": false
+    },
+    "textWrap": {
+     "type": "enum",
+     "values": [
+      "balance",
+      "nowrap",
+      "pretty",
+      "stable",
+      "wrap"
+     ],
+     "required": false
+    },
+    "top": {
+     "type": "string",
+     "required": false
+    },
+    "tt": {
+     "type": "enum",
+     "values": [
+      "-moz-initial",
+      "capitalize",
+      "full-size-kana",
+      "full-width",
+      "inherit",
+      "initial",
+      "lowercase",
+      "math-auto",
+      "none",
+      "revert",
+      "revert-layer",
+      "unset",
+      "uppercase"
+     ],
+     "required": false
+    },
+    "unstyled": {
+     "type": "boolean",
+     "required": false
+    },
+    "variant": {
+     "type": "string",
+     "required": false
+    },
+    "visibleFrom": {
+     "type": "enum",
+     "values": [
+      "lg",
+      "md",
+      "sm",
+      "xl",
+      "xs"
+     ],
+     "required": false
+    },
+    "w": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  }
+ }
+}

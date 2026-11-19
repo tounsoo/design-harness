@@ -1,0 +1,51 @@
+{
+  "root": "page",
+  "elements": {
+    "page": {
+      "type": "Page",
+      "props": {},
+      "children": [],
+      "slots": {
+        "title": [
+          "name"
+        ],
+        "facts": [
+          "summary",
+          "submitted-note",
+          "saved-note"
+        ],
+        "body": [
+          "amount",
+          "rules"
+        ],
+        "alternate": [
+          "save"
+        ],
+        "action": [
+          "submit"
+        ]
+      }
+    },
+    "name": {"type": "Title", "props": {"order": 1, "text": {"$state": "/expense/name"}}, "children": []},
+    "summary": {"type": "Text", "props": {"text": {"$template": "${/expense/category}, ${/expense/date}"}}, "children": []},
+    "submitted-note": {"type": "Text", "props": {"text": "Submitted for approval"}, "visible": {"$state": "/scenario/state", "eq": "submitted"}, "children": []},
+    "saved-note": {"type": "Text", "props": {"text": "Saved as a draft"}, "visible": {"$state": "/scenario/state", "eq": "saved"}, "children": []},
+    "amount": {"type": "Layout", "props": {"id": "amount-question", "label": "Amount in euros", "amount": {"$state": "/expense/amount"}}, "children": []},
+    "rules": {"type": "Layout", "props": {"id": "receipt-rules", "items": {"$state": "/rules"}}, "children": []},
+    "save": {"type": "Button", "props": {"variant": "outline", "color": "violet", "text": "Save draft"}, "children": []},
+    "submit": {"type": "Button", "props": {"variant": "filled", "color": "violet", "text": "Submit expense", "gradient": {"from": "violet", "to": "grape"}}, "children": []}
+  },
+  "state": {
+    "expense": {
+      "id": "lunch",
+      "name": "Team lunch",
+      "category": "Meals",
+      "date": "12 March",
+      "amount": "48.20"
+    },
+    "rules": [
+      "Attach a receipt for anything over 25 euros",
+      "Name everyone at the meal"
+    ]
+  }
+}
