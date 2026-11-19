@@ -2,6 +2,7 @@ import "fake-indexeddb/auto";
 import { describe, expect, it } from "vitest";
 import { nook } from "../../../../packages/core/examples/nook/project";
 import { seedLegal } from "../../test/nook";
+import { NO_PINS, addPin } from "../pins/model";
 import { Store } from "./db";
 
 let count = 0;
@@ -68,6 +69,21 @@ describe("the browser store", () => {
     const reopened = await Store.open(indexedDB, name);
     const loaded = await reopened.prototypes("nook");
     expect(loaded.items.map((item) => [item.id, item.variants ?? null])).toEqual([["booking", variants], ["draft", null]]);
+    reopened.close();
+  });
+
+  it("keeps a prototype's pinned notes beside it across a reopen, and reports ones it cannot read instead of dropping them silently", async () => {
+    const name = `test-${(count += 1)}`;
+    const store = await Store.open(indexedDB, name);
+    const added = addPin(NO_PINS, { scenario: "lantern-open", view: "desktop", revision: "rev-1", seen: "rev-1", point: { x: 270, y: 210 } }, "Make this bigger", "2026-11-19T10:00:00.000Z");
+    if (!added.ok) throw new Error(added.error);
+    await store.replaceProject(nook, [{ projectId: "nook", id: "booking", name: "Booking", prototype: seedLegal(), pins: added.value }]);
+    await store.putPrototype({ projectId: "nook", id: "draft", name: "Draft", prototype: seedLegal(), pins: { ...added.value, version: 9 } as never });
+    store.close();
+    const reopened = await Store.open(indexedDB, name);
+    const loaded = await reopened.prototypes("nook");
+    expect(loaded.items.map((item) => [item.id, item.pins ?? null])).toEqual([["booking", added.value], ["draft", null]]);
+    expect(loaded.problems).toEqual(['The pinned notes stored with prototype "draft" could not be read and were not loaded:\n$: expected pins as { "version": 1, "next", "pins" }']);
     reopened.close();
   });
 });

@@ -5,6 +5,9 @@
 [data-appearance="light"] {
   --todae-harness-canvas-bg: var(--todae-color-gray-100);
   --todae-harness-canvas-dot: var(--todae-color-gray-300);
+  --todae-harness-note-bg: var(--todae-color-violet-700);
+  --todae-harness-note-fg: var(--todae-color-gray-0);
+  --todae-harness-note-soft: var(--todae-color-violet-100);
   --todae-harness-shadow-floating: 0px 2px 4px 0px oklch(0.25 0.01 260 / 0.08), 0px 12px 32px -8px oklch(0.25 0.01 260 / 0.12);
   --todae-harness-shadow-raised: 0px 1px 2px 0px oklch(0.25 0.01 260 / 0.06), 0px 4px 12px -2px oklch(0.25 0.01 260 / 0.06);
   color-scheme: light;
@@ -14,6 +17,9 @@
   [data-appearance="system"] {
     --todae-harness-canvas-bg: var(--todae-color-gray-100);
     --todae-harness-canvas-dot: var(--todae-color-gray-300);
+    --todae-harness-note-bg: var(--todae-color-violet-700);
+    --todae-harness-note-fg: var(--todae-color-gray-0);
+    --todae-harness-note-soft: var(--todae-color-violet-100);
     --todae-harness-shadow-floating: 0px 2px 4px 0px oklch(0.25 0.01 260 / 0.08), 0px 12px 32px -8px oklch(0.25 0.01 260 / 0.12);
     --todae-harness-shadow-raised: 0px 1px 2px 0px oklch(0.25 0.01 260 / 0.06), 0px 4px 12px -2px oklch(0.25 0.01 260 / 0.06);
     color-scheme: light;
@@ -23,6 +29,9 @@
 [data-appearance="dark"] {
   --todae-harness-canvas-bg: var(--todae-color-gray-950);
   --todae-harness-canvas-dot: var(--todae-color-gray-800);
+  --todae-harness-note-bg: var(--todae-color-violet-300);
+  --todae-harness-note-fg: var(--todae-color-violet-900);
+  --todae-harness-note-soft: var(--todae-color-violet-900);
   --todae-harness-shadow-floating: 0px 2px 4px 0px oklch(0.05 0 0 / 0.4), 0px 12px 32px -8px oklch(0.05 0 0 / 0.5);
   --todae-harness-shadow-raised: 0px 1px 2px 0px oklch(0.05 0 0 / 0.4), 0px 4px 12px -2px oklch(0.05 0 0 / 0.4);
   color-scheme: dark;
@@ -32,6 +41,9 @@
   [data-appearance="system"] {
     --todae-harness-canvas-bg: var(--todae-color-gray-950);
     --todae-harness-canvas-dot: var(--todae-color-gray-800);
+    --todae-harness-note-bg: var(--todae-color-violet-300);
+    --todae-harness-note-fg: var(--todae-color-violet-900);
+    --todae-harness-note-soft: var(--todae-color-violet-900);
     --todae-harness-shadow-floating: 0px 2px 4px 0px oklch(0.05 0 0 / 0.4), 0px 12px 32px -8px oklch(0.05 0 0 / 0.5);
     --todae-harness-shadow-raised: 0px 1px 2px 0px oklch(0.05 0 0 / 0.4), 0px 4px 12px -2px oklch(0.05 0 0 / 0.4);
     color-scheme: dark;
@@ -82,6 +94,16 @@
   --todae-harness-panel-bg: var(--_todae-harness-panel-bg, var(--todae-color-bg-surface));
   --todae-harness-panel-header-height: var(--_todae-harness-panel-header-height, 3rem);
   --todae-harness-panel-padding: var(--_todae-harness-panel-padding, var(--todae-space-4));
+  --todae-harness-pin-card: var(--_todae-harness-pin-card, 20rem);
+  --todae-harness-pin-on-dark-bg: var(--_todae-harness-pin-on-dark-bg, var(--todae-color-violet-300));
+  --todae-harness-pin-on-dark-fg: var(--_todae-harness-pin-on-dark-fg, var(--todae-color-violet-900));
+  --todae-harness-pin-on-dark-ring: var(--_todae-harness-pin-on-dark-ring, var(--todae-color-gray-950));
+  --todae-harness-pin-on-light-bg: var(--_todae-harness-pin-on-light-bg, var(--todae-color-violet-700));
+  --todae-harness-pin-on-light-fg: var(--_todae-harness-pin-on-light-fg, var(--todae-color-gray-0));
+  --todae-harness-pin-on-light-ring: var(--_todae-harness-pin-on-light-ring, var(--todae-color-gray-0));
+  --todae-harness-pin-ring: var(--_todae-harness-pin-ring, 2px);
+  --todae-harness-pin-size: var(--_todae-harness-pin-size, 1.5rem);
+  --todae-harness-pin-size-quiet: var(--_todae-harness-pin-size-quiet, 1rem);
   --todae-harness-size-artboard-label: var(--_todae-harness-size-artboard-label, 10.5rem);
   --todae-harness-size-column: var(--_todae-harness-size-column, 20rem);
   --todae-harness-size-diagram: var(--_todae-harness-size-diagram, 12rem);

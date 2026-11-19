@@ -6,6 +6,7 @@ import { PACKAGES_UNAVAILABLE, resolvePackages, sourceFor, type PackageSource, t
 import { PRIORITY, RENDER_SLOTS, type RenderSlots } from "./render-slots";
 import { PROTOCOL, readFrameMessage, type FrameMessage, type FrameStage, type ModuleSource, type PageRef, type RenderRequest, type RootRef, type SpecPart, type SpecPayload } from "./protocol";
 import { SPEC_RENDERER, specParts, specPayload } from "./spec-payload";
+import type { TagPlace } from "./tags";
 import { moduleSpecifier, type CompileProblem } from "./transform";
 
 /**
@@ -59,8 +60,8 @@ export type FrameSpec = {
 export type FrameState =
   | { readonly state: "waiting" }
   | { readonly state: "rendering" }
-  /** `tags`: the element tags the frame drew (`tags.ts`), sorted. */
-  | { readonly state: "measured"; readonly snapshot: RenderedSnapshot; readonly tags: readonly string[] }
+  /** `tags`: the element tags the frame drew (`tags.ts`), sorted. `places`: the box each drew, for pins (`pins/anchor.ts`); absent where none were sent. */
+  | { readonly state: "measured"; readonly snapshot: RenderedSnapshot; readonly tags: readonly string[]; readonly places?: readonly TagPlace[] }
   | { readonly state: "failed"; readonly stage: FrameStage | "setup" | "timeout"; readonly message: string };
 
 export type SessionState = {
@@ -533,7 +534,7 @@ export class Session {
     }
     if (this.state.frameStates[key]?.state !== "rendering") return;
     this.endTurn(key);
-    if (message.type === "snapshot") this.setFrame(key, { state: "measured", snapshot: message.snapshot, tags: message.tags });
+    if (message.type === "snapshot") this.setFrame(key, { state: "measured", snapshot: message.snapshot, tags: message.tags, places: message.places });
     else this.setFrame(key, { state: "failed", stage: message.stage, message: message.message });
     this.afterMeasure(key);
     this.finishIfDone();

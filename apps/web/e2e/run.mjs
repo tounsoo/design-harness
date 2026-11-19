@@ -3917,6 +3917,422 @@ test("the proposals list is cards that lead with the change: a cap before and af
   await context.close();
 });
 
+// ---- pinned feedback ---------------------------------------------------------
+
+const pinMode = (page) => page.getByTestId("pin-mode");
+const boardScroll = (page) => page.locator(".board-area").evaluate((element) => [element.scrollLeft, element.scrollTop]);
+const cardOfFrame = (page, scenario, view) => page.locator(`.frame-card[data-frame-key="${scenario}@${view}"]`);
+const marker = (page, number) => page.locator(`[data-testid="pin"][data-pin="${number}"]`);
+const noteRow = (page, number) => page.locator(`[data-testid="your-notes"] .note[data-note="${number}"]`);
+
+async function pinModeOn(page) {
+  if ((await pinMode(page).getAttribute("aria-pressed")) !== "true") await pinMode(page).click();
+  await page.getByTestId("pin-hint").waitFor();
+}
+
+/**
+ * Pins a note on an element of a frame as a person does: with "Pin a note"
+ * on, a click on the artboard where the element is. The element's place is
+ * read from the frame's own page, in its CSS px, and mapped to the artboard
+ * by its zoom, so the test asserts no size that depends on a font.
+ */
+async function pinOn(page, scenario, view, role, name, note) {
+  const title = `${scenario} at ${view}`;
+  // A frame already drawn is read where it stands: centring it again would
+  // scroll the board itself, as pin mode's hint makes the board shorter.
+  const drawn = page.locator(`.frame-viewport[data-frame-name="${title}"][data-drawn] iframe[title="${title}"]`).first();
+  const frame = (await drawn.count()) ? page.frameLocator(`iframe[title="${title}"]`).first() : await liveFrame(page, title);
+  const target = await frame.getByRole(role, { name, exact: true }).first().evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return { x: box.left + window.scrollX + box.width / 2, y: box.top + window.scrollY + box.height / 2 };
+  });
+  await pinModeOn(page);
+  const capture = cardOfFrame(page, scenario, view).getByTestId("pin-capture");
+  const box = await capture.boundingBox();
+  const scale = box.width / Number(await page.locator(`iframe[title="${title}"]`).first().getAttribute("width"));
+  await capture.click({ position: { x: target.x * scale, y: target.y * scale } });
+  await page.getByTestId("pin-text").fill(note);
+  await page.getByTestId("pin-save").click();
+  await page.getByTestId("pin-text").waitFor({ state: "detached" });
+}
+
+/**
+ * Whether a pin's point is on an element of its frame: the element's box in
+ * the frame's own page, mapped onto the artboard by its zoom, against the
+ * marker's point (its lower left corner) on the artboard.
+ */
+async function pinIsOn(page, number, scenario, view, role, name) {
+  const title = `${scenario} at ${view}`;
+  const frame = await liveFrame(page, title);
+  const box = await frame.getByRole(role, { name, exact: true }).first().evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+  });
+  const scale = (await page.locator(`.frame-viewport[data-frame-name="${title}"]`).first().boundingBox()).width / Number(await page.locator(`iframe[title="${title}"]`).first().getAttribute("width"));
+  const at = await markerAt(page, number);
+  const on = at.x >= box.x * scale - 1 && at.x <= (box.x + box.width) * scale + 1 && at.y >= box.y * scale - 1 && at.y <= (box.y + box.height) * scale + 1;
+  return { on, at, box, scale };
+}
+
+/** Where a pin's marker is in its artboard, in screen px from the artboard's corner. */
+async function markerAt(page, number) {
+  return marker(page, number).evaluate((element) => {
+    const layer = element.closest(".pin-layer").getBoundingClientRect();
+    const box = element.getBoundingClientRect();
+    return { x: box.left - layer.left, y: box.bottom - layer.top };
+  });
+}
+
+test("pin a note on a frame: it anchors to the element clicked, is listed under Your notes apart from the checks, and changes no report, byte for byte", async ({ browser, base }) => {
+  const { page, errors, context } = await openApp(browser, base);
+  await measured(page, 1);
+  await showAllRules(page);
+  const before = await page.locator('[data-testid="report-json"]').textContent();
+  const headline = await page.getByTestId("checks-headline").textContent();
+  const tab = await page.getByRole("tab", { name: /Checks/ }).textContent();
+  assert.match(await page.getByTestId("notes-summary").textContent(), /Pin a note on any frame/);
+  await liveFrame(page, "lantern-open at desktop");
+  const scroll = await boardScroll(page);
+
+  // Pin mode never scrolls the board: turning it on, the click, the note's card, saving it, opening and closing it.
+  await pinModeOn(page);
+  assert.equal(await pinMode(page).getAttribute("aria-pressed"), "true");
+  assert.deepEqual(await boardScroll(page), scroll, "turning pin mode on does not scroll the board");
+  await pinOn(page, "lantern-open", "desktop", "button", "Book room", "Make this the clear next step");
+  assert.deepEqual(await boardScroll(page), scroll, "pinning a note does not scroll the board");
+  await becomesFocused(page, marker(page, 1), "focus goes to the new pin");
+  await marker(page, 1).click();
+  const card = page.locator('[data-testid="pin-card"]:popover-open');
+  await card.getByTestId("pin-note").waitFor();
+  assert.equal(await card.getByTestId("pin-note").textContent(), "Make this the clear next step");
+  assert.match(await card.getByTestId("pin-on").textContent(), /^On button "Book room" · Booking, room open — desktop \(Lantern open\)$/);
+  assert.equal(await card.getByTestId("note-status").textContent(), "Open");
+  assert.deepEqual(await boardScroll(page), scroll, "opening a note does not scroll the board");
+  await shot(page, "pin-card-light");
+  await shotDark(page, "pin-card-dark");
+  await page.keyboard.press("Escape");
+  await card.waitFor({ state: "detached" }).catch(() => undefined);
+  assert.equal(await pinMode(page).getAttribute("aria-pressed"), "true", "Escape closed the card first, and pin mode stays");
+  await page.keyboard.press("Escape");
+  await eventually(page, () => pinMode(page).getAttribute("aria-pressed"), (value) => value === "false", "a second Escape leaves pin mode");
+  assert.deepEqual(await boardScroll(page), scroll, "leaving pin mode does not scroll the board");
+
+  // The marker sits on the element: its point is inside the button's box on the artboard.
+  const title = "lantern-open at desktop";
+  const placed = await pinIsOn(page, 1, "lantern-open", "desktop", "button", "Book room");
+  assert.ok(placed.on, `the pin's point is on the button: ${JSON.stringify(placed)}`);
+
+  // Your notes: its own section, words and mark; no check, count or badge changed.
+  const notes = page.getByTestId("your-notes");
+  assert.equal(await notes.getByRole("heading", { name: "Your notes" }).count(), 1);
+  assert.equal(await page.getByTestId("notes-summary").textContent(), "1 open");
+  assert.equal(await noteRow(page, 1).getByTestId("note-text").textContent(), "Make this the clear next step");
+  assert.equal(await page.locator(".checks [data-testid=\"your-notes\"]").count(), 0, "the notes are outside core's report");
+  assert.equal(await page.locator(".fixes .note, .checks-rules .note").count(), 0);
+  assert.equal(await page.locator('[data-testid="report-json"]').textContent(), before, "core's report is the same bytes with a pin");
+  assert.equal(await page.getByTestId("checks-headline").textContent(), headline);
+  assert.equal(await page.getByRole("tab", { name: /Checks/ }).textContent(), tab, "the Checks tab counts no note");
+  assert.equal(await page.locator(".checks").getAttribute("data-revision"), "1", "a pin starts no revision");
+  await shot(page, "pin-notes-light");
+  await shotDark(page, "pin-notes-dark");
+
+  // Canvas only shows pins and keeps pin mode.
+  await page.keyboard.press("Control+.");
+  await page.locator(".shell[data-canvas-only]").waitFor();
+  assert.equal(await marker(page, 1).isVisible(), true, "canvas only shows the pin");
+  await pinMode(page).click();
+  await page.getByTestId("pin-hint").waitFor();
+  await shot(page, "pin-canvas-only-light");
+  await page.keyboard.press("Escape");
+  await eventually(page, () => pinMode(page).getAttribute("aria-pressed"), (value) => value === "false", "Escape leaves pin mode first");
+  assert.equal(await page.locator(".shell[data-canvas-only]").count(), 1, "and canvas only stays");
+  // A second Escape pressed within a few frames of the first can land before the workspace listens for it again; a person's does not.
+  await page.waitForTimeout(400);
+  await page.keyboard.press("Escape");
+  await page.locator(".shell:not([data-canvas-only])").waitFor();
+
+  // It survives a reload, with the same report.
+  await page.reload();
+  await measured(page, 1);
+  await showAllRules(page);
+  assert.equal(await noteRow(page, 1).getByTestId("note-text").textContent(), "Make this the clear next step");
+  await liveFrame(page, title);
+  assert.equal(await marker(page, 1).count(), 1);
+  assert.equal(await page.locator('[data-testid="report-json"]').textContent(), before, "and the same report after a reload");
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("a pinned note reaches the scripted agent as a finding; the agent fixes it and marks it addressed; the person closes it; it survives a reload and export and import", async ({ browser, base, api }) => {
+  const { page, errors, context } = await openApp(browser, base);
+  await measured(page, 1);
+  await pinOn(page, "lantern-open", "desktop", "button", "Hold room", "Say how long the hold lasts");
+  await page.keyboard.press("Escape");
+  const RENAMED = '<Button.Root variant="secondary">Hold for 10 minutes</Button.Root>';
+  api.script([
+    (body) => {
+      const content = body.messages.at(-1).content;
+      assert.equal(content.length, 2, "the notes ride with the person's message");
+      assert.match(content[0].text, /^Your notes from the person: 1 open note pinned on the canvas\. They are the person's own feedback, not checks/);
+      assert.match(content[0].text, /\n- note 1: "Say how long the hold lasts" \[pages\/booking\.tsx:34:\d+, scenario lantern-open, view desktop\]\n {2}on: button "Hold room"\n {2}where: [^\n]* of the view, at x \d+, y \d+ of 1280 × 900; [^\n]*nearest: /);
+      assert.equal(content[1].text, "Please address my pinned note.");
+      assert.ok(body.tools.some((tool) => tool.name === "address_note"));
+      // An input that tries to do more than answer is refused whole.
+      return toolReply("sneak", "address_note", { note: 1, reply: "Done", status: "closed", text: "Rewritten by the agent" });
+    },
+    (body) => {
+      assert.match(lastMessage(body), /The input does not fit address_note's schema, so nothing ran/);
+      return toolReply("rename", "edit_file", { path: "pages/booking.tsx", old_text: HOLD_SECONDARY, new_text: RENAMED }, "The note asks how long a hold lasts.");
+    },
+    (body) => {
+      assert.match(lastMessage(body), /Checks for revision 2, with every frame measured: /);
+      return toolReply("answer", "address_note", { note: 1, reply: "The button now reads Hold for 10 minutes." });
+    },
+    (body) => {
+      assert.match(lastMessage(body), /Marked note 1 as addressed, with your reply\. The person will close it or reopen it\. No note is open now\./);
+      return textReply("I renamed the button and answered your note.");
+    },
+  ]);
+  await enterKey(page);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  await page.getByTestId("notes-ask").click();
+  const box = page.getByRole("textbox", { name: "Message the agent" });
+  assert.equal(await eventually(page, () => box.inputValue(), (text) => text !== "", "the chat box is filled with a message about the note"), "Please address my pinned note.");
+  await page.getByRole("button", { name: "Send" }).click();
+  assert.equal(await turnEnded(page), "done");
+  assert.equal(api.left(), 0);
+  await measured(page, 2);
+  const reply = page.locator(".chat-reply").last();
+  assert.match(await reply.textContent(), /Sent with your open note from the canvas\./);
+  assert.equal(await reply.locator('.chat-tool[data-tool="address_note"] .chat-tool-title').last().textContent(), "Answered your note 1");
+
+  // Addressed, with the agent's reply; the note's words are the person's, untouched; and it is still on its element, renamed where it stands.
+  const row = noteRow(page, 1);
+  await eventually(page, () => row.getAttribute("data-status"), (value) => value === "addressed", "the note is marked addressed");
+  assert.equal(await row.getByTestId("note-status").textContent(), "Addressed by the agent");
+  assert.equal(await row.getByTestId("note-reply").textContent(), "The agent repliedThe button now reads Hold for 10 minutes.");
+  assert.equal(await row.getByTestId("note-text").textContent(), "Say how long the hold lasts");
+  await eventually(page, () => row.locator(".note-where").textContent(), (value) => /^On button "Hold for 10 minutes" · /.test(value), "the pin follows its element through the agent's change");
+  assert.equal(await row.getAttribute("data-lost"), null);
+  assert.equal(await (await liveFrame(page, "lantern-open at desktop")).getByRole("button", { name: "Hold for 10 minutes" }).count(), 1);
+  assert.equal(await marker(page, 1).getAttribute("data-status"), "addressed");
+  await marker(page, 1).click();
+  await page.locator('[data-testid="pin-card"]:popover-open').getByTestId("pin-reply").waitFor();
+  await shot(page, "pin-addressed-light");
+  await shotDark(page, "pin-addressed-dark");
+
+  // Only the person closes it.
+  await page.locator('[data-testid="pin-card"]:popover-open').getByTestId("pin-close").click();
+  await eventually(page, () => row.getAttribute("data-status"), (value) => value === "closed", "the person closed the note");
+  assert.equal(await page.getByTestId("notes-summary").textContent(), "1 closed");
+  assert.equal(await page.getByTestId("notes-ask").count(), 0);
+
+  // A reload keeps it, history and all.
+  await page.reload();
+  await measured(page, 1);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  assert.equal(await noteRow(page, 1).getAttribute("data-status"), "closed");
+  assert.equal(await noteRow(page, 1).getByTestId("note-reply").textContent(), "The agent repliedThe button now reads Hold for 10 minutes.");
+  assert.match(await noteRow(page, 1).getByTestId("pin-history").locator("summary").textContent(), /History: 3 entries/);
+
+  // Export carries the pins; import brings them back as they were exported.
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export", exact: true }).click()]);
+  const path = await download.path();
+  const exported = JSON.parse(readFileSync(path, "utf8"));
+  const pins = exported.prototypes.find((item) => item.id === "booking").pins;
+  assert.deepEqual(pins.pins.map((pin) => [pin.number, pin.status, pin.note, pin.reply, pin.history.map((event) => event.kind)]), [[1, "closed", "Say how long the hold lasts", "The button now reads Hold for 10 minutes.", ["created", "addressed", "closed"]]]);
+  assert.equal(pins.pins[0].anchor.scenario, "lantern-open");
+  assert.equal(exported.prototypes.find((item) => item.id === "booking-spec").pins, undefined, "a prototype with no notes exports none");
+  assert.ok(!JSON.stringify(exported).includes(KEY));
+  await noteRow(page, 1).getByTestId("note-reopen").click();
+  await eventually(page, () => noteRow(page, 1).getAttribute("data-status"), (value) => value === "open", "the person reopened it");
+  await page.locator('[data-testid="import-file"]').setInputFiles(path);
+  await measured(page, 1);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  await eventually(page, () => noteRow(page, 1).getAttribute("data-status"), (value) => value === "closed", "the import brought the pins back as exported");
+  await page.reload();
+  await measured(page, 1);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  assert.equal(await noteRow(page, 1).getAttribute("data-status"), "closed", "and the import was saved");
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("a pin whose element is removed shows moved or gone at its last position and is never dropped; one whose element only moved in the source stays on it", async ({ browser, base }) => {
+  const { page, errors, context } = await openApp(browser, base);
+  await measured(page, 1);
+  await pinOn(page, "lantern-open", "desktop", "button", "Hold room", "Is a hold needed at all?");
+  await pinOn(page, "lantern-open", "desktop", "button", "Book room", "Keep this one");
+  await page.keyboard.press("Escape");
+  const [hold, book] = [await markerAt(page, 1), await markerAt(page, 2)];
+  // The alternate slot goes: Hold room is removed, and Book room is now written three lines higher.
+  await editFile(page, "pages/booking.tsx", (text) => text.replace(/\s*<Slot name="alternate">[\s\S]*?<\/Slot>/, ""));
+  await measured(page, 2);
+  await liveFrame(page, "lantern-open at desktop");
+  await eventually(page, () => marker(page, 1).getAttribute("data-lost"), (value) => value === "", "the pin on the removed button is marked moved or gone");
+  const after = await markerAt(page, 1);
+  assert.ok(Math.abs(after.x - hold.x) <= 1 && Math.abs(after.y - hold.y) <= 1, `it stays at its last position: ${JSON.stringify(after)} for ${JSON.stringify(hold)}`);
+  assert.match(await marker(page, 1).getAttribute("aria-label"), /^Your note 1, open, moved or gone: Is a hold needed at all\?/);
+  // Book room moved up into the removed button's place, so the two pins now sit on one spot: the keyboard opens the one underneath.
+  await marker(page, 1).focus();
+  await page.keyboard.press("Enter");
+  assert.match(await page.locator('[data-testid="pin-card"]:popover-open').getByTestId("pin-lost").textContent(), /^Moved or gone: what this note was pinned to is no longer on this page\. It stays where it last was\.$/);
+  await shot(page, "pin-lost-light");
+  await shotDark(page, "pin-lost-dark");
+  await page.keyboard.press("Escape");
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  assert.equal(await noteRow(page, 1).getAttribute("data-lost"), "");
+  assert.match(await noteRow(page, 1).getByTestId("note-lost").textContent(), /^Moved or gone/);
+  assert.equal(await page.getByTestId("notes-summary").textContent(), "2 open", "no note was dropped");
+  // The other pin's element moved in the file, not off the page: still on it, at the same spot.
+  assert.equal(await marker(page, 2).getAttribute("data-lost"), null);
+  assert.match(await noteRow(page, 2).locator(".note-where").textContent(), /^On button "Book room" · /);
+  const kept = await markerAt(page, 2);
+  const placed = await pinIsOn(page, 2, "lantern-open", "desktop", "button", "Book room");
+  assert.ok(placed.on, `the kept pin is on its button: ${JSON.stringify(placed)} (was at ${JSON.stringify(book)}, now ${JSON.stringify(kept)})`);
+  // Putting the slot back finds the lost pin's element again.
+  await editFile(page, "pages/booking.tsx", () => BOOKING);
+  await measured(page, 3);
+  await eventually(page, () => marker(page, 1).getAttribute("data-lost"), (value) => value === null, "the pin is back on its element once it returns");
+  // After a reload a lost pin is still there, still lost.
+  await editFile(page, "pages/booking.tsx", (text) => text.replace(/\s*<Slot name="alternate">[\s\S]*?<\/Slot>/, ""));
+  await measured(page, 4);
+  await eventually(page, () => marker(page, 1).getAttribute("data-lost"), (value) => value === "", "lost again");
+  await page.waitForTimeout(600);
+  await page.reload();
+  await measured(page, 1);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  assert.equal(await noteRow(page, 1).getAttribute("data-lost"), "");
+  assert.equal(await noteRow(page, 2).getAttribute("data-lost"), null);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("pins show and work on a parked frame, from its snapshot: no document, no board scroll, and the frame stays parked", async ({ browser, base }) => {
+  const { page, errors, context } = await openApp(browser, base);
+  await measured(page, 1);
+  await pinOn(page, "rooms-list", "desktop", "heading", "Rooms", "A friendlier title");
+  const first = await markerAt(page, 1);
+  const area = page.locator(".board-area");
+  const bottom = await area.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    return element.scrollTop;
+  });
+  // The first row is out of sight and parked: its iframe is gone, and its pin is still drawn where it was.
+  const viewport = page.locator('.frame-viewport[data-frame-name="rooms-list at desktop"]');
+  await viewport.locator('[data-testid="frame-parked"]').waitFor({ state: "attached", timeout: 60000 });
+  assert.equal(await viewport.locator("iframe").count(), 0);
+  assert.deepEqual(await markerAt(page, 1), first, "the pin is drawn the same on the parked frame");
+  // A second note, pinned on the parked frame from its list of elements, with the keyboard, without a pointer.
+  const list = cardOfFrame(page, "rooms-list", "desktop").getByTestId("pin-from-list");
+  await list.evaluate((element) => element.focus({ preventScroll: true }));
+  await page.keyboard.press("Enter");
+  const card = page.locator('[data-testid="pin-card"]:popover-open');
+  await card.getByTestId("pin-element").waitFor();
+  const options = await card.getByTestId("pin-element").locator("option").allTextContents();
+  assert.ok(options.includes('heading "Rooms"') && options.some((option) => /^button "Open /.test(option)), `the list holds the frame's measured elements: ${options.join(", ")}`);
+  await card.getByTestId("pin-element").selectOption({ label: options.find((option) => /^button "Open /.test(option)) });
+  await card.getByTestId("pin-text").fill("Pinned while parked");
+  await page.keyboard.press("Control+Enter");
+  await marker(page, 2).waitFor({ state: "attached" });
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  assert.match(await noteRow(page, 2).locator(".note-where").textContent(), /^On button "Open [A-Za-z]+" · Rooms — desktop/);
+  // Nothing went live for it, nothing scrolled, and no frame is caught parking and unparking.
+  const live = () => page.locator(".board iframe").count();
+  const counts = [];
+  for (let tries = 0; tries < 6; tries += 1) {
+    counts.push(await live());
+    await page.waitForTimeout(200);
+  }
+  assert.equal(new Set(counts).size, 1, `the live frames are steady while a parked frame is pinned: ${counts.join(", ")}`);
+  assert.equal(await viewport.locator("iframe").count(), 0, "the pinned frame stays parked");
+  assert.equal(await area.evaluate((element) => element.scrollTop), bottom, "pinning on a parked frame never scrolls the board");
+  // Show me moves the app's camera to the pin, as a finding's does, and opens its card.
+  await noteRow(page, 2).getByTestId("note-show").click();
+  await page.locator('[data-testid="pin-card"]:popover-open').getByTestId("pin-note").waitFor();
+  assert.equal(await page.locator('[data-testid="pin-card"]:popover-open').getByTestId("pin-note").textContent(), "Pinned while parked");
+  await eventually(page, () => area.evaluate((element) => element.scrollTop), (value) => value < bottom, "the camera moved the board to the pin's artboard");
+  assert.match(await page.getByTestId("board-said").textContent(), /Showing note 2 on Rooms — desktop/);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("keyboard-only pinning: the shortcut, a frame's list of elements, the note, and Escape, on a spec prototype", async ({ browser, base }) => {
+  const { page, errors, context } = await openApp(browser, base);
+  await measured(page, 1);
+  await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
+  await measured(page, 2);
+  await page.keyboard.press("Control+Alt+N");
+  await page.getByTestId("pin-hint").waitFor();
+  assert.equal(await pinMode(page).getAttribute("aria-pressed"), "true");
+  assert.equal(await pinMode(page).getAttribute("aria-keyshortcuts"), "Control+Alt+N Meta+Alt+N");
+  // Tab reaches a frame's list button; nothing here uses a pointer.
+  const reached = async () => page.evaluate(() => document.activeElement?.getAttribute("data-testid") === "pin-from-list" && document.activeElement.closest(".frame-card")?.getAttribute("data-frame-key"));
+  await page.locator(".board-toolbar button").first().focus();
+  let frame = false;
+  for (let tabs = 0; tabs < 60 && !frame; tabs += 1) {
+    await page.keyboard.press("Tab");
+    frame = await reached();
+  }
+  assert.ok(frame, "Tab reaches a frame's Pin a note button");
+  const [scenario, view] = frame.split("@");
+  assert.match(await page.evaluate(() => document.activeElement.getAttribute("aria-label")), /^Pin a note on .+: pick an element from a list$/);
+  await page.keyboard.press("Enter");
+  const card = page.locator('[data-testid="pin-card"]:popover-open');
+  await card.getByTestId("pin-element").waitFor();
+  assert.equal(await card.evaluate((element) => element.contains(document.activeElement)), true, "focus moves into the note's card");
+  // The list: pick a button with the arrow keys in the select, then write the note.
+  await card.getByTestId("pin-element").focus();
+  const options = await card.getByTestId("pin-element").locator("option").allTextContents();
+  const want = options.indexOf('button "Open Harbor"');
+  assert.ok(want >= 0, `the list names the page's elements: ${options.join(", ")}`);
+  // Todae's select opens its list of options on an arrow key; arrows move through it and Enter picks.
+  const active = () => page.evaluate(() => (document.activeElement?.tagName === "OPTION" ? document.activeElement.textContent : null));
+  for (let step = 0; step <= options.length && (await active()) !== options[want]; step += 1) await page.keyboard.press("ArrowDown");
+  assert.equal(await active(), options[want], "the arrow keys reach the element in the list");
+  await page.keyboard.press("Enter");
+  await eventually(page, () => card.getByTestId("pin-on").textContent(), (value) => /^On button "Open Harbor" · /.test(value), "the arrow keys pick the element");
+  await page.keyboard.press("Tab");
+  await becomesFocused(page, card.getByTestId("pin-text"), "Tab moves to the note");
+  await page.keyboard.type("Too quiet for the main action");
+  await page.keyboard.press("Control+Enter");
+  await becomesFocused(page, marker(page, 1), "focus lands on the new pin");
+  assert.equal(await marker(page, 1).evaluate((element) => element.closest(".frame-card").getAttribute("data-frame-key")), `${scenario}@${view}`);
+  // A spec pin is anchored by its element's key.
+  await page.keyboard.press("Enter");
+  await card.getByTestId("pin-note").waitFor();
+  assert.equal(await card.getByTestId("pin-note").textContent(), "Too quiet for the main action");
+  // Edit with the keyboard.
+  await card.getByTestId("pin-edit").focus();
+  await page.keyboard.press("Enter");
+  await becomesFocused(page, card.getByTestId("pin-text"), "editing puts focus in the note, after its words");
+  await page.keyboard.type(" on a phone");
+  await page.keyboard.press("Control+Enter");
+  await eventually(page, () => card.getByTestId("pin-note").textContent().catch(() => ""), (value) => value === "Too quiet for the main action on a phone", "the note is edited from the keyboard");
+  await page.keyboard.press("Escape");
+  await becomesFocused(page, marker(page, 1), "Escape closes the card and gives focus back to the pin");
+  assert.equal(await pinMode(page).getAttribute("aria-pressed"), "true");
+  await page.keyboard.press("Escape");
+  await eventually(page, () => pinMode(page).getAttribute("aria-pressed"), (value) => value === "false", "Escape leaves pin mode");
+  const stored = await page.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const open = indexedDB.open("design-harness");
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const get = open.result.transaction("prototypes").objectStore("prototypes").get(["nook", "booking-spec"]);
+          get.onsuccess = () => resolve(get.result.pins);
+          get.onerror = () => reject(get.error);
+        };
+      }),
+  );
+  assert.equal(stored.pins.length, 1);
+  assert.deepEqual([stored.pins[0].anchor.element.source.kind, stored.pins[0].anchor.element.label.name, stored.pins[0].history.map((event) => event.kind)], ["key", "Open Harbor", ["created", "edited"]]);
+  assert.ok(stored.pins[0].anchor.element.source.tag.length > 0 && !/\.json:\d+/.test(stored.pins[0].anchor.element.source.tag), "a spec pin holds its element's key");
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 // ---- runner ----------------------------------------------------------------
 
 const server = await preview({ root, configFile: join(root, "vite.config.ts"), logLevel: "silent", preview: { port: 0, host: "127.0.0.1" } });
