@@ -21,7 +21,8 @@ export type BoundChange = { readonly bound: BoundKey; readonly before: string; r
  * One change and its class. A change to a rule in force also names the rule
  * (`rule`) and says it in core's words as it was when classified (`was`),
  * since a removed or replaced rule is gone from the config once the
- * proposal is adopted; `bounds` lists the limits a changed rule moves.
+ * proposal is adopted; `bounds` lists the limits a changed rule moves, or
+ * a task's step budget before and after, which the config also forgets.
  */
 export type ClassifiedChange = {
   readonly change: string;
@@ -57,7 +58,9 @@ function classifyOp(op: InventoryOp, config: ProjectConfig): ClassifiedChange {
     case "set-max-steps": {
       const before = config.inputs.tasks.find((task) => task.id === op.task)?.maxSteps;
       if (before === undefined) return loosens("names a task the config does not have");
-      return op.value < before ? { change, class: "tightens", reason: `lowers max steps from ${before} to ${op.value}` } : loosens(`raises max steps from ${before} to ${op.value}`);
+      // The budget is a limit like a rule's `max`: it is said before and after in the same words, with which way it moved.
+      const bounds = (direction: BoundChange["direction"]): readonly BoundChange[] => [{ bound: "max", before: boundWords("max", before, config), after: boundWords("max", op.value, config), direction }];
+      return op.value < before ? { change, class: "tightens", reason: `lowers max steps from ${before} to ${op.value}`, bounds: bounds("stricter") } : { ...loosens(`raises max steps from ${before} to ${op.value}`), bounds: bounds("looser") };
     }
     case "set-cap": {
       const cap = config.inputs.caps[op.name];

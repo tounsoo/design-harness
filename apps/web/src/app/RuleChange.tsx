@@ -18,16 +18,18 @@ import {
   type ImpactView,
   type Limit,
   type LimitEdit,
+  type LimitMove,
 } from "../review/rule-change";
 import { ClassBadge, RuleWords } from "./proposal-parts";
+import type { ChangeClass, ClassifiedChange, Proposal } from "@design-harness/core";
 import { exampleLabel } from "./words";
 
 /** Which rule a flow is open on, and which flow. */
 export type RuleFlow = { readonly kind: "remove" | "change"; readonly rule: string };
 
-type FlowProps = {
+/** What every flow that ends in a person's proposal is given: the project, core's reading of its prototypes, and the ways out. */
+export type FlowContext = {
   readonly config: ProjectConfig;
-  readonly rule: RuleSpec;
   /** Every prototype in the project with its measured snapshots; null while they are being measured. */
   readonly existing: readonly ExistingPrototype[] | null;
   readonly progress: { readonly answered: number; readonly total: number };
@@ -39,6 +41,8 @@ type FlowProps = {
   readonly onAsk: (message: string) => void;
   readonly onOpenProposal: (id: string) => void;
 };
+
+type FlowProps = FlowContext & { readonly rule: RuleSpec };
 
 const now = () => new Date().toISOString();
 
@@ -173,34 +177,14 @@ function ChangeFlow({ config, rule, existing, progress, agent, onClose, onPropos
             {preview.state === "invalid" && <ErrorMessage.Root role="alert">{preview.problem}</ErrorMessage.Root>}
             {preview.state === "changed" && (
               <>
-                <ul className="rule-moves" aria-label="What moves">
-                  {preview.moves.map((move) => (
-                    <li key={move.key} className="rule-move" data-testid="rule-move" data-direction={move.direction}>
-                      <span className="rule-move-words">
-                        <span data-testid="rule-move-before">{move.before}</span>
-                        <ArrowRight aria-hidden="true" />
-                        <VisuallyHidden.Root> becomes </VisuallyHidden.Root>
-                        <strong data-testid="rule-move-after">{move.after}</strong>
-                      </span>
-                      <Badge.Root tone={move.direction === "stricter" ? "info" : "warning"}>{move.direction === "unknown" ? "not provably stricter" : move.direction}</Badge.Root>
-                    </li>
-                  ))}
-                </ul>
+                <Moves moves={preview.moves} />
                 <dl className="rule-before-after">
                   <dt>Now</dt>
                   <dd data-testid="rule-words-before">{preview.words.before}</dd>
                   <dt>After</dt>
                   <dd data-testid="rule-words-after">{preview.words.after}</dd>
                 </dl>
-                <Stack.Root direction="row" align="center" gap="condensed" wrap>
-                  <Text.Root as="span" tone="muted">
-                    Core classifies it:
-                  </Text.Root>
-                  <ClassBadge value={preview.class} />
-                </Stack.Root>
-                <Text.Root as="p" tone="muted" className="review-small">
-                  {preview.changes.map((change) => change.reason).join("; ")}.
-                </Text.Root>
+                <Classified value={preview.class} changes={preview.changes} />
               </>
             )}
           </div>
@@ -221,10 +205,46 @@ function ChangeFlow({ config, rule, existing, progress, agent, onClose, onPropos
   );
 }
 
-/** One limit's number. A limit that reads a cap says so, and whose rules move with it. */
-function LimitField({ limit, rule, config, value, onChange }: { readonly limit: Limit; readonly rule: RuleSpec; readonly config: ProjectConfig; readonly value: number | null; readonly onChange: (value: number | null) => void }) {
+/** Each limit that moves, before and after, with a badge for the way it moved. */
+export function Moves({ moves }: { readonly moves: readonly LimitMove[] }) {
+  return (
+    <ul className="rule-moves" aria-label="What moves">
+      {moves.map((move) => (
+        <li key={move.key} className="rule-move" data-testid="rule-move" data-direction={move.direction}>
+          <span className="rule-move-words">
+            <span data-testid="rule-move-before">{move.before}</span>
+            <ArrowRight aria-hidden="true" />
+            <VisuallyHidden.Root> becomes </VisuallyHidden.Root>
+            <strong data-testid="rule-move-after">{move.after}</strong>
+          </span>
+          <Badge.Root tone={move.direction === "stricter" ? "info" : "warning"}>{move.direction === "unknown" ? "not provably stricter" : move.direction}</Badge.Root>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Core's class for the draft, and its reason for each change. */
+export function Classified({ value, changes }: { readonly value: ChangeClass; readonly changes: readonly ClassifiedChange[] }) {
+  return (
+    <>
+      <Stack.Root direction="row" align="center" gap="condensed" wrap>
+        <Text.Root as="span" tone="muted">
+          Core classifies it:
+        </Text.Root>
+        <ClassBadge value={value} />
+      </Stack.Root>
+      <Text.Root as="p" tone="muted" className="review-small" data-testid="rule-class-reason">
+        {changes.map((change) => change.reason).join("; ")}.
+      </Text.Root>
+    </>
+  );
+}
+
+/** One limit's number. A limit that reads a cap says so, and whose rules move with it. `rule` is the rule whose limit it is, when it is a rule's; `min` is the least the number can be. */
+export function LimitField({ limit, rule, config, value, onChange, min = 0 }: { readonly limit: Limit; readonly rule?: RuleSpec; readonly config: ProjectConfig; readonly value: number | null; readonly onChange: (value: number | null) => void; readonly min?: number }) {
   const id = `rule-limit-${limit.key}`;
-  const others = limit.cap !== undefined ? otherReaders(config, limit.cap, rule.id) : [];
+  const others = limit.cap !== undefined ? otherReaders(config, limit.cap, rule?.id ?? "") : [];
   return (
     <div className="rule-limit" data-limit={limit.key} {...(limit.cap !== undefined ? { "data-cap": limit.cap } : {})}>
       <Label.Root htmlFor={id}>
@@ -233,7 +253,7 @@ function LimitField({ limit, rule, config, value, onChange }: { readonly limit: 
       </Label.Root>
       <Field.Root id={id} className="rule-limit-field" aria-describedby={`${id}-hint`}>
         <Field.Decrement />
-        <Field.NumberInput value={value} min={0} step={1} placeholder={limit.required || limit.cap !== undefined ? "" : "no limit"} onValueChange={onChange} />
+        <Field.NumberInput value={value} min={min} step={1} placeholder={limit.required || limit.cap !== undefined ? "" : "no limit"} onValueChange={onChange} />
         <Field.Increment />
       </Field.Root>
       <Text.Root as="p" tone="muted" className="review-small" id={`${id}-hint`} data-testid={limit.cap !== undefined ? "rule-cap-note" : "rule-limit-note"}>
@@ -247,11 +267,33 @@ function LimitField({ limit, rule, config, value, onChange }: { readonly limit: 
   );
 }
 
+/**
+ * What a flow is about when it is not a rule itself: a number the rules
+ * read, such as a task's step budget. It stands where the rule's words do,
+ * and gives the shell its own words for what a rule flow says of "this rule".
+ */
+export type FlowSubject = {
+  /** What it is, after "this" or "the": "step budget". */
+  readonly noun: string;
+  /** Shown where a rule flow shows the rule in core's words. */
+  readonly lead: ReactNode;
+  /** What a waiting proposal does to it, in a few words. */
+  readonly waitingWords: (proposal: Proposal) => string;
+  /** Which examples core's adoption needs for it, after "one that passes". */
+  readonly examplesNeed: string;
+  /** What to do when the change breaks an example an adopted proposal keeps. */
+  readonly brokenAdvice: string;
+  /** Attributes on the dialog, such as the task it is open on. */
+  readonly data?: Readonly<Record<`data-${string}`, string>>;
+};
+
 type ShellProps = {
   readonly name: string;
   readonly testId: string;
   readonly config: ProjectConfig;
-  readonly rule: RuleSpec;
+  /** The rule the flow is about; a flow about something else gives `subject`. */
+  readonly rule?: RuleSpec;
+  readonly subject?: FlowSubject;
   /** The draft as it stands, without its reason; null while there is nothing to propose yet. */
   readonly draft: ProposalDraft | null;
   readonly why: string;
@@ -273,14 +315,15 @@ type ShellProps = {
   readonly onOpenProposal: FlowProps["onOpenProposal"];
 };
 
-/** What both flows share: the rule, what waits on it already, why, core's reading of the project, the examples, and the way out. */
-function FlowShell({ name, testId, config, rule, draft, why, onWhy, whyHint, impact, examples, progress, agent, waiting, submit, after, hideProposal, children, onClose, onPropose, onOpenProposal }: ShellProps) {
+/** What every flow shares: the rule or what else it is about, what waits on it already, why, core's reading of the project, the examples, and the way out. */
+export function FlowShell({ name, testId, config, rule, subject, draft, why, onWhy, whyHint, impact, examples, progress, agent, waiting, submit, after, hideProposal, children, onClose, onPropose, onOpenProposal }: ShellProps) {
   const [problem, setProblem] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
   const measuring = draft !== null && (impact === null || examples === null);
   // The card's own sentence leads; core's words follow it without repeating it as an author's note.
-  const { description: _lead, ...bare } = rule;
+  const { description: _lead, ...bare } = rule ?? ({} as Partial<RuleSpec>);
   void _lead;
+  const noun = subject?.noun ?? "rule";
   const open = (ask: boolean) => {
     if (!draft || !examples) return;
     if (why.trim() === "") return setProblem("Say why: a proposal needs its reason.");
@@ -291,29 +334,32 @@ function FlowShell({ name, testId, config, rule, draft, why, onWhy, whyHint, imp
     onPropose(result.value, draft.id, ask ? examplesMessage(full, examples.needs) : undefined);
   };
   return (
-    <Dialog.Root open onOpenChange={(next) => !next && onClose()} aria-label={name} className="rule-flow" data-testid={testId} data-rule={rule.id}>
+    <Dialog.Root open onOpenChange={(next) => !next && onClose()} aria-label={name} className="rule-flow" data-testid={testId} {...(rule ? { "data-rule": rule.id } : {})} {...subject?.data}>
       <Dialog.Header>
         <Dialog.Title>{name}</Dialog.Title>
       </Dialog.Header>
       <Dialog.Body>
         <div className="rule-flow-body">
-          <section className="rule-flow-section" aria-label="The rule">
-            {rule.description && (
-              <Text.Root as="p" weight="medium" className="rule-flow-lead">
-                {rule.description}
-              </Text.Root>
-            )}
-            <RuleWords rule={bare as RuleSpec} config={config} />
-          </section>
+          {subject?.lead}
+          {rule && (
+            <section className="rule-flow-section" aria-label="The rule">
+              {rule.description && (
+                <Text.Root as="p" weight="medium" className="rule-flow-lead">
+                  {rule.description}
+                </Text.Root>
+              )}
+              <RuleWords rule={bare as RuleSpec} config={config} />
+            </section>
+          )}
 
           {waiting.length > 0 && (
             <Alert.Root tone="info" data-testid="rule-waiting">
-              <Alert.Title>{waiting.length === 1 ? "A proposal already waits on this rule" : `${waiting.length} proposals already wait on this rule`}</Alert.Title>
+              <Alert.Title>{waiting.length === 1 ? `A proposal already waits on this ${noun}` : `${waiting.length} proposals already wait on this ${noun}`}</Alert.Title>
               <Alert.Description>
                 <ul className="rule-waiting">
                   {waiting.map((proposal) => (
                     <li key={proposal.id}>
-                      “{proposal.title}” is {proposal.status} and {waitingWords(proposal, rule.id)}.{" "}
+                      “{proposal.title}” is {proposal.status} and {subject ? subject.waitingWords(proposal) : waitingWords(proposal, rule?.id ?? "")}.{" "}
                       <Button.Root type="button" variant="ghost" onClick={() => onOpenProposal(proposal.id)}>
                         Open it
                       </Button.Root>
@@ -331,7 +377,17 @@ function FlowShell({ name, testId, config, rule, draft, why, onWhy, whyHint, imp
               <Stack.Root gap="condensed" className="rule-flow-section">
                 <Label.Root htmlFor="rule-flow-why">Why</Label.Root>
                 <Field.Root id="rule-flow-why" invalid={problem !== null} {...(problem ? { "aria-describedby": "rule-flow-why-problem" } : {})}>
-                  <Field.Textarea value={why} onValueChange={onWhy} rows={2} autoGrow maxRows={6} />
+                  <Field.Textarea
+                    value={why}
+                    onValueChange={(value) => {
+                      // The reason was missing; once it is being written, the field is no longer in error.
+                      if (value.trim() !== "") setProblem(null);
+                      onWhy(value);
+                    }}
+                    rows={2}
+                    autoGrow
+                    maxRows={6}
+                  />
                 </Field.Root>
                 {problem && (
                   <ErrorMessage.Root id="rule-flow-why-problem" role="alert">
@@ -392,7 +448,7 @@ function FlowShell({ name, testId, config, rule, draft, why, onWhy, whyHint, imp
                         <Alert.Root tone="warning" data-testid="rule-broken">
                           <Alert.Title>Core would refuse to adopt it as it is</Alert.Title>
                           <Alert.Description>
-                            An adopted proposal keeps its examples as tests, and this breaks {impact.broken.length === 1 ? "one" : impact.broken.length}: {impact.broken.join("; ")}. Remove the rule instead, which retires them, or keep the limit within what they prove.
+                            An adopted proposal keeps its examples as tests, and this breaks {impact.broken.length === 1 ? "one" : impact.broken.length}: {impact.broken.join("; ")}. {subject?.brokenAdvice ?? "Remove the rule instead, which retires them, or keep the limit within what they prove."}
                           </Alert.Description>
                         </Alert.Root>
                       )}
@@ -412,7 +468,7 @@ function FlowShell({ name, testId, config, rule, draft, why, onWhy, whyHint, imp
                     </Text.Root>
                   ) : (
                     <Text.Root as="p" tone="muted">
-                      Core adopts a proposal only on examples: one that passes{draft.rules.add.length > 0 ? ", and one the changed rule flags and no other rule does" : ", and one that a rule still in force flags"}. These are taken from the project as it is, never written for you.
+                      Core adopts a proposal only on examples: one that passes{subject ? subject.examplesNeed : draft.rules.add.length > 0 ? ", and one the changed rule flags and no other rule does" : ", and one that a rule still in force flags"}. These are taken from the project as it is, never written for you.
                     </Text.Root>
                   )}
                   {examples.picked.length > 0 && (
@@ -459,7 +515,7 @@ function FlowShell({ name, testId, config, rule, draft, why, onWhy, whyHint, imp
                 </Alert.Root>
               )}
               <Text.Root as="p" tone="muted" className="review-small">
-                This opens a proposal by you. The rule stays as it is until you approve and adopt the proposal on its review page.
+                This opens a proposal by you. The {noun} stays as it is until you approve and adopt the proposal on its review page.
               </Text.Root>
             </>
           )}

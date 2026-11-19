@@ -264,20 +264,20 @@ const list = (items: readonly string[]) => (items.length <= 1 ? items.join("") :
  * What a draft would do to every prototype in the project, from core's
  * `proposalImpact` and core's report on each as it is now. `rules` are the
  * rules the draft is about: the one removed or changed, or the readers of a
- * cap it moves.
+ * cap it moves, or the rules that read a step budget it moves; `said` is
+ * what a line calls them.
  */
-export function impactOf(config: ProjectConfig, draft: ProposalDraft, existing: readonly ExistingPrototype[], rules: readonly string[]): ImpactView {
+export function impactOf(config: ProjectConfig, draft: ProposalDraft, existing: readonly ExistingPrototype[], rules: readonly string[], said: string = rules.length === 1 ? "this rule" : "these rules"): ImpactView {
   const impact = proposalImpact(config, draft, existing);
   if (!impact.ok) return { ok: false, refusal: impact.error };
   const about = new Set(rules);
-  const one = rules.length === 1;
   const rows = impact.value.prototypes.map((item): ImpactRow => {
     const record = existing.find((entry) => entry.name === item.name);
     const report = record ? checkPrototype({ config, prototype: record.prototype, ...(record.snapshots ? { snapshots: record.snapshots } : {}) }) : null;
     const now = report?.findings.filter((finding) => about.has(finding.rule)).length ?? 0;
     const after = record ? checkPrototype({ config: impact.value.config, prototype: record.prototype, ...(record.snapshots ? { snapshots: record.snapshots } : {}) }) : null;
     const stillFailing = after?.rules.filter((rule) => rule.status === "fail").map((rule) => rule.rule) ?? [];
-    const has = now === 0 ? `No finding from ${one ? "this rule" : "these rules"} now.` : `${count(now, "finding")} from ${one ? "this rule" : "these rules"} now.`;
+    const has = now === 0 ? `No finding from ${said} now.` : `${count(now, "finding")} from ${said} now.`;
     const newly = item.rules.filter((rule) => rule.after === "fail" && rule.before !== "fail").map((rule) => rule.rule);
     if (newly.length > 0) {
       const first = item.added.find((finding) => newly.includes(finding.rule));
@@ -293,7 +293,7 @@ export function impactOf(config: ProjectConfig, draft: ProposalDraft, existing: 
   const clears = rows.filter((row) => row.effect === "clears").length;
   const fails = rows.filter((row) => row.effect === "fails").length;
   const parts = [
-    rows.length === 0 ? "The project has no prototype to read." : `${having(withFindings, rows.length)} from ${one ? "this rule" : "these rules"} now`,
+    rows.length === 0 ? "The project has no prototype to read." : `${having(withFindings, rows.length)} from ${said} now`,
     ...(rows.length > 0 && clears > 0 ? [`${rows.length === 1 ? "it" : clears} would stop failing`] : []),
     ...(rows.length > 0 && fails > 0 ? [`${rows.length === 1 ? "it" : fails} would newly fail`] : []),
   ];
@@ -319,6 +319,23 @@ export type ExampleChoice = {
   readonly needs: readonly string[];
 };
 
+/** The rules in force that hold each task's routes to its step budget. Usually one, `step-budget`; none when a project removed it. */
+export function stepBudgetRules(config: ProjectConfig): readonly RuleSpec[] {
+  return config.rules.filter((rule) => rule.type === "flow" && rule.check === "step-budget");
+}
+
+/** A task's step budget a draft lowers, with a rule in force that reads it: what a failing example has to show. */
+type LoweredBudget = { readonly rule: string; readonly task: string; readonly before: number; readonly after: number };
+
+function loweredBudgets(config: ProjectConfig, candidate: ProjectConfig, draft: ProposalDraft): readonly LoweredBudget[] {
+  const rule = stepBudgetRules(candidate)[0];
+  if (!rule) return [];
+  return config.inputs.tasks.flatMap((task) => {
+    const after = candidate.inputs.tasks.find((item) => item.id === task.id)?.maxSteps;
+    return draft.inventory.some((op) => op.op === "set-max-steps" && op.task === task.id) && after !== undefined && after < task.maxSteps ? [{ rule: rule.id, task: task.id, before: task.maxSteps, after }] : [];
+  });
+}
+
 type Source = { readonly label: string; readonly from: string; readonly prototype: ExistingPrototype["prototype"]; readonly snapshots?: readonly RenderedSnapshot[]; readonly cleared: boolean };
 
 /**
@@ -326,7 +343,9 @@ type Source = { readonly label: string; readonly from: string; readonly prototyp
  * has and never written here: one prototype that passes every rule with the
  * draft applied, and for each rule the draft adds (a changed rule is one),
  * a prototype that rule flags and no other does; a draft that adds no rule
- * needs any one prototype a single rule still in force flags. The project's
+ * needs any one prototype a single rule still in force flags, except that
+ * a draft that lowers a task's step budget is proven like a changed rule:
+ * by a prototype whose route the new budget flags. The project's
  * prototypes come first, one the draft clears before the rest, then the
  * examples adopted proposals keep. Each is read by `checkPrototype` under
  * the draft's config, on the snapshots it has, as `adopt` will read it.
@@ -349,7 +368,7 @@ export function chooseExamples(config: ProjectConfig, draft: ProposalDraft, exis
   const added = draft.rules.add.map((rule) => rule.id);
   const read = sources.map((source) => {
     const report = checkPrototype({ config: candidate, prototype: source.prototype, ...(source.snapshots ? { snapshots: source.snapshots } : {}) });
-    return { source, failing: report.rules.filter((rule) => rule.status === "fail").map((rule) => rule.rule), unrun: report.rules.filter((rule) => rule.status === "not-run").map((rule) => rule.rule) };
+    return { source, findings: report.findings, failing: report.rules.filter((rule) => rule.status === "fail").map((rule) => rule.rule), unrun: report.rules.filter((rule) => rule.status === "not-run").map((rule) => rule.rule) };
   });
 
   const names = new Set<string>();
@@ -375,15 +394,31 @@ export function chooseExamples(config: ProjectConfig, draft: ProposalDraft, exis
     needs.push("a prototype that passes every rule once this is adopted");
   }
   const flaggedBy = (rule: string | null) => read.find((item) => item !== passing && item.failing.length === 1 && (rule === null ? inForce.has(item.failing[0] ?? "") : item.failing[0] === rule));
-  for (const rule of added.length > 0 ? added : [null]) {
-    const found = flaggedBy(rule);
+  // A route over the new budget and within the old one shows the change itself; one already over both still shows the budget fires.
+  const overBudget = (want: LoweredBudget) => {
+    const over = read.flatMap((item) => {
+      if (item === passing || item.failing.length !== 1 || item.failing[0] !== want.rule) return [];
+      const steps = item.findings.flatMap((finding) => (finding.rule === want.rule && finding.evidence?.kind === "route-vs-budget" && finding.evidence.task === want.task ? [finding.evidence.steps] : []));
+      return steps.length > 0 ? [{ item, newly: steps.every((count) => count <= want.before) }] : [];
+    });
+    return (over.find((entry) => entry.newly) ?? over[0])?.item;
+  };
+  const wanted: readonly (string | LoweredBudget | null)[] = [...added, ...loweredBudgets(config, candidate, draft)];
+  for (const rule of wanted.length > 0 ? wanted : [null]) {
+    const found = rule !== null && typeof rule === "object" ? overBudget(rule) : flaggedBy(rule);
     const by = found?.failing[0];
     if (found && by !== undefined) {
       const name = nameFor(found.source.label, "fail");
       fail.push({ name, prototype: found.source.prototype, flaggedBy: { rule: by } });
       picked.push({ name, expect: "fail", from: found.source.from, rule: by });
     } else {
-      needs.push(rule === null ? "a prototype that one rule still in force flags, and no other rule does" : `a prototype that ${rule} flags as changed, and no other rule does`);
+      needs.push(
+        rule === null
+          ? "a prototype that one rule still in force flags, and no other rule does"
+          : typeof rule === "object"
+            ? `a prototype whose longest route for ${rule.task} takes more than ${count(rule.after, "step")}, so that ${rule.rule} flags it, and no other rule does`
+            : `a prototype that ${rule} flags as changed, and no other rule does`,
+      );
     }
   }
   return { examples: { pass, fail }, picked, needs };
