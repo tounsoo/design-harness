@@ -1,10 +1,10 @@
 import { Badge, Button, Field, Loader, Popover, Stack, Text, ToggleGroup, Toolbar, VisuallyHidden, usePopover } from "@tounsoo/todae";
 import { ArrowLeft, Grid3x3, Maximize2, PanelBottomDashed, Pointer, ZoomIn, ZoomOut } from "lucide-react";
-import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
-import { flowFacts, viewFacts, type Finding, type ProjectConfig } from "@design-harness/core";
+import { createContext, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type Ref } from "react";
+import { flowFacts, viewFacts, type Finding, type ProjectConfig, type RenderedSnapshot } from "@design-harness/core";
 import { FRAME_SANDBOX } from "../runtime/frame-document";
 import { PACKAGES_UNAVAILABLE } from "../runtime/package-source";
-import { frameKey, type FrameSpec, type FrameState, type Session, type SessionState } from "../runtime/session";
+import { frameKey, type FramePresence, type FrameSpec, type FrameState, type Session, type SessionState } from "../runtime/session";
 import { planOutline } from "../runtime/tags";
 import { cameraMove } from "../visual/camera";
 import { coverage } from "../visual/coverage";
@@ -215,7 +215,7 @@ export function Board({
   );
 
   return (
-    <div className="board" data-focused={focused ? "" : undefined} data-floating={floating ? "" : undefined}>
+    <div className="board" data-focused={focused ? "" : undefined} data-floating={floating ? "" : undefined} data-engine={session.engineWhere()}>
       <Toolbar.Root aria-label="Canvas" className="board-toolbar">
         {floating && <div className="board-toolbar-start">{floating.start}</div>}
         {focusedSpec ? (
@@ -330,6 +330,7 @@ function linesOf(row: readonly FrameSpec[]): FrameSpec[][] {
 function statusOf(frameState: FrameState): { tone: "neutral" | "success" | "critical" | "info"; text: string } | null {
   switch (frameState.state) {
     case "waiting":
+      return { tone: "neutral", text: "Waiting to measure" };
     case "rendering":
       return { tone: "info", text: "Measuring" };
     case "measured":
@@ -423,13 +424,77 @@ export function FrameCard({ session, spec, revision, frameState, scale, focused,
 }
 
 /**
- * One frame's live iframe, scaled, with its failure over it when it has one:
+ * Whether the frames under it are on a view the person can see: false for
+ * the board while another view is open over it, where it stays laid out
+ * (and measuring) but out of sight, so its frames are parked.
+ */
+export const FramesShown = createContext(true);
+
+/** The nearest ancestor that scrolls, which is what "near the screen" is measured against; null for the page itself. */
+function scroller(element: HTMLElement): HTMLElement | null {
+  for (let parent = element.parentElement; parent && parent !== document.body && parent !== document.documentElement; parent = parent.parentElement) {
+    const style = getComputedStyle(parent);
+    if (/(auto|scroll|overlay)/.test(`${style.overflowY} ${style.overflowX}`)) return parent;
+  }
+  return null;
+}
+
+/**
+ * Calls `near` with whether an element is on screen or within half a screen
+ * of it, in the area that scrolls it, and again whenever that changes.
+ * Without IntersectionObserver every frame counts as near, as before.
+ */
+function watchNear(element: HTMLElement, near: (value: boolean) => void): () => void {
+  if (typeof IntersectionObserver === "undefined") {
+    near(true);
+    return () => undefined;
+  }
+  const observer = new IntersectionObserver((entries) => {
+    const last = entries.at(-1);
+    if (last) near(last.isIntersecting);
+  }, { root: scroller(element), rootMargin: "50% 25%" });
+  observer.observe(element);
+  return () => observer.disconnect();
+}
+
+/**
+ * One frame's iframe, scaled, with its failure over it when it has one:
  * the artboard without its label, for where the frame is a picture inside
  * something else, as a role's preview is.
+ *
+ * The iframe is in the DOM only while the session keeps the frame live
+ * (`Session.liveOf`): while it renders to be measured, and afterwards while
+ * it is near the screen and the live-frame budget has room. Otherwise the
+ * frame is parked, and the viewport keeps its size and draws what the
+ * snapshot measured, as outlines, until it is drawn again.
  */
 export function FrameViewport({ session, spec, revision, frameState, scale, hidden, name, fit, packagesHint }: Pick<CardProps, "session" | "spec" | "revision" | "frameState" | "scale" | "hidden" | "packagesHint"> & { readonly name: string; /** Show only as much of the view as the page fills, once it is measured. */ readonly fit?: boolean }) {
-  // A fresh document, on a fresh channel, for every revision.
-  const doc = useMemo(() => (spec.blocked ? null : session.documentFor(spec.key)), [session, spec.key, spec.blocked, revision]);
+  const shown = useContext(FramesShown);
+  const box = useRef<HTMLDivElement>(null);
+  const presence = useRef<FramePresence | null>(null);
+  const [near, setNear] = useState(false);
+  // Drawn here: the session measures the frame, near the screen first.
+  useEffect(() => {
+    if (spec.blocked) return;
+    const present = session.present(spec.key);
+    presence.current = present;
+    return () => {
+      present.leave();
+      if (presence.current === present) presence.current = null;
+    };
+  }, [session, spec.key, spec.blocked]);
+  useEffect(() => {
+    const element = box.current;
+    return element ? watchNear(element, setNear) : undefined;
+  }, []);
+  const visible = near && !hidden && shown;
+  useEffect(() => {
+    presence.current?.visible(visible);
+  }, [visible, session, spec.key, spec.blocked]);
+  const live = useSyncExternalStore(session.subscribeLive, () => session.liveOf(spec.key));
+  const drawn = useSyncExternalStore(session.subscribeLive, () => session.drawnOf(spec.key));
+  // A fresh document, on a fresh channel, for every revision and every time the frame goes live.
+  const doc = useMemo(() => (spec.blocked || live === null ? null : session.documentFor(spec.key)), [session, spec.key, spec.blocked, revision, live]);
   // One stable ref per document: a new callback on each render would detach and re-attach the frame.
   const attach = useCallback(
     (element: HTMLIFrameElement | null) => {
@@ -445,8 +510,8 @@ export function FrameViewport({ session, spec, revision, frameState, scale, hidd
   const top = fit && frameState.state === "measured" ? frameState.snapshot.elements.filter((element) => element.visible).reduce((least, element) => Math.min(least, element.rect.y), Number.POSITIVE_INFINITY) : 0;
   const height = filled > 0 && Number.isFinite(top) ? Math.min(spec.view.height, Math.ceil(filled + Math.max(top, 0))) : spec.view.height;
   return (
-    <div className="frame-viewport" style={{ width: width * scale, height: height * scale, background: spec.view.scheme === "dark" ? "#121212" : "#ffffff" }}>
-      {doc && (
+    <div ref={box} className="frame-viewport" data-frame-name={name} data-live={doc ? "" : undefined} data-drawn={doc && drawn ? "" : undefined} style={{ width: width * scale, height: height * scale, background: spec.view.scheme === "dark" ? "#121212" : "#ffffff" }}>
+      {doc ? (
         <iframe
           key={doc.channel}
           ref={attach}
@@ -460,6 +525,8 @@ export function FrameViewport({ session, spec, revision, frameState, scale, hidd
           style={{ transform: `scale(${scale})`, colorScheme: spec.view.scheme }}
           tabIndex={hidden ? -1 : undefined}
         />
+      ) : (
+        frameState.state === "measured" && <ParkedFrame snapshot={frameState.snapshot} width={width} height={spec.view.height} scale={scale} />
       )}
       {frameState.state === "failed" && (
         <div className="frame-failure" role="status">
@@ -477,5 +544,26 @@ export function FrameViewport({ session, spec, revision, frameState, scale, hidd
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * A parked frame: what its snapshot measured, drawn as outlines on the
+ * page's canvas colour, controls as boxes and text as bars in the colour it
+ * was painted. A picture of the data the checks read, never of pixels.
+ */
+function ParkedFrame({ snapshot, width, height, scale }: { readonly snapshot: RenderedSnapshot; readonly width: number; readonly height: number; readonly scale: number }) {
+  const rgba = (color: readonly [number, number, number, number]) => `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${color[3]})`;
+  return (
+    <svg className="frame-parked" data-testid="frame-parked" width={width * scale} height={height * scale} viewBox={`0 0 ${width} ${height}`} aria-hidden="true" focusable="false">
+      <rect width={width} height={height} fill={rgba(snapshot.canvas)} />
+      {snapshot.elements.map((element, index) =>
+        !element.visible || element.rect.y > height ? null : element.interactive ? (
+          <rect key={index} x={element.rect.x} y={element.rect.y} width={element.rect.width} height={element.rect.height} rx={4} fill="none" stroke={element.text ? rgba(element.text.color) : "currentColor"} strokeOpacity={0.5} strokeWidth={1.5} />
+        ) : element.text ? (
+          <rect key={index} x={element.rect.x} y={element.rect.y + element.rect.height * 0.2} width={element.rect.width} height={element.rect.height * 0.6} rx={2} fill={rgba(element.text.color)} fillOpacity={0.22} />
+        ) : null,
+      )}
+    </svg>
   );
 }

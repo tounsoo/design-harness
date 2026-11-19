@@ -1,5 +1,5 @@
 import { describeRule, type Finding, type ProjectConfig, type RuleReport } from "@design-harness/core";
-import type { FrameSpec } from "../runtime/session";
+import type { FrameSpec, FrameState, SessionState } from "../runtime/session";
 import type { OutlinePlan } from "../runtime/tags";
 
 /**
@@ -117,4 +117,20 @@ export function describeOutline(plan: OutlinePlan, frames: readonly FrameSpec[])
   if (plan.unmeasured.length > 0) parts.push(`Not measured in ${plan.unmeasured.map((key) => frameNameOf(key, frames)).join("; ")}.`);
   if (parts.length === 0) parts.push("Not drawn in any scenario.");
   return parts.join(" ");
+}
+
+/**
+ * What is still pending, plainly: how many frames have answered, how many
+ * are being measured now and how many wait their turn (frames near the
+ * screen go first, the rest are measured out of sight), or, once every
+ * frame has answered, that core is checking them.
+ */
+export function pendingWords(state: SessionState): string {
+  const count = (value: FrameState["state"]) => state.frames.filter((frame) => state.frameStates[frame.key]?.state === value).length;
+  const frames = state.frames.length;
+  const answered = count("measured") + count("failed");
+  if (answered === frames) return `Every frame has answered; core is checking the ${frames} ${frames === 1 ? "snapshot" : "snapshots"}.`;
+  const rendering = count("rendering");
+  const waiting = count("waiting");
+  return `Measuring the frames: ${answered} of ${frames} answered, ${rendering} measuring now, ${waiting} waiting their turn. Rules about the rendered page wait for every frame.`;
 }

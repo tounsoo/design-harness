@@ -137,9 +137,40 @@ const UNDERSIZED = (text) =>
 
 const BOOKING_SCENARIOS = SCENARIOS.filter((scenario) => scenario !== "rooms-list");
 
+/**
+ * A frame's iframe, once its artboard is on screen, it is live and its page
+ * is drawn. A frame off screen is parked once it is measured (its iframe
+ * leaves the DOM and its snapshot stays), and drawn again in a fresh
+ * document when it comes near the screen, so a test brings it on screen
+ * first, as a person would.
+ */
+async function liveFrame(page, title) {
+  const viewport = page.locator(`.frame-viewport[data-frame-name="${title}"]`).first();
+  await viewport.waitFor({ state: "attached" });
+  await viewport.evaluate((element) => element.scrollIntoView({ block: "center", inline: "center" }));
+  // Live, and its page drawn in the new document.
+  await page.locator(`.frame-viewport[data-frame-name="${title}"][data-drawn] iframe[title="${title}"]`).first().waitFor({ state: "attached", timeout: 60000 });
+  return page.frameLocator(`iframe[title="${title}"]`).first();
+}
+
+/**
+ * Every frame the board shows, one at a time: each brought on screen until
+ * it is live and its page drawn, with its iframe and its Playwright frame. Frames out of sight are parked, so a test that reaches into
+ * every frame visits each in turn.
+ */
+async function* everyLiveFrame(page) {
+  const titles = await page.locator(".board .frame-card:not([data-hidden]) .frame-viewport[data-frame-name]").evaluateAll((elements) => elements.map((element) => element.dataset.frameName));
+  for (const title of titles) {
+    await liveFrame(page, title);
+    const iframe = page.locator(`iframe[title="${title}"]`).first();
+    const frame = await (await iframe.elementHandle()).contentFrame();
+    yield { title, iframe, frame };
+  }
+}
+
 /** Each overlay's box in one frame. */
 async function overlays(page, scenario, view) {
-  const frame = page.frameLocator(`iframe[title="${scenario} at ${view}"]`);
+  const frame = (await liveFrame(page, `${scenario} at ${view}`));
   return frame.locator("[data-design-harness-overlay]").evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().toJSON()));
 }
 
@@ -150,7 +181,7 @@ const surrounds = (outer, inner) => outer.x <= inner.x && outer.y <= inner.y && 
 async function outlinedInBookingFrames(page, count) {
   for (const scenario of BOOKING_SCENARIOS) {
     for (const view of VIEWS) {
-      await page.frameLocator(`iframe[title="${scenario} at ${view}"]`).locator("[data-design-harness-overlay]").nth(count - 1).waitFor({ state: "attached" });
+      await (await liveFrame(page, `${scenario} at ${view}`)).locator("[data-design-harness-overlay]").nth(count - 1).waitFor({ state: "attached" });
       assert.equal((await overlays(page, scenario, view)).length, count, `${scenario} at ${view} outlines ${count}`);
     }
   }
@@ -159,7 +190,7 @@ async function outlinedInBookingFrames(page, count) {
 
 /** The boxes of every button named `name` in a frame. */
 async function buttonBoxes(page, scenario, view, name) {
-  return page.frameLocator(`iframe[title="${scenario} at ${view}"]`).getByRole("button", { name, exact: true }).evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().toJSON()));
+  return (await liveFrame(page, `${scenario} at ${view}`)).getByRole("button", { name, exact: true }).evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().toJSON()));
 }
 
 // ---- tests -----------------------------------------------------------------
@@ -171,12 +202,12 @@ test("the seeded Nook project renders every frame", async ({ browser, base }) =>
   assert.deepEqual(cards, SCENARIOS.flatMap((scenario) => VIEWS.map((view) => [`${scenario}@${view}`, "measured"])));
   for (const scenario of SCENARIOS) {
     for (const view of VIEWS) {
-      const frame = page.frameLocator(`iframe[title="${scenario} at ${view}"]`);
+      const frame = (await liveFrame(page, `${scenario} at ${view}`));
       const title = (await frame.locator("h1").textContent())?.trim();
       assert.equal(title, scenario === "rooms-list" ? "Rooms" : "Lantern", `${scenario} at ${view} shows its title`);
     }
   }
-  const booked = await page.frameLocator('iframe[title="lantern-booked at phone"]').locator("text=Booked until 3 pm").count();
+  const booked = await (await liveFrame(page, 'lantern-booked at phone')).locator("text=Booked until 3 pm").count();
   assert.equal(booked, 1, "the booked scenario's state reaches the page");
   await shot(page, "board-light");
   assert.deepEqual(errors, []);
@@ -241,6 +272,28 @@ test("a second primary action brings core's finding: selecting it outlines both 
   await shot(page, "failing-source-light");
 });
 
+test("a frame drawn again outlines its finding without moving the board", async ({ browser, base }) => {
+  const { page } = await openApp(browser, base);
+  await measured(page, 1);
+  await editFile(page, "pages/booking.tsx", SECOND_PRIMARY);
+  await measured(page, 2);
+  await showAllRules(page);
+  await page.locator('.rule[data-rule="one-primary-per-page"] .finding').first().click();
+  // The camera has moved to the finding's first artboard; from here only the test moves the board.
+  await (await liveFrame(page, "lantern-open at desktop")).locator("[data-design-harness-overlay]").nth(1).waitFor({ state: "attached" });
+  const area = page.locator(".board-area");
+  const bottom = await area.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    return element.scrollTop;
+  });
+  // The last row's frames were parked out of sight: they are drawn again, and outline both actions in their own page.
+  const last = "lantern-held at phone-dark";
+  await page.locator(`.frame-viewport[data-frame-name="${last}"][data-drawn]`).waitFor({ state: "attached", timeout: 60000 });
+  await page.frameLocator(`iframe[title="${last}"]`).locator("[data-design-harness-overlay]").nth(1).waitFor({ state: "attached" });
+  await page.waitForTimeout(500);
+  assert.equal(await area.evaluate((element) => element.scrollTop), bottom, "an outline scrolls only its own frame's page, never the board");
+});
+
 test("an undersized control brings the rendered target-size finding, highlighted in its frame", async ({ browser, base }) => {
   const { page } = await openApp(browser, base);
   await measured(page, 1);
@@ -254,7 +307,7 @@ test("an undersized control brings the rendered target-size finding, highlighted
   assert.equal(typeof finding.element, "number");
   await showAllRules(page);
   await page.locator('.rule[data-rule="target-size"] .finding').filter({ hasText: finding.message }).filter({ hasText: "scenario lantern-open" }).filter({ hasText: /view desktop$/ }).click();
-  const frame = page.frameLocator('iframe[title="lantern-open at desktop"]');
+  const frame = (await liveFrame(page, 'lantern-open at desktop'));
   await frame.locator("[data-design-harness-overlay]").waitFor({ state: "attached" });
   const overlay = await frame.locator("[data-design-harness-overlay]").boundingBox();
   const target = await frame.getByRole("button", { name: "A", exact: true }).boundingBox();
@@ -302,15 +355,15 @@ test("export then import round-trips the project", async ({ browser, base }) => 
 
   await editFile(page, "pages/rooms.tsx", (text) => text.replace('<Text.Root as="h1">Rooms</Text.Root>', '<Text.Root as="h1">Spaces</Text.Root>'));
   await measured(page, 2);
-  assert.equal((await page.frameLocator('iframe[title="rooms-list at desktop"]').locator("h1").textContent()).trim(), "Spaces");
+  assert.equal((await (await liveFrame(page, 'rooms-list at desktop')).locator("h1").textContent()).trim(), "Spaces");
 
   await page.locator('[data-testid="import-file"]').setInputFiles(path);
   await measured(page, 1);
-  assert.equal((await page.frameLocator('iframe[title="rooms-list at desktop"]').locator("h1").textContent()).trim(), "Rooms");
+  assert.equal((await (await liveFrame(page, 'rooms-list at desktop')).locator("h1").textContent()).trim(), "Rooms");
   assert.equal((await report(page)).status, "pass");
   await page.reload();
   await measured(page, 1);
-  assert.equal((await page.frameLocator('iframe[title="rooms-list at desktop"]').locator("h1").textContent()).trim(), "Rooms", "the import was saved");
+  assert.equal((await (await liveFrame(page, 'rooms-list at desktop')).locator("h1").textContent()).trim(), "Rooms", "the import was saved");
 
   const broken = join(dirname(path), "broken.json");
   writeFileSync(broken, JSON.stringify({ ...exported, project: { ...exported.project, views: [] } }));
@@ -337,12 +390,16 @@ test("a frame cannot reach the app: no parent DOM, storage, cookies or network",
   const flagged = (await report(page)).findings.filter((item) => item.rule === "no-ambient-globals").map((item) => item.message);
   assert.ok(flagged.some((message) => message.startsWith("pages/rooms.tsx:1:7 uses window")), `core refuses the prototype that reaches for the app: ${flagged.join(" | ")}`);
 
+  // Off-screen frames are parked once measured; every iframe in the DOM is sandboxed, and each frame is visited live below.
   const sandboxes = await page.locator("iframe").evaluateAll((elements) => elements.map((element) => element.getAttribute("sandbox")));
-  assert.equal(sandboxes.length, FRAMES);
+  assert.ok(sandboxes.length > 0 && sandboxes.length <= FRAMES, `${sandboxes.length} live frames`);
   assert.ok(sandboxes.every((value) => value === "allow-scripts"));
 
   const codeFromStrings = [];
-  for (const frame of page.frames().filter((item) => item !== page.mainFrame())) {
+  let visited = 0;
+  for await (const { iframe, frame } of everyLiveFrame(page)) {
+    visited += 1;
+    assert.equal(await iframe.getAttribute("sandbox"), "allow-scripts");
     const { strings, ...probe } = await frame.evaluate(async () => {
       const attempt = async (fn) => {
         try {
@@ -387,6 +444,7 @@ test("a frame cannot reach the app: no parent DOM, storage, cookies or network",
     });
     if (strings[0] !== undefined) codeFromStrings.push(strings);
   }
+  assert.equal(visited, FRAMES, "every frame was probed");
   assert.deepEqual(codeFromStrings, VIEWS.map(() => ["EvalError", "EvalError"]), "the CSP refuses eval and the Function constructor to prototype code in every rooms frame");
 });
 
@@ -511,15 +569,15 @@ test("a project on another library, Mantine, renders on the board with every rul
   for (const rule of ["target-size", "accessible-names", "heading-structure", "text-contrast", "rank-1-in-first-view", "no-sideways-scroll"]) {
     assert.equal(value.rules.find((item) => item.rule === rule)?.status, "pass", `${rule} ran on measured Mantine frames`);
   }
-  for (const scenario of TALLY_SCENARIOS) for (const view of TALLY_VIEWS) assert.equal(await page.locator(`iframe[title="${scenario} at ${view}"]`).count(), 1, `${scenario} at ${view} is on the board`);
+  for (const scenario of TALLY_SCENARIOS) for (const view of TALLY_VIEWS) assert.equal(await page.locator(`.frame-card[data-state="measured"] .frame-viewport[data-frame-name="${scenario} at ${view}"]`).count(), 1, `${scenario} at ${view} is on the board, measured`);
   // Mantine's own parts, inside its provider, in each view's scheme: the phone view is dark.
-  const open = page.frameLocator('iframe[title="lunch-open at desktop"]');
+  const open = (await liveFrame(page, 'lunch-open at desktop'));
   assert.equal((await open.locator("h1").textContent()).trim(), "Team lunch");
   assert.equal(await open.locator("button.mantine-Button-root").count(), 2);
   assert.equal(await open.getByLabel("Amount in euros").count(), 1, `Mantine's label names the amount field: ${logs.join("\n").slice(0, 3000)}`);
   assert.equal(await open.getByLabel("Amount in euros").inputValue(), "48.20");
   assert.equal(await open.locator(":root").getAttribute("data-mantine-color-scheme"), "light");
-  assert.equal(await page.frameLocator('iframe[title="lunch-open at phone"]').locator(":root").getAttribute("data-mantine-color-scheme"), "dark");
+  assert.equal(await (await liveFrame(page, 'lunch-open at phone')).locator(":root").getAttribute("data-mantine-color-scheme"), "dark");
   await shot(page, "tally-board-light");
 
   // Injected: the expense's title drawn as an h3, which only the measured heading structure can see.
@@ -539,7 +597,7 @@ test("a project on another library, Mantine, renders on the board with every rul
   await place.click();
   await page.locator('.frame-card[data-frame-key="lunch-open@desktop"][data-selected]').waitFor({ state: "attached" });
   await eventually(page, () => place.getAttribute("aria-pressed"), (value) => value === "true", "the place shown is pressed");
-  assert.equal(await page.frameLocator('iframe[title="lunch-open at desktop"]').locator("[data-design-harness-overlay]").count(), 0);
+  assert.equal(await (await liveFrame(page, 'lunch-open at desktop')).locator("[data-design-harness-overlay]").count(), 0);
   await showAllRules(page);
   assert.equal(await page.getByTestId("report-status").textContent(), "fail");
   assert.ok((await page.locator('.rule[data-rule="heading-structure"] .finding').filter({ hasText: "scenario lunch-open" }).count()) > 0, "the rule list behind Details names the finding in its frame");
@@ -642,7 +700,7 @@ test("the agent edits a file through the API, and the frames and checks follow",
   await ask(page, "Call the rooms page Spaces");
   assert.equal(await turnEnded(page), "done");
   assert.equal(api.left(), 0);
-  assert.equal((await page.frameLocator('iframe[title="rooms-list at desktop"]').locator("h1").textContent()).trim(), "Spaces");
+  assert.equal((await (await liveFrame(page, 'rooms-list at desktop')).locator("h1").textContent()).trim(), "Spaces");
   await measured(page, 2);
   assert.equal((await report(page)).status, "pass");
   const reply = page.locator(".chat-reply").last();
@@ -746,7 +804,7 @@ test("stop mid-stream: the reply stops, nothing runs, and the next message works
   await page.getByRole("button", { name: "Stop" }).click();
   assert.equal(await turnEnded(page), "stopped");
   assert.equal(await page.locator(".chat-reply").last().locator('.chat-tool[data-tool="write_file"]').count(), 0, "the half-streamed tool call never ran");
-  assert.equal((await page.frameLocator('iframe[title="rooms-list at desktop"]').locator("h1").textContent()).trim(), "Rooms");
+  assert.equal((await (await liveFrame(page, 'rooms-list at desktop')).locator("h1").textContent()).trim(), "Rooms");
   await ask(page, "Never mind");
   assert.equal(await turnEnded(page), "done");
   assert.deepEqual(api.requests[1].body.messages.map((message) => message.role), ["user", "user"], "the stopped reply is not in the history");
@@ -787,11 +845,11 @@ test("undo puts the prototype back as it was before the turn, and the agent is t
   await enterKey(page);
   await ask(page, "Call the rooms page Spaces");
   assert.equal(await turnEnded(page), "done");
-  assert.equal((await page.frameLocator('iframe[title="rooms-list at desktop"]').locator("h1").textContent()).trim(), "Spaces");
+  assert.equal((await (await liveFrame(page, 'rooms-list at desktop')).locator("h1").textContent()).trim(), "Spaces");
   await page.getByRole("button", { name: "Undo this turn" }).click();
   await page.locator(".chat-reply").last().getByText("Undone").waitFor();
   await measured(page, 3);
-  assert.equal((await page.frameLocator('iframe[title="rooms-list at desktop"]').locator("h1").textContent()).trim(), "Rooms");
+  assert.equal((await (await liveFrame(page, 'rooms-list at desktop')).locator("h1").textContent()).trim(), "Rooms");
   assert.equal((await report(page)).status, "pass");
   await ask(page, "Thanks");
   assert.equal(await turnEnded(page), "done");
@@ -809,9 +867,9 @@ test("the key is in no frame, export, project storage, page storage or log; reme
   await page.getByText("Settings and key").click();
   assert.match(await page.getByTestId("key-status").textContent(), /^Key sk-ant-…mnop: in this tab's memory, and stored on this device in IndexedDB database "design-harness-key"/);
 
-  const frames = page.frames().filter((item) => item !== page.mainFrame());
-  assert.equal(frames.length, FRAMES);
-  for (const frame of frames) {
+  const srcdocs = [];
+  for await (const { iframe, frame } of everyLiveFrame(page)) {
+    srcdocs.push((await iframe.getAttribute("srcdoc")) ?? "");
     const seen = await frame.evaluate(async (key) => {
       const reach = async (fn) => {
         try {
@@ -837,7 +895,7 @@ test("the key is in no frame, export, project storage, page storage or log; reme
     }, KEY);
     assert.deepEqual(seen, { dom: "not found", globals: "not found", parent: "SecurityError", storage: "SecurityError" });
   }
-  const srcdocs = await page.locator("iframe").evaluateAll((items) => items.map((item) => item.getAttribute("srcdoc") ?? ""));
+  assert.equal(srcdocs.length, FRAMES, "every frame was visited live");
   assert.ok(srcdocs.every((html) => !html.includes(KEY)), "no frame document carries the key");
 
   const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export", exact: true }).click()]);
@@ -1016,7 +1074,7 @@ test("a drafted proposal opens to its review page: examples side by side in fram
   assert.equal(await example(page, "two-toasts").getByTestId("example-detail").textContent(), 'flagged by "one-toast-per-page" and no other rule');
   // Rendered in frames of their own, at every view, opened on the scenario the rule flags.
   for (const view of VIEWS) {
-    const frame = page.frameLocator(`iframe[title="two-toasts: lantern-open at ${view}"]`);
+    const frame = (await liveFrame(page, `two-toasts: lantern-open at ${view}`));
     assert.equal(await frame.locator("text=Booked").count(), 2, `the failing example renders its two toasts at ${view}`);
     assert.equal(await page.locator(`.example[data-example="two-toasts"] .frame-card[data-frame-key="lantern-open@${view}"]`).getAttribute("data-state"), "measured");
   }
@@ -1238,7 +1296,7 @@ test("a proposal that adds a rendered rule adopts on measured snapshots, and giv
   assert.equal(await example(page, "long-intro").getByTestId("example-verdict").textContent(), "fails for harbor-in-first-view alone");
   assert.match(await example(page, "long-intro").locator(".finding-message").first().textContent(), /^At \d+ by \d+: "Open Harbor" is at \d+ to \d+ CSS px, below the first view of \d+\.$/);
   // The frame outlines the button the rendered rule flags, with the board's own highlight.
-  const frame = page.frameLocator('iframe[title="long-intro: rooms-list at phone"]');
+  const frame = (await liveFrame(page, 'long-intro: rooms-list at phone'));
   await frame.locator("[data-design-harness-overlay]").waitFor({ state: "attached" });
   const overlay = await frame.locator("[data-design-harness-overlay]").boundingBox();
   const target = await frame.getByRole("button", { name: "Open Harbor" }).boundingBox();
@@ -1268,11 +1326,12 @@ test("a proposal that adds a rendered rule adopts on measured snapshots, and giv
   // The Project tab's palette draws its own frames as its tiles are scrolled to; a re-run adds none.
   await page.getByTestId("regression").scrollIntoViewIfNeeded();
   await page.waitForTimeout(500);
-  const framesBefore = await page.locator("iframe").count();
+  const viewportsBefore = await page.locator(".frame-viewport").count();
   await page.getByRole("button", { name: "Re-run every adopted proposal's examples" }).click();
   assert.match(await page.getByTestId("regression-summary").textContent(), /^All 2 examples behave/);
-  assert.equal(await page.locator("iframe").count(), framesBefore, "re-running reads the stored snapshots: no example is rendered again");
-  assert.equal(await page.locator('iframe:not([title*="drawn by"])').count(), FRAMES, "the only other frames are the board's");
+  // Every frame has a viewport, live or parked; the palette's tiles are named "drawn by". Re-running adds none, and renders no example.
+  assert.equal(await page.locator(".frame-viewport").count(), viewportsBefore, "re-running reads the stored snapshots: no example is rendered again");
+  assert.equal(await page.locator('.frame-viewport:not([data-frame-name*="drawn by"])').count(), FRAMES, "the only other frames are the board's");
   assert.deepEqual(await page.locator('[data-testid="regression"] tbody tr').evaluateAll((rows) => rows.map((row) => [...row.cells].map((cell) => cell.textContent.trim()))), [
     ["harbor-first-view", "as-is", "pass", "behaves", "passes every rule"],
     ["harbor-first-view", "long-intro", "fail", "behaves", 'flagged by "harbor-in-first-view"'],
@@ -1405,13 +1464,13 @@ test("the spec prototype renders every frame from data, and passes every rule", 
   const cards = await page.locator(".frame-card").evaluateAll((elements) => elements.map((element) => [element.dataset.frameKey, element.dataset.state]));
   assert.deepEqual(cards, SCENARIOS.flatMap((scenario) => VIEWS.map((view) => [`${scenario}@${view}`, "measured"])));
   for (const scenario of SCENARIOS) {
-    const frame = page.frameLocator(`iframe[title="${scenario} at desktop"]`);
+    const frame = (await liveFrame(page, `${scenario} at desktop`));
     assert.equal((await frame.locator("h1").textContent())?.trim(), scenario === "rooms-list" ? "Rooms" : "Lantern");
   }
-  const booked = page.frameLocator('iframe[title="lantern-booked at phone"]');
+  const booked = (await liveFrame(page, 'lantern-booked at phone'));
   assert.equal(await booked.locator("text=Booked until 3 pm").count(), 1, "the scenario's flow state reaches the spec's visible condition");
   assert.equal(await booked.locator("text=Held for 10 minutes").count(), 0);
-  const rooms = page.frameLocator('iframe[title="rooms-list at desktop"]');
+  const rooms = (await liveFrame(page, 'rooms-list at desktop'));
   assert.deepEqual(await rooms.getByRole("button").allTextContents(), ["Open Lantern", "Open Harbor"], "the repeat draws one card per room in state");
   const value = await report(page);
   assert.equal(value.status, "pass", JSON.stringify(value.findings, null, 1));
@@ -1425,7 +1484,7 @@ test("the spec prototype renders every frame from data, and passes every rule", 
 test("a spec frame loads the library, React, json-render and the spec renderer, and no prototype code", async ({ browser, base }) => {
   const { page } = await openSpec(browser, base);
   for (const scenario of SCENARIOS) {
-    const imports = await page.frameLocator(`iframe[title="${scenario} at desktop"]`).locator('script[type="importmap"]').evaluate((element) => Object.keys(JSON.parse(element.textContent ?? "{}").imports).sort());
+    const imports = await (await liveFrame(page, `${scenario} at desktop`)).locator('script[type="importmap"]').evaluate((element) => Object.keys(JSON.parse(element.textContent ?? "{}").imports).sort());
     assert.deepEqual(imports, ["@design-harness/page", "@design-harness/spec", "@json-render/react", "@tounsoo/todae", "react", "react-dom", "react-dom/client", "react/jsx-runtime"]);
   }
 });
@@ -1469,7 +1528,7 @@ test("a violation injected into a spec is flagged: its JSON line marked, a rende
   assert.ok(heading && typeof heading.element === "number", "heading-structure flags lantern-open at desktop, at an element");
   await showAllRules(page);
   await page.locator('.rule[data-rule="heading-structure"] .finding').filter({ hasText: "scenario lantern-open" }).filter({ hasText: "view desktop" }).first().click();
-  const frame = page.frameLocator('iframe[title="lantern-open at desktop"]');
+  const frame = (await liveFrame(page, 'lantern-open at desktop'));
   await frame.locator("[data-design-harness-overlay]").waitFor({ state: "attached" });
   const overlay = await frame.locator("[data-design-harness-overlay]").boundingBox();
   const target = await frame.locator("h3", { hasText: "6 seats, Second floor" }).boundingBox();
@@ -1495,7 +1554,7 @@ test("what the catalog refuses is reported by extract and never reaches the fram
       `pages/booking.json: element "book" sets "style", a style prop the project excludes ("style" in library.excludedProps): a Button.Root's styling must come from the library's own variants and tokens, not from props that style it directly.`,
     ],
   );
-  const frame = page.frameLocator('iframe[title="lantern-open at desktop"]');
+  const frame = (await liveFrame(page, 'lantern-open at desktop'));
   assert.equal(await frame.getByRole("button", { name: "Book room" }).isVisible(), true, "the refused style prop never reached the button");
   assert.equal(await frame.locator("text=Free").count(), 0, "the refused Badge rendered nothing");
 });
@@ -1577,9 +1636,9 @@ test("the agent writes specs: the catalog's prompt, a patch the catalog refuses,
   // The streamed drafts were drawn in place in the frames, not as revisions: the patch that applied is the only new one.
   assert.equal(last, "3");
   await measured(page, Number(last));
-  assert.equal((await page.frameLocator('iframe[title="rooms-list at desktop"]').locator("h1").textContent()).trim(), "Spaces");
+  assert.equal((await (await liveFrame(page, 'rooms-list at desktop')).locator("h1").textContent()).trim(), "Spaces");
   assert.equal((await report(page)).status, "pass");
-  assert.equal(await page.frameLocator('iframe[title="rooms-list at desktop"]').getByText("Free", { exact: true }).count(), 0, "the refused badge was never applied");
+  assert.equal(await (await liveFrame(page, 'rooms-list at desktop')).getByText("Free", { exact: true }).count(), 0, "the refused badge was never applied");
   assert.ok(logs.every((line) => !line.includes(KEY)), "the key is never logged");
   await shot(page, "spec-chat-light");
 });
@@ -1592,7 +1651,9 @@ test("a spec Toast proposal: refused while its failing example does not fail", a
   await judged(page);
   assert.equal(await example(page, "one-toast").getAttribute("data-verdict"), "ok");
   assert.equal(await example(page, "only-one").getByTestId("example-detail").textContent(), 'failing example "only-one" is not flagged as it must be: "one-toast-per-page" passed it');
-  const toast = example(page, "one-toast").frameLocator('iframe[title$="lantern-open at desktop"]').locator("text=Booked").first();
+  // The examples show one scenario at a time; frames of the others are measured out of sight and parked, so the page is asked for this one, as a person would.
+  await page.locator(".review").getByRole("combobox", { name: "Scenario" }).selectOption("lantern-open");
+  const toast = (await liveFrame(page, "one-toast: lantern-open at desktop")).locator("text=Booked").first();
   await toast.waitFor({ state: "attached" });
   await page.getByRole("button", { name: "Approve", exact: true }).click();
   await page.waitForFunction(() => document.querySelector(".review")?.getAttribute("data-status") === "approved");
@@ -1647,12 +1708,12 @@ test("the Nook spec draws each layout instance with its own parameters, and pass
   assert.equal(value.status, "pass", JSON.stringify(value.findings, null, 1));
   assert.equal(value.rules.length, 33);
   assert.ok(value.rules.every((rule) => rule.status === "pass"), "every rule runs and passes, the six rendered ones included");
-  const open = page.frameLocator('iframe[title="lantern-open at desktop"]');
+  const open = (await liveFrame(page, 'lantern-open at desktop'));
   // The question's id is scoped to its instance, and its label names it, so a screen reader hears the label.
   assert.equal(await open.locator("label").getAttribute("for"), "question/field");
   assert.equal(await open.getByRole("combobox", { name: "How long?" }).count(), 1);
   assert.equal((await open.locator("summary").textContent())?.trim(), "Room details", "the summary is the parameter's default");
-  assert.deepEqual(await page.frameLocator('iframe[title="rooms-list at phone"]').getByRole("button").allTextContents(), ["Open Lantern", "Open Harbor"], "the room cards repeat over the list the page gives them");
+  assert.deepEqual(await (await liveFrame(page, 'rooms-list at phone')).getByRole("button").allTextContents(), ["Open Lantern", "Open Harbor"], "the room cards repeat over the list the page gives them");
   assert.deepEqual(errors, []);
 });
 
@@ -1677,7 +1738,7 @@ test("a violation inside a layout instance is flagged and highlighted: the layou
     for (const view of VIEWS) {
       const [box] = await overlays(page, scenario, view);
       // In the frame's own coordinates: the action the layout draws, and the disclosure it is in.
-      const { go, details } = await page.frameLocator(`iframe[title="${scenario} at ${view}"]`).locator("details", { hasText: "Room details" }).evaluate((element) => {
+      const { go, details } = await (await liveFrame(page, `${scenario} at ${view}`)).locator("details", { hasText: "Room details" }).evaluate((element) => {
         const inner = [...element.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Book room");
         return { go: inner?.getBoundingClientRect().toJSON(), details: element.getBoundingClientRect().toJSON() };
       });
@@ -1706,7 +1767,7 @@ test("a violation inside a layout instance is flagged and highlighted: the layou
   assert.deepEqual(failing(value), ["heading-structure"]);
   await showAllRules(page);
   await page.locator('.rule[data-rule="heading-structure"] .finding').filter({ hasText: "scenario rooms-list" }).filter({ hasText: "view desktop" }).first().click();
-  const frame = page.frameLocator('iframe[title="rooms-list at desktop"]');
+  const frame = (await liveFrame(page, 'rooms-list at desktop'));
   await frame.locator("[data-design-harness-overlay]").waitFor({ state: "attached" });
   const overlay = await frame.locator("[data-design-harness-overlay]").boundingBox();
   const target = await frame.locator("h3").first().boundingBox();
@@ -1748,7 +1809,7 @@ test("a scripted agent lists the layouts, draws an instance of one, and changes 
   const last = Number(await page.locator(".checks").getAttribute("data-revision"));
   await measured(page, last);
   assert.equal((await report(page)).status, "pass");
-  assert.deepEqual(await page.frameLocator('iframe[title="rooms-list at desktop"]').getByRole("button").allTextContents(), ["Open Lantern", "Open Harbor", "Open Willow", "Open Birch"]);
+  assert.deepEqual(await (await liveFrame(page, 'rooms-list at desktop')).getByRole("button").allTextContents(), ["Open Lantern", "Open Harbor", "Open Willow", "Open Birch"]);
   await shot(page, "layout-agent-light");
 });
 
@@ -1763,9 +1824,9 @@ test("the Project view lists the spec prototype's layouts with their parameters 
   assert.match(await question.locator('tr[data-param="label"]').textContent(), /text.*yes.*e\.g\. "How long\?"/);
   assert.match(await question.textContent(), /Drawn at pages\/booking\.json:20\./);
   await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="layout-preview"] .frame-card')].length === 3 && [...document.querySelectorAll('[data-testid="layout-preview"] .frame-card')].every((card) => card.getAttribute("data-state") === "measured"), null, { timeout: 60000 });
-  const preview = page.frameLocator('iframe[title="select-question preview: layout-preview at desktop"]');
+  const preview = (await liveFrame(page, 'select-question preview: layout-preview at desktop'));
   assert.equal(await preview.getByRole("combobox", { name: "How long?" }).count(), 1, "the preview draws the layout with its example values");
-  assert.deepEqual(await page.frameLocator('iframe[title="room-cards preview: layout-preview at desktop"]').getByRole("button").allTextContents(), ["Open Lantern", "Open Harbor"]);
+  assert.deepEqual(await (await liveFrame(page, 'room-cards preview: layout-preview at desktop')).getByRole("button").allTextContents(), ["Open Lantern", "Open Harbor"]);
   await question.scrollIntoViewIfNeeded();
   await shot(page, "project-layouts-light");
 });
@@ -1827,7 +1888,7 @@ test("an existing TSX prototype still works: it passes, and its agent writes cod
   await enterKey(page);
   await ask(page, "Call the rooms page Spaces");
   assert.equal(await turnEnded(page), "done");
-  assert.equal((await page.frameLocator('iframe[title="rooms-list at desktop"]').locator("h1").textContent()).trim(), "Spaces");
+  assert.equal((await (await liveFrame(page, 'rooms-list at desktop')).locator("h1").textContent()).trim(), "Spaces");
 });
 
 test("a stored project without a library description gets the bundled one on load, and says so", async ({ browser, base }) => {
@@ -2172,7 +2233,7 @@ test("the checks lead with plain words: a summary, each thing to fix with core's
   assert.match(await details.textContent(), /Ruleone-primary-per-page \(count\)/, "the rule's id and type are in its details");
   // Show me outlines both primary actions in every frame that draws them, and the card says where.
   await primary.getByRole("button", { name: "Show me" }).click();
-  await page.frameLocator('iframe[title="lantern-open at desktop"]').locator("[data-design-harness-overlay]").first().waitFor({ state: "attached" });
+  await (await liveFrame(page, 'lantern-open at desktop')).locator("[data-design-harness-overlay]").first().waitFor({ state: "attached" });
   await eventually(page, () => primary.getByTestId("fix-outline").textContent(), (text) => text === `Outlined in ${3 * VIEWS.length} frames: Booking, room open (Lantern open); Booking, booked (Lantern booked); Booking, held (Lantern held).`, "the card says where both actions are outlined");
   await eventually(page, () => page.locator(".frame-card[data-selected]").count(), (count) => count === 3 * VIEWS.length, "the frames that draw them are selected");
   // Show in code, one click away, marks the line.
@@ -2185,7 +2246,7 @@ test("the checks lead with plain words: a summary, each thing to fix with core's
   const target = page.locator('.fix[data-rule="target-size"]');
   assert.equal(await target.getByTestId("fix-lead").textContent(), "Every control meets 24 px or the WCAG 2.5.8 spacing exception.", "a cap reads as its value");
   await target.getByRole("button", { name: "Show Lantern open — desktop", exact: true }).click();
-  const frame = page.frameLocator('iframe[title="lantern-open at desktop"]');
+  const frame = (await liveFrame(page, 'lantern-open at desktop'));
   // The two outlines Show me drew for the primary actions give way to this one finding's outline.
   const overlays = frame.locator("[data-design-harness-overlay]");
   for (let tries = 0; (await overlays.count()) !== 1; tries += 1) {
@@ -2287,12 +2348,15 @@ test("a scripted agent offers three variants: side by side in measured frames, e
     assert.deepEqual(await frames.evaluateAll((cards) => cards.filter((card) => !card.hasAttribute("data-hidden")).map((card) => card.dataset.frameKey)), VIEWS.map((view) => `lantern-open@${view}`));
     assert.equal(await page.locator(`.variant-card[data-variant="${id}"] .frame-card[data-state="measured"]`).count(), FRAMES);
   }
+  // Four sources at 16 frames each, and the board's 16 under the view: measured, but no more than 24 live documents at once.
+  const live = await page.locator("iframe").count();
+  assert.ok(live <= 24, `at most 24 live frames, not one per frame: ${live}`);
   // Every view of a source side by side, as the board lays a scenario out.
   const [desktop, phone] = await Promise.all(VIEWS.map((view) => page.locator(`.variant-card[data-variant="a"] .frame-card[data-frame-key="lantern-open@${view}"]`).boundingBox()));
   assert.ok(desktop.x + desktop.width <= phone.x && Math.abs(desktop.y - phone.y) < 2, `the phone view sits beside the desktop view: ${JSON.stringify([desktop, phone])}`);
-  const askFrame = page.frameLocator('iframe[title="Variant A: lantern-open at desktop"]');
+  const askFrame = (await liveFrame(page, 'Variant A: lantern-open at desktop'));
   assert.equal((await askFrame.locator("label").first().textContent()).trim(), "For how long?");
-  assert.equal((await page.frameLocator('iframe[title="Current: lantern-open at desktop"]').locator("label").first().textContent()).trim(), "How long?");
+  assert.equal((await (await liveFrame(page, 'Current: lantern-open at desktop')).locator("label").first().textContent()).trim(), "How long?");
   // C fails in core's words, and its report is core's whole report, measured.
   const message = (await failing.locator('[data-rule="one-primary-per-page"] [data-testid="variant-finding"]').first().textContent()).trim();
   assert.match(message, /^Page "booking" has 2 primary actions, more than 1/);
@@ -2348,7 +2412,7 @@ test("picking slots from two variants applies a new revision that passes every r
   await combination.waitFor();
   assert.match(await combination.textContent(), /title from Current, facts from Variant B, body from Variant A, alternate from Current, action from Current\./);
   await page.waitForFunction(() => document.querySelector('[data-testid="variant-combination"]')?.getAttribute("data-standing") === "pass", null, { timeout: 90000 });
-  const frame = page.frameLocator('iframe[title="The combination: lantern-open at desktop"]');
+  const frame = (await liveFrame(page, 'The combination: lantern-open at desktop'));
   assert.equal((await frame.locator("label").first().textContent()).trim(), "For how long?");
   assert.equal(await frame.locator("text=Second floor, 6 seats").count(), 1);
   await shot(page, "variants-pick-light");
@@ -2359,7 +2423,7 @@ test("picking slots from two variants applies a new revision that passes every r
   assert.equal(after.status, "pass", JSON.stringify(after.findings, null, 1));
   assert.deepEqual(after.findings, []);
   await page.getByRole("tab", { name: "Canvas" }).click();
-  const board = page.frameLocator('iframe[title="lantern-open at desktop"]');
+  const board = (await liveFrame(page, 'lantern-open at desktop'));
   await eventually(page, async () => (await board.locator("label").first().textContent()).trim(), (text) => text === "For how long?", "the board draws the pick");
   await eventually(page, () => board.locator("text=Second floor, 6 seats").count(), (count) => count === 1, "the board draws B's facts");
   await showCode(page, "pages/booking.json");
@@ -2432,7 +2496,7 @@ test("a pick answers for its own page: with the rooms page already failing, a pa
   const after = await report(page);
   assert.deepEqual(after.findings, before.findings, "the same findings as before the pick, all on the rooms page");
   await page.getByRole("tab", { name: "Canvas" }).click();
-  const board = page.frameLocator('iframe[title="lantern-open at desktop"]');
+  const board = (await liveFrame(page, 'lantern-open at desktop'));
   await eventually(page, async () => (await board.locator("label").first().textContent()).trim(), (text) => text === "For how long?", "the board draws the pick");
   await eventually(page, () => board.locator("text=Second floor, 6 seats").count(), (count) => count === 1, "the board draws B's facts");
 });
@@ -2617,6 +2681,76 @@ async function recording(browser, base, tags) {
   return { tsx: by(1), spec: by(2) };
 }
 
+/**
+ * Every snapshot message the app receives from its frames, and core's
+ * report, for Nook's board in a window of `height`: the board scrolled to
+ * its last artboard and back, so frames parked out of sight are drawn again.
+ */
+async function lazyRecording(browser, base, height) {
+  const context = await browser.newContext({ viewport: { width: 1600, height } });
+  await context.addInitScript(() => {
+    if (window.top !== window) return;
+    window.__frameMessages = [];
+    window.addEventListener("message", (event) => {
+      if (event.data && event.data.type === "snapshot") window.__frameMessages.push(JSON.parse(JSON.stringify(event.data)));
+    });
+  });
+  const page = await context.newPage();
+  await page.goto(base);
+  await measured(page, 1);
+  const live = await page.locator("iframe").count();
+  const parked = await page.locator('[data-testid="frame-parked"]').count();
+  const states = await page.locator(".frame-card").evaluateAll((cards) => cards.map((card) => card.dataset.state));
+  const value = await page.locator('[data-testid="report-json"]').textContent();
+  await liveFrame(page, "lantern-held at phone-dark");
+  await liveFrame(page, "rooms-list at desktop");
+  const messages = await page.evaluate(() => window.__frameMessages);
+  await context.close();
+  return { live, parked, states, report: value, messages };
+}
+
+test("lazy measuring changes nothing a rule measures: on screen, off screen or drawn again, every frame measures the same, and the report is the same at any window height", async ({ browser, base }) => {
+  const tall = await lazyRecording(browser, base, 1000);
+  const short = await lazyRecording(browser, base, 420);
+  for (const run of [tall, short]) {
+    assert.deepEqual(run.states, Array.from({ length: FRAMES }, () => "measured"), "every frame is measured, the ones out of sight included");
+    assert.ok(run.live <= 24, `at most 24 live frames: ${run.live}`);
+  }
+  assert.ok(short.live < FRAMES && short.parked > 0, `a short window parks the frames out of sight once measured: ${short.live} live, ${short.parked} parked`);
+  assert.equal(short.report, tall.report, "the same report, byte for byte, whichever frames were on screen");
+  const byKey = new Map();
+  for (const message of [...tall.messages, ...short.messages].filter((item) => item.generation === 1)) {
+    const key = `${message.snapshot.scenario}@${message.snapshot.view}`;
+    byKey.set(key, [...(byKey.get(key) ?? []), message.snapshot]);
+  }
+  assert.equal(byKey.size, FRAMES);
+  for (const [key, snapshots] of byKey) for (const snapshot of snapshots.slice(1)) assert.deepEqual(snapshot, snapshots[0], `${key}: every render measures the same`);
+  assert.ok([...byKey.values()].some((snapshots) => snapshots.length > 2), "a frame parked out of sight was drawn again, and measured the same");
+});
+
+test("core's checks run in a module worker and give the same report, byte for byte, as on the main thread, for Nook and Tally", async ({ browser, base }) => {
+  const reports = {};
+  for (const where of ["worker", "main"]) {
+    const address = where === "main" ? `${base}?checks=main` : base;
+    const { context, page } = await openApp(browser, address);
+    await measured(page, 1);
+    assert.equal(await page.locator(".board").getAttribute("data-engine"), where);
+    const tsx = await page.locator('[data-testid="report-json"]').textContent();
+    await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
+    await measured(page, 2);
+    const spec = await page.locator('[data-testid="report-json"]').textContent();
+    await context.close();
+    const tally = await openTally(browser, address);
+    assert.equal(await tally.page.locator(".board").getAttribute("data-engine"), where);
+    reports[where] = { tsx, spec, tally: await tally.page.locator('[data-testid="report-json"]').textContent() };
+    await tally.context.close();
+  }
+  for (const seed of ["tsx", "spec", "tally"]) {
+    assert.ok(JSON.parse(reports.worker[seed]).rules.length > 0, `${seed}: a report`);
+    assert.equal(reports.worker[seed], reports.main[seed], `${seed}: the worker's report is the main thread's`);
+  }
+});
+
 test("element tags change nothing a rule measures: Nook's snapshots are identical with and without them, TSX and spec", async ({ browser, base }) => {
   const tagged = await recording(browser, base, true);
   const plain = await recording(browser, base, false);
@@ -2775,7 +2909,7 @@ test("Show me moves the camera to a tiny element: its artboard opens at full siz
   assert.equal(await card(page, key).evaluate((element) => Math.round(element.querySelector("iframe").getBoundingClientRect().width)), first.view.startsWith("phone") ? 390 : 1280, "at full size");
   await eventually(page, () => page.getByTestId("board-said").textContent(), (text) => /^Opened .* at full size: what the finding points at is too small to see at \d+%\.$/.test(text), "a screen reader hears where the camera went");
   // The outline is in that frame, and now large enough to see; the board shows it.
-  const overlay = page.frameLocator(`iframe[title="${first.scenario} at ${first.view}"]`).locator("[data-design-harness-overlay]");
+  const overlay = (await liveFrame(page, `${first.scenario} at ${first.view}`)).locator("[data-design-harness-overlay]");
   await overlay.waitFor({ state: "attached" });
   const size = await overlay.boundingBox();
   assert.ok(size.width >= 16 && size.height >= 16, `the outline is ${size.width} by ${size.height} px on screen`);
@@ -2916,11 +3050,13 @@ test("the first-view lens draws the fold, a ghost of what lies below it, and the
   await shotDark(page, "visual-lens-first-view-after-dark");
 
   // The frame says where it is scrolled to, and what belongs to the page moves with it: the fold rises by as much.
+  // The frame on screen and live first (bringing it on screen scrolls the board), then where the fold is.
+  const live = await liveFrame(page, "lantern-open at phone");
   const before = (await phone.getByTestId("lens-fold").boundingBox()).y;
   const zoom = board.width / 390;
   const down = Math.min(60, Math.floor(below.evidence.pageHeight - 844));
   assert.ok(down >= 12, `the page scrolls far enough to tell (${down} px)`);
-  await page.frameLocator('iframe[title="lantern-open at phone"]').locator("body").evaluate((_, y) => window.scrollTo(0, y), down);
+  await live.locator("body").evaluate((_, y) => window.scrollTo(0, y), down);
   await eventually(page, async () => before - (await phone.getByTestId("lens-fold").boundingBox()).y, (moved) => Math.abs(moved - down * zoom) <= 1, `the fold line follows the page's scroll (${down} px at ${zoom})`);
   // No report changed for any of it.
   assert.deepEqual(await report(page), all);
@@ -3337,10 +3473,10 @@ test("new project on Todae: named, roles confirmed by eye with a correction and 
   assert.equal(await page.getByRole("combobox", { name: "Project" }).inputValue(), "ledger");
   assert.deepEqual(await page.getByRole("combobox", { name: "Project" }).locator("option").allTextContents(), ["Ledger", "Nook"]);
   assert.match((await page.getByTestId("notice").textContent()) ?? "", /Ledger was created.*31 rules in force/s);
-  const start = page.frameLocator('iframe[title="start at desktop"]');
+  const start = (await liveFrame(page, 'start at desktop'));
   assert.equal(await start.getByRole("heading", { level: 1 }).textContent(), "Ledger");
   assert.deepEqual(await start.getByRole("button").allTextContents(), ["Pay now"]);
-  assert.match((await page.frameLocator('iframe[title="pay-an-invoice-done at phone"]').locator("body").textContent()) ?? "", /Done: Pay an invoice/);
+  assert.match((await (await liveFrame(page, 'pay-an-invoice-done at phone')).locator("body").textContent()) ?? "", /Done: Pay an invoice/);
   await shot(page, "wizard-board-todae");
   // The Project view keeps how each role was decided, the reason included.
   await page.getByRole("tab", { name: "Project" }).click();
@@ -3375,7 +3511,7 @@ test("new project on Mantine: every variant drawn to pick from, a role with no p
   // Every value of the button's variant, drawn to pick from by eye.
   const primaryCard = roleCard(page, "primary-action");
   await primaryCard.getByText("Pick other values").click();
-  const all = page.frameLocator('iframe[title="Every variant of Button"]');
+  const all = (await liveFrame(page, 'Every variant of Button'));
   await eventually(page, () => all.locator("button.mantine-Button-root").allTextContents().catch(() => []), (texts) => texts.length === 8, "every variant of Mantine's Button is drawn");
   assert.deepEqual(await primaryCard.getByRole("group", { name: "Values for Primary action" }).getByRole("checkbox", { checked: true }).count(), 1);
   // A role left with no part: what core's missingRoleEffects says leaves the project, before anything is decided.
@@ -3403,11 +3539,11 @@ test("new project on Mantine: every variant drawn to pick from, a role with no p
   await page.getByRole("button", { name: "Review" }).click();
   assert.equal(await page.getByTestId("review-rules").textContent(), "32");
   await createFromReview(page);
-  const start = page.frameLocator('iframe[title="start at desktop"]');
+  const start = (await liveFrame(page, 'start at desktop'));
   assert.equal(await start.locator("h1.mantine-Title-root").textContent(), "Fieldnotes");
   assert.deepEqual(await start.locator("button.mantine-Button-root").allTextContents(), ["Not now", "Continue"]);
   assert.equal(await start.locator(":root").getAttribute("data-mantine-color-scheme"), "light");
-  assert.equal(await page.frameLocator('iframe[title="start at phone"]').locator(":root").getAttribute("data-mantine-color-scheme"), "dark");
+  assert.equal(await (await liveFrame(page, 'start at phone')).locator(":root").getAttribute("data-mantine-color-scheme"), "dark");
   await shot(page, "wizard-board-mantine");
   const file = await passesReloadsAndRoundTrips(page, browser, base, { id: "fieldnotes", rules: 32 });
   assert.deepEqual(file.project.library.roles.question, { components: ["TextInput", "NumberInput"] });

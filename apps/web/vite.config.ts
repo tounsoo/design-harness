@@ -57,6 +57,8 @@ export default defineConfig({
   base: "./",
   plugins: [frameRuntime()],
   esbuild: { jsx: "automatic" },
+  // The check worker is a module worker (src/runtime/check-worker.ts), split into chunks like the app.
+  worker: { format: "es" },
   build: {
     target: "es2022",
     chunkSizeWarningLimit: 2000,

@@ -15,7 +15,7 @@ import { planOutline } from "../runtime/tags";
 import type { Store } from "../store/db";
 import type { LoadNote } from "../store/migrate";
 import { exportFileName, exportProject, importProject, type Imported, type PrototypeRecord } from "../store/project-file";
-import { Board, type BoardHandle } from "./Board";
+import { Board, FramesShown, type BoardHandle } from "./Board";
 import { ChatPanel } from "./ChatPanel";
 import { ChecksPanel } from "./ChecksPanel";
 import { CodePanel, MANIFEST_FILE } from "./CodePanel";
@@ -687,7 +687,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
           <Splitter.Root className="shell-inner" primary="end" show={canvasOnly ? "start" : "both"} value={panels.side.open ? panels.side.width : 0} onValueChange={(value) => resize("side", value)} min={PANEL_SIZES.side.min} max={PANEL_SIZES.side.max} collapsible>
             <Splitter.Panel className="shell-panel">
               <main id={mainId} tabIndex={-1} className="app-main" aria-label={center === "canvas" ? "Canvas" : center === "project" ? "Project" : center === "variants" ? "Variants" : "Proposals"}>
-                {/* The board stays laid out under the project view, so frames keep their viewport and keep measuring. */}
+                {/* The board stays laid out under the project view, so frames keep their viewport and keep measuring; out of sight, they are parked once measured. */}
                 <div className="app-main-pane" data-inactive={center === "canvas" ? undefined : ""} aria-hidden={center === "canvas" ? undefined : true}>
                   <PackagesNotice
                     config={config}
@@ -704,6 +704,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
                       <Alert.Description>A draft, not saved yet. The checks judge it once it arrives whole.</Alert.Description>
                     </Alert.Root>
                   )}
+                  <FramesShown value={center === "canvas"}>
                   <Board
                     ref={board}
                     session={session}
@@ -736,6 +737,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
                         : undefined
                     }
                   />
+                  </FramesShown>
                 </div>
                 {center === "variants" && (
                   <div className="app-main-pane app-main-scroll" data-testid="variants-pane">

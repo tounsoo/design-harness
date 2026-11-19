@@ -1,4 +1,5 @@
 import { boot, kit, spec } from "virtual:frame-runtime";
+import { mainThreadEngine, workerEngine, type CheckEngine } from "../runtime/check-engine";
 import { Session } from "../runtime/session";
 import { esmShPackageSource, localPackageSource, type PackageSource, type PackageSources } from "../runtime/package-source";
 
@@ -32,6 +33,19 @@ function esm(): PackageSource {
 }
 
 /**
+ * Where core's engine runs for every session of the page: one module
+ * worker, so typing and scrolling never wait on a check, or the main thread
+ * when the page is opened with `?checks=main` or a worker cannot start. The
+ * report is the same either way (`check-engine.ts`).
+ */
+export function checkEngine(): CheckEngine {
+  engine ??= new URLSearchParams(window.location.search).get("checks") === "main" || typeof Worker === "undefined" ? mainThreadEngine() : workerEngine(() => new Worker(new URL("../runtime/check-worker.ts", import.meta.url), { type: "module", name: "design-harness checks" }));
+  return engine;
+}
+
+let engine: CheckEngine | undefined;
+
+/**
  * Whether this deployment lets a person load one project's library from
  * esm.sh, for a version the page's source does not serve. On unless the
  * build sets `VITE_ESM_FALLBACK=off`; a person still chooses it, per
@@ -49,5 +63,5 @@ let sharedEsm: PackageSource | null | undefined;
 
 export function createSession(): Session {
   const sources = packageSources();
-  return new Session({ source: sources.page, esm: sources.esm, kit, spec, boot, parentOrigin: window.location.origin, window });
+  return new Session({ source: sources.page, esm: sources.esm, kit, spec, boot, parentOrigin: window.location.origin, window, engine: checkEngine() });
 }

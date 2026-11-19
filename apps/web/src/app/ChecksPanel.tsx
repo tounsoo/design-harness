@@ -8,7 +8,7 @@ import { planOutline } from "../runtime/tags";
 import { EvidenceFigure } from "../visual/figures";
 import { FlowMap } from "../visual/FlowMap";
 import { VisualContext } from "../visual/parts";
-import { describeOutline, findingPlace, ruleLead, scenarioLabel, viewLabel } from "./words";
+import { describeOutline, findingPlace, pendingWords, ruleLead, scenarioLabel, viewLabel } from "./words";
 
 type Props = {
   readonly state: SessionState;
@@ -71,7 +71,7 @@ export function ChecksPanel({ state, measuredCount, selected, onSelect, onShowCo
           : "Checking the rendered pages…";
   // Where the selected finding's elements are outlined on the canvas, in words.
   const outline = outlineOf(selected, state);
-  const progress = state.measured ? `${report.rules.length} rules checked, on ${measuredCount} of ${frames} frames.` : `Measuring the frames: ${countAnswered(state)} of ${frames} answered. Rules about the rendered page wait for every frame.`;
+  const progress = state.measured ? `${report.rules.length} rules checked, on ${measuredCount} of ${frames} frames.` : pendingWords(state);
   return (
     <VisualContext value={visual}>
     <div className="checks" data-revision={state.revision} data-measured={state.measured ? "" : undefined}>
@@ -320,12 +320,6 @@ function lowerFirst(text: string): string {
   return text ? `${text[0]?.toLowerCase() ?? ""}${text.slice(1)}` : text;
 }
 
-function countAnswered(state: SessionState): number {
-  return state.frames.filter((frame) => {
-    const value = state.frameStates[frame.key]?.state;
-    return value === "measured" || value === "failed";
-  }).length;
-}
 
 /** Where the selected finding's elements are outlined, in words; null when it has no elements to outline. */
 function outlineOf(selected: Finding | null, state: SessionState): string | null {
