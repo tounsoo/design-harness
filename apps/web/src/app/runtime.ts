@@ -11,6 +11,14 @@ import { esmShPackageSource, localPackageSource, type PackageSource } from "../r
  * of origin cannot widen what a frame can reach.
  */
 export function packageSource(): PackageSource {
+  // One source for the page, so every session shares the files it has already read.
+  shared ??= choose();
+  return shared;
+}
+
+let shared: PackageSource | undefined;
+
+function choose(): PackageSource {
   const params = new URLSearchParams(window.location.search);
   const asked = params.get("packages") ?? import.meta.env.VITE_PACKAGE_SOURCE ?? "local";
   if (asked !== "esm.sh") return localPackageSource(new URL("vendor/", document.baseURI).href);

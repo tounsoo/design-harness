@@ -1,6 +1,6 @@
 import { Badge, Button, Code, DataList, Disclosure, Stack, Table, Text } from "@tounsoo/todae";
 import { useState } from "react";
-import { ROLE_NAMES, describeRule, rerunExamples, type ExampleRun, type ProjectConfig, type Proposal, type RoleMapping } from "@design-harness/core";
+import { ROLE_NAMES, describeRule, rerunExamples, type ConfirmedRole, type ExampleRun, type ProjectConfig, type Proposal, type RoleMapping } from "@design-harness/core";
 import { formatTime } from "../review/timeline";
 import type { PrototypeRecord } from "../store/project-file";
 import { LayoutsView } from "./LayoutsView";
@@ -161,6 +161,7 @@ export function ProjectView({ config, onOpenProposal, prototype }: { readonly co
                   <Table.HeaderCell>Role</Table.HeaderCell>
                   <Table.HeaderCell>Parts</Table.HeaderCell>
                   <Table.HeaderCell>Prop</Table.HeaderCell>
+                  {library.confirmed && <Table.HeaderCell>Confirmed</Table.HeaderCell>}
                 </Table.Row>
               </Table.Head>
               <Table.Body>
@@ -171,10 +172,18 @@ export function ProjectView({ config, onOpenProposal, prototype }: { readonly co
                     </Table.Cell>
                     <Table.Cell>{library.roles[role].components.join(", ")}</Table.Cell>
                     <Table.Cell>{propText(library.roles[role])}</Table.Cell>
+                    {library.confirmed && <Table.Cell data-testid={`confirmed-${role}`}>{confirmedText(library.confirmed.roles.find((entry) => entry.role === role))}</Table.Cell>}
                   </Table.Row>
                 ))}
               </Table.Body>
             </Table.Root>
+            {library.confirmed && (
+              <Text.Root as="p" tone="muted" data-testid="confirmed-exclusion">
+                {library.confirmed.exclusion.decision === "none"
+                  ? "No style props are excluded."
+                  : `${library.confirmed.exclusion.props.length} style props are excluded, ${library.confirmed.exclusion.decision === "accepted" ? "as core drafted them" : `changed from core's draft: ${library.confirmed.exclusion.why}`}.`}
+              </Text.Root>
+            )}
           </section>
           <section aria-labelledby="project-views">
             <Text.Root as="h2" id="project-views">
@@ -244,6 +253,12 @@ function Fact({ term, value }: { readonly term: string; readonly value: string }
       <DataList.Details>{value}</DataList.Details>
     </DataList.Item>
   );
+}
+
+/** How a role was decided when the library was onboarded: as core drafted it, or changed, with the person's reason. */
+function confirmedText(entry: ConfirmedRole | undefined): string {
+  if (!entry) return "";
+  return entry.decision === "accepted" ? `As drafted (${entry.confidence} confidence)` : `Changed from the draft: ${entry.why}`;
 }
 
 function propText(mapping: RoleMapping): string {

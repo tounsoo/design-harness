@@ -1,6 +1,6 @@
 import { ROLE_NAMES, type PageKind, type RoleName } from "../rules/types";
-import { arr, bool, int, obj, oneOf, record, scalar, slug, str, tagged, type Check } from "../validate";
-import type { Cap, PageType, PartDescription, PropSchema, RankedAction, RoleMapping, Task } from "./types";
+import { arr, bool, either, int, obj, oneOf, record, scalar, slug, str, tagged, type Check } from "../validate";
+import type { Cap, ConfirmedExclusion, ConfirmedRole, PageType, PartDescription, PropSchema, RankedAction, RoleMapping, Task } from "./types";
 
 /** The config parts a proposal's inventory operations also carry. */
 export const roleMapping: Check<RoleMapping> = obj({ components: arr(str()) }, { prop: obj({ name: str(), values: arr(scalar, { min: 1 }), whenMissing: bool }) });
@@ -9,6 +9,22 @@ export const roles: Check<Readonly<Record<RoleName, RoleMapping>>> = (value, pat
   const shape = Object.fromEntries(ROLE_NAMES.map((name) => [name, roleMapping])) as Record<RoleName, Check<RoleMapping>>;
   return obj(shape)(value, path, issues);
 };
+
+const isNull: Check<null> = (value, path, issues) => {
+  if (value !== null) issues.push({ path, message: "expected null" });
+  return null;
+};
+const confirmedRole: Check<ConfirmedRole> = tagged("decision", {
+  accepted: obj({ role: oneOf(ROLE_NAMES), decision: oneOf(["accepted"]), mapping: roleMapping, confidence: oneOf(["high", "medium", "low"]) }),
+  corrected: obj({ role: oneOf(ROLE_NAMES), decision: oneOf(["corrected"]), mapping: roleMapping, drafted: either((value) => (value === null ? "a" : "b"), isNull, roleMapping), why: str() }),
+});
+const confirmedExclusion: Check<ConfirmedExclusion> = tagged("decision", {
+  accepted: obj({ decision: oneOf(["accepted"]), props: arr(str()) }),
+  corrected: obj({ decision: oneOf(["corrected"]), props: arr(str()), drafted: arr(str()), why: str() }),
+  none: obj({ decision: oneOf(["none"]), props: arr(str()) }),
+}) as Check<ConfirmedExclusion>;
+/** The record of a library's confirmed roles (`library.confirmed`). */
+export const confirmedLibrary = obj({ roles: arr(confirmedRole), exclusion: confirmedExclusion });
 
 const pageTypeFields = { id: slug, slots: arr(str(), { min: 1 }), chrome: arr(str()) } as const;
 export const pageType: Check<PageType> = tagged("kind", {

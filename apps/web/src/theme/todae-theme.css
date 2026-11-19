@@ -65,10 +65,15 @@
   --todae-harness-size-label: var(--_todae-harness-size-label, 6rem);
   --todae-harness-size-log: var(--_todae-harness-size-log, 16rem);
   --todae-harness-size-name: var(--_todae-harness-size-name, 16rem);
+  --todae-harness-size-option: var(--_todae-harness-size-option, 11rem);
   --todae-harness-size-picker: var(--_todae-harness-size-picker, 10rem);
   --todae-harness-size-picker-wide: var(--_todae-harness-size-picker-wide, 12rem);
+  --todae-harness-size-role-card: var(--_todae-harness-size-role-card, 24rem);
   --todae-harness-size-sticky-clearance: var(--_todae-harness-size-sticky-clearance, 10rem);
   --todae-harness-size-views-row: var(--_todae-harness-size-views-row, 34rem);
+  --todae-harness-size-wizard-rail: var(--_todae-harness-size-wizard-rail, 11rem);
+  --todae-harness-size-wizard-step: var(--_todae-harness-size-wizard-step, 42rem);
+  --todae-harness-size-wizard-wide: var(--_todae-harness-size-wizard-wide, 76rem);
   --todae-harness-size-zoom: var(--_todae-harness-size-zoom, 7.5rem);
   --todae-button-base-font-size: var(--_todae-button-base-font-size, var(--todae-font-size-2));
   --todae-card-shadow: var(--_todae-card-shadow, var(--todae-harness-shadow-raised));

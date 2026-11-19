@@ -58,6 +58,19 @@ export type LibraryRoot = {
   readonly schemeProp?: string;
 };
 
+export type Confidence = "high" | "medium" | "low";
+
+/** How each role ended up when the library was onboarded: as drafted, or corrected, with the draft it replaced and why. */
+export type ConfirmedRole =
+  | { readonly role: RoleName; readonly decision: "accepted"; readonly mapping: RoleMapping; readonly confidence: Confidence }
+  | { readonly role: RoleName; readonly decision: "corrected"; readonly mapping: RoleMapping; readonly drafted: RoleMapping | null; readonly why: string };
+
+/** How the excluded props were decided. */
+export type ConfirmedExclusion =
+  | { readonly decision: "accepted"; readonly props: readonly string[] }
+  | { readonly decision: "corrected"; readonly props: readonly string[]; readonly drafted: readonly string[]; readonly why: string }
+  | { readonly decision: "none"; readonly props: readonly [] };
+
 export type ComponentLibrary = {
   /** The npm package prototypes import components from, such as `@tounsoo/todae`. */
   readonly package: string;
@@ -84,6 +97,12 @@ export type ComponentLibrary = {
    */
   readonly excludedProps?: readonly string[];
   readonly roles: Readonly<Record<RoleName, RoleMapping>>;
+  /**
+   * The record of the confirmation `roles` and `excludedProps` came from
+   * (`confirmRoles`): which drafted roles a person accepted, and each
+   * correction with its reason. It is a record for people; no check reads it.
+   */
+  readonly confirmed?: { readonly roles: readonly ConfirmedRole[]; readonly exclusion: ConfirmedExclusion };
   /**
    * Every part of the library, described for spec prototypes (`Button.Root`
    * and the like). A spec prototype can use the parts of the inventoried

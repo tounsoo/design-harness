@@ -302,4 +302,77 @@
   .variant-elsewhere, .variant-details { font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); color: var(--todae-color-fg-muted); }
   .variants-table td { vertical-align: middle; }
   .variants-pick[data-undone] { color: var(--todae-color-fg-muted); }
+  /*
+   * New project: Todae's wizard recipe (Steps for where the person is, a Form
+   * per step) with Card, RadioGroup, Checkbox, Field, DataList, Disclosure,
+   * Alert and Badge. This sheet places them, and adds what Todae has no part
+   * for: the page with a rail beside a scrolling step and its sticky actions,
+   * a role card's live frame on the canvas colour, a scrolling grid of
+   * checkboxes, and a radio option with a second line.
+   */
+  .wizard { display: flex; flex-direction: column; block-size: 100dvh; min-height: 0; background: var(--todae-harness-canvas-bg); }
+  .wizard-header { padding: var(--todae-space-2) var(--todae-space-3); border-block-end: var(--todae-border-width) solid var(--todae-color-border-subtle); background: var(--todae-harness-panel-bg); }
+  .wizard-name { margin: 0; --todae-text-h1-font-size: var(--todae-font-size-2); white-space: nowrap; }
+  .wizard-product { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wizard-cancel { margin-inline-start: auto; flex: none; }
+  .wizard-body { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--todae-harness-size-wizard-rail) minmax(0, 1fr); }
+  .wizard-rail { padding: var(--todae-space-8) var(--todae-space-4); border-inline-end: var(--todae-border-width) solid var(--todae-color-border-subtle); background: var(--todae-harness-panel-bg); overflow: auto; }
+  .wizard-main { overflow: auto; padding: var(--todae-space-8) var(--todae-space-8) 0; }
+  .wizard-step { display: grid; gap: var(--todae-space-6); max-inline-size: var(--todae-harness-size-wizard-step); margin-inline: auto; }
+  .wizard-main[data-wide] .wizard-step { max-inline-size: var(--todae-harness-size-wizard-wide); }
+  .wizard-head { display: grid; gap: var(--todae-space-2); }
+  .wizard-title { margin: 0; outline: none; --todae-text-h2-font-size: var(--todae-font-size-5); }
+  .wizard-count { display: block; margin-block-end: var(--todae-space-1); color: var(--todae-color-fg-muted); }
+  .wizard-lead { margin: 0; max-inline-size: var(--todae-harness-measure-note); }
+  .wizard-section { display: grid; gap: var(--todae-space-3); }
+  .wizard-section h3, .wizard-section p, .wizard-aside h3, .wizard-aside p, .wizard-starter h3 { margin: 0; }
+  .wizard-section h3, .wizard-aside h3, .wizard-starter h3 { --todae-text-h3-font-size: var(--todae-font-size-3); }
+  /* The step's actions stay in reach under a long step. */
+  .wizard-actions { position: sticky; inset-block-end: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: var(--todae-space-2); margin-inline: calc(-1 * var(--todae-space-2)); padding: var(--todae-space-3) var(--todae-space-2) var(--todae-space-6); background: var(--todae-harness-canvas-bg); border-block-start: var(--todae-border-width) solid var(--todae-color-border-subtle); }
+  .wizard-bar { justify-content: space-between; }
+  .wizard-list { margin: 0; padding-inline-start: var(--todae-space-5); display: grid; gap: var(--todae-space-1); }
+  .wizard-notes { color: var(--todae-color-fg-muted); font-size: var(--todae-font-size-1); }
+  .wizard-note > :not(summary) { margin-block-start: var(--todae-space-2); }
+  .wizard-import p { margin: 0; }
+  .library-list { gap: var(--todae-space-2); }
+  .library-option-text { display: grid; gap: calc(var(--todae-space-1) / 2); }
+  .chip-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--todae-space-1); }
+  .option-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--todae-harness-size-option)), 1fr)); gap: var(--todae-space-1) var(--todae-space-3); max-block-size: var(--todae-harness-size-log); overflow: auto; padding: var(--todae-space-3); border: var(--todae-border-width) solid var(--todae-color-border-subtle); border-radius: var(--todae-radius-md); background: var(--todae-color-bg-surface); }
+  .option-list-wide { max-block-size: var(--todae-harness-size-column); }
+  .add-row { display: flex; gap: var(--todae-space-2); align-items: center; }
+  .add-row > :first-child { flex: 1; max-inline-size: var(--todae-harness-size-column); }
+  .task-list { display: grid; gap: var(--todae-space-3); }
+  .task-row { display: grid; grid-template-columns: minmax(0, 1fr) var(--todae-harness-size-zoom) auto; gap: var(--todae-space-3); align-items: end; }
+  .two-fields, .cap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--todae-harness-size-column)), 1fr)); gap: var(--todae-space-4); align-items: start; }
+
+  /* A role: its parts drawn live, what core read, and what it could be instead. */
+  .role-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--todae-harness-size-role-card)), 1fr)); gap: var(--todae-space-4); align-items: start; }
+  .role-card { display: flex; flex-direction: column; min-width: 0; }
+  .role-card-body { flex: 1; }
+  .role-card[data-standing="accepted"] { box-shadow: 0 0 0 var(--todae-border-width) var(--todae-color-status-success-border), var(--todae-card-shadow); }
+  .role-accepted { display: inline-flex; align-items: center; gap: var(--todae-space-1); color: var(--todae-color-status-success-fg); font-weight: var(--todae-font-weight-medium); }
+  .role-accepted svg { inline-size: 1em; block-size: 1em; }
+  .role-title { margin: 0; --todae-text-h3-font-size: var(--todae-font-size-3); }
+  .role-card p { margin: 0; }
+  .role-preview { margin: 0; display: grid; gap: var(--todae-space-2); justify-items: center; padding: var(--todae-space-3) var(--todae-space-2); border-radius: var(--todae-radius-md); background-color: var(--todae-harness-canvas-bg); overflow-x: auto; }
+  .role-preview figcaption { display: grid; gap: calc(var(--todae-space-1) / 2); justify-items: center; text-align: center; }
+  .role-preview-none { padding: var(--todae-space-4); text-align: center; }
+  .role-mapping { font-family: var(--todae-font-family-mono); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); overflow-wrap: anywhere; }
+  .role-evidence { display: grid; gap: var(--todae-space-1); font-size: var(--todae-font-size-1); color: var(--todae-color-fg-muted); }
+  .role-evidence ul, .role-effects { margin: 0; padding-inline-start: var(--todae-space-4); display: grid; gap: var(--todae-space-1); }
+  .role-hint { font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  .role-options-body { margin-block-start: var(--todae-space-2); }
+
+  /* The last step: what core built beside its first page, drawn. */
+  .wizard-review { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--todae-harness-size-role-card)), 1fr)); gap: var(--todae-space-6); align-items: start; }
+  .wizard-summary { display: grid; gap: var(--todae-space-4); }
+  .wizard-roles { list-style: none; margin: 0; padding: 0; display: grid; gap: calc(var(--todae-space-1) / 2); }
+  .wizard-starter { display: grid; gap: var(--todae-space-3); min-width: 0; }
+  .wizard-frames { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--todae-space-4); min-width: 0; overflow: hidden; padding: var(--todae-space-4); border-radius: var(--todae-radius-md); background-color: var(--todae-harness-canvas-bg); background-image: radial-gradient(var(--todae-harness-canvas-dot) var(--todae-border-width), transparent var(--todae-border-width)); background-size: var(--todae-harness-canvas-dot-gap) var(--todae-harness-canvas-dot-gap); }
+  .shell-project-picker { min-inline-size: var(--todae-harness-size-label); }
+  @media (max-width: 52rem) {
+    .wizard-body { grid-template-columns: minmax(0, 1fr); }
+    .wizard-rail { display: none; }
+    .wizard-main { padding-inline: var(--todae-space-4); }
+  }
 }

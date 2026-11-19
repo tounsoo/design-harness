@@ -1,4 +1,6 @@
-import type { PartDescription, RoleMapping } from "../config/types";
+import type { Confidence, ConfirmedExclusion, ConfirmedRole, PartDescription, RoleMapping } from "../config/types";
+
+export type { Confidence, ConfirmedExclusion, ConfirmedRole };
 import { ROLE_NAMES, type RoleName, type RuleSpec, type Selector } from "../rules/types";
 import type { Issue, Result } from "../validate";
 
@@ -33,7 +35,6 @@ export type LibraryDescription = {
 /** The props the drafter proposes the config exclude (`library.excludedProps`), with its evidence. */
 export type ExclusionGuess = { readonly props: readonly string[]; readonly confidence: Confidence; readonly evidence: readonly string[] };
 
-export type Confidence = "high" | "medium" | "low";
 
 /** One role the drafter could map: the mapping, how sure it is, and why, in words a reviewer checks against the library. */
 export type RoleGuess = {
@@ -72,17 +73,6 @@ export type RoleConfirmation = {
    */
   readonly excludedProps?: "accept" | { readonly props: readonly string[]; readonly why: string };
 };
-
-/** How each role ended up: as drafted, or corrected, with the draft it replaced and why. */
-export type ConfirmedRole =
-  | { readonly role: RoleName; readonly decision: "accepted"; readonly mapping: RoleMapping; readonly confidence: Confidence }
-  | { readonly role: RoleName; readonly decision: "corrected"; readonly mapping: RoleMapping; readonly drafted: RoleMapping | null; readonly why: string };
-
-/** How the excluded props were decided. */
-export type ConfirmedExclusion =
-  | { readonly decision: "accepted"; readonly props: readonly string[] }
-  | { readonly decision: "corrected"; readonly props: readonly string[]; readonly drafted: readonly string[]; readonly why: string }
-  | { readonly decision: "none"; readonly props: readonly [] };
 
 export type ConfirmedRoles = {
   readonly roles: Readonly<Record<RoleName, RoleMapping>>;
@@ -313,7 +303,8 @@ function draftExclusion(description: LibraryDescription): ExclusionGuess | null 
   return { props, confidence: "high", evidence };
 }
 
-const same = (a: RoleMapping, b: RoleMapping) => JSON.stringify(normal(a)) === JSON.stringify(normal(b));
+/** Whether two mappings name the same parts and prop values, whatever order they list them in. */
+export const sameMapping = (a: RoleMapping, b: RoleMapping) => JSON.stringify(normal(a)) === JSON.stringify(normal(b));
 function normal(mapping: RoleMapping): RoleMapping {
   return { components: [...mapping.components].sort(compare), ...(mapping.prop ? { prop: { name: mapping.prop.name, values: [...mapping.prop.values].sort((a, b) => compare(String(a), String(b))), whenMissing: mapping.prop.whenMissing } } : {}) };
 }
@@ -358,7 +349,7 @@ export function confirmRoles(description: LibraryDescription, confirmation: Role
     }
     const { mapping, why } = correction as { mapping: RoleMapping; why: string };
     if (why.trim() === "") issues.push({ path: `${path}.why`, message: `the correction of "${role}" gives no reason` });
-    if (guess && same(guess.mapping, mapping)) issues.push({ path, message: `the correction of "${role}" is the draft itself: accept it instead` });
+    if (guess && sameMapping(guess.mapping, mapping)) issues.push({ path, message: `the correction of "${role}" is the draft itself: accept it instead` });
     for (const component of mapping.components) {
       if (!(component in description.parts)) issues.push({ path: `${path}.mapping.components`, message: `names ${component}, which ${description.package} ${description.version} has no part of` });
     }
@@ -394,7 +385,8 @@ export function confirmRoles(description: LibraryDescription, confirmation: Role
   return { ok: true, value: { roles: roles as Record<RoleName, RoleMapping>, excludedProps: exclusion.props, record, exclusion } };
 }
 
-function describeMapping(mapping: RoleMapping): string {
+/** A mapping in words: "Button with variant \"filled\" (or no variant)". */
+export function describeMapping(mapping: RoleMapping): string {
   const parts = mapping.components.join(" or ") || "no part";
   if (!mapping.prop) return parts;
   return `${parts} with ${mapping.prop.name} ${mapping.prop.values.map((value) => JSON.stringify(value)).join(" or ")}${mapping.prop.whenMissing ? ` (or no ${mapping.prop.name})` : ""}`;
