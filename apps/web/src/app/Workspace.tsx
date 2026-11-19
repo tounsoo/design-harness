@@ -209,10 +209,14 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
       setPinningState(next);
       // Notes are pinned on the canvas, and on the Variants view's frames when a spec prototype is open there; from anywhere else, the canvas comes up.
       const spec = recordsRef.current.find((record) => record.id === currentId)?.prototype.format === "spec";
-      if (next) setCenter((now) => (now === "variants" && spec ? now : "canvas"));
+      if (next) {
+        setCenterState((now) => (now === "variants" && spec ? now : "canvas"));
+        // On a phone, a panel covering the main view steps aside, as for any way to the frames.
+        revealMain();
+      }
       announce(next ? "Pin a note: click a spot on a frame, or pick an element from a frame's list. Press Escape to leave." : "Left pin a note.");
     },
-    [announce, currentId],
+    [announce, currentId, revealMain],
   );
   // Pin mode belongs to the views that show frames to pin on: opening another one leaves it.
   useEffect(() => {
