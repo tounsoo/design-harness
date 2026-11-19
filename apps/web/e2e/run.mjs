@@ -47,6 +47,13 @@ const FRAMES = SCENARIOS.length * VIEWS.length;
 // Tally keeps its own two views.
 const TALLY_VIEWS = ["desktop", "phone"];
 
+/**
+ * The header's button for a main view (Canvas, Variants, Project or
+ * Proposals), in its toggle group. A count badge sits inside its button, so
+ * the name is matched from its start.
+ */
+const mainView = (page, name) => page.getByRole("group", { name: "Main view" }).getByRole("button", { name: new RegExp(`^${name}`) });
+
 async function openApp(browser, base, options = {}) {
   // The fake API's certificate is self-signed; only it is reached at api.anthropic.com (see the runner).
   // E2E_SCALE=2 saves screenshots at twice the density; it changes no CSS pixel a test reads.
@@ -458,14 +465,14 @@ test("the board opens a frame at full size and the project view reads the config
     assert.equal(Math.round(viewport.width), 1280);
     await shot(page, `full-size-${colorScheme}`);
     await page.getByRole("button", { name: "Back to board" }).click();
-    await page.getByRole("tab", { name: "Project" }).click();
+    await mainView(page, "Project").click();
     await page.getByRole("heading", { name: "What a prototype can build with" }).waitFor();
     for (const text of ["@tounsoo/todae 0.11.3", "primary-action", "Room details", "TARGET_MIN_PX", "Rules in force (32)", "No proposals yet"]) {
       assert.ok((await page.locator(".project").textContent()).includes(text), `the project view shows ${text}`);
     }
     await shot(page, `project-${colorScheme}`);
     if (colorScheme === "dark") {
-      await page.getByRole("tab", { name: "Canvas" }).click();
+      await mainView(page, "Canvas").click();
       await editFile(page, "pages/booking.tsx", UNDERSIZED);
       await measured(page, 2);
       await showAllRules(page);
@@ -779,13 +786,13 @@ test("a drafted proposal is saved as open, with core's adoption dry run", async 
   const card = page.locator('.chat-proposal[data-proposal="booking-toast"]');
   assert.match(await card.textContent(), /^Proposal draftedA toast that confirms a booking/);
   assert.match(await card.textContent(), /Core's adoption dry run passes/);
-  await page.getByRole("tab", { name: "Project" }).click();
+  await mainView(page, "Project").click();
   await page.getByText("Proposals (1)").waitFor();
   assert.match(await page.locator('.project [data-testid="project-history"] [data-proposal="booking-toast"]').textContent(), /^A toast that confirms a booking.*open.*Waiting for you.*Adds 1 component and 1 rule\./);
   assert.equal((await report(page)).rules.some((rule) => rule.rule === "one-toast-per-page"), false, "an open proposal puts no rule in force");
   await shot(page, "chat-proposal-light");
   await page.reload();
-  await page.getByRole("tab", { name: "Project" }).click();
+  await mainView(page, "Project").click();
   await page.getByText("Proposals (1)").waitFor();
   assert.ok(await page.locator('.chat-proposal[data-proposal="booking-toast"]').count(), "the chat and the proposal survive a reload");
 });
@@ -1195,7 +1202,7 @@ test("decline needs a note, and the history records it", async ({ browser, base,
   assert.match(await page.getByTestId("review-history").textContent(), /Declined by you.*Toasts move focus away from the booking; not this quarter\./);
   assert.deepEqual(await page.getByTestId("history-note").allTextContents(), ["Toasts move focus away from the booking; not this quarter."]);
   await page.reload();
-  await page.getByRole("tab", { name: /Proposals/ }).click();
+  await mainView(page, "Proposals").click();
   await page.getByRole("button", { name: "Declined (1)" }).click();
   await page.locator('.proposal-cards [data-proposal="booking-toast"][data-status="declined"]').waitFor();
 });
@@ -1322,7 +1329,7 @@ test("a proposal that adds a rendered rule adopts on measured snapshots, and giv
 
   await page.reload();
   await measured(page, 1);
-  await page.getByRole("tab", { name: "Project" }).click();
+  await mainView(page, "Project").click();
   // The Project tab's palette draws its own frames as its tiles are scrolled to; a re-run adds none.
   await page.getByTestId("regression").scrollIntoViewIfNeeded();
   await page.waitForTimeout(500);
@@ -1371,11 +1378,11 @@ test("no tool call or chat message can change a proposal's status", async ({ bro
   assert.equal(await turnEnded(page), "done");
   assert.equal(api.left(), 0);
   assert.equal(await page.getByTestId("open-proposals").textContent(), "1");
-  await page.getByRole("tab", { name: /Proposals/ }).click();
+  await mainView(page, "Proposals").click();
   assert.equal(await page.locator('.proposal-cards [data-proposal="booking-toast"]').getAttribute("data-status"), "open");
   assert.equal((await report(page)).rules.some((rule) => rule.rule === "one-toast-per-page"), false, "no rule came into force");
   await page.reload();
-  await page.getByRole("tab", { name: /Proposals/ }).click();
+  await mainView(page, "Proposals").click();
   assert.equal(await page.locator('.proposal-cards [data-proposal="booking-toast"]').getAttribute("data-status"), "open", "nor was a status saved");
 });
 
@@ -1815,7 +1822,7 @@ test("a scripted agent lists the layouts, draws an instance of one, and changes 
 
 test("the Project view lists the spec prototype's layouts with their parameters and a rendered preview", async ({ browser, base }) => {
   const { page } = await openSpec(browser, base);
-  await page.getByRole("tab", { name: "Project" }).click();
+  await mainView(page, "Project").click();
   const section = page.getByTestId("project-layouts");
   await section.waitFor();
   assert.deepEqual(await section.locator(".layout-card").evaluateAll((cards) => cards.map((card) => card.getAttribute("data-layout"))), ["room-cards", "room-details", "select-question"]);
@@ -2000,7 +2007,7 @@ test("a stored Nook project on Todae 0.10.1 renders with 0.10.1, and passes ever
   await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
   await measured(page, 2);
   assert.equal((await report(page)).status, "pass", "the spec prototype passes on 0.10.1");
-  await page.getByRole("tab", { name: "Project" }).click();
+  await mainView(page, "Project").click();
   assert.equal(await page.getByTestId("library-version-current").textContent(), "Todae 0.10.1");
   assert.deepEqual(errors, []);
   await context.close();
@@ -2009,7 +2016,7 @@ test("a stored Nook project on Todae 0.10.1 renders with 0.10.1, and passes ever
 test("moving a project from Todae 0.10.1 to 0.11.3 shows the diff first, and moves only on confirm", async ({ browser, base }) => {
   for (const colorScheme of ["light", "dark"]) {
     const { page, context, errors } = await openOnTodae0101(browser, base, { colorScheme });
-    await page.getByRole("tab", { name: "Project" }).click();
+    await mainView(page, "Project").click();
     const section = page.getByTestId("library-version");
     assert.equal(await section.getByRole("combobox", { name: "Move to" }).inputValue(), "0.11.3");
     await section.getByRole("button", { name: "See what changes in 0.11.3" }).click();
@@ -2037,7 +2044,7 @@ test("moving a project from Todae 0.10.1 to 0.11.3 shows the diff first, and mov
     const stored = await eventually(page, () => storedLibrary(page), (library) => library.version === "0.11.3", "the move is saved");
     assert.deepEqual(stored.history.map((entry) => [entry.kind, entry.from, entry.to, entry.by]), [["moved", "0.10.1", "0.11.3", "you"]]);
     assert.equal(stored.parts, 203);
-    await page.getByRole("tab", { name: "Canvas" }).click();
+    await mainView(page, "Canvas").click();
     await measured(page, 2);
     assert.equal((await report(page)).status, "pass", "the moved project passes every rule on 0.11.3");
     await page.reload();
@@ -2072,7 +2079,7 @@ test("a version this app does not serve: the canvas says what is missing and off
     await page.getByTestId("library-move-plan").waitFor();
     assert.equal(await page.getByTestId("library-move-plan").getAttribute("data-to"), "0.11.3");
     await page.getByRole("button", { name: "Cancel" }).click();
-    await page.getByRole("tab", { name: "Canvas" }).click();
+    await mainView(page, "Canvas").click();
     // esm.sh, for this project only, chosen by the person, and shown while it lasts.
     await notice.getByRole("button", { name: "Load 0.9.0 from esm.sh" }).click();
     await measured(page, 2);
@@ -2384,15 +2391,15 @@ test("at phone width the header's parts do not overlap, the page does not scroll
   // A view's tab brings the main view forward from under a panel, the tab already chosen included.
   await chatToggle.click();
   await chat.waitFor();
-  await page.getByRole("tab", { name: "Project" }).click();
+  await mainView(page, "Project").click();
   await page.getByRole("heading", { name: "What a prototype can build with" }).waitFor();
   assert.equal(await chat.isVisible(), false, "the Project tab puts the chat away");
   await noSidewaysScroll(page, "phone, Project");
   await sideToggle.click();
   await side.waitFor();
-  await page.getByRole("tab", { name: "Project" }).click();
+  await mainView(page, "Project").click();
   await side.waitFor({ state: "hidden" });
-  await page.getByRole("tab", { name: "Canvas" }).click();
+  await mainView(page, "Canvas").click();
   assert.deepEqual(await storedPanels(page), { chat: { open: true, width: 360 }, side: { open: true, width: 400 } }, "what a phone shows leaves the stored panels alone");
 
   // With a second project the header also holds the project picker, and still nothing overlaps.
@@ -2683,7 +2690,7 @@ test("picking slots from two variants applies a new revision that passes every r
   await showCode(page, "pages/booking.json");
   const original = await page.locator('[data-testid="code-editor"]').inputValue();
   await offerVariants(page, api);
-  await page.getByRole("tab", { name: /Variants/ }).click();
+  await mainView(page, "Variants").click();
   await standing(page, "a", "pass");
   await standing(page, "b", "pass");
   assert.equal(await page.getByTestId("apply-pick").isDisabled(), true);
@@ -2704,7 +2711,7 @@ test("picking slots from two variants applies a new revision that passes every r
   const after = await report(page);
   assert.equal(after.status, "pass", JSON.stringify(after.findings, null, 1));
   assert.deepEqual(after.findings, []);
-  await page.getByRole("tab", { name: "Canvas" }).click();
+  await mainView(page, "Canvas").click();
   const board = (await liveFrame(page, 'lantern-open at desktop'));
   await eventually(page, async () => (await board.locator("label").first().textContent()).trim(), (text) => text === "For how long?", "the board draws the pick");
   await eventually(page, () => board.locator("text=Second floor, 6 seats").count(), (count) => count === 1, "the board draws B's facts");
@@ -2716,7 +2723,7 @@ test("picking slots from two variants applies a new revision that passes every r
   await measured(page, 1);
   await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
   await measured(page, 2);
-  await page.getByRole("tab", { name: /Variants/ }).click();
+  await mainView(page, "Variants").click();
   const history = page.getByTestId("pick-history");
   await history.waitFor();
   assert.match(await history.textContent(), /title from Current, facts from Variant B, body from Variant A, alternate from Current, action from Current/);
@@ -2726,7 +2733,7 @@ test("picking slots from two variants applies a new revision that passes every r
   assert.equal((await report(page)).status, "pass");
   await showCode(page, "pages/booking.json");
   assert.equal(await page.locator('[data-testid="code-editor"]').inputValue(), original, "undo restores the page as it was");
-  await page.getByRole("tab", { name: /Variants/ }).click();
+  await mainView(page, "Variants").click();
   assert.match(await page.getByTestId("pick-history").textContent(), /\(undone\)/);
   assert.equal(await page.getByTestId("undo-pick").count(), 0);
 });
@@ -2744,7 +2751,7 @@ test("a pick answers for its own page: with the rooms page already failing, a pa
   assert.match(await page.getByTestId("checks-headline").textContent(), /to fix/);
 
   await offerVariants(page, api);
-  await page.getByRole("tab", { name: /Variants/ }).click();
+  await mainView(page, "Variants").click();
   // The page as it is and the variants that are clean on the booking page stand as passing, though the prototype does not pass.
   const current = await standing(page, "current", "pass");
   const a = await standing(page, "a", "pass");
@@ -2777,7 +2784,7 @@ test("a pick answers for its own page: with the rooms page already failing, a pa
   // The pick is the new revision: the booking page changed, and the rooms page fails exactly as it did.
   const after = await report(page);
   assert.deepEqual(after.findings, before.findings, "the same findings as before the pick, all on the rooms page");
-  await page.getByRole("tab", { name: "Canvas" }).click();
+  await mainView(page, "Canvas").click();
   const board = (await liveFrame(page, 'lantern-open at desktop'));
   await eventually(page, async () => (await board.locator("label").first().textContent()).trim(), (text) => text === "For how long?", "the board draws the pick");
   await eventually(page, () => board.locator("text=Second floor, 6 seats").count(), (count) => count === 1, "the board draws B's facts");
@@ -2786,7 +2793,7 @@ test("a pick answers for its own page: with the rooms page already failing, a pa
 test("more like this reaches the agent, naming the variant, and its new variants say whose they are like", async ({ browser, base, api }) => {
   const { page } = await openSpec(browser, base);
   await offerVariants(page, api);
-  await page.getByRole("tab", { name: /Variants/ }).click();
+  await mainView(page, "Variants").click();
   const b = await standing(page, "b", "pass");
   const more = threeVariants().slice(0, 2).map((variant, index) => ({ note: `Floor first, take ${index + 1}`, spec: { ...variant.spec, state: { ...variant.spec.state, duration: "60" } } }));
   api.script([
@@ -2848,14 +2855,14 @@ test("no tool call or chat message can apply a pick", async ({ browser, base, ap
   assert.equal(await page.locator(".checks").getAttribute("data-revision"), "2", "no new revision");
   await showCode(page, "pages/booking.json");
   assert.equal(await page.locator('[data-testid="code-editor"]').inputValue(), original);
-  await page.getByRole("tab", { name: /Variants/ }).click();
+  await mainView(page, "Variants").click();
   await page.getByTestId("variants").waitFor();
   assert.equal(await page.getByTestId("pick-history").count(), 0, "no pick was recorded");
   await page.reload();
   await measured(page, 1);
   await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
   await measured(page, 2);
-  await page.getByRole("tab", { name: /Variants/ }).click();
+  await mainView(page, "Variants").click();
   await page.locator('.variant-card[data-variant="c"]').waitFor();
   assert.equal(await page.getByTestId("pick-history").count(), 0, "nor saved");
   // A TSX prototype says plainly that variants are for spec prototypes.
@@ -3442,7 +3449,7 @@ test("the flow map numbers the longest route against the budget, on the step-bud
   await becomesFocused(page, card(page, "lantern-held@desktop"), "the state's artboard takes focus");
 
   // The Project view draws every task's map for the open prototype.
-  await page.getByRole("tab", { name: "Project" }).click();
+  await mainView(page, "Project").click();
   const project = page.getByTestId("project-flow");
   assert.deepEqual(await project.getByTestId("flow-map").evaluateAll((maps) => maps.map((map) => [map.dataset.task, map.dataset.status])), [["book-room", "over"], ["hold-room", "fits"]]);
   assert.equal(await project.locator('[data-task="hold-room"] [data-testid="flow-count"]').textContent(), "2 steps on the longest route, budget 2");
@@ -3450,7 +3457,7 @@ test("the flow map numbers the longest route against the budget, on the step-bud
   await shot(page, "visual-project-flow-light");
   await project.locator('[data-task="hold-room"]').getByRole("button", { name: "Show Room open on the canvas" }).click();
   await becomesFocused(page, card(page, "lantern-open@desktop"), "from the Project view, a state opens the canvas at its artboard");
-  assert.equal(await page.getByRole("tab", { name: "Canvas" }).getAttribute("aria-selected"), "true");
+  assert.equal(await mainView(page, "Canvas").getAttribute("aria-pressed"), "true");
   assert.deepEqual(errors, []);
 });
 
@@ -3561,7 +3568,7 @@ test("the loop notices a rule the agent fixed in two turns: the suggestion appea
   await measured(page, 1);
   await page.locator('.chat-proposal[data-proposal="hold-room-secondary"]').waitFor();
   assert.equal(await page.getByTestId("loop-suggestion").count(), 0);
-  await page.getByRole("tab", { name: /Proposals/ }).click();
+  await mainView(page, "Proposals").click();
   assert.equal(await page.locator('.proposal-cards [data-proposal="hold-room-secondary"]').getAttribute("data-status"), "open");
 });
 
@@ -3772,11 +3779,11 @@ test("new project on Todae: named, roles confirmed by eye with a correction and 
   assert.match((await (await liveFrame(page, 'pay-an-invoice-done at phone')).locator("body").textContent()) ?? "", /Done: Pay an invoice/);
   await shot(page, "wizard-board-todae");
   // The Project view keeps how each role was decided, the reason included.
-  await page.getByRole("tab", { name: "Project" }).click();
+  await mainView(page, "Project").click();
   await page.getByText("Technical details").click();
   assert.equal(await page.getByTestId("confirmed-question").textContent(), "Changed from the draft: A switch asks a yes or no question too.");
   assert.equal(await page.getByTestId("confirmed-action").textContent(), "As drafted (high confidence)");
-  await page.getByRole("tab", { name: "Canvas" }).click();
+  await mainView(page, "Canvas").click();
   const file = await passesReloadsAndRoundTrips(page, browser, base, { id: "ledger", rules: 31 });
   assert.deepEqual(file.project.library.roles.question, { components: ["Field.Root", "Switch.Root"] });
   assert.equal(file.project.library.confirmed.roles.find((entry) => entry.role === "question").why, "A switch asks a yes or no question too.");
@@ -4000,7 +4007,7 @@ test("the Project tab draws the palette live: each component in a sandboxed fram
   const { page, errors, context } = await openApp(browser, base);
   await measured(page, 1);
   const boardFrames = await page.locator("iframe").count();
-  await page.getByRole("tab", { name: "Project" }).click();
+  await mainView(page, "Project").click();
   const palette = page.getByTestId("palette");
   await palette.waitFor();
   assert.deepEqual(await palette.locator(".specimen").evaluateAll((items) => items.map((item) => item.dataset.component)), ["Alert", "Button", "Card", "Disclosure", "EmptyState", "Field", "Label", "Stack", "Text"]);
@@ -4084,7 +4091,7 @@ if (process.env.E2E_LIBRARY) {
 test("the Project tab draws page types as slot diagrams, a length cap at its size, count caps and budgets in words with today's routes, and rules as grouped cards", async ({ browser, base }) => {
   const { page, errors, context } = await openApp(browser, base);
   await measured(page, 1);
-  await page.getByRole("tab", { name: "Project" }).click();
+  await mainView(page, "Project").click();
   // Page types: slots in the project's order, each as chrome, body or the primary slot, readable as a list.
   const booking = page.locator('[data-testid="slot-diagram"][data-page-type="booking"]');
   assert.deepEqual(await booking.locator(".slot").evaluateAll((items) => items.map((item) => [item.dataset.slot, item.dataset.slotKind])), [["title", "chrome"], ["facts", "chrome"], ["body", "body"], ["alternate", "chrome"], ["action", "primary"]]);
@@ -4137,7 +4144,7 @@ test("the Project tab draws page types as slot diagrams, a length cap at its siz
 
 test("Tally's palette is drawn by Mantine: its buttons by variant with the ranked actions, and its accordion closed", async ({ browser, base }) => {
   const { page, errors, context } = await openTally(browser, base);
-  await page.getByRole("tab", { name: "Project" }).click();
+  await mainView(page, "Project").click();
   const palette = page.getByTestId("palette");
   await palette.waitFor();
   assert.deepEqual(await palette.locator(".specimen").evaluateAll((items) => items.map((item) => item.dataset.component)), ["Accordion", "Button", "Card", "NumberInput", "Stack", "Text", "TextInput", "Title"]);
@@ -4184,7 +4191,7 @@ test("the proposals list is cards that lead with the change: a cap before and af
     },
     { key: false },
   );
-  await page.getByRole("tab", { name: /Proposals/ }).click();
+  await mainView(page, "Proposals").click();
   const cards = page.locator(".proposal-cards > li");
   assert.equal(await cards.count(), 2);
   const cap = page.locator('.proposal-cards [data-proposal="two-questions"]');
@@ -4987,7 +4994,7 @@ test("a note pinned on a variant: on the variant's own element, listed with its 
   assert.deepEqual(await report(page), before);
 
   // Show me, from the canvas: the Variants view comes up on the note's variant, and its card opens.
-  await page.getByRole("tab", { name: "Canvas" }).click();
+  await mainView(page, "Canvas").click();
   await page.locator('main[aria-label="Canvas"]').waitFor();
   await noteRow(page, 1).getByTestId("note-show").click();
   await page.locator('main[aria-label="Variants"]').waitFor();
@@ -5004,7 +5011,7 @@ test("a note pinned on a variant: on the variant's own element, listed with its 
   assert.match(await noteRow(page, 1).locator(".note-where").textContent(), /^On button "Book room" · Variant A · /);
   assert.equal(await noteRow(page, 1).getAttribute("data-status"), "addressed");
   // Dismissing the variant drops no note: it says the variant is gone, and no new variant will take its id.
-  await page.getByRole("tab", { name: "Variants" }).click();
+  await mainView(page, "Variants").click();
   await standing(page, "a", "pass");
   await variantCard(page, "a").getByRole("button", { name: "Dismiss", exact: true }).click();
   await variantCard(page, "a").getByRole("button", { name: "Dismiss Variant A" }).click();
