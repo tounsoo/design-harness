@@ -1,4 +1,4 @@
-import { checkPrototype, checkVariant, formatSpec, nextVariantIds, parseJson, variantLabel, variantPrototype, type JsonValue, type ProjectConfig, type Prototype, type Variant } from "@design-harness/core";
+import { checkPrototype, checkVariant, formatSpec, nextVariantIds, parseJson, pickScope, variantLabel, variantPrototype, type JsonValue, type ProjectConfig, type Prototype, type Variant } from "@design-harness/core";
 import type { JsonSchema } from "./schema";
 import type { AgentHost, ToolOutcome } from "./tools";
 
@@ -48,12 +48,20 @@ export const VARIANT_TOOL_DESCRIPTIONS: Readonly<Record<keyof typeof VARIANT_TOO
 
 const refused = (title: string, content: string): ToolOutcome => ({ content, isError: true, changed: false, title });
 
-/** Core's report on a variant without frames, in a line: rendered rules need the board's frames, which measure it. */
+/**
+ * Core's verdict on a variant without frames, in a line: rendered rules need
+ * the board's frames, which measure it. A variant answers for its own page
+ * (core's `pickScope`): a finding another page already had is not the
+ * variant's, and is only counted.
+ */
 export function variantVerdict(config: ProjectConfig, prototype: Prototype, variant: Variant): string {
-  const report = checkPrototype({ config, prototype: variantPrototype(prototype, variant) });
-  const failing = report.rules.filter((rule) => rule.status === "fail");
-  if (failing.length === 0) return "passes every rule core checks without frames; the board measures the rendered ones";
-  return `fails ${failing.map((rule) => `${rule.rule} (${rule.findings.slice(0, 2).map((finding) => finding.message).join("; ")})`).join(", ")}`;
+  const candidate = variantPrototype(prototype, variant);
+  const scope = pickScope(checkPrototype({ config, prototype }), checkPrototype({ config, prototype: candidate }), candidate, variant.page);
+  const byRule = new Map<string, string[]>();
+  for (const finding of [...scope.page, ...scope.introduced]) byRule.set(finding.rule, [...(byRule.get(finding.rule) ?? []), finding.message]);
+  const elsewhere = scope.existing.length > 0 ? ` (${scope.existing.length} ${scope.existing.length === 1 ? "finding" : "findings"} already on another page ${scope.existing.length === 1 ? "is" : "are"} not this variant's and do not stop a pick)` : "";
+  if (byRule.size === 0) return `passes every rule core checks without frames${scope.existing.length > 0 ? " on its own page" : ""}; the board measures the rendered ones${elsewhere}`;
+  return `fails ${[...byRule].map(([rule, messages]) => `${rule} (${messages.slice(0, 2).join("; ")})`).join(", ")}${elsewhere}`;
 }
 
 function specText(spec: unknown): string {

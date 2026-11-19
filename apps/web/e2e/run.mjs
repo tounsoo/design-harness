@@ -1914,6 +1914,58 @@ test("picking slots from two variants applies a new revision that passes every r
   assert.equal(await page.getByTestId("undo-pick").count(), 0);
 });
 
+test("a pick answers for its own page: with the rooms page already failing, a passing pick on the booking page applies, and a failing variant still cannot be picked", async ({ browser, base, api }) => {
+  const { page } = await openSpec(browser, base);
+  // The rooms page breaks a rule of its own: a primary action on a collection (core's own illegal fixture).
+  const failingRooms = readFileSync(join(root, "..", "..", "packages", "core", "examples", "nook", "prototypes", "spec", "illegal", "primary-on-collection", "files", "pages", "rooms.json"), "utf8");
+  await editFile(page, "pages/rooms.json", () => failingRooms);
+  await measured(page, 3);
+  const before = await report(page);
+  assert.equal(before.status, "fail");
+  assert.ok(before.findings.length > 0 && before.findings.every((finding) => finding.page === "rooms"), `only the rooms page fails: ${JSON.stringify(before.findings)}`);
+  await showAllRules(page);
+  assert.match(await page.getByTestId("checks-headline").textContent(), /to fix/);
+
+  await offerVariants(page, api);
+  await page.getByRole("tab", { name: /Variants/ }).click();
+  // The page as it is and the variants that are clean on the booking page stand as passing, though the prototype does not pass.
+  const current = await standing(page, "current", "pass");
+  const a = await standing(page, "a", "pass");
+  await standing(page, "b", "pass");
+  const c = await standing(page, "c", "fail");
+  assert.match(await a.textContent(), /this page follows the rules/);
+  assert.match(await a.getByTestId("variant-report").textContent(), /Nothing to fix on this page\./);
+  // The other page's failure is shown, in core's words, as not part of the pick.
+  await a.getByTestId("variant-elsewhere").locator("summary").click();
+  assert.match(await a.getByTestId("variant-elsewhere").textContent(), /Already on another page: \d+ things? to fix, not part of this pick/);
+  assert.match(await a.getByTestId("variant-elsewhere").textContent(), /Page "rooms" has 1 primary action, more than 0/);
+  assert.match(await current.textContent(), /this page follows the rules/);
+  // C breaks a rule on the booking page itself: its own findings block it, and the rooms page's are not among them.
+  assert.deepEqual(await c.locator('.variant-issue').evaluateAll((items) => [...new Set(items.map((item) => item.dataset.scope))]), ["page"]);
+  assert.match((await c.locator('[data-rule="one-primary-per-page"] [data-testid="variant-finding"]').first().textContent()).trim(), /^Page "booking" has 2 primary actions, more than 1/);
+  assert.equal(await c.locator('.variant-issue [data-testid="variant-finding"]').evaluateAll((items) => items.some((item) => item.textContent.includes('"rooms"'))), false);
+  for (const slot of ["title", "facts", "body", "alternate", "action"]) assert.equal(await pickRadio(page, slot, "Variant C").isDisabled(), true, `${slot}: C cannot be picked`);
+  assert.equal(await pickRadio(page, "body", "Variant A").isDisabled(), false, "A can be picked while another page fails");
+
+  await pickRadio(page, "body", "Variant A").check();
+  await pickRadio(page, "facts", "Variant B").check();
+  await page.waitForFunction(() => document.querySelector('[data-testid="variant-combination"]')?.getAttribute("data-standing") === "pass", null, { timeout: 90000 });
+  assert.equal(await page.getByTestId("apply-pick").isDisabled(), false, "the pick can be applied");
+  assert.equal(await page.getByTestId("apply-why").count(), 0);
+  assert.match(await page.getByTestId("apply-note").textContent(), /This page follows the rules\. \d+ things? to fix on another page stays? as (it is|they are)\./);
+  await shot(page, "variants-scoped-light");
+  await page.getByTestId("apply-pick").click();
+  await measured(page, 4);
+  assert.match(await page.getByTestId("notice").textContent(), /Pick applied/);
+  // The pick is the new revision: the booking page changed, and the rooms page fails exactly as it did.
+  const after = await report(page);
+  assert.deepEqual(after.findings, before.findings, "the same findings as before the pick, all on the rooms page");
+  await page.getByRole("tab", { name: "Canvas" }).click();
+  const board = page.frameLocator('iframe[title="lantern-open at desktop"]');
+  assert.equal((await board.locator("label").first().textContent()).trim(), "For how long?", "the board draws the pick");
+  assert.equal(await board.locator("text=Second floor, 6 seats").count(), 1);
+});
+
 test("more like this reaches the agent, naming the variant, and its new variants say whose they are like", async ({ browser, base, api }) => {
   const { page } = await openSpec(browser, base);
   await offerVariants(page, api);

@@ -42,6 +42,22 @@ describe("propose_variants", () => {
     expect(parts.variants().picks).toEqual([]);
   });
 
+  it("tells the agent a variant answers for its own page: a failure the rooms page already had is counted, not the variant's", async () => {
+    const seed = seedSpec();
+    // The rooms page breaks a rule of its own: a primary action on a collection.
+    const rooms = JSON.parse(seed.files["pages/rooms.json"] as string) as Spec;
+    rooms.elements.extra = { type: "Button.Root", props: { variant: "primary", text: "Book room" }, children: [] };
+    const root = rooms.elements[rooms.root]!;
+    root.slots = { ...root.slots, body: [...(root.slots?.body ?? []), "extra"] };
+    const failingElsewhere = { ...seed, files: { ...seed.files, "pages/rooms.json": JSON.stringify(rooms, null, 2) } };
+    const parts = fakeHost(failingElsewhere);
+    const outcome = await runTool(call("propose_variants", { page: "booking", variants: three() }), parts.host, signal);
+    expect(outcome.isError).toBe(false);
+    expect(outcome.content).toMatch(/Variant A \(id "a"\): Asks for how long\. Core passes every rule core checks without frames on its own page; the board measures the rendered ones \(\d+ findings? already on another page (is|are) not this variant's and do not stop a pick\)/);
+    expect(outcome.content).toMatch(/Variant C \(id "c"\): Both actions primary\. Core fails one-primary-per-page \(Page "booking" has 2 primary actions/);
+    expect(outcome.content).not.toMatch(/Variant A[^\n]*fails/);
+  });
+
   it("keeps none when core refuses any of them, and says why in core's words", async () => {
     const parts = fakeHost(seedSpec());
     const [first, second] = three();
