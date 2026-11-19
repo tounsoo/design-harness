@@ -24,13 +24,13 @@ export function describedVersions(name: string): readonly DescribedVersion[] {
 }
 
 /**
- * The description of the version a project is on: its own `library.parts`
- * when it has them, which is what its prototypes are checked against, else
- * the one this app ships for that version, or null when it has none.
+ * The whole description of the version a project is on: the one this app
+ * ships for that version, else the project's own `library.parts` (which a
+ * project New project built cuts to what it inventories), else null.
  */
 export async function currentDescription(config: ProjectConfig): Promise<LibraryDescription | null> {
   const { package: name, version, parts } = config.library;
-  if (parts) return { package: name, version, parts };
   const shipped = DESCRIBED_VERSIONS.find((entry) => entry.package === name && entry.version === version);
-  return shipped ? shipped.describe() : null;
+  if (shipped) return shipped.describe();
+  return parts ? { package: name, version, parts } : null;
 }

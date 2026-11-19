@@ -101,6 +101,10 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   const [center, setCenter] = useState<"canvas" | "project" | "proposals" | "variants">("canvas");
   /** A library version the canvas's packages notice picked, for the Project view to compare. */
   const [libraryTarget, setLibraryTarget] = useState<string | undefined>(undefined);
+  // The version is for the visit the notice opened; the Project view opened later starts with nothing compared.
+  useEffect(() => {
+    if (center !== "project") setLibraryTarget(undefined);
+  }, [center]);
   /** The proposal whose review page is open in the Proposals view, or null for the list. */
   const [reviewing, setReviewing] = useState<string | null>(null);
   /** Text put into the chat's message box for the person to edit and send; the nonce makes the same text land twice. */

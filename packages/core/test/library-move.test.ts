@@ -94,6 +94,13 @@ describe("planning a move", () => {
     expect(plan.diff.changed.map((change) => [change.part, change.changed])).toEqual([["Text.Root", ["as"]]]);
   });
 
+  it("carries the new version's parts of only the families a project carried, or all of them when it carried every one", () => {
+    const some = Object.fromEntries(Object.entries(older.parts).filter(([part]) => ["Button", "Text", "Disclosure", "Field", "Card", "Stack", "Alert", "EmptyState", "Label"].includes(part.split(".")[0] as string)));
+    const plan = planLibraryMove({ ...onOlder, library: { ...onOlder.library, parts: some } }, older, newer, []);
+    expect(Object.keys(plan.config?.library.parts ?? {})).toEqual(Object.keys(newer.parts).filter((part) => part in some).sort());
+    expect(Object.keys(planLibraryMove(onOlder, older, newer, []).config?.library.parts ?? {}).length).toBe(Object.keys(newer.parts).length);
+  });
+
   it("refuses a move that would leave a role or an inventoried component without a part, saying which", () => {
     const next = edited(newer, "0.12.0", (parts) => {
       for (const part of Object.keys(parts)) if (part.startsWith("Disclosure")) delete parts[part];

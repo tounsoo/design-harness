@@ -145,11 +145,26 @@ export function compareLibraries(from: LibraryDescription, to: LibraryDescriptio
   return { package: to.package, from: from.version, to: to.version, added, removed, renamed, changed, unchanged };
 }
 
+const familyOf = (part: string) => part.split(".")[0] as string;
+
+/**
+ * The new version's parts a project carries: all of them when the project
+ * carried every family of the old version (or no parts at all), else only
+ * the families it carried, as a project New project built carries only what
+ * it inventories.
+ */
+function movedParts(library: ComponentLibrary, from: LibraryDescription, to: LibraryDescription): Readonly<Record<string, PartDescription>> {
+  if (!library.parts) return to.parts;
+  const carried = new Set(Object.keys(library.parts).map(familyOf));
+  if (Object.keys(from.parts).every((part) => carried.has(familyOf(part)))) return to.parts;
+  return Object.fromEntries(Object.keys(to.parts).sort(compareStrings).filter((part) => carried.has(familyOf(part))).map((part) => [part, to.parts[part] as PartDescription]));
+}
+
 /** The library as it would be on the new version. */
-function movedLibrary(library: ComponentLibrary, to: LibraryDescription, options: MoveOptions): ComponentLibrary {
+function movedLibrary(library: ComponentLibrary, from: LibraryDescription, to: LibraryDescription, options: MoveOptions): ComponentLibrary {
   const { source: _source, ...rest } = library;
   void _source;
-  return { ...rest, version: to.version, parts: to.parts, ...(options.stylesheets ? { stylesheets: options.stylesheets } : {}), ...(options.source ? { source: options.source } : {}) };
+  return { ...rest, version: to.version, parts: movedParts(library, from, to), ...(options.stylesheets ? { stylesheets: options.stylesheets } : {}), ...(options.source ? { source: options.source } : {}) };
 }
 
 function findingKey(finding: Finding): string {
@@ -158,9 +173,10 @@ function findingKey(finding: Finding): string {
 
 /**
  * The dry run of moving `config` to the version `to` describes, for every
- * prototype given. `from` is the description of the version the project is
- * on now: the project's own `library.parts` when it has them, else the one
- * the caller ships. Nothing is changed.
+ * prototype given. `from` is the whole description of the version the
+ * project is on now, as the caller ships it (or the project's own
+ * `library.parts` when the caller has none). The moved project carries the
+ * new version's parts of the families it carried. Nothing is changed.
  */
 export function planLibraryMove(config: ProjectConfig, from: LibraryDescription, to: LibraryDescription, prototypes: readonly ProjectPrototype[], options: MoveOptions = {}): LibraryMovePlan {
   const library = config.library;
@@ -184,7 +200,7 @@ export function planLibraryMove(config: ProjectConfig, from: LibraryDescription,
 
   let moved: ProjectConfig | null = null;
   if (refusals.length === 0) {
-    const parsed = parseProjectConfig({ ...config, library: movedLibrary(library, to, options) });
+    const parsed = parseProjectConfig({ ...config, library: movedLibrary(library, from, to, options) });
     if (parsed.ok) moved = parsed.value;
     else for (const issue of parsed.error) refusals.push(`the moved config does not validate: ${issue.path} ${issue.message}`);
   }

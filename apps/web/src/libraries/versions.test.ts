@@ -128,10 +128,11 @@ describe("a vendor manifest with two versions of one library", () => {
 });
 
 describe("the description of the version a project is on", () => {
-  it("is the project's own parts when it has them, else the one the app ships, else none", async () => {
-    expect((await currentDescription(nook))?.parts).toBe(nook.library.parts);
+  it("is the whole description the app ships for it, else the project's own parts, else none", async () => {
     const { parts: _parts, ...bare } = nook.library;
+    expect(Object.keys((await currentDescription({ ...nook, library: { ...bare, parts: { "Button.Root": { props: {}, content: "children" } } } }))?.parts ?? {}).length).toBe(203);
     expect((await currentDescription({ ...nook, library: { ...bare, version: "0.10.1" } }))?.version).toBe("0.10.1");
+    expect((await currentDescription({ ...nook, library: { ...nook.library, version: "0.9.0" } }))?.parts).toBe(nook.library.parts);
     expect(await currentDescription({ ...nook, library: { ...bare, version: "0.9.0" } })).toBeNull();
   });
 });
