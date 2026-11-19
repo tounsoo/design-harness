@@ -646,7 +646,7 @@
   .wizard-frames { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--todae-space-4); min-width: 0; overflow: hidden; padding: var(--todae-space-4); border-radius: var(--todae-radius-md); background-color: var(--todae-harness-canvas-bg); background-image: radial-gradient(var(--todae-harness-canvas-dot) var(--todae-border-width), transparent var(--todae-border-width)); background-size: var(--todae-harness-canvas-dot-gap) var(--todae-harness-canvas-dot-gap); }
   .shell-project-picker { min-inline-size: var(--todae-harness-size-label); }
   /*
-   * ---- The Project and Proposals tabs as pictures. ----
+   * ---- The Project and Proposals views as pictures. ----
    * Todae's Card, Badge, ToggleGroup and Text hold them; this sheet adds
    * what Todae has no part for: a specimen tile (the library's own ground
    * over the app's), a role tag with a pointer, a slot diagram, a class
@@ -835,6 +835,21 @@
   .thumb-control { fill: none; stroke: var(--vis-ink); stroke-width: var(--todae-harness-annotation-stroke); }
   .thumb-flag { stroke-width: var(--todae-harness-annotation-stroke-strong); }
   @media (max-width: 40rem) { .impact-grid > li[data-impact="fails"] { grid-column: auto; } }
+
+  /*
+   * ---- Narrow windows: the views and dialogs beyond the canvas. ----
+   * The scroll pane lays its one child out as a flex item, which is as wide
+   * as its widest unbreakable row unless told it may be narrower.
+   */
+  .project, .proposals, .review { min-inline-size: 0; }
+  /* The status filter is five buttons in a row; where they do not fit they take a second row. */
+  .proposals-filter { flex-wrap: wrap; max-inline-size: 100%; }
+  /* Todae's Button keeps its label on one line and cuts it short. A card's title is the proposal's name, so it wraps whole. */
+  .proposal-card-body .proposals-title > * { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+  /* A phone has no room to keep the actions in view: stuck, they cover close to half of it. They scroll with the page there. */
+  .shell[data-width="phone"] .review-actions { position: static; }
+  /* What is pressed is 24 CSS px tall at least: a radio's or a checkbox's label and a disclosure's summary are as tall as their text otherwise. */
+  :is(.variants, .wizard, .review, .proposals, .rule-flow) :is(label:has(> input), summary) { min-block-size: var(--todae-harness-size-target); }
 
   @media (max-width: 52rem) {
     .wizard-body { grid-template-columns: minmax(0, 1fr); }

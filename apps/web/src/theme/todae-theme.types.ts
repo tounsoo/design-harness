@@ -78,6 +78,7 @@ export const THEME_OVERRIDE_TYPES = {
   'harness.size.stage': 'dimension',
   'harness.size.stage-max': 'dimension',
   'harness.size.sticky-clearance': 'dimension',
+  'harness.size.target': 'dimension',
   'harness.size.tile': 'dimension',
   'harness.size.views-row': 'dimension',
   'harness.size.wizard-rail': 'dimension',

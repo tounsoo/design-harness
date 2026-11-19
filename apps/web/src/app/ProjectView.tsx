@@ -46,7 +46,7 @@ export function ProjectView({
 }: {
   readonly config: ProjectConfig;
   readonly onOpenProposal: (id: string) => void;
-  /** Opens the Proposals tab. */
+  /** Opens the Proposals view. */
   readonly onOpenProposals?: (() => void) | undefined;
   readonly prototype?: PrototypeRecord | undefined;
   /** Goes to a flow state's artboard on the canvas, from a flow map. */
@@ -471,12 +471,12 @@ function RuleCard({ rule, config, onOpenProposal, onFlow }: { readonly rule: Rul
   );
 }
 
-/** How the project got like this, in five lines: the newest proposals, open ones waiting. The Proposals tab is their home. */
+/** How the project got like this, in five lines: the newest proposals, open ones waiting. The Proposals view is their home. */
 function History({ config, onOpenProposal, onOpenProposals }: { readonly config: ProjectConfig; readonly onOpenProposal: (id: string) => void; readonly onOpenProposals?: (() => void) | undefined }) {
   const { items, more } = projectTimeline(config);
   return (
     <section aria-labelledby="project-proposals" data-testid="project-history">
-      <SectionHead id="project-proposals" title={`Proposals (${config.proposals.length})`} text="How the project got like this: the newest changes proposed, by the agent or by you. The Proposals tab is where you review them." />
+      <SectionHead id="project-proposals" title={`Proposals (${config.proposals.length})`} text="How the project got like this: the newest changes proposed, by the agent or by you. The Proposals view is where you review them." />
       {items.length === 0 ? (
         <Text.Root as="p" tone="muted">
           No proposals yet. A proposal carries an inventory change, the rule that governs it, and examples that must pass and fail; it is adopted only when its rules prove themselves on its examples.
@@ -509,7 +509,7 @@ function History({ config, onOpenProposal, onOpenProposals }: { readonly config:
       {(more > 0 || items.length > 0) && onOpenProposals && (
         <div>
           <Button.Root variant="secondary" onClick={onOpenProposals}>
-            {more > 0 ? `All ${config.proposals.length} proposals` : "Open the Proposals tab"}
+            {more > 0 ? `All ${config.proposals.length} proposals` : "Open the Proposals view"}
           </Button.Root>
         </div>
       )}
