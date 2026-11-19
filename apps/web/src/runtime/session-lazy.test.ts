@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, type Mock } from "vitest";
 import type { RenderedSnapshot } from "@design-harness/core";
 import { nook } from "../../../../packages/core/examples/nook/project";
 import { legalSnapshots } from "../../../../packages/core/examples/nook/snapshots";
@@ -23,7 +23,7 @@ function board(options: { readonly slots?: number; readonly budget?: number } = 
   const budget = new FrameBudget(options.budget ?? 24);
   const session = new Session({ source, kit: "/* kit */", boot: "/* boot */", parentOrigin: "https://app.example", window: win, channel: () => `ch-${(next += 1)}`, timeoutMs: 1000, slots: new RenderSlots(options.slots ?? 12), budget });
   const presences = new Map<string, FramePresence>();
-  const mounted = new Map<string, { epoch: number; generation: number; channel: string; window: { postMessage: ReturnType<typeof vi.fn> } }>();
+  const mounted = new Map<string, { epoch: number; generation: number; channel: string; window: { postMessage: Mock<(message: unknown) => void> } }>();
   /** Every document a frame was given, in order. */
   const documents: string[] = [];
   const sync = () => {
@@ -37,7 +37,7 @@ function board(options: { readonly slots?: number; readonly budget?: number } = 
       if (epoch !== null && !mounted.has(spec.key)) {
         const doc = session.documentFor(spec.key);
         if (!doc) continue;
-        const contentWindow = { postMessage: vi.fn() };
+        const contentWindow = { postMessage: vi.fn<(message: unknown) => void>() };
         mounted.set(spec.key, { epoch, generation: doc.generation, channel: doc.channel, window: contentWindow });
         documents.push(spec.key);
         session.attach(spec.key, { contentWindow } as unknown as HTMLIFrameElement, doc.generation, doc.channel);
@@ -58,7 +58,7 @@ function board(options: { readonly slots?: number; readonly budget?: number } = 
   const send = (key: string, data: object) => {
     const frame = mounted.get(key);
     if (!frame) throw new Error(`${key} is not live`);
-    listener?.({ data: { protocol: PROTOCOL, channel: frame.channel, ...data }, source: frame.window } as MessageEvent);
+    listener?.({ data: { protocol: PROTOCOL, channel: frame.channel, ...data }, source: frame.window } as unknown as MessageEvent);
     sync();
   };
   /** Each live frame says it listens; each asked to render answers with its snapshot (or `snapshotFor`'s). */
