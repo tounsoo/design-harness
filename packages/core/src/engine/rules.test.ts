@@ -1,167 +1,128 @@
 import { describe, expect, it } from "vitest";
-import { HEADER, check, configWith, messages, prototype } from "../../test/helpers";
+import { check, configWith, fragment, home, messages, prototype, type TestElement } from "../../test/helpers";
 import { legalSnapshots } from "../../examples/nook/snapshots";
 import type { RuleSpec } from "../rules/types";
 import { checkPrototype } from "./check";
 
-const home = (body: string, extra = "") => ({ "pages/home.tsx": `${HEADER}${extra}\nexport function Home() {\n  return (\n    <>\n${body}\n    </>\n  );\n}\n` });
-const slot = (name: string, inner: string) => `      <Slot name="${name}">${inner}</Slot>`;
+const button = (text: string, variant?: unknown, extra: Partial<TestElement> = {}): TestElement => ({ type: "Button.Root", props: { text, ...(variant !== undefined ? { variant } : {}) }, ...extra });
+const text = (words: string, as?: unknown): TestElement => ({ type: "Text.Root", props: { text: words, ...(as !== undefined ? { as } : {}) } });
+/** A press that changes state at `path`, so whatever reads it is unknown until run time. */
+const writes = (path: string) => ({ on: { press: [{ action: "setState", params: { statePath: path, value: "x" } }] } });
+const at = (file = "pages/home.json") => `${file.replace(/[.]/g, "\\.")}:\\d+:\\d+`;
 
 describe("count", () => {
   const rule: RuleSpec = { type: "count", id: "one-primary", scope: "page", select: { role: "primary-action" }, max: 1 };
 
   it("passes at the bound and fails over it, naming every match", () => {
-    expect(check([rule], home(slot("action", `<Button.Root>Book room</Button.Root>`))).status).toBe("pass");
-    const report = check([rule], home(slot("action", `<Button.Root>Book room</Button.Root><Button.Root variant="primary">Pay</Button.Root>`)));
-    expect(messages(report)).toEqual([expect.stringContaining(`violation: Page "home" has 2 primary actions, more than 1: Button.Root "Book room" at pages/home.tsx:7:27, Button.Root "Pay" at pages/home.tsx:7:63.`)]);
+    expect(check([rule], home({ action: ["book"] }, { book: button("Book room") })).status).toBe("pass");
+    const report = check([rule], home({ action: ["book", "pay"] }, { book: button("Book room"), pay: button("Pay", "primary") }));
+    expect(messages(report)).toEqual([expect.stringMatching(new RegExp(`^violation: Page "home" has 2 primary actions, more than 1: Button\\.Root "Book room" at ${at()}, Button\\.Root "Pay" at ${at()}\\.`))]);
   });
 
-  it("counts an element in a list of unknown length as any number", () => {
-    const report = check([rule], home(slot("body", `{rows.map(() => <Button.Root>Book room</Button.Root>)}`), "const rows = useRows();"));
-    expect(messages(report)).toEqual([expect.stringContaining("is rendered once per item of a list, so page \"home\" may show more than 1 primary actions")]);
+  it("counts an element in a list the page can change as any number", () => {
+    const report = check([rule], home({ body: ["rows"] }, { rows: { type: "Stack.Root", repeat: { statePath: "/rows" }, children: ["row"] }, row: button("Book room", undefined, writes("/rows")) }, { state: { rows: [] } }));
+    expect(messages(report)).toEqual([expect.stringContaining('is rendered once per item of a list, so page "home" may show more than 1 primary actions')]);
   });
 
   it("reports an element it cannot decide only when it could change the answer", () => {
-    const one = home(slot("action", `<Button.Root variant={tone}>Pay</Button.Root>`), "const tone = pick();");
+    const tone = { $state: "/tone" };
+    const one = home({ action: ["pay"] }, { pay: button("Pay", tone, writes("/tone")) }, { state: { tone: "primary" } });
     expect(check([rule], one).status).toBe("pass");
-    const two = home(slot("action", `<Button.Root>Book room</Button.Root><Button.Root variant={tone}>Pay</Button.Root>`), "const tone = pick();");
-    expect(messages(check([rule], two))).toEqual([expect.stringMatching(/^unverifiable: Cannot tell whether Button.Root "Pay" .* is a primary action: its variant is computed from `tone`/)]);
+    const two = home({ action: ["book", "pay"] }, { book: button("Book room"), pay: button("Pay", tone, writes("/tone")) }, { state: { tone: "primary" } });
+    expect(messages(check([rule], two))).toEqual([expect.stringMatching(/^unverifiable: Cannot tell whether Button\.Root "Pay" .* is a primary action: .*\/tone/)]);
   });
 
   it("reads a cap by name, and repeats over an input list", () => {
     const capped: RuleSpec = { type: "count", id: "disclosures", scope: "page", select: { role: "disclosure" }, max: { cap: "MAX_DISCLOSURES_PER_PAGE" } };
-    expect(messages(check([capped], home(slot("body", `<Disclosure.Root /><Disclosure.Root />`))))).toEqual([expect.stringContaining("more than 1 (MAX_DISCLOSURES_PER_PAGE)")]);
+    expect(messages(check([capped], home({ body: ["a", "b"] }, { a: { type: "Disclosure.Root" }, b: { type: "Disclosure.Root" } })))).toEqual([expect.stringContaining("more than 1 (MAX_DISCLOSURES_PER_PAGE)")]);
     const sections: RuleSpec = { type: "count", id: "sections", scope: "pages", each: "disclosedSections", select: { role: "disclosure-summary", text: { each: true } }, min: 1 };
-    expect(messages(check([sections], home(slot("body", `<Disclosure.Root><Disclosure.Summary>Room details</Disclosure.Summary></Disclosure.Root>`))))).toEqual([]);
-    expect(messages(check([sections], home(slot("body", `<Disclosure.Root><Disclosure.Summary>Other</Disclosure.Summary></Disclosure.Root>`))))).toEqual([expect.stringContaining(`0 disclosure summaries reading "Room details"`)]);
+    const disclosure = (summary: string) => home({ body: ["d"] }, { d: { type: "Disclosure.Root", children: ["s"] }, s: { type: "Disclosure.Summary", props: { text: summary } } });
+    expect(messages(check([sections], disclosure("Room details")))).toEqual([]);
+    expect(messages(check([sections], disclosure("Other")))).toEqual([expect.stringContaining(`0 disclosure summaries reading "Room details"`)]);
   });
 
-  it("in source scope, counts what no page renders too", () => {
-    const raw: RuleSpec = { type: "count", id: "raw", scope: "source", select: { component: ["button"] }, max: 0 };
-    const report = check([raw], { ...home(""), "pages/unused.tsx": `export const Unused = () => <button>x</button>;` });
-    expect(messages(report)).toEqual([expect.stringContaining(`<button> "x" at pages/unused.tsx:1:29`)]);
+  it("in source scope, counts what no page draws too", () => {
+    const spare: RuleSpec = { type: "count", id: "spare", scope: "source", select: { component: ["Button.Root"] }, max: 0 };
+    const report = check([spare], { ...home({ title: [] }), "layouts/spare.json": fragment("spare", { spare: button("x") }) });
+    expect(messages(report)).toEqual([expect.stringMatching(new RegExp(`Button\\.Root "x" at ${at("layouts/spare.json")}`))]);
   });
 });
 
-describe("style-props", () => {
-  const rule: RuleSpec = { type: "style-props", id: "no-inline-styles" };
-  const run = (files: Record<string, string>, excludedProps?: readonly string[]) => {
+describe("excluded props in a spec", () => {
+  it("are refused by the catalog, by name or pattern, as the extract rule's finding, before any rule reads the page", () => {
     const { excludedProps: _nook, ...library } = configWith([]).library;
-    return checkPrototype({ config: configWith([rule], { library: { ...library, ...(excludedProps ? { excludedProps } : {}) } }), prototype: prototype(files) });
-  };
-
-  it("refuses an excluded prop on a library part or an HTML element, whatever its value, naming the prop and its pattern as a spec's refusal does", () => {
-    const report = run(home(slot("body", `<Text.Root className={tone} data-tone="x">Hi</Text.Root><div className="x" />`), "const tone = pick();"), ["className", "data-*"]);
-    expect(messages(report)).toEqual([
-      `violation: Text.Root "Hi" at pages/home.tsx:7:25 sets "className", a style prop the project excludes ("className" in library.excludedProps): a Text.Root's styling must come from the library's own variants and tokens, not from props that style it directly.`,
-      `violation: Text.Root "Hi" at pages/home.tsx:7:25 sets "data-tone", a style prop the project excludes ("data-*" in library.excludedProps): a Text.Root's styling must come from the library's own variants and tokens, not from props that style it directly.`,
-      `violation: <div> at pages/home.tsx:7:81 sets "className", a style prop the project excludes ("className" in library.excludedProps): a <div>'s styling must come from the library's own variants and tokens, not from props that style it directly.`,
-    ]);
-  });
-
-  it("refuses style on any element, excluded or not", () => {
-    const files = home(slot("body", `<Card style={{ padding: 4 }} />`), "const Card = (props: { style?: object }) => <Text.Root>Hi</Text.Root>;");
-    expect(messages(run(files, undefined))).toEqual([`violation: Card at pages/home.tsx:7:25 sets "style", a style prop: a Card's styling must come from the library's own variants and tokens, not from props that style it directly.`]);
-  });
-
-  it("leaves a prototype's own component its prop names, and reads what it passes on where a part receives it", () => {
-    const own = home(slot("body", `<Card className="x" />`), "const Card = ({ className }: { className: string }) => <Text.Root className={className}>Hi</Text.Root>;");
-    expect(messages(run(own, ["className"]))).toEqual([expect.stringContaining(`violation: Text.Root "Hi" at pages/home.tsx:3:56 sets "className"`)]);
-    const renamed = home(slot("body", `<Card tone="x" />`), "const Card = ({ tone }: { tone: string }) => <Text.Root>{tone}</Text.Root>;");
-    expect(messages(run(renamed, ["className"]))).toEqual([]);
-  });
-
-  it("reads a prop set through a spread it can see, and cannot check one it cannot", () => {
-    const seen = home(slot("body", `<Text.Root {...look}>Hi</Text.Root>`), `const look = { className: "x" };`);
-    expect(messages(run(seen, ["className"]))).toEqual([expect.stringContaining(`violation: Text.Root "Hi" at pages/home.tsx:7:25 sets "className"`)]);
-    const hidden = home(slot("body", `<Text.Root {...look}>Hi</Text.Root>`), "const look = pick();");
-    expect(messages(run(hidden, ["className"]))).toEqual([`unverifiable: Cannot tell whether Text.Root "Hi" at pages/home.tsx:7:25 sets a style prop: a spread at line 7 may set any prop.`]);
-    expect(run(hidden, ["className"]).status).toBe("fail");
-  });
-
-  it("cannot check an element it cannot resolve", () => {
-    const files = home(slot("body", `<Part />`), "const Part = pick();");
-    expect(messages(run(files, ["className"]))).toEqual([expect.stringMatching(/^unverifiable: Cannot tell whether <Part> at pages\/home\.tsx:7:25 sets a style prop: /)]);
+    const config = configWith([], { library: { ...library, excludedProps: ["className", "ton*"] } });
+    const report = checkPrototype({ config, prototype: prototype(home({ title: ["t"] }, { t: { type: "Text.Root", props: { as: "h1", text: "Hi", tone: "muted" } } })) });
+    expect(messages(report, "extract")).toEqual([expect.stringContaining('element "t" sets "tone", a style prop the project excludes ("ton*" in library.excludedProps): a Text.Root\'s styling must come from the library\'s own variants and tokens')]);
   });
 });
 
 describe("containment", () => {
   it("must not be inside, and must be inside", () => {
     const notInside: RuleSpec = { type: "containment", id: "no-hidden-primary", select: { role: "primary-action" }, must: "not-be-inside", of: { role: "disclosure" } };
-    const hidden = home(slot("body", `<Disclosure.Root><Button.Root>Book room</Button.Root></Disclosure.Root>`));
-    expect(messages(check([notInside], hidden))).toEqual([expect.stringContaining(`Button.Root "Book room" at pages/home.tsx:7:42 is a primary action inside a disclosure, Disclosure.Root at pages/home.tsx:7:25.`)]);
+    const hidden = home({ body: ["d"] }, { d: { type: "Disclosure.Root", children: ["b"] }, b: button("Book room") });
+    expect(messages(check([notInside], hidden))).toEqual([expect.stringMatching(new RegExp(`Button\\.Root "Book room" at ${at()} is a primary action inside a disclosure, Disclosure\\.Root at ${at()}\\.`))]);
     const inside: RuleSpec = { type: "containment", id: "fields-in-disclosure", select: { role: "question" }, must: "be-inside", of: { role: "disclosure" } };
-    expect(messages(check([inside], home(slot("body", `<Field.Root />`))))).toEqual([expect.stringContaining("is a question outside every disclosure")]);
+    expect(messages(check([inside], home({ body: ["f"] }, { f: { type: "Field.Root" } })))).toEqual([expect.stringContaining("is a question outside every disclosure")]);
   });
 
-  it("counts nesting depth through local components", () => {
+  it("counts nesting depth through a layout instance", () => {
     const depth: RuleSpec = { type: "containment", id: "depth", select: { role: "disclosure" }, must: "nest-at-most", depth: 1 };
-    const files = home(slot("body", `<Disclosure.Root><Inner /></Disclosure.Root>`), "const Inner = () => <Disclosure.Root>inner</Disclosure.Root>;");
-    expect(messages(check([depth], files))).toEqual([expect.stringContaining("nests disclosures 2 deep, more than 1")]);
+    const files = { ...home({ body: ["d"] }, { d: { type: "Disclosure.Root", children: ["inner"] }, inner: { type: "Layout", props: { id: "inner" } } }), "layouts/inner.json": fragment("box", { box: { type: "Disclosure.Root", props: {} } }) };
+    expect(messages(check([depth], files, { layouts: [{ id: "inner", component: { file: "layouts/inner.json", export: "default" } }] }))).toEqual([expect.stringContaining("nests disclosures 2 deep, more than 1")]);
   });
 });
 
 describe("prop-values and requires", () => {
   const as: RuleSpec = { type: "prop-values", id: "text-as", select: { component: "Text.Root" }, prop: "as", allowed: ["h1", "p"], required: true };
 
-  it("allows listed literals, flags others and a missing required prop, and cannot check a computed one", () => {
-    expect(check([as], home(slot("title", `<Text.Root as="h1">T</Text.Root>`))).status).toBe("pass");
-    expect(messages(check([as], home(slot("title", `<Text.Root as="h4">T</Text.Root><Text.Root>U</Text.Root><Text.Root as={level}>V</Text.Root>`), "const level = pick();")))).toEqual([
-      expect.stringContaining(`violation: Text.Root "T" at pages/home.tsx:7:26 sets as to "h4"; it must be one of "h1", "p".`),
-      expect.stringContaining(`violation: Text.Root "U" at pages/home.tsx:7:58 has no as`),
+  it("allows listed literals, flags others and a missing required prop, and cannot check one read from state the page changes", () => {
+    expect(check([as], home({ title: ["t"] }, { t: text("T", "h1") })).status).toBe("pass");
+    const report = check([as], home({ title: ["t", "u", "v"], action: ["b"] }, { t: text("T", "h4"), u: text("U"), v: text("V", { $state: "/level" }), b: button("Book room", undefined, writes("/level")) }, { state: { level: "h1" } }));
+    expect(messages(report)).toEqual([
+      expect.stringMatching(new RegExp(`^violation: Text\\.Root "T" at ${at()} sets as to "h4"; it must be one of "h1", "p"\\.`)),
+      expect.stringMatching(new RegExp(`^violation: Text\\.Root "U" at ${at()} has no as`)),
       expect.stringContaining(`unverifiable: Cannot tell whether Text.Root "V"`),
     ]);
   });
 
   it("checks every value a choice can take", () => {
-    expect(messages(check([as], home(slot("title", `<Text.Root as={big ? "h1" : "h5"}>T</Text.Root>`), "const big = pick();")))).toEqual([expect.stringContaining(`sets as to "h5"`)]);
+    const choice = { $cond: { $state: "/scenario/state", eq: "booked" }, $then: "h1", $else: "h5" };
+    expect(messages(check([as], home({ title: ["t"] }, { t: text("T", choice) })))).toEqual([expect.stringContaining(`sets as to "h5"`)]);
   });
 
   it("requires: every match also matches the second selector", () => {
     const rank2: RuleSpec = { type: "requires", id: "rank-2", select: { role: "action", text: { rank: 2 } }, must: { role: "secondary-action" } };
-    expect(check([rank2], home(slot("alternate", `<Button.Root variant="secondary">Hold room</Button.Root>`))).status).toBe("pass");
-    expect(messages(check([rank2], home(slot("alternate", `<Button.Root variant="ghost">Hold room</Button.Root>`))))).toEqual([expect.stringContaining("so it must be a secondary action, and it is not")]);
+    expect(check([rank2], home({ alternate: ["h"] }, { h: button("Hold room", "secondary") })).status).toBe("pass");
+    expect(messages(check([rank2], home({ alternate: ["h"] }, { h: button("Hold room", "ghost") })))).toEqual([expect.stringContaining("so it must be a secondary action, and it is not")]);
   });
 });
 
 describe("slot, page structure and reachability", () => {
   const primarySlot: RuleSpec = { type: "slot", id: "primary-slot", slot: "$primary", holds: { role: "primary-action" }, min: 1, max: 1, only: { role: "primary-action" } };
+  const bookLayout = { "layouts/book.json": fragment("book", { book: button("Book room") }) };
+  const withBook = { layouts: [{ id: "book", component: { file: "layouts/book.json", export: "default" } }] };
 
-  it("a primary slot holds exactly one primary action, seeing through wrapper components", () => {
-    expect(check([primarySlot], home(slot("action", `<Book />`), "const Book = () => <Button.Root>Book room</Button.Root>;")).status).toBe("pass");
-    expect(messages(check([primarySlot], home(slot("action", `<Button.Root>A</Button.Root><Button.Root>B</Button.Root>`))))).toEqual([expect.stringContaining(`accepts at most 1 primary actions, found 2`)]);
-    expect(messages(check([primarySlot], home(slot("title", `<Text.Root as="h1">T</Text.Root>`))))).toEqual([expect.stringContaining(`Page "home" does not fill its slot "action"`)]);
+  it("a primary slot holds exactly one primary action, and a layout instance there is a layout, not the action it draws", () => {
+    expect(check([primarySlot], home({ action: ["b"] }, { b: button("Book room") })).status).toBe("pass");
+    expect(messages(check([primarySlot], { ...home({ action: ["use"] }, { use: { type: "Layout", props: { id: "book" } } }), ...bookLayout }, withBook))).toEqual([expect.stringContaining("found 0"), expect.stringContaining("which is not a primary action")]);
+    expect(messages(check([primarySlot], home({ action: ["a", "b"] }, { a: button("A"), b: button("B") })))).toEqual([expect.stringContaining(`accepts at most 1 primary actions, found 2`)]);
+    expect(messages(check([primarySlot], home({ title: ["t"] }, { t: text("T", "h1") })))).toEqual([expect.stringContaining(`Page "home" does not fill its slot "action"`)]);
   });
 
-  it("page structure: known slots, each once, nothing outside them", () => {
+  it("page structure: known slots only, and nothing outside them", () => {
     const structure: RuleSpec = { type: "page-structure", id: "structure" };
-    const report = check([structure], home(`${slot("title", "")}\n${slot("title", "")}\n${slot("footer", "")}\n      <Text.Root as="p">loose</Text.Root>\n      <Slot name={which} />`, "const which = pick();"));
+    const report = check([structure], home({ title: [], footer: [] }, { loose: text("loose", "p") }, { outside: ["loose"] }));
     expect(messages(report)).toEqual([
-      expect.stringContaining(`fills slot "title" twice`),
-      expect.stringContaining(`fills slot "footer" at pages/home.tsx:9:7, but page type "booking" has no such slot`),
-      expect.stringContaining(`Text.Root "loose" at pages/home.tsx:10:7 is outside every slot`),
-      expect.stringContaining("has a computed name"),
+      expect.stringMatching(new RegExp(`fills slot "footer" at ${at()}, but page type "booking" has no such slot`)),
+      expect.stringMatching(new RegExp(`Text\\.Root "loose" at ${at()} is outside every slot`)),
     ]);
   });
 
-  it("reachable: an action built where no page renders it", () => {
+  it("reachable: an action written where no page draws it", () => {
     const reachable: RuleSpec = { type: "reachable", id: "reached", select: { role: "action" } };
-    const report = check([reachable], { ...home(slot("action", `<Button.Root>Book room</Button.Root>`)), "pages/spare.tsx": `${HEADER}export const Spare = () => <Button.Root>Spare</Button.Root>;` });
-    expect(messages(report)).toEqual([expect.stringContaining(`Button.Root "Spare" at pages/spare.tsx:3:28 is an action that no page reaches`)]);
-  });
-});
-
-describe("membership", () => {
-  it("imports: the library and its subpaths, React, the page kit, and the prototype's files only", () => {
-    const imports: RuleSpec = { type: "membership", id: "imports", of: "imports" };
-    const report = check([imports], {
-      "pages/home.tsx": `import "@tounsoo/todae/styles.css";\nimport { useState } from "react";\nimport { Slot, Page } from "@design-harness/page";\nimport { x } from "./missing";\nimport lodash from "lodash";\nexport const Home = () => null;`,
-    });
-    expect(messages(report)).toEqual([
-      expect.stringContaining("imports Page from @design-harness/page, which exports only Slot and the PageProps type"),
-      expect.stringContaining(`imports "./missing", which is not a file in the prototype`),
-      expect.stringContaining(`imports "lodash", which is not the project's library`),
-    ]);
+    const report = check([reachable], { ...home({ action: ["b"] }, { b: button("Book room") }), "layouts/spare.json": fragment("spare", { spare: button("Spare") }) });
+    expect(messages(report)).toEqual([expect.stringMatching(new RegExp(`Button\\.Root "Spare" at ${at("layouts/spare.json")} is an action that no page reaches`))]);
   });
 });
 
@@ -180,24 +141,24 @@ describe("flow", () => {
 
   it("passes when every route fits, ignoring routes that return to a state they passed", () => {
     const hold = [{ from: "rooms", event: "open", to: "room-open" }, { from: "room-open", event: "hold", to: "held" }, { from: "room-open", event: "back", to: "rooms" }];
-    expect(check([budget], home(""), { flow: flow(hold) }).status).toBe("pass");
+    expect(check([budget], home({ title: [] }), { flow: flow(hold) }).status).toBe("pass");
   });
 
   it("fails the longest route over budget even when the shortest fits", () => {
     const hold = [{ from: "rooms", event: "quick-hold", to: "held" }, { from: "rooms", event: "open", to: "room-open" }, { from: "room-open", event: "book", to: "booked" }, { from: "booked", event: "re-hold", to: "held" }];
-    expect(messages(check([budget], home(""), { flow: flow(hold) }))).toEqual([`violation: The route open → book → re-hold takes 3 steps, which exceeds max steps 2 for "hold-room". Every route that finishes the task must fit, not only the shortest.`]);
+    expect(messages(check([budget], home({ title: [] }), { flow: flow(hold) }))).toEqual([`violation: The route open → book → re-hold takes 3 steps, which exceeds max steps 2 for "hold-room". Every route that finishes the task must fit, not only the shortest.`]);
   });
 
   it("fails an unreachable success state and a flow for a task the project does not have", () => {
     const stuck = [{ from: "rooms", event: "open", to: "room-open" }];
-    expect(messages(check([budget], home(""), { flow: flow(stuck, [{ task: "ghost", start: "rooms", transitions: [] }]) }))).toEqual([
+    expect(messages(check([budget], home({ title: [] }), { flow: flow(stuck, [{ task: "ghost", start: "rooms", transitions: [] }]) }))).toEqual([
       expect.stringContaining(`No route from "rooms" reaches "held"`),
       expect.stringContaining(`The flow models task "ghost"`),
     ]);
   });
 
   it("state coverage: every state has a scenario; every scenario a state and a page", () => {
-    const report = check([coverage], home(""), {
+    const report = check([coverage], home({ title: [] }), {
       flow: flow([]),
       scenarios: [
         { id: "a", state: "rooms", page: "home" },
@@ -219,7 +180,7 @@ describe("rendered rules", () => {
     { type: "rendered", id: "target-size", check: "target-size", minPx: { cap: "TARGET_MIN_PX" } },
     { type: "rendered", id: "headings", check: "headings" },
   ];
-  const legal = prototype(home(""), { scenarios: [{ id: "rooms-list", state: "rooms", page: "home" }] });
+  const legal = prototype(home({ title: [] }), { scenarios: [{ id: "rooms-list", state: "rooms", page: "home" }] });
 
   it("do not run without snapshots, and report a scenario and view with no snapshot", () => {
     const none = checkPrototype({ config: configWith(rendered), prototype: legal });

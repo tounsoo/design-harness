@@ -1,10 +1,11 @@
-import { exportReactProject, type CheckReport, type ProjectConfig, type Prototype } from "@design-harness/core";
+import { exportReactProject, type CheckReport, type ProjectConfig, type Prototype, type TsxPrototype } from "@design-harness/core";
 import { strToU8, zipSync } from "fflate";
 
 /**
  * Code export: a prototype as a runnable React project, zipped in the
  * browser. Core writes the files (`exportReactProject`, which writes a spec
- * prototype as TSX first); this only names them under the project's folder
+ * prototype as TSX first, and a stored TSX prototype's files as they are);
+ * this only names them under the project's folder
  * and zips them with fflate (0.8.3, pinned), deflated, every entry dated
  * the time of the export, so the same export is the same bytes.
  */
@@ -18,7 +19,7 @@ export function checksWords(report: CheckReport | null): string | undefined {
   return report.status === "pass" ? "pass: every rule passes" : report.status === "fail" ? `fail: ${failing.join(", ")}` : "incomplete: some rules did not run";
 }
 
-export function codeZip(input: { readonly config: ProjectConfig; readonly prototype: Prototype; readonly name: string; readonly at: string; readonly report?: CheckReport | null }): { ok: true; value: CodeZip } | { ok: false; error: string } {
+export function codeZip(input: { readonly config: ProjectConfig; readonly prototype: Prototype | TsxPrototype; readonly name: string; readonly at: string; readonly report?: CheckReport | null }): { ok: true; value: CodeZip } | { ok: false; error: string } {
   const checks = checksWords(input.report ?? null);
   const project = exportReactProject({ config: input.config, prototype: input.prototype, name: input.name, at: input.at, ...(checks ? { checks } : {}) });
   if (!project.ok) return project;

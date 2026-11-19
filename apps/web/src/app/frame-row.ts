@@ -1,6 +1,6 @@
 /**
  * How a row of scaled frames is sized where a card shows a page's views
- * side by side: the Variants tab. Plain arithmetic on what the row measures
+ * side by side: the Variants view. Plain arithmetic on what the row measures
  * of itself, so the stylesheet's tokens stay the one place sizes are set.
  */
 

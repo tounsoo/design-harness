@@ -2,7 +2,7 @@ import { classifyProposal, opLabel, type BoundChange, type Bound, type Cap, type
 import { humanize } from "../app/words";
 
 /**
- * What the Project and Proposals tabs draw, worked out from the project
+ * What the Project and Proposals views draw, worked out from the project
  * config and core's facts: which group a rule belongs to, which figure it
  * gets, what a page type's slots are, a cap and a task's budget in words,
  * where a proposal stands and what it leads with. Pure functions of
@@ -41,14 +41,12 @@ export function ruleGroup(rule: RuleSpec): RuleGroupId {
     case "rendered":
       return "rendered";
     case "membership":
-      return rule.of === "imports" ? "code" : "inventory";
+      return "inventory";
     case "prop-values":
       return "inventory";
     case "flow":
       return "flow";
     case "reachable":
-    case "isolation":
-    case "style-props":
       return "code";
   }
 }

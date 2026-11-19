@@ -369,9 +369,19 @@ export function tryExamples(config: ProjectConfig, id: string): Result<{ readonl
 }
 
 /**
+ * Whether a proposal only takes rules out of force: no inventory change and
+ * no rule added. Such a proposal needs no examples, since nothing it does
+ * can be shown to fire; what it does is read from its impact instead.
+ */
+export function onlyRemovesRules(proposal: Pick<ProposalContent, "inventory" | "rules">): boolean {
+  return proposal.inventory.length === 0 && proposal.rules.add.length === 0 && proposal.rules.remove.length > 0;
+}
+
+/**
  * Adopts an approved proposal: applies its changes and puts its rules in
  * force, but only once its examples prove the rules. Every passing example
- * must pass every rule of the new config; every failing example must fail
+ * must pass every rule of the new config (a proposal that only removes rules
+ * needs none, `onlyRemovesRules`); every failing example must fail
  * the rule it names, with the message it names, and no other rule; and every
  * rule the proposal adds must be named by a failing example, so each is
  * shown to fire. Every example of an earlier adopted proposal must still
@@ -395,7 +405,8 @@ export function adopt(config: ProjectConfig, id: string, stamp: Stamp, existing:
   const candidate = applied.value;
 
   const { pass, fail } = proposal.examples;
-  if (pass.length === 0 || fail.length === 0) {
+  // A proposal that only takes rules out of force adds nothing an example could prove: it adopts with none, and any it carries are still judged.
+  if (!onlyRemovesRules(proposal) && (pass.length === 0 || fail.length === 0)) {
     return refuse("missing-examples", `proposal "${id}" needs at least one passing and one failing example; it has ${pass.length} passing and ${fail.length} failing`);
   }
   const ruleIds = new Set(candidate.rules.map((rule) => rule.id));

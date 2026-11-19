@@ -24,9 +24,13 @@ mkdirSync(join(root, "dist"), { recursive: true });
 writeFileSync(join(root, "dist/core.browser.min.js"), code);
 
 const inputs = Object.entries(result.metafile.outputs[Object.keys(result.metafile.outputs)[0]].inputs);
-const parser = inputs.filter(([path]) => path.includes("@babel/parser")).reduce((sum, [, input]) => sum + input.bytesInOutput, 0);
+// Core has no dependencies: everything in the bundle is its own source.
+const dependencies = inputs.filter(([path]) => path.includes("node_modules/")).map(([path]) => path);
 const kb = (bytes) => `${(bytes / 1024).toFixed(1)} KiB`;
 console.log(`core, browser, minified: ${kb(code.byteLength)} (${code.byteLength} bytes)`);
 console.log(`core, browser, minified and gzipped: ${kb(gzipSync(code).byteLength)} (${gzipSync(code).byteLength} bytes)`);
-console.log(`of which @babel/parser, minified: ${kb(parser)}`);
+if (dependencies.length > 0) {
+  console.error(`core bundled dependencies it should not have:\n${dependencies.join("\n")}`);
+  process.exitCode = 1;
+}
 console.log(`written to ${join("packages/core/dist/core.browser.min.js")}`);

@@ -469,7 +469,7 @@ export function FrameCard({ session, spec, revision, frameState, scale, focused,
     if (!pinBoard || !measure) return;
     const frame = { scenario: spec.scenario.id, view: spec.view.name, ...(pinBoard.variant !== undefined ? { variant: pinBoard.variant } : {}) };
     const first = elementChoices(measure)[0];
-    const anchor = (first ? anchorOn(measure, frame, first.index, pinBoard.revision, pinBoard.kind) : null) ?? anchorAt(measure, frame, { x: width / 2, y: height / 2 }, pinBoard.revision, pinBoard.kind);
+    const anchor = (first ? anchorOn(measure, frame, first.index, pinBoard.revision) : null) ?? anchorAt(measure, frame, { x: width / 2, y: height / 2 }, pinBoard.revision);
     pinBoard.setOpen(null);
     pinBoard.setDraft({ frame: spec.key, anchor, list: true });
   };

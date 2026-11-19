@@ -2,19 +2,25 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { nook } from "../examples/nook/project";
-import { checkPrototype } from "../src/engine/check";
 import { EXPORT_TOOLING, exportReactProject } from "../src/export/project";
+import { specToTsx } from "../src/export/tsx";
 import { parsePrototype } from "../src/parse";
+import type { Prototype, TsxPrototype } from "../src/prototype/types";
 import { EXAMPLES, loadPrototype } from "./fixtures";
 
 /** A prototype as a runnable React project: its files, its pins, and its prototype read back by core. */
 
 const spec = loadPrototype(join(EXAMPLES, "spec", "legal", "booking"));
-const tsx = loadPrototype(join(EXAMPLES, "legal", "booking"));
+/** A TSX prototype as one was stored before every prototype was a spec: here, the legal spec as code export writes it. */
+const tsx: TsxPrototype = (() => {
+  const written = specToTsx(spec, nook);
+  if (!written.ok) throw new Error(written.error);
+  return written.value.prototype;
+})();
 const at = "2026-11-18T12:00:00.000Z";
 const root = join(import.meta.dirname, "..", "..", "..");
 
-function project(prototype = spec, name = "Booking (spec)") {
+function project(prototype: Prototype | TsxPrototype = spec, name = "Booking (spec)") {
   const result = exportReactProject({ config: nook, prototype, name, at, checks: "pass: every rule passes" });
   if (!result.ok) throw new Error(result.error);
   return result.value;
@@ -54,14 +60,16 @@ describe("a spec prototype exported as a React project", () => {
     }
   });
 
-  it("holds a TSX prototype core reads back and passes, with the spec's manifest", () => {
+  it("holds the spec's manifest as a TSX prototype, which core refuses to read back and the README says so", () => {
     const files = Object.fromEntries(Object.entries(exported.files).filter(([path]) => path.startsWith("src/prototype/") && path !== "src/prototype/manifest.json").map(([path, text]) => [path.slice("src/prototype/".length), text]));
     const manifest = JSON.parse(exported.files["src/prototype/manifest.json"] as string) as Record<string, unknown>;
+    expect(manifest.format).toBe("tsx");
     const parsed = parsePrototype({ ...manifest, files });
-    expect(parsed.ok).toBe(true);
-    if (!parsed.ok) return;
-    expect(parsed.value.scenarios).toEqual(spec.scenarios);
-    expect(checkPrototype({ config: nook, prototype: parsed.value }).findings).toEqual([]);
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok || !("tsx" in parsed)) throw new Error("expected a TSX refusal");
+    expect(parsed.tsx.scenarios).toEqual(spec.scenarios);
+    expect(parsed.tsx).toEqual(exported.prototype);
+    expect(exported.files["README.md"]).toContain("design-harness reads spec prototypes only, so it does not check this TSX or import it back");
   });
 
   it("says where it came from, and wires the page kit and the library's stylesheet", () => {
@@ -80,18 +88,23 @@ describe("a spec prototype exported as a React project", () => {
   });
 });
 
-describe("a TSX prototype exported as a React project", () => {
-  it("has the same shape, with the prototype's files as they are", () => {
-    const exported = project(tsx, "Booking");
-    for (const [path, text] of Object.entries(tsx.files)) expect(exported.files[`src/prototype/${path}`]).toBe(text);
-    expect(exported.files["src/scenarios.ts"]).toContain('import { BookingPage } from "./prototype/pages/booking";');
+describe("a stored TSX prototype exported as a React project", () => {
+  it("has the same shape, with the prototype's files and manifest as they are, and says nothing checked them", () => {
+    const named: TsxPrototype = tsx;
+    const exported = project(named, "Booking");
+    for (const [path, text] of Object.entries(named.files)) expect(exported.files[`src/prototype/${path}`]).toBe(text);
+    const { files: _files, ...manifest } = named;
+    expect(JSON.parse(exported.files["src/prototype/manifest.json"] as string)).toEqual(manifest);
+    expect(exported.prototype).toEqual(named);
+    expect(exported.files["src/scenarios.ts"]).toContain('import BookingPage from "./prototype/pages/booking";');
     expect(exported.files["src/scenarios.ts"]).toContain('import RoomsPage from "./prototype/pages/rooms";');
+    expect(exported.files["README.md"]).toContain("The prototype was written as TSX, which design-harness no longer reads: its files are here as they were stored, and nothing checked them at export.");
     expect(exported.notes).toEqual([]);
   });
 });
 
 describe("a project on a library with a root part, exported", () => {
-  it("renders every page inside the root, in the light scheme, as the frames do, and checks as the spec does", async () => {
+  it("renders every page inside the root, in the light scheme, as the frames do", async () => {
     const { tally } = await import("../examples/tally/project");
     const spec = loadPrototype(join(import.meta.dirname, "..", "examples", "tally", "prototypes", "spec", "legal", "expense"));
     const result = exportReactProject({ config: tally, prototype: spec, name: "Expense", at: "2026-11-18T12:00:00.000Z" });
@@ -101,9 +114,6 @@ describe("a project on a library with a root part, exported", () => {
     expect(main).toContain('import { MantineProvider } from "@mantine/core";\nimport "@mantine/core/styles.css";');
     expect(main).toContain('<StrictMode><MantineProvider forceColorScheme={"light"}><App /></MantineProvider></StrictMode>');
     expect(JSON.parse(exported.files["package.json"] ?? "{}").dependencies["@mantine/core"]).toBe("9.7.4");
-    const files = Object.fromEntries(Object.entries(exported.files).filter(([path]) => path.startsWith("src/prototype/") && !path.endsWith("manifest.json")).map(([path, text]) => [path.slice("src/prototype/".length), text]));
-    const tsx = parsePrototype({ ...JSON.parse(exported.files["src/prototype/manifest.json"] ?? "{}"), files });
-    if (!tsx.ok) throw new Error(JSON.stringify(tsx.error));
-    expect(checkPrototype({ config: tally, prototype: tsx.value }).rules.filter((rule) => rule.status === "fail")).toEqual([]);
+    expect(exported.notes).toEqual([]);
   });
 });

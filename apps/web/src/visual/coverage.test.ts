@@ -4,11 +4,11 @@ import { nook } from "../../../../packages/core/examples/nook/project";
 import { renderedCases } from "../../../../packages/core/examples/nook/rendered-cases";
 import { legalSnapshots } from "../../../../packages/core/examples/nook/snapshots";
 import { frameSpecs, type FrameState } from "../runtime/session";
-import { seedLegal } from "../../test/nook";
+import { seedSpec } from "../../test/nook";
 import { coverage } from "./coverage";
 import { cellWords } from "./CoverageGrid";
 
-const legal = seedLegal();
+const legal = seedSpec();
 
 function measuredStates(prototype: Prototype, snapshots = legalSnapshots()): Record<string, FrameState> {
   return Object.fromEntries(frameSpecs(nook, prototype).map((frame) => [frame.key, { state: "measured", snapshot: snapshots.find((item) => item.scenario === frame.scenario.id && item.view === frame.view.name) ?? snapshots[0], tags: [] } as FrameState]));

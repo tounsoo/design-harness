@@ -96,34 +96,20 @@ describe("removing a rule", () => {
     expect(view.broken).toEqual([]);
   });
 
-  it("takes its examples from the project: one the removal lets through, one a rule still in force flags alone", () => {
+  it("takes no examples, since a removal adds nothing an example could show firing, and core adopts it on none", () => {
     const draft = removalDraft(nook, onePrimary, "Why.");
-    const choice = chooseExamples(nook, draft, [questions, early, booking]);
-    expect(choice.picked).toEqual([
-      { name: "early-booking", expect: "pass", from: "the prototype Early booking" },
-      { name: "two-questions", expect: "fail", from: "the prototype Two questions", rule: "visible-questions" },
-    ]);
-    expect(choice.needs).toEqual([]);
-    expect(choice.examples.pass[0]?.prototype).toBe(early.prototype);
-    expect(choice.examples.fail[0]).toEqual({ name: "two-questions", prototype: questions.prototype, flaggedBy: { rule: "visible-questions" } });
-    // Core adopts it on those examples, and retires nothing here.
-    const opened = ok(proposeByPerson(nook, draft, choice.examples, "2026-11-19T10:00:00.000Z"));
+    for (const existing of [[questions, early, booking], [booking], []]) {
+      expect(chooseExamples(nook, draft, existing)).toEqual({ examples: { pass: [], fail: [] }, picked: [], needs: [] });
+    }
+    const opened = ok(proposeByPerson(nook, draft, chooseExamples(nook, draft, [booking]).examples, "2026-11-19T10:00:00.000Z"));
     expect(opened.proposals[0]?.history).toEqual([{ status: "open", at: "2026-11-19T10:00:00.000Z", by: "you" }]);
     expect(opened.rules).toBe(nook.rules);
+    // A project whose every prototype passes, the seed's case, can still remove a rule.
+    expect(dryRunAdoption(opened, draft.id, { at: "t" }, [booking])).toMatchObject({ ok: true });
     const adoption = ok(adopt(ok(approve(opened, draft.id, { at: "t1", by: "you" })), draft.id, { at: "t2", by: "you" }, [early, booking, questions]));
     expect(adoption.config.rules.some((rule) => rule.id === onePrimary.id)).toBe(false);
     expect(adoption.newlyFailing).toEqual([]);
     expect(failing(adoption.config, early)).toEqual([]);
-  });
-
-  it("names what the project lacks, and writes no example of its own", () => {
-    const draft = removalDraft(nook, onePrimary, "Why.");
-    expect(chooseExamples(nook, draft, [booking])).toMatchObject({ picked: [{ name: "booking", expect: "pass" }], needs: ["a prototype that one rule still in force flags, and no other rule does"] });
-    expect(chooseExamples(nook, draft, [questions])).toMatchObject({ picked: [{ name: "two-questions", expect: "fail", rule: "visible-questions" }], needs: ["a prototype that passes every rule once this is adopted"] });
-    expect(chooseExamples(nook, draft, [])).toMatchObject({ examples: { pass: [], fail: [] }, needs: ["a prototype that passes every rule once this is adopted", "a prototype that one rule still in force flags, and no other rule does"] });
-    // Without the examples core refuses to adopt, in its own words.
-    const opened = ok(proposeByPerson(nook, draft, chooseExamples(nook, draft, [booking]).examples, "t0"));
-    expect(dryRunAdoption(opened, draft.id, { at: "t" })).toMatchObject({ ok: false, error: { code: "missing-examples" } });
   });
 
   it("needs a reason", () => {
@@ -186,7 +172,12 @@ describe("changing a rule's own limit", () => {
     const two = withMax(2);
     const stricter = impactOf(two, changed(previewChange(two, ruleOf(two, onePrimary.id), { limits: { max: 1 } }, "")).draft, [booking, early], [onePrimary.id]);
     if (!stricter.ok) throw new Error(stricter.refusal.message);
-    expect(stricter.summary).toBe("0 of 2 prototypes have findings from this rule now; 1 would newly fail.");
+    expect(stricter.summary).toBe("None of the 2 prototypes has findings from this rule now; 1 would newly fail.");
+    // One prototype is not "0 of 1 prototype have": the sentence is about the one.
+    const alone = impactOf(two, changed(previewChange(two, ruleOf(two, onePrimary.id), { limits: { max: 1 } }, "")).draft, [early], [onePrimary.id]);
+    expect(alone.ok && alone.summary).toBe("The one prototype has no findings from this rule now; it would newly fail.");
+    const cleared = impactOf(nook, changed(previewChange(nook, onePrimary, { limits: { max: 2 } }, "")).draft, [early], [onePrimary.id]);
+    expect(cleared.ok && cleared.summary).toBe("The one prototype has findings from this rule now; it would stop failing.");
     expect(stricter.rows[1]).toMatchObject({ name: "Early booking", effect: "fails" });
     expect(stricter.rows[1]?.text).toMatch(/^No finding from this rule now\. It would newly fail one-primary-per-page: Page "booking" has 2 primary actions, more than 1/);
   });
@@ -232,8 +223,9 @@ describe("changing a rule's own limit", () => {
     expect(view.ok && view.broken.map((line) => line.split(":")[0])).toEqual(["passing example early-booking of change-one-primary-per-page"]);
     const removal = impactOf(adopted, removalDraft(adopted, rule, ""), [], [rule.id]);
     expect(removal.ok && removal.retired).toEqual(["three-ways-to-book, of change-one-primary-per-page"]);
-    const choice = chooseExamples(adopted, removalDraft(adopted, rule, ""), []);
-    expect(choice.picked.map((item) => [item.expect, item.from])).toEqual([["pass", "the example early-booking that change-one-primary-per-page keeps"]]);
+    // A change still falls back to the examples adopted proposals keep: one the looser rule passes.
+    const loosest = changed(previewChange(adopted, rule, { limits: { max: 4 } }, "Why."));
+    expect(chooseExamples(adopted, loosest.draft, []).picked.filter((item) => item.expect === "pass").map((item) => item.from)).toEqual(["the example early-booking that change-one-primary-per-page keeps"]);
   });
 });
 

@@ -1,5 +1,5 @@
 import type { ProjectConfig, SettablePropSchema as PropSchema } from "../config/types";
-import type { SourceLocation } from "../extract/model";
+import type { SourceLocation } from "../prototype/model";
 import type { Prototype } from "../prototype/types";
 import { LAYOUT_TYPE, PAGE_TYPE, SCENARIO_STATE, SPEC_ACTIONS, excludedBy, specCatalog, type CatalogComponent, type SpecCatalog } from "./catalog";
 import { isRecord, parseJson, pointer, type JsonValue, type Position } from "./json";
@@ -463,7 +463,7 @@ function checkInstance(props: { readonly [key: string]: JsonValue }, context: Re
   }
   const params = context.layouts.get(id);
   if (!context.prototype.layouts.some((layout) => layout.id === id) || !params) {
-    fail(`draws layout "${id}", which is not a layout of the manifest (${quote(context.prototype.layouts.map((layout) => layout.id)) || "none"}).`, "props", LAYOUT_ID_PROP);
+    fail(`draws layout "${id}", which is not a layout of the manifest (${quote(context.prototype.layouts.map((layout) => layout.id).sort(compare)) || "none"}).`, "props", LAYOUT_ID_PROP);
     return {};
   }
   const kept: Record<string, JsonValue> = { [LAYOUT_ID_PROP]: id };

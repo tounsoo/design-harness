@@ -5,7 +5,7 @@ import { ROLE_NAMES, describeRule, flowFacts, rerunExamples, type ConfirmedRole,
 import { budgetWaiting, budgetWaitingWords, taskName } from "../review/budget-change";
 import { waitingOn, waitingWords } from "../review/rule-change";
 import { formatTime } from "../review/timeline";
-import type { PrototypeRecord } from "../store/project-file";
+import { isSpecRecord, type PrototypeRecord } from "../store/project-file";
 import { BudgetFigure, CapMeterView, PageTypeFigure, RuleFigure, SlotLegend } from "../visual/project-figures";
 import { RULE_GROUPS, budgetMeter, capReaders, capsRead, groupRules, projectTimeline, ruleBound, ruleGroup, ruleSource, type BudgetMeter, type RuleGroupId } from "../visual/project-model";
 import { BudgetFlowDialog, type BudgetFlow } from "./BudgetChange";
@@ -48,7 +48,7 @@ export function ProjectView({
 }: {
   readonly config: ProjectConfig;
   readonly onOpenProposal: (id: string) => void;
-  /** Opens the Proposals tab. */
+  /** Opens the Proposals view. */
   readonly onOpenProposals?: (() => void) | undefined;
   readonly prototype?: PrototypeRecord | undefined;
   /** Goes to a flow state's artboard on the canvas, from a flow map. */
@@ -71,7 +71,9 @@ export function ProjectView({
   const [ruleFlow, setRuleFlow] = useState<RuleFlow | BudgetFlow | null>(null);
   const editable = board !== undefined && onStartProposal !== undefined;
   // Core's facts about the open prototype's flow: each task's routes against its budget.
-  const flow = prototype ? flowFacts(config, prototype.prototype) : null;
+  // A TSX prototype is kept for its files alone: core reads no flow from it.
+  const spec = prototype && isSpecRecord(prototype) ? prototype : null;
+  const flow = spec ? flowFacts(config, spec.prototype) : null;
   const { library, inventories, inputs } = config;
   const open = config.proposals.filter((proposal) => proposal.status === "open").length;
   const ranking = [...inputs.ranking].sort((a, b) => a.rank - b.rank);
@@ -99,7 +101,7 @@ export function ProjectView({
 
       {onSave && <LibraryVersionSection config={config} prototypes={prototypes} onSave={onSave} target={libraryTarget} />}
 
-      {prototype?.prototype.format === "spec" && <LayoutsView config={config} record={prototype} />}
+      {spec && <LayoutsView config={config} record={spec} />}
 
       <section aria-labelledby="project-inventories">
         <SectionHead
@@ -503,12 +505,12 @@ function RuleCard({ rule, config, onOpenProposal, onFlow }: { readonly rule: Rul
   );
 }
 
-/** How the project got like this, in five lines: the newest proposals, open ones waiting. The Proposals tab is their home. */
+/** How the project got like this, in five lines: the newest proposals, open ones waiting. The Proposals view is their home. */
 function History({ config, onOpenProposal, onOpenProposals }: { readonly config: ProjectConfig; readonly onOpenProposal: (id: string) => void; readonly onOpenProposals?: (() => void) | undefined }) {
   const { items, more } = projectTimeline(config);
   return (
     <section aria-labelledby="project-proposals" data-testid="project-history">
-      <SectionHead id="project-proposals" title={`Proposals (${config.proposals.length})`} text="How the project got like this: the newest changes proposed, by the agent or by you. The Proposals tab is where you review them." />
+      <SectionHead id="project-proposals" title={`Proposals (${config.proposals.length})`} text="How the project got like this: the newest changes proposed, by the agent or by you. The Proposals view is where you review them." />
       {items.length === 0 ? (
         <Text.Root as="p" tone="muted">
           No proposals yet. A proposal carries an inventory change, the rule that governs it, and examples that must pass and fail; it is adopted only when its rules prove themselves on its examples.
@@ -541,7 +543,7 @@ function History({ config, onOpenProposal, onOpenProposals }: { readonly config:
       {(more > 0 || items.length > 0) && onOpenProposals && (
         <div>
           <Button.Root variant="secondary" onClick={onOpenProposals}>
-            {more > 0 ? `All ${config.proposals.length} proposals` : "Open the Proposals tab"}
+            {more > 0 ? `All ${config.proposals.length} proposals` : "Open the Proposals view"}
           </Button.Root>
         </div>
       )}

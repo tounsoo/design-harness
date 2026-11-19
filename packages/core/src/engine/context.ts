@@ -1,5 +1,5 @@
 import type { PageType, ProjectConfig } from "../config/types";
-import type { ElementNode, PageModel, PrototypeModel, SourceLocation } from "../extract/model";
+import type { ElementNode, PageModel, PrototypeModel, SourceLocation } from "../prototype/model";
 import type { Prototype } from "../prototype/types";
 import type { RenderedSnapshot } from "../rendered/types";
 import type { Bound, PageFilter, TextMatch } from "../rules/types";
@@ -76,10 +76,10 @@ function renderedByOrigin(model: PrototypeModel): ReadonlyMap<string, readonly {
   return index;
 }
 
-/** The elements a frame can find for one node: itself, or for a local component or a layout instance, the outermost elements it renders. */
+/** The elements a frame can find for one node: itself, or for a page or a layout instance, the outermost elements it draws. */
 function drawn(node: ElementNode): ElementNode[] {
-  if (node.kind === "library" || node.kind === "kit" || node.kind === "intrinsic") return [node];
-  // An element the extractor cannot name has no tag in a frame; its finding points at the code alone.
+  if (node.kind === "library" || node.kind === "kit") return [node];
+  // An element core cannot expand has no tag in a frame; its finding points at the file alone.
   if (node.kind === "unresolved") return [];
   return node.children.flatMap(drawn);
 }
@@ -119,9 +119,9 @@ export function pointAt(ctx: Pick<CheckContext, "model">, nodes: readonly Elemen
   return out.length > 0 ? { targets: out } : {};
 }
 
-/** How a message names an element: `Button.Root "Book room"`, or `<button>`. */
+/** How a message names an element: `Button.Root "Book room"`, or `<room-details>` for one core cannot expand. */
 export function named(node: ElementNode): string {
-  const name = node.kind === "intrinsic" ? `<${node.name}>` : node.kind === "unresolved" ? `<${node.name}>` : node.name;
+  const name = node.kind === "unresolved" ? `<${node.name}>` : node.name;
   // Text is shown for an element whose text is its own, not gathered from children with text of their own.
   const own = node.children.every((child) => child.text === "");
   const text = own && node.text && !node.textDynamic && node.text.length <= 40 ? ` "${node.text}"` : "";

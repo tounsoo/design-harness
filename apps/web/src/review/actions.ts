@@ -12,7 +12,7 @@ import {
   type RenderedSnapshot,
   type Result,
 } from "@design-harness/core";
-import { REVIEWER } from "./timeline";
+import { REVIEWER, ownProposal } from "./timeline";
 
 /**
  * What the person can do to a proposal, each one deliberate click in the
@@ -35,8 +35,13 @@ export function declineProposal(config: ProjectConfig, id: string, note: string,
   return decline(config, id, { at, by: REVIEWER, note: said });
 }
 
-/** The chat message a send-back becomes: it names the proposal and carries the note, word for word. */
+/**
+ * The chat message a send-back becomes: it names the proposal and carries the
+ * note, word for word. A proposal the person drafted was never the agent's to
+ * get back, so there the message says whose it is and asks for the revision.
+ */
 export function sendBackMessage(proposal: Proposal, note: string): string {
+  if (ownProposal(proposal)) return `I started proposal "${proposal.id}" (${proposal.title}) myself, and I am asking you to revise it from its review page. Revise it with revise_proposal, keeping its id. My note:\n\n${note.trim()}`;
   return `I sent proposal "${proposal.id}" (${proposal.title}) back to you from its review page. Revise it with revise_proposal, keeping its id. My note:\n\n${note.trim()}`;
 }
 

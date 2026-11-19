@@ -99,7 +99,7 @@ describe("what core reads in the project with the budget moved", () => {
     const { draft } = changed(previewBudget(nook, bookRoom, 2, ""));
     const impact = impactOf(nook, draft, [booking, straight], ["step-budget"], said);
     if (!impact.ok) throw new Error(impact.refusal.message);
-    expect(impact.summary).toBe("0 of 2 prototypes have findings from the rule step-budget now; 1 would newly fail.");
+    expect(impact.summary).toBe("None of the 2 prototypes has findings from the rule step-budget now; 1 would newly fail.");
     expect(impact.rows.map((row) => [row.name, row.effect])).toEqual([["Booking", "fails"], ["Straight to booking", "same"]]);
     expect(impact.rows[0]?.text).toBe('No finding from the rule step-budget now. It would newly fail step-budget: The route open-room → hold → book takes 3 steps, which exceeds max steps 2 for "book-room". Every route that finishes the task must fit, not only the shortest.');
   });

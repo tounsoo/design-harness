@@ -4,6 +4,7 @@ import {
   checkPrototype,
   classifyProposal,
   describeRule,
+  onlyRemovesRules,
   proposalImpact,
   propose,
   ruleBounds,
@@ -237,7 +238,7 @@ export type ImpactView =
   | {
       readonly ok: true;
       readonly rows: readonly ImpactRow[];
-      /** In a sentence: "2 of 3 prototypes have findings from this rule now; 1 would stop failing." */
+      /** In a sentence: "2 of 3 prototypes have findings from this rule now; 1 would stop failing." At one prototype: "The one prototype has findings from this rule now". */
       readonly summary: string;
       /** Failing examples adopted proposals keep that the draft retires. */
       readonly retired: readonly string[];
@@ -247,6 +248,16 @@ export type ImpactView =
     };
 
 const count = (value: number, one: string, many = `${one}s`) => `${value} ${value === 1 ? one : many}`;
+/**
+ * How many of the project's prototypes have findings, with the verb its count
+ * takes: "The one prototype has no findings", "None of the 2 prototypes has
+ * findings", "1 of 2 prototypes has findings", "2 of 3 prototypes have findings".
+ */
+function having(some: number, all: number): string {
+  if (all === 1) return `The one prototype has ${some === 0 ? "no findings" : "findings"}`;
+  if (some === 0) return `None of the ${all} prototypes has findings`;
+  return `${some} of ${count(all, "prototype")} ${some === 1 ? "has" : "have"} findings`;
+}
 const list = (items: readonly string[]) => (items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`);
 
 /**
@@ -282,9 +293,9 @@ export function impactOf(config: ProjectConfig, draft: ProposalDraft, existing: 
   const clears = rows.filter((row) => row.effect === "clears").length;
   const fails = rows.filter((row) => row.effect === "fails").length;
   const parts = [
-    rows.length === 0 ? "The project has no prototype to read." : `${withFindings} of ${count(rows.length, "prototype")} ${withFindings === 1 ? "has" : "have"} findings from ${said} now`,
-    ...(rows.length > 0 && clears > 0 ? [`${clears} would stop failing`] : []),
-    ...(rows.length > 0 && fails > 0 ? [`${fails} would newly fail`] : []),
+    rows.length === 0 ? "The project has no prototype to read." : `${having(withFindings, rows.length)} from ${said} now`,
+    ...(rows.length > 0 && clears > 0 ? [`${rows.length === 1 ? "it" : clears} would stop failing`] : []),
+    ...(rows.length > 0 && fails > 0 ? [`${rows.length === 1 ? "it" : fails} would newly fail`] : []),
   ];
   return {
     ok: true,
@@ -338,9 +349,12 @@ type Source = { readonly label: string; readonly from: string; readonly prototyp
  * prototypes come first, one the draft clears before the rest, then the
  * examples adopted proposals keep. Each is read by `checkPrototype` under
  * the draft's config, on the snapshots it has, as `adopt` will read it.
- * What is missing is named in `needs`: the agent writes those.
+ * What is missing is named in `needs`: the agent writes those. A draft
+ * that only removes rules needs none (core's `onlyRemovesRules`), so none
+ * are taken.
  */
 export function chooseExamples(config: ProjectConfig, draft: ProposalDraft, existing: readonly ExistingPrototype[]): ExampleChoice {
+  if (onlyRemovesRules(draft)) return { examples: NO_EXAMPLES, picked: [], needs: [] };
   const impact = proposalImpact(config, draft, existing);
   if (!impact.ok) return { examples: NO_EXAMPLES, picked: [], needs: [] };
   const candidate = impact.value.config;

@@ -2,37 +2,23 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { nook } from "../examples/nook/project";
 import { checkPrototype } from "../src/engine/check";
-import type { CheckReport } from "../src/engine/report";
 import { specToTsx } from "../src/export/tsx";
-import type { Prototype } from "../src/prototype/types";
-import { EXAMPLES, loadCases, loadPrototype, type IllegalCase } from "./fixtures";
+import { parsePrototype } from "../src/parse";
+import type { Prototype, TsxPrototype } from "../src/prototype/types";
+import { EXAMPLES, loadCases, loadPrototype } from "./fixtures";
 
 /**
- * Code export must be checkable: the TSX a spec prototype exports, read back
- * as a TSX prototype with the same manifest, gives the same report as the
- * spec. Rule ids and each rule's status must match, and so must each rule's
- * findings by kind (violation or unverifiable) and count. Messages are not
- * compared: they name the file and line a finding is at, and the spec's
- * are JSON files where the export's are TSX.
- *
- * It holds for the legal Nook spec and for every illegal spec fixture core
- * reads whole. It cannot hold where the spec's own `extract` rule fails:
- * what the catalog refused is left out of the export, so the TSX has
- * nothing left to refuse (`EXTRACT_ONLY` lists those cases).
+ * Code export writes a spec prototype as the TSX a person would write, one
+ * file per page and layout with the spec's manifest. Core no longer reads
+ * TSX, so the export is not checked back against the spec's report: these
+ * tests hold what it writes, and the end-to-end test "code export builds"
+ * builds it with Vite and TypeScript.
  */
 
 const SPEC = join(EXAMPLES, "spec");
 const legal = loadPrototype(join(SPEC, "legal", "booking"));
 
-function shape(report: CheckReport): Record<string, { status: string; findings: string[] }> {
-  return Object.fromEntries(report.rules.map((rule) => [rule.rule, { status: rule.status, findings: rule.findings.map((finding) => finding.kind).sort() }]));
-}
-
-function configFor(item: IllegalCase) {
-  return item.caps ? { ...nook, inputs: { ...nook.inputs, caps: Object.fromEntries(Object.entries(nook.inputs.caps).map(([name, cap]) => [name, { ...cap, value: item.caps?.[name] ?? cap.value }])) } } : nook;
-}
-
-function exported(prototype: Prototype, config = nook): Prototype {
+function exported(prototype: Prototype, config = nook): TsxPrototype {
   const result = specToTsx(prototype, config);
   if (!result.ok) throw new Error(result.error);
   return result.value.prototype;
@@ -49,11 +35,12 @@ describe("the legal Nook spec, exported as TSX", () => {
     expect(tsx.pages.map((page) => [page.id, page.pageType, page.component.file])).toEqual(legal.pages.map((page) => [page.id, page.pageType, page.component.file.replace(/\.json$/, ".tsx")]));
   });
 
-  it("gives the same report as the spec: every rule passes", () => {
-    const spec = checkPrototype({ config: nook, prototype: legal });
-    const back = checkPrototype({ config: nook, prototype: tsx });
-    expect(back.findings).toEqual([]);
-    expect(shape(back)).toEqual(shape(spec));
+  it("is TSX core refuses to read back, handed over as it is", () => {
+    const back = parsePrototype(tsx);
+    expect(back.ok).toBe(false);
+    if (back.ok || !("tsx" in back)) throw new Error("expected a TSX refusal");
+    expect(back.tsx).toEqual(tsx);
+    expect(back.error[0]?.path).toBe("$.format");
   });
 
   it("writes code a person would: imports from the library, React and the page kit only", () => {
@@ -71,26 +58,12 @@ describe("the legal Nook spec, exported as TSX", () => {
   });
 });
 
-/** Cases whose named rule is extract: the catalog refused part of the spec, and the export leaves it out. */
-const EXTRACT_ONLY = new Set<string>();
-
-describe("each illegal Nook spec gives the same report once exported", () => {
-  const cases = loadCases(legal, join(SPEC, "illegal"));
-  for (const item of cases) {
-    const config = configFor(item);
-    const spec = checkPrototype({ config, prototype: item.prototype });
-    const refused = spec.rules.find((rule) => rule.rule === "extract")?.status === "fail";
-    if (refused) EXTRACT_ONLY.add(item.name);
-    it(`${item.name}${refused ? " (extract fails: the export cannot carry what was refused)" : ""}`, () => {
-      const back = checkPrototype({ config, prototype: exported(item.prototype, config) });
-      if (refused) {
-        // What the catalog refused is not in the export; every other rule still agrees.
-        const { extract: _spec, ...rest } = shape(spec);
-        const { extract: _back, ...again } = shape(back);
-        expect(again).toEqual(rest);
-        return;
-      }
-      expect(shape(back), JSON.stringify(back.findings, null, 1)).toEqual(shape(spec));
+describe("each illegal Nook spec is exported", () => {
+  for (const item of loadCases(legal, join(SPEC, "illegal"))) {
+    it(item.name, () => {
+      const tsx = exported(item.prototype);
+      expect(tsx.pages.map((page) => page.id)).toEqual(item.prototype.pages.map((page) => page.id));
+      expect(exported(item.prototype)).toEqual(tsx);
     });
   }
 });
@@ -118,12 +91,6 @@ describe("a spec with actions, conditions, templates and repeats, exported", () 
     expect(page).toContain("{notes.map((note, index) => <Text.Root key={index} as=\"p\">{room.name}: {note.title}</Text.Root>)}");
   });
 
-  it("gives the same report as the spec", () => {
-    const fromSpec = checkPrototype({ config: nook, prototype });
-    const back = checkPrototype({ config: nook, prototype: tsx });
-    expect(back.rules.find((rule) => rule.rule === "extract")?.findings).toEqual([]);
-    expect(shape(back)).toEqual(shape(fromSpec));
-  });
 });
 
 describe("a layout that reads its parameters in conditions and templates, exported", () => {
@@ -148,21 +115,17 @@ describe("a layout that reads its parameters in conditions and templates, export
     expect(cards).toContain('<Button.Root variant="secondary">{verb}{" "}{room.name}</Button.Root>');
   });
 
-  it("gives the same report as the spec", () => {
-    const fromSpec = checkPrototype({ config: nook, prototype });
-    const back = checkPrototype({ config: nook, prototype: tsx });
-    expect(fromSpec.findings).toEqual([]);
-    expect(back.rules.find((rule) => rule.rule === "extract")?.findings).toEqual([]);
-    expect(shape(back)).toEqual(shape(fromSpec));
+  it("is written from a spec that passes every rule", () => {
+    expect(checkPrototype({ config: nook, prototype }).findings).toEqual([]);
   });
 });
 
-describe("each refused Nook spec, exported, agrees on every rule but extract", () => {
+describe("each refused Nook spec, exported, leaves out what the catalog refused and says so", () => {
   for (const item of loadCases(legal, join(SPEC, "refused"))) {
     it(item.name, () => {
-      const { extract: _spec, ...spec } = shape(checkPrototype({ config: nook, prototype: item.prototype }));
-      const { extract: _back, ...back } = shape(checkPrototype({ config: nook, prototype: exported(item.prototype) }));
-      expect(back).toEqual(spec);
+      const result = specToTsx(item.prototype, nook);
+      if (!result.ok) throw new Error(result.error);
+      expect(result.value.notes.some((note) => note.includes("Core refused") || note.includes("could not be read") || note.includes("not a page or layout"))).toBe(true);
     });
   }
 });

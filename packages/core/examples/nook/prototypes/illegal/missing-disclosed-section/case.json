@@ -1,1 +1,0 @@
-{ "what": "The room details disclosure is summarised as Room info, so no disclosure holds Room details", "expect": [{ "rule": "disclosed-sections", "message": "Across its pages, the prototype has 0 disclosure summaries reading \"Room details\" inside a disclosure, fewer than 1" }] }

@@ -157,6 +157,14 @@
     },
     "size": {
       "$description": "The few fixed sizes the layout needs: the least width of a picker (and of one in the phone's header, picker-compact), a column and a label, the most a name or a log may take, the code editor's least height, the room a sticky bar keeps clear, and the New project wizard's rail, its reading column, its wide steps, its role cards and its option columns.",
+      "target": {
+        "$description": "The least height of something pressed: WCAG 2.5.8's 24 CSS px, which a radio's or a checkbox's label and a disclosure's summary do not reach by their text alone.",
+        "$type": "dimension",
+        "$value": {
+          "value": 24,
+          "unit": "px"
+        }
+      },
       "picker": {
         "$type": "dimension",
         "$value": {

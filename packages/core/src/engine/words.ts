@@ -48,13 +48,6 @@ export function describeRule(rule: RuleSpec, config: ProjectConfig): string {
       return `Every ${describe(rule.select, ctx)} written anywhere in the source is rendered from a page, so the per-page rules count it.`;
     case "page-structure":
       return "Every page fills only its page type's slots, each at most once, and puts nothing outside them.";
-    case "isolation":
-      return "Prototype code reaches only its imports and plain language built-ins: no browser globals, timers, frame plumbing, DOM handles, constructors, or property reads by a computed key.";
-    case "style-props": {
-      const excluded = config.library.excludedProps ?? [];
-      const which = excluded.length === 0 ? "" : `, or ${excluded.length > 6 ? `one of the ${excluded.length} props the project excludes (library.excludedProps)` : `a prop the project excludes (${listWords(excluded)})`}, on a library part or an HTML element`;
-      return `No element sets a style prop: style, on any element${which}. Styling comes from the library's own variants and tokens.`;
-    }
     case "flow":
       return rule.check === "state-coverage"
         ? "Every flow state has a scenario, and every scenario shows a modeled state on a page of the prototype."
@@ -69,8 +62,6 @@ function membershipWords(subject: MembershipSubject, config: ProjectConfig): str
   switch (subject) {
     case "components":
       return `Pages render only the library parts in the component inventory (${listWords(inventories.components)}).`;
-    case "imports":
-      return `Files import only ${config.library.package}, React, the page kit and the prototype's own files, by static imports.`;
     case "page-types":
       return `Every page is of a page type in the inventory (${listWords(inventories.pageTypes.map((type) => type.id))}).`;
     case "layouts":

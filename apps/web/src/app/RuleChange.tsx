@@ -1,7 +1,7 @@
 import { Alert, Badge, Button, Dialog, ErrorMessage, Field, Label, Loader, Stack, Text, VisuallyHidden } from "@tounsoo/todae";
 import { ArrowRight, Check, Minus, X } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
-import type { ExistingPrototype, ProjectConfig, ProposalDraft, Refusal, RuleSpec } from "@design-harness/core";
+import { onlyRemovesRules, type ExistingPrototype, type ProjectConfig, type ProposalDraft, type Refusal, type RuleSpec } from "@design-harness/core";
 import {
   changeMessage,
   chooseExamples,
@@ -462,9 +462,15 @@ export function FlowShell({ name, testId, config, rule, subject, draft, why, onW
                   <Text.Root as="h3" id="rule-flow-examples">
                     Its examples
                   </Text.Root>
-                  <Text.Root as="p" tone="muted">
-                    Core adopts a proposal only on examples: one that passes{subject ? subject.examplesNeed : draft.rules.add.length > 0 ? ", and one the changed rule flags and no other rule does" : ", and one that a rule still in force flags"}. These are taken from the project as it is, never written for you.
-                  </Text.Root>
+                  {onlyRemovesRules(draft) ? (
+                    <Text.Root as="p" tone="muted" data-testid="rule-no-examples">
+                      A removal needs none: it adds nothing an example could show firing. What it does is the list above.
+                    </Text.Root>
+                  ) : (
+                    <Text.Root as="p" tone="muted">
+                      Core adopts a proposal only on examples: one that passes{subject ? subject.examplesNeed : draft.rules.add.length > 0 ? ", and one the changed rule flags and no other rule does" : ", and one that a rule still in force flags"}. These are taken from the project as it is, never written for you.
+                    </Text.Root>
+                  )}
                   {examples.picked.length > 0 && (
                     <ul className="rule-examples" aria-label="Examples from the project">
                       {examples.picked.map((item) => (

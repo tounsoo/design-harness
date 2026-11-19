@@ -10,7 +10,7 @@ import type { RuleSpec } from "../rules/types";
 import type { Result } from "../validate";
 import { applyProposal } from "./apply";
 import { classifyProposal } from "./classify";
-import { adopt, approve, proposalImpact, propose, rerunExamples, type ProposalDraft, type Refusal } from "./lifecycle";
+import { adopt, approve, onlyRemovesRules, proposalImpact, propose, rerunExamples, type ProposalDraft, type Refusal } from "./lifecycle";
 import type { Proposal } from "./types";
 
 /**
@@ -235,5 +235,33 @@ describe("what a draft would do, before it is a proposal", () => {
 
   it("gives the same answer whatever order the prototypes come in", () => {
     expect(ok(proposalImpact(nook, removal, [...existing].reverse()))).toEqual(ok(proposalImpact(nook, removal, existing)));
+  });
+});
+
+describe("a proposal that only removes rules", () => {
+  const removal = (examples: ProposalDraft["examples"] = { pass: [], fail: [] }): ProposalDraft => ({ id: "drop-one-primary", title: "Drop one primary", reason: "Why.", states: [], inventory: [], rules: { add: [], remove: [onePrimary.id] }, examples });
+
+  it("is told apart from one that adds a rule or changes an inventory", () => {
+    expect(onlyRemovesRules(removal())).toBe(true);
+    expect(onlyRemovesRules(change("change-one-primary", atMost(2)))).toBe(false);
+    expect(onlyRemovesRules({ inventory: [{ op: "set-cap", name: "MAX_VISIBLE_QUESTIONS", value: 2 }], rules: { add: [], remove: [onePrimary.id] } })).toBe(false);
+    expect(onlyRemovesRules({ inventory: [], rules: { add: [], remove: [] } })).toBe(false);
+  });
+
+  it("adopts with no examples, and the rule leaves force", () => {
+    const adopted = ok(adopt(approved(nook, removal()), "drop-one-primary", { at: "t2" }, [{ name: "Two primaries", prototype: twoPrimaries }]));
+    expect(adopted.config.rules.some((rule) => rule.id === onePrimary.id)).toBe(false);
+    expect(failing(adopted.config, twoPrimaries)).not.toContain(onePrimary.id);
+    expect(adopted.classification.class).toBe("loosens-or-removes");
+  });
+
+  it("still has any examples it carries judged", () => {
+    const wrong = removal({ pass: [{ name: "two-questions", prototype: twoQuestions }], fail: [] });
+    expect(refusal(adopt(approved(nook, wrong), "drop-one-primary", { at: "t2" })).code).toBe("passing-example-fails");
+  });
+
+  it("needs examples again once it also changes an inventory", () => {
+    const mixed: ProposalDraft = { ...removal(), inventory: [{ op: "set-cap", name: "MAX_VISIBLE_QUESTIONS", value: 2 }] };
+    expect(refusal(adopt(approved(nook, mixed), "drop-one-primary", { at: "t2" })).code).toBe("missing-examples");
   });
 });

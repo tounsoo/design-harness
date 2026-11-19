@@ -1,7 +1,7 @@
 import { Button, Card, Code, EmptyState, Stack, Text, ToggleGroup } from "@tounsoo/todae";
 import { Check, X } from "lucide-react";
 import { useState } from "react";
-import { PROPOSAL_STATUSES, type ProjectConfig, type Proposal, type ProposalStatus } from "@design-harness/core";
+import { PROPOSAL_STATUSES, onlyRemovesRules, type ProjectConfig, type Proposal, type ProposalStatus } from "@design-harness/core";
 import { draftedBy, formatTime } from "../review/timeline";
 import { changeLine, sortProposals } from "../visual/project-model";
 import { ClassBadge, RequestBadge, StatusBadge, classificationOf } from "./proposal-parts";
@@ -95,14 +95,20 @@ function ProposalCard({ proposal, config, onOpen }: { readonly proposal: Proposa
         </Stack.Root>
         {request ? <RequestBadge /> : <ClassBadge value={classificationOf(proposal, config).class} />}
         <Text.Root as="p">{changeLine(proposal)}</Text.Root>
-        <Text.Root as="p" className="proposal-examples" data-testid="proposal-examples">
-          <span className="proposal-example" data-expect="pass">
-            <Check aria-hidden="true" /> {request ? request.pass.length : proposal.examples.pass.length} must pass
-          </span>
-          <span className="proposal-example" data-expect="fail">
-            <X aria-hidden="true" /> {request ? request.fail.length : proposal.examples.fail.length} must fail{request ? ", in words" : ""}
-          </span>
-        </Text.Root>
+        {!request && onlyRemovesRules(proposal) && proposal.examples.pass.length + proposal.examples.fail.length === 0 ? (
+          <Text.Root as="p" tone="muted" className="proposal-examples" data-testid="proposal-examples">
+            No examples needed: it only removes.
+          </Text.Root>
+        ) : (
+          <Text.Root as="p" className="proposal-examples" data-testid="proposal-examples">
+            <span className="proposal-example" data-expect="pass">
+              <Check aria-hidden="true" /> {request ? request.pass.length : proposal.examples.pass.length} must pass
+            </span>
+            <span className="proposal-example" data-expect="fail">
+              <X aria-hidden="true" /> {request ? request.fail.length : proposal.examples.fail.length} must fail{request ? ", in words" : ""}
+            </span>
+          </Text.Root>
+        )}
         <Text.Root as="p" tone="muted">
           By {drafted.by}, <time dateTime={drafted.at}>{formatTime(drafted.at)}</time> <Code.Root className="proposals-id">{proposal.id}</Code.Root>
         </Text.Root>

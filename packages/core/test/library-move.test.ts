@@ -6,7 +6,7 @@ import type { PartDescription, ProjectConfig } from "../src/config/types";
 import { chooseLibrarySource, compareLibraries, moveLibrary, planLibraryMove, reportChanges } from "../src/library/move";
 import type { LibraryDescription } from "../src/library/roles";
 import { parseProjectConfig } from "../src/parse";
-import { EXAMPLES, loadPrototype } from "./fixtures";
+import { EXAMPLES, loadCases, loadPrototype } from "./fixtures";
 
 /**
  * Moving a project to another version of its library: what the two
@@ -21,9 +21,12 @@ const newer = read("todae-0.11.3.json");
 
 /** Nook as a project stored on Todae 0.10.1, the one Ben's deployed app holds. */
 const onOlder: ProjectConfig = { ...nook, library: { ...nook.library, version: "0.10.1", parts: older.parts } };
+const legal = loadPrototype(join(EXAMPLES, "spec", "legal", "booking"));
+const twoQuestions = loadCases(legal, join(EXAMPLES, "spec", "illegal")).find((item) => item.name === "two-questions");
+if (!twoQuestions) throw new Error("no two-questions case");
 const prototypes = [
-  { id: "booking", name: "Booking", prototype: loadPrototype(join(EXAMPLES, "legal", "booking")) },
-  { id: "booking-spec", name: "Booking (spec)", prototype: loadPrototype(join(EXAMPLES, "spec", "legal", "booking")) },
+  { id: "booking-spec", name: "Booking (spec)", prototype: legal },
+  { id: "two-questions", name: "Two questions", prototype: twoQuestions.prototype },
 ];
 
 /** A copy of a description with some parts changed. */
@@ -72,8 +75,8 @@ describe("planning a move", () => {
     expect(plan.config?.library.version).toBe("0.11.3");
     expect(plan.config?.library.parts).toEqual(newer.parts);
     expect(plan.prototypes.map((change) => [change.id, change.before, change.after, reportChanges(change)])).toEqual([
-      ["booking", "incomplete", "incomplete", false],
       ["booking-spec", "incomplete", "incomplete", false],
+      ["two-questions", "fail", "fail", false],
     ]);
   });
 
