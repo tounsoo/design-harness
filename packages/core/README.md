@@ -310,7 +310,7 @@ A request for a new rule type: when what a project needs cannot be said in the r
 
 `adopt(config, id, stamp, existing?)` applies the operations, re-validates the config, and refuses unless:
 
-- there is at least one passing and one failing example, and every rule the proposal adds is named by a failing example;
+- there is at least one passing and one failing example, and every rule the proposal adds is named by a failing example. A proposal that only removes rules (`onlyRemovesRules`: no inventory change, no rule added) needs none, since nothing it does can be shown to fire; any examples it does carry are still judged;
 - every passing example passes every rule of the new config, and runs every new rule;
 - every failing example fails its named rule, with its message, and no other rule;
 - every example of an earlier adopted proposal still behaves as it did: its passing examples pass every rule, and its failing examples are still flagged by their rule. The one exception is a failing example whose rule this proposal removes: the example has nothing left to prove, so it is retired, not broken.

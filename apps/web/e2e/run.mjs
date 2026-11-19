@@ -4375,9 +4375,9 @@ async function setLimit(dialog, key, value) {
   await input.press("Tab");
 }
 
-/** Approves and adopts the proposal on the open review page, once its examples are judged. */
+/** Approves and adopts the proposal on the open review page, once its examples are judged (a removal has none to judge). */
 async function approveAndAdopt(page) {
-  await judged(page);
+  if ((await page.locator(".review .example").count()) > 0) await judged(page);
   await page.getByRole("button", { name: "Approve", exact: true }).click();
   await page.waitForFunction(() => document.querySelector(".review")?.getAttribute("data-status") === "approved");
   await page.waitForSelector('[data-testid="review-measuring"][data-measured]', { timeout: 60000 });
@@ -4391,7 +4391,7 @@ async function reportWhen(page, accept, message) {
   return eventually(page, async () => ((await page.locator(".checks[data-measured]").count()) > 0 ? report(page) : null), (value) => value !== null && accept(value), message);
 }
 
-test("a person removes a rule from its card: the proposal opens with examples from the project, and once adopted the rule and its findings are gone and nothing else changes", async ({ browser, base, api }) => {
+test("a person removes a rule from its card: the proposal needs no examples, and once adopted the rule and its findings are gone and nothing else changes", async ({ browser, base, api }) => {
   const { page, errors } = await openApp(browser, base);
   await measured(page, 1);
   api.script([]);
@@ -4416,12 +4416,9 @@ test("a person removes a rule from its card: the proposal opens with examples fr
   ]);
   assert.match(await dialog.locator('.rule-impact > li[data-prototype="Booking"]').textContent(), /1 finding from this rule now\. It would stop failing\./);
   assert.equal(await dialog.getByTestId("rule-retired").count(), 0, "no adopted proposal keeps an example of a built-in rule");
-  // Its examples are the project's own prototypes: one the removal lets through, one a rule still in force flags.
-  assert.deepEqual(await dialog.locator(".rule-examples > li").evaluateAll((items) => items.map((item) => [item.dataset.example, item.dataset.expect])), [
-    ["booking", "pass"],
-    ["two-questions", "fail"],
-  ]);
-  assert.match(await dialog.locator('.rule-examples > li[data-example="two-questions"]').textContent(), /must fail, flagged by visible-questions: the prototype Two questions, as it is now\./);
+  // A removal takes no examples: it adds nothing an example could show firing, and the impact above is what it does.
+  assert.equal(await dialog.locator(".rule-examples > li").count(), 0);
+  assert.match(await dialog.getByTestId("rule-no-examples").textContent(), /A removal needs none/);
   assert.equal(await dialog.getByTestId("rule-needs").count(), 0);
   await shot(page, "rule-remove-light");
   await shotDark(page, "rule-remove-dark");
@@ -4444,8 +4441,9 @@ test("a person removes a rule from its card: the proposal opens with examples fr
   assert.equal((await removed.getByTestId("rule-line-words").textContent()).trim(), "Removes rule one-primary-per-page");
   assert.equal((await removed.getByTestId("rule-words").textContent()).trim(), "Each page holds at most 1 primary action.");
   assert.equal((await report(page)).rules.some((rule) => rule.rule === "one-primary-per-page"), true, "the rule is still in force");
-  await judged(page);
-  assert.deepEqual([await example(page, "booking").getAttribute("data-verdict"), await example(page, "two-questions").getAttribute("data-verdict")], ["ok", "ok"]);
+  // With no examples, core's dry run still says it would be adopted.
+  assert.equal(await page.locator(".review .example").count(), 0);
+  await eventually(page, () => page.getByTestId("review-verdict").textContent(), (text) => /it would be adopted/.test(text), "core's dry run adopts a removal with no examples");
   await review.getByTestId("review-impact").locator('[data-prototype="two-questions"]').waitFor({ timeout: 60000 });
   await shot(page, "rule-remove-review-light");
   await shotDark(page, "rule-remove-review-dark");
@@ -4462,7 +4460,7 @@ test("a person removes a rule from its card: the proposal opens with examples fr
   await page.getByRole("button", { name: "← All proposals" }).click();
   const card = page.locator('.proposal-cards [data-proposal="remove-one-primary-per-page"]');
   assert.equal(await card.getByTestId("rule-line").getAttribute("data-kind"), "removes");
-  assert.match(await card.textContent(), /− rule.*Removes rule one-primary-per-page.*It says: Each page holds at most 1 primary action\..*Removes 1 rule\..*1 must pass.*1 must fail.*By you/s);
+  assert.match(await card.textContent(), /− rule.*Removes rule one-primary-per-page.*It says: Each page holds at most 1 primary action\..*Removes 1 rule\..*No examples needed: it only removes\..*By you/s);
   await shot(page, "rule-remove-card-light");
   await card.getByRole("button", { name: /^Remove the rule/ }).click();
   await review.waitFor();

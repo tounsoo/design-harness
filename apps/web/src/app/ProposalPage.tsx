@@ -1,6 +1,29 @@
-import { Alert, Badge, Button, Card, Code, DataList, Disclosure, EmptyState, ErrorMessage, Field, Label, Stack, Steps, Table, Text } from "@tounsoo/todae";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Code,
+  DataList,
+  Disclosure,
+  EmptyState,
+  ErrorMessage,
+  Field,
+  Label,
+  Stack,
+  Steps,
+  Table,
+  Text,
+} from "@tounsoo/todae";
 import { Check, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import {
   applyProposal,
   checkPrototype,
@@ -29,21 +52,61 @@ import {
 } from "@design-harness/core";
 import { frameKey, type Session, type SessionState } from "../runtime/session";
 import type { PrototypeRecord } from "../store/project-file";
-import { adoptProposal, approveProposal, declineProposal, sendBackProposal, type ExampleMeasurement } from "../review/actions";
+import {
+  adoptProposal,
+  approveProposal,
+  declineProposal,
+  sendBackProposal,
+  type ExampleMeasurement,
+} from "../review/actions";
 import { inventoryDiff, type DiffSection } from "../review/diff";
-import { REVIEWER, draftedBy, formatTime, proposalTimeline, timelineTitle, type TimelineEntry } from "../review/timeline";
+import {
+  REVIEWER,
+  draftedBy,
+  formatTime,
+  proposalTimeline,
+  timelineTitle,
+  type TimelineEntry,
+} from "../review/timeline";
 import { FrameCard, FrameViewport } from "./Board";
 import { EvidenceFigure, drawsFigure } from "../visual/figures";
-import { ClassScale, ProposalTrack, RuleFigure } from "../visual/project-figures";
-import { proofPair, proposalPreview, ruleBound, ruleLines } from "../visual/project-model";
+import {
+  ClassScale,
+  ProposalTrack,
+  RuleFigure,
+} from "../visual/project-figures";
+import {
+  proofPair,
+  proposalPreview,
+  ruleBound,
+  ruleLines,
+} from "../visual/project-model";
 import { FindingButton } from "./ChecksPanel";
 import { lineRange } from "./CodePanel";
 import { SpecimenTile } from "./Palette";
-import { PreviewFigure, RuleLineView, SnapshotThumb, flaggedIn } from "./ProposalPreview";
-import { ClassBadge, RequestBadge, RuleWords, StatusBadge, classWords, classificationOf } from "./proposal-parts";
+import {
+  PreviewFigure,
+  RuleLineView,
+  SnapshotThumb,
+  flaggedIn,
+} from "./ProposalPreview";
+import {
+  ClassBadge,
+  RequestBadge,
+  RuleWords,
+  StatusBadge,
+  classWords,
+  classificationOf,
+} from "./proposal-parts";
 import { MeasureFrames, useProjectExisting } from "./project-measure";
 import { useSessions, type Measured } from "./sessions";
-import { exampleLabel, frameNameOf, scenarioName, scenarioNameOf, viewLabel } from "./words";
+import {
+  exampleLabel,
+  frameNameOf,
+  scenarioName,
+  scenarioNameOf,
+  viewLabel,
+} from "./words";
 
 type Props = {
   readonly config: ProjectConfig;
@@ -79,7 +142,15 @@ type Verdict =
   | { readonly state: "not-judged"; readonly text: string };
 
 /** Core's judgement of the examples on their measurement: the config with the snapshots stored and every example tried, or why core could not. */
-type Judged = { readonly refusal: Refusal } | { readonly config: ProjectConfig; readonly tried: { readonly config: ProjectConfig; readonly results: readonly ExampleResult[] } };
+type Judged =
+  | { readonly refusal: Refusal }
+  | {
+      readonly config: ProjectConfig;
+      readonly tried: {
+        readonly config: ProjectConfig;
+        readonly results: readonly ExampleResult[];
+      };
+    };
 
 const now = () => new Date().toISOString();
 
@@ -98,7 +169,9 @@ export function ProposalPage(props: Props) {
   if (!proposal) {
     return (
       <EmptyState.Root>
-        <EmptyState.Title as="h2">No proposal &quot;{props.id}&quot;</EmptyState.Title>
+        <EmptyState.Title as="h2">
+          No proposal &quot;{props.id}&quot;
+        </EmptyState.Title>
         <EmptyState.Actions>
           <Button.Root variant="secondary" onClick={props.onBack}>
             All proposals
@@ -107,11 +180,18 @@ export function ProposalPage(props: Props) {
       </EmptyState.Root>
     );
   }
-  return proposal.needsRuleType ? <RequestReview {...props} proposal={proposal} /> : <Review {...props} proposal={proposal} />;
+  return proposal.needsRuleType ? (
+    <RequestReview {...props} proposal={proposal} />
+  ) : (
+    <Review {...props} proposal={proposal} />
+  );
 }
 
 /** What copying a request does, and what the page says after. */
-type Copied = { readonly state: "idle" } | { readonly state: "copied" } | { readonly state: "failed"; readonly message: string };
+type Copied =
+  | { readonly state: "idle" }
+  | { readonly state: "copied" }
+  | { readonly state: "failed"; readonly message: string };
 
 /**
  * The review page of a request for a new rule type. It is a code change, and
@@ -120,11 +200,21 @@ type Copied = { readonly state: "idle" } | { readonly state: "copied" } | { read
  * file. There is no Approve or Adopt: core refuses both, and the page shows
  * core's refusal word for word. Send back and decline work as on any proposal.
  */
-function RequestReview({ config, proposal, agent, onBack, onSave, onSendBack }: Props & { readonly proposal: Proposal }) {
+function RequestReview({
+  config,
+  proposal,
+  agent,
+  onBack,
+  onSave,
+  onSendBack,
+}: Props & { readonly proposal: Proposal }) {
   const request = proposal.needsRuleType;
   const issue = ruleTypeIssue(proposal);
   const id = proposal.id;
-  const [refusal, setRefusal] = useState<{ readonly action: string; readonly refusal: Refusal } | null>(null);
+  const [refusal, setRefusal] = useState<{
+    readonly action: string;
+    readonly refusal: Refusal;
+  } | null>(null);
   const [copied, setCopied] = useState<Copied>({ state: "idle" });
   if (!request || !issue) return null;
   const text = `# ${issue.title}\n\n${issue.body}\n`;
@@ -137,47 +227,81 @@ function RequestReview({ config, proposal, agent, onBack, onSave, onSendBack }: 
       await navigator.clipboard.writeText(text);
       setCopied({ state: "copied" });
     } catch (error) {
-      setCopied({ state: "failed", message: error instanceof Error ? error.message : String(error) });
+      setCopied({
+        state: "failed",
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   };
-  const act = async (action: string, run: () => ReturnType<typeof approveProposal>) => {
+  const act = async (
+    action: string,
+    run: () => ReturnType<typeof approveProposal>,
+  ) => {
     const result = run();
     if (!result.ok) return setRefusal({ action, refusal: result.error });
     setRefusal(null);
     await onSave(result.value);
   };
   return (
-    <div className="review" data-proposal={id} data-status={proposal.status} data-request="">
+    <div
+      className="review"
+      data-proposal={id}
+      data-status={proposal.status}
+      data-request=""
+    >
       <Stack.Root gap="spacious">
         <Stack.Root gap="condensed">
           <div>
-            <Button.Root variant="ghost" onClick={onBack} className="review-back">
+            <Button.Root
+              variant="ghost"
+              onClick={onBack}
+              className="review-back"
+            >
               ← All proposals
             </Button.Root>
           </div>
           <Text.Root as="h1" className="review-title">
             {proposal.title}
           </Text.Root>
-          <ProposalTrack proposal={proposal} note={proposal.status === "open" ? "it cannot be approved: it needs a code change" : undefined} />
+          <ProposalTrack
+            proposal={proposal}
+            note={
+              proposal.status === "open"
+                ? "it cannot be approved: it needs a code change"
+                : undefined
+            }
+          />
           <Stack.Root direction="row" align="center" gap="condensed" wrap>
             <StatusBadge status={proposal.status} />
             <RequestBadge />
             <Code.Root>{id}</Code.Root>
             <Text.Root as="span" tone="muted">
-              Drafted by {drafted.by}, <time dateTime={drafted.at}>{formatTime(drafted.at)}</time>
+              Drafted by {drafted.by},{" "}
+              <time dateTime={drafted.at}>{formatTime(drafted.at)}</time>
             </Text.Root>
           </Stack.Root>
         </Stack.Root>
 
         <Alert.Root tone="warning" data-testid="rule-type-request">
-          <Alert.Title>Needs a new rule type: this is a code change</Alert.Title>
+          <Alert.Title>
+            Needs a new rule type: this is a code change
+          </Alert.Title>
           <Alert.Description>
             <Stack.Root gap="condensed">
               <Text.Root as="p">
-                Core&apos;s rule vocabulary cannot express this rule, so it can never become a check here. A person adds the rule type to core; then the agent can propose a rule that uses it, with examples that prove it, for you to adopt.
+                Core&apos;s rule vocabulary cannot express this rule, so it can
+                never become a check here. A person adds the rule type to core;
+                then the agent can propose a rule that uses it, with examples
+                that prove it, for you to adopt.
               </Text.Root>
               {refused && (
-                <Text.Root as="p" tone="muted" className="review-small" data-testid="request-refusal" data-code={refused.code}>
+                <Text.Root
+                  as="p"
+                  tone="muted"
+                  className="review-small"
+                  data-testid="request-refusal"
+                  data-code={refused.code}
+                >
                   Core on approving it: {refused.message}
                 </Text.Root>
               )}
@@ -185,8 +309,18 @@ function RequestReview({ config, proposal, agent, onBack, onSave, onSendBack }: 
                 <Button.Root variant="primary" onClick={() => void copy()}>
                   Copy the request to file
                 </Button.Root>
-                <Text.Root as="span" className="review-small" aria-live="polite" data-testid="request-copied" data-state={copied.state}>
-                  {copied.state === "copied" ? "Copied: a title and a Markdown body, ready to file as an issue." : copied.state === "failed" ? `Could not copy (${copied.message}); select the request below instead.` : ""}
+                <Text.Root
+                  as="span"
+                  className="review-small"
+                  aria-live="polite"
+                  data-testid="request-copied"
+                  data-state={copied.state}
+                >
+                  {copied.state === "copied"
+                    ? "Copied: a title and a Markdown body, ready to file as an issue."
+                    : copied.state === "failed"
+                      ? `Could not copy (${copied.message}); select the request below instead.`
+                      : ""}
                 </Text.Root>
               </Stack.Root>
             </Stack.Root>
@@ -196,16 +330,26 @@ function RequestReview({ config, proposal, agent, onBack, onSave, onSendBack }: 
         <RequestActions
           proposal={proposal}
           agent={agent}
-          onDecline={(note) => act("decline", () => declineProposal(config, id, note, now()))}
+          onDecline={(note) =>
+            act("decline", () => declineProposal(config, id, note, now()))
+          }
           onSendBack={async (note) => {
             const sent = sendBackProposal(config, id, note, now());
-            if (!sent.ok) return setRefusal({ action: "send back", refusal: sent.error });
+            if (!sent.ok)
+              return setRefusal({ action: "send back", refusal: sent.error });
             setRefusal(null);
             await onSave(sent.value.config);
             onSendBack(sent.value.message);
           }}
         />
-        {refusal && <RefusalAlert action={refusal.action} refusal={refusal.refusal} onShowExample={() => undefined} onOpenProposal={() => undefined} />}
+        {refusal && (
+          <RefusalAlert
+            action={refusal.action}
+            refusal={refusal.refusal}
+            onShowExample={() => undefined}
+            onOpenProposal={() => undefined}
+          />
+        )}
 
         <section aria-labelledby="request-checks" className="review-section">
           <Text.Root as="h2" id="request-checks">
@@ -231,8 +375,16 @@ function RequestReview({ config, proposal, agent, onBack, onSave, onSendBack }: 
             In words: there is no rule to run them against yet.
           </Text.Root>
           <div className="review-columns">
-            <WordExamples title="Must pass" examples={request.pass} expect="pass" />
-            <WordExamples title="Must fail" examples={request.fail} expect="fail" />
+            <WordExamples
+              title="Must pass"
+              examples={request.pass}
+              expect="pass"
+            />
+            <WordExamples
+              title="Must fail"
+              examples={request.fail}
+              expect="fail"
+            />
           </div>
         </section>
         <section aria-labelledby="review-why" className="review-section">
@@ -243,12 +395,25 @@ function RequestReview({ config, proposal, agent, onBack, onSave, onSendBack }: 
             {proposal.reason}
           </Text.Root>
         </section>
-        <section aria-labelledby="request-text-title" className="review-section">
+        <section
+          aria-labelledby="request-text-title"
+          className="review-section"
+        >
           <Text.Root as="h2" id="request-text-title">
             The request as it is copied
           </Text.Root>
-          <Field.Root id="request-text" aria-label="The request as it is copied">
-            <Field.Textarea value={text} readOnly rows={12} autoGrow maxRows={24} data-testid="request-text" />
+          <Field.Root
+            id="request-text"
+            aria-label="The request as it is copied"
+          >
+            <Field.Textarea
+              value={text}
+              readOnly
+              rows={12}
+              autoGrow
+              maxRows={24}
+              data-testid="request-text"
+            />
           </Field.Root>
         </section>
 
@@ -258,13 +423,25 @@ function RequestReview({ config, proposal, agent, onBack, onSave, onSendBack }: 
   );
 }
 
-function WordExamples({ title, examples, expect }: { readonly title: string; readonly examples: readonly RuleTypeExample[]; readonly expect: "pass" | "fail" }) {
+function WordExamples({
+  title,
+  examples,
+  expect,
+}: {
+  readonly title: string;
+  readonly examples: readonly RuleTypeExample[];
+  readonly expect: "pass" | "fail";
+}) {
   return (
     <div className="review-column">
       <Text.Root as="h3">{title}</Text.Root>
       <ul className="review-rules" aria-label={title}>
         {examples.map((example) => (
-          <li key={example.name} data-example={example.name} data-expect={expect}>
+          <li
+            key={example.name}
+            data-example={example.name}
+            data-expect={expect}
+          >
             <Stack.Root gap="condensed">
               <Text.Root as="span" className="example-name">
                 {example.name}
@@ -272,7 +449,9 @@ function WordExamples({ title, examples, expect }: { readonly title: string; rea
               <Text.Root as="p" className="review-small pre">
                 {example.description}
               </Text.Root>
-              {example.snippet && <pre className="project-json">{example.snippet}</pre>}
+              {example.snippet && (
+                <pre className="project-json">{example.snippet}</pre>
+              )}
             </Stack.Root>
           </li>
         ))}
@@ -282,7 +461,17 @@ function WordExamples({ title, examples, expect }: { readonly title: string; rea
 }
 
 /** A request's actions: send it back or decline it, each with its note. Approve and Adopt are not offered: core refuses both. */
-function RequestActions({ proposal, agent, onDecline, onSendBack }: { readonly proposal: Proposal; readonly agent: { readonly ready: boolean; readonly why: string }; readonly onDecline: (note: string) => Promise<void> | void; readonly onSendBack: (note: string) => Promise<void> | void }) {
+function RequestActions({
+  proposal,
+  agent,
+  onDecline,
+  onSendBack,
+}: {
+  readonly proposal: Proposal;
+  readonly agent: { readonly ready: boolean; readonly why: string };
+  readonly onDecline: (note: string) => Promise<void> | void;
+  readonly onSendBack: (note: string) => Promise<void> | void;
+}) {
   const [form, setForm] = useState<"decline" | "send-back" | null>(null);
   if (proposal.status !== "open") return null;
   return (
@@ -290,26 +479,53 @@ function RequestActions({ proposal, agent, onDecline, onSendBack }: { readonly p
       <Card.Body>
         <Stack.Root gap="condensed">
           <Stack.Root direction="row" align="center" gap="condensed" wrap>
-            <Button.Root variant="secondary" onClick={() => setForm(form === "send-back" ? null : "send-back")} aria-expanded={form === "send-back"}>
+            <Button.Root
+              variant="secondary"
+              onClick={() => setForm(form === "send-back" ? null : "send-back")}
+              aria-expanded={form === "send-back"}
+            >
               Send back to the agent
             </Button.Root>
-            <Button.Root variant="ghost" onClick={() => setForm(form === "decline" ? null : "decline")} aria-expanded={form === "decline"}>
+            <Button.Root
+              variant="ghost"
+              onClick={() => setForm(form === "decline" ? null : "decline")}
+              aria-expanded={form === "decline"}
+            >
               Decline
             </Button.Root>
           </Stack.Root>
           <Text.Root as="p" tone="muted" className="review-small">
-            Once the request is filed, decline it here with a note that says where. Send it back if the vocabulary can say it after all.
+            Once the request is filed, decline it here with a note that says
+            where. Send it back if the vocabulary can say it after all.
           </Text.Root>
-          {form === "decline" && <NoteForm key="decline" label="Why decline it?" hint="Declining is final. The note is kept in the request's history." submit="Decline proposal" required="Say why you decline it." onCancel={() => setForm(null)} onSubmit={async (note) => {
-            await onDecline(note);
-            setForm(null);
-          }} />}
+          {form === "decline" && (
+            <NoteForm
+              key="decline"
+              label="Why decline it?"
+              hint="Declining is final. The note is kept in the request's history."
+              submit="Decline proposal"
+              required="Say why you decline it."
+              onCancel={() => setForm(null)}
+              onSubmit={async (note) => {
+                await onDecline(note);
+                setForm(null);
+              }}
+            />
+          )}
           {form === "send-back" &&
             (agent.ready ? (
-              <NoteForm key="send-back" label="What should the agent change?" hint="The note goes to the agent as a chat message naming this request, and into its history. It stays open." submit="Send to the agent" required="Say what the agent should change." onCancel={() => setForm(null)} onSubmit={async (note) => {
-                await onSendBack(note);
-                setForm(null);
-              }} />
+              <NoteForm
+                key="send-back"
+                label="What should the agent change?"
+                hint="The note goes to the agent as a chat message naming this request, and into its history. It stays open."
+                submit="Send to the agent"
+                required="Say what the agent should change."
+                onCancel={() => setForm(null)}
+                onSubmit={async (note) => {
+                  await onSendBack(note);
+                  setForm(null);
+                }}
+              />
             ) : (
               <Alert.Root tone="info">
                 <Alert.Description>{agent.why}</Alert.Description>
@@ -321,7 +537,19 @@ function RequestActions({ proposal, agent, onDecline, onSendBack }: { readonly p
   );
 }
 
-function Review({ config, proposal, prototypes, openPrototypeId, board, agent, onBack, onSave, onSendBack, onOpenPrototype, onOpenProposal }: Props & { readonly proposal: Proposal }) {
+function Review({
+  config,
+  proposal,
+  prototypes,
+  openPrototypeId,
+  board,
+  agent,
+  onBack,
+  onSave,
+  onSendBack,
+  onOpenPrototype,
+  onOpenProposal,
+}: Props & { readonly proposal: Proposal }) {
   const id = proposal.id;
   const live = proposal.status === "open" || proposal.status === "approved";
 
@@ -332,19 +560,53 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
     return applied.ok ? applied.value : config;
   }, [config, proposal]);
   const all = useMemo(
-    () => [...proposal.examples.pass.map((example) => ({ example, expect: "pass" as const })), ...proposal.examples.fail.map((example) => ({ example, expect: "fail" as const }))],
+    () => [
+      ...proposal.examples.pass.map((example) => ({
+        example,
+        expect: "pass" as const,
+      })),
+      ...proposal.examples.fail.map((example) => ({
+        example,
+        expect: "fail" as const,
+      })),
+    ],
     [proposal.examples],
   );
-  const exampleItems = useMemo(() => all.map(({ example }) => ({ id: example.name, config: renderConfig, prototype: example.prototype })), [all, renderConfig]);
+  const exampleItems = useMemo(
+    () =>
+      all.map(({ example }) => ({
+        id: example.name,
+        config: renderConfig,
+        prototype: example.prototype,
+      })),
+    [all, renderConfig],
+  );
   const exampleFrames = useSessions(exampleItems);
 
   // Every prototype in the project, measured, for the impact. The open one is the board's.
-  const { existing, frames: otherFrames } = useProjectExisting({ config, prototypes, openPrototypeId, board, live });
+  const { existing, frames: otherFrames } = useProjectExisting({
+    config,
+    prototypes,
+    openPrototypeId,
+    board,
+    live,
+  });
 
-  const exampleMeasurement: ExampleMeasurement | null = exampleFrames.every((item) => item.measurement.state === "measured")
-    ? Object.fromEntries(exampleFrames.map((item) => [item.id, item.measurement.state === "measured" ? item.measurement.snapshots : []]))
+  const exampleMeasurement: ExampleMeasurement | null = exampleFrames.every(
+    (item) => item.measurement.state === "measured",
+  )
+    ? Object.fromEntries(
+        exampleFrames.map((item) => [
+          item.id,
+          item.measurement.state === "measured"
+            ? item.measurement.snapshots
+            : [],
+        ]),
+      )
     : null;
-  const measurementKey = exampleMeasurement ? exampleFrames.map((item) => item.key).join("|") : null;
+  const measurementKey = exampleMeasurement
+    ? exampleFrames.map((item) => item.key).join("|")
+    : null;
 
   // Core's judgement of every example, on the complete measurement only.
   const judged = useMemo((): Judged | null => {
@@ -359,7 +621,12 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
 
   const dryRun = useMemo(() => {
     if (!judged || !("tried" in judged) || !existing) return null;
-    return dryRunAdoption(judged.config, id, { at: "dry run", by: REVIEWER }, existing);
+    return dryRunAdoption(
+      judged.config,
+      id,
+      { at: "dry run", by: REVIEWER },
+      existing,
+    );
   }, [judged, existing, id]);
   const impact: readonly NewlyFailing[] | null = useMemo(() => {
     if (!dryRun || !judged || !("tried" in judged) || !existing) return null;
@@ -368,40 +635,162 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
   }, [dryRun, judged, existing, config]);
 
   // An adopted proposal's examples are judged on the snapshots stored at adoption, with no frame: rerunExamples.
-  const reruns = useMemo(() => (proposal.status === "adopted" ? rerunExamples(config).filter((run) => run.proposal === id) : []), [proposal.status, config, id]);
+  const reruns = useMemo(
+    () =>
+      proposal.status === "adopted"
+        ? rerunExamples(config).filter((run) => run.proposal === id)
+        : [],
+    [proposal.status, config, id],
+  );
 
   const views: ExampleView[] = all.map(({ example, expect }, index) => {
     const frames = exampleFrames[index] as Measured;
-    const named = expect === "fail" ? (example as FailingExample).flaggedBy.rule : undefined;
-    const ruleFindings = (report: CheckReport) => (named ? (report.rules.find((rule) => rule.rule === named)?.findings ?? []) : []);
+    const named =
+      expect === "fail"
+        ? (example as FailingExample).flaggedBy.rule
+        : undefined;
+    const ruleFindings = (report: CheckReport) =>
+      named
+        ? (report.rules.find((rule) => rule.rule === named)?.findings ?? [])
+        : [];
     if (proposal.status === "adopted") {
-      const run = reruns.find((item) => item.example === example.name && item.expect === expect);
-      const report = checkPrototype({ config, prototype: example.prototype, ...(example.snapshots ? { snapshots: example.snapshots } : {}) });
-      return { name: example.name, expect, example, frames, findings: ruleFindings(report), verdict: run ? (run.ok ? { state: "ok", text: run.detail } : { state: "bad", text: run.detail }) : { state: "not-judged", text: "Not re-run." } };
+      const run = reruns.find(
+        (item) => item.example === example.name && item.expect === expect,
+      );
+      const report = checkPrototype({
+        config,
+        prototype: example.prototype,
+        ...(example.snapshots ? { snapshots: example.snapshots } : {}),
+      });
+      return {
+        name: example.name,
+        expect,
+        example,
+        frames,
+        findings: ruleFindings(report),
+        verdict: run
+          ? run.ok
+            ? { state: "ok", text: run.detail }
+            : { state: "bad", text: run.detail }
+          : { state: "not-judged", text: "Not re-run." },
+      };
     }
-    if (proposal.status === "declined") return { name: example.name, expect, example, frames, findings: [], verdict: { state: "not-judged", text: "Declined: its examples are no longer judged." } };
+    if (proposal.status === "declined")
+      return {
+        name: example.name,
+        expect,
+        example,
+        frames,
+        findings: [],
+        verdict: {
+          state: "not-judged",
+          text: "Declined: its examples are no longer judged.",
+        },
+      };
     const measurement = frames.measurement;
-    if (measurement.state === "measuring") return { name: example.name, expect, example, frames, findings: [], verdict: { state: "measuring", text: `Measuring: ${measurement.answered} of ${measurement.total} frames answered.` } };
+    if (measurement.state === "measuring")
+      return {
+        name: example.name,
+        expect,
+        example,
+        frames,
+        findings: [],
+        verdict: {
+          state: "measuring",
+          text: `Measuring: ${measurement.answered} of ${measurement.total} frames answered.`,
+        },
+      };
     if (measurement.state === "failed") {
-      return { name: example.name, expect, example, frames, findings: [], verdict: { state: "unmeasured", text: `Not measured: ${measurement.problems.map((problem) => `${frameNameOf(problem.frame, frames.state.frames)} (${problem.stage}): ${problem.message}`).join("; ")}` } };
+      return {
+        name: example.name,
+        expect,
+        example,
+        frames,
+        findings: [],
+        verdict: {
+          state: "unmeasured",
+          text: `Not measured: ${measurement.problems.map((problem) => `${frameNameOf(problem.frame, frames.state.frames)} (${problem.stage}): ${problem.message}`).join("; ")}`,
+        },
+      };
     }
-    if (!judged) return { name: example.name, expect, example, frames, findings: [], verdict: { state: "measuring", text: "Measured; waiting for the other examples." } };
-    if ("refusal" in judged) return { name: example.name, expect, example, frames, findings: [], verdict: { state: "bad", text: judged.refusal.message, refusal: judged.refusal } };
-    const result = judged.tried.results.find((item) => item.example === example.name && item.expect === expect);
-    if (!result) return { name: example.name, expect, example, frames, findings: [], verdict: { state: "not-judged", text: "Not judged." } };
-    const findings = result.ok ? ruleFindings(result.report) : (result.refusal?.findings ?? ruleFindings(result.report));
-    return { name: example.name, expect, example, frames, findings, verdict: result.ok ? { state: "ok", text: result.detail } : { state: "bad", text: result.detail, ...(result.refusal ? { refusal: result.refusal } : {}) } };
+    if (!judged)
+      return {
+        name: example.name,
+        expect,
+        example,
+        frames,
+        findings: [],
+        verdict: {
+          state: "measuring",
+          text: "Measured; waiting for the other examples.",
+        },
+      };
+    if ("refusal" in judged)
+      return {
+        name: example.name,
+        expect,
+        example,
+        frames,
+        findings: [],
+        verdict: {
+          state: "bad",
+          text: judged.refusal.message,
+          refusal: judged.refusal,
+        },
+      };
+    const result = judged.tried.results.find(
+      (item) => item.example === example.name && item.expect === expect,
+    );
+    if (!result)
+      return {
+        name: example.name,
+        expect,
+        example,
+        frames,
+        findings: [],
+        verdict: { state: "not-judged", text: "Not judged." },
+      };
+    const findings = result.ok
+      ? ruleFindings(result.report)
+      : (result.refusal?.findings ?? ruleFindings(result.report));
+    return {
+      name: example.name,
+      expect,
+      example,
+      frames,
+      findings,
+      verdict: result.ok
+        ? { state: "ok", text: result.detail }
+        : {
+            state: "bad",
+            text: result.detail,
+            ...(result.refusal ? { refusal: result.refusal } : {}),
+          },
+    };
   });
 
   const measuring = exampleFrames.reduce(
     (sum, item) => {
       const state = item.measurement;
-      return state.state === "measuring" ? { answered: sum.answered + state.answered, total: sum.total + state.total, failed: sum.failed } : { answered: sum.answered + item.state.frames.length, total: sum.total + item.state.frames.length, failed: sum.failed + (state.state === "failed" ? 1 : 0) };
+      return state.state === "measuring"
+        ? {
+            answered: sum.answered + state.answered,
+            total: sum.total + state.total,
+            failed: sum.failed,
+          }
+        : {
+            answered: sum.answered + item.state.frames.length,
+            total: sum.total + item.state.frames.length,
+            failed: sum.failed + (state.state === "failed" ? 1 : 0),
+          };
     },
     { answered: 0, total: 0, failed: 0 },
   );
 
-  const [refusal, setRefusal] = useState<{ readonly action: string; readonly refusal: Refusal } | null>(null);
+  const [refusal, setRefusal] = useState<{
+    readonly action: string;
+    readonly refusal: Refusal;
+  } | null>(null);
   const [adoption, setAdoption] = useState<Adoption | null>(null);
   const [focusExample, setFocusExample] = useState<string | null>(null);
   const refusalRef = useRef<HTMLDivElement>(null);
@@ -409,7 +798,10 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
     if (refusal) refusalRef.current?.scrollIntoView({ block: "start" });
   }, [refusal]);
 
-  const act = async (action: string, run: () => ReturnType<typeof approveProposal>) => {
+  const act = async (
+    action: string,
+    run: () => ReturnType<typeof approveProposal>,
+  ) => {
     const result = run();
     if (!result.ok) return setRefusal({ action, refusal: result.error });
     setRefusal(null);
@@ -417,10 +809,17 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
   };
   const adopt = async () => {
     if (!exampleMeasurement || !existing) return;
-    const result = adoptProposal(config, id, exampleMeasurement, existing, now());
+    const result = adoptProposal(
+      config,
+      id,
+      exampleMeasurement,
+      existing,
+      now(),
+    );
     if (!result.ok) {
       setRefusal({ action: "adopt", refusal: result.error });
-      if (result.error.example && !result.error.proposal) setFocusExample(result.error.example);
+      if (result.error.example && !result.error.proposal)
+        setFocusExample(result.error.example);
       return;
     }
     setRefusal(null);
@@ -446,16 +845,28 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
           ? "in force"
           : undefined;
   const classSection = (
-    <section aria-labelledby="review-class" className="review-section" data-testid="review-class">
+    <section
+      aria-labelledby="review-class"
+      className="review-section"
+      data-testid="review-class"
+    >
       <Text.Root as="h2" id="review-class">
         How far it moves the project
       </Text.Root>
       <Text.Root as="p" tone="muted">
-        Core classifies every change{proposal.classification ? ", kept from when it was adopted" : ", against the project as it is now"}. A proposal sits at its loosest change: this one {classWords(classification.class)}.
+        Core classifies every change
+        {proposal.classification
+          ? ", kept from when it was adopted"
+          : ", against the project as it is now"}
+        . A proposal sits at its loosest change: this one{" "}
+        {classWords(classification.class)}.
       </Text.Root>
       <Card.Root className="figure-card">
         <ClassScale value={classification.class} />
-        <Table.Root className="project-table" aria-label="Each change and its class">
+        <Table.Root
+          className="project-table"
+          aria-label="Each change and its class"
+        >
           <Table.Head>
             <Table.Row>
               <Table.HeaderCell>Change</Table.HeaderCell>
@@ -465,7 +876,12 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
           </Table.Head>
           <Table.Body>
             {classification.changes.map((change, index) => (
-              <Table.Row key={index} data-sets-class={change.class === classification.class ? "" : undefined}>
+              <Table.Row
+                key={index}
+                data-sets-class={
+                  change.class === classification.class ? "" : undefined
+                }
+              >
                 <Table.Cell>
                   <Code.Root>{change.change}</Code.Root>
                 </Table.Cell>
@@ -486,7 +902,11 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
       <Stack.Root gap="spacious">
         <Stack.Root gap="condensed">
           <div>
-            <Button.Root variant="ghost" onClick={onBack} className="review-back">
+            <Button.Root
+              variant="ghost"
+              onClick={onBack}
+              className="review-back"
+            >
               ← All proposals
             </Button.Root>
           </div>
@@ -498,7 +918,8 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
             <StatusBadge status={proposal.status} />
             <Code.Root>{id}</Code.Root>
             <Text.Root as="span" tone="muted">
-              Drafted by {drafted.by}, <time dateTime={drafted.at}>{formatTime(drafted.at)}</time>
+              Drafted by {drafted.by},{" "}
+              <time dateTime={drafted.at}>{formatTime(drafted.at)}</time>
             </Text.Root>
           </Stack.Root>
         </Stack.Root>
@@ -510,11 +931,16 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
           ready={exampleMeasurement !== null && existing !== null}
           dryRun={dryRun}
           judgedRefusal={judged && "refusal" in judged ? judged.refusal : null}
-          onApprove={() => act("approve", () => approveProposal(config, id, now()))}
-          onDecline={(note) => act("decline", () => declineProposal(config, id, note, now()))}
+          onApprove={() =>
+            act("approve", () => approveProposal(config, id, now()))
+          }
+          onDecline={(note) =>
+            act("decline", () => declineProposal(config, id, note, now()))
+          }
           onSendBack={async (note) => {
             const sent = sendBackProposal(config, id, note, now());
-            if (!sent.ok) return setRefusal({ action: "send back", refusal: sent.error });
+            if (!sent.ok)
+              return setRefusal({ action: "send back", refusal: sent.error });
             setRefusal(null);
             await onSave(sent.value.config);
             onSendBack(sent.value.message);
@@ -524,11 +950,24 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
 
         {refusal && (
           <div ref={refusalRef} className="review-refusal">
-            <RefusalAlert action={refusal.action} refusal={refusal.refusal} onShowExample={setFocusExample} onOpenProposal={onOpenProposal} />
+            <RefusalAlert
+              action={refusal.action}
+              refusal={refusal.refusal}
+              onShowExample={setFocusExample}
+              onOpenProposal={onOpenProposal}
+            />
           </div>
         )}
 
-        {proposal.status === "adopted" && <InForce proposal={proposal} config={config} adoption={adoption} onOpenPrototype={onOpenPrototype} prototypes={prototypes} />}
+        {proposal.status === "adopted" && (
+          <InForce
+            proposal={proposal}
+            config={config}
+            adoption={adoption}
+            onOpenPrototype={onOpenPrototype}
+            prototypes={prototypes}
+          />
+        )}
 
         {classSection}
 
@@ -542,7 +981,11 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
           {proposal.states.length > 0 && (
             <>
               <Text.Root as="h3">States it shows</Text.Root>
-              <DataList.Root orientation="horizontal" className="project-facts" data-testid="proposal-states">
+              <DataList.Root
+                orientation="horizontal"
+                className="project-facts"
+                data-testid="proposal-states"
+              >
                 {proposal.states.map((state, index) => (
                   <DataList.Item key={index}>
                     <DataList.Term>{state.state}</DataList.Term>
@@ -554,11 +997,33 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
           )}
         </section>
 
-        <Changes proposal={proposal} config={config} renderConfig={renderConfig} views={views} onShowExample={setFocusExample} />
+        <Changes
+          proposal={proposal}
+          config={config}
+          renderConfig={renderConfig}
+          views={views}
+          onShowExample={setFocusExample}
+        />
 
-        <Examples views={views} config={renderConfig} status={proposal.status} focus={focusExample} onFocused={() => setFocusExample(null)} />
+        <Examples
+          views={views}
+          config={renderConfig}
+          status={proposal.status}
+          focus={focusExample}
+          onFocused={() => setFocusExample(null)}
+        />
 
-        {live && <Impact impact={impact} measuring={existing === null} dryRun={dryRun} prototypes={prototypes} existing={existing} views={config.views} onOpenPrototype={onOpenPrototype} />}
+        {live && (
+          <Impact
+            impact={impact}
+            measuring={existing === null}
+            dryRun={dryRun}
+            prototypes={prototypes}
+            existing={existing}
+            views={config.views}
+            onOpenPrototype={onOpenPrototype}
+          />
+        )}
         {live && <MeasureFrames items={otherFrames} />}
 
         <History proposal={proposal} config={config} />
@@ -570,7 +1035,11 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
 type ActionsProps = {
   readonly proposal: Proposal;
   readonly agent: { readonly ready: boolean; readonly why: string };
-  readonly measuring: { readonly answered: number; readonly total: number; readonly failed: number };
+  readonly measuring: {
+    readonly answered: number;
+    readonly total: number;
+    readonly failed: number;
+  };
   readonly ready: boolean;
   readonly dryRun: ReturnType<typeof dryRunAdoption> | null;
   readonly judgedRefusal: Refusal | null;
@@ -581,23 +1050,51 @@ type ActionsProps = {
 };
 
 /** The person's actions, each a deliberate click, with what core's dry run says beside them. */
-function Actions({ proposal, agent, measuring, ready, dryRun, judgedRefusal, onApprove, onDecline, onSendBack, onAdopt }: ActionsProps) {
+function Actions({
+  proposal,
+  agent,
+  measuring,
+  ready,
+  dryRun,
+  judgedRefusal,
+  onApprove,
+  onDecline,
+  onSendBack,
+  onAdopt,
+}: ActionsProps) {
   const [form, setForm] = useState<"decline" | "send-back" | null>(null);
   const { status } = proposal;
   if (status === "adopted" || status === "declined") return null;
-  const measured = measuring.total > 0 && measuring.answered === measuring.total && measuring.failed === 0;
-  const progress = measured
-    ? `Every example measured: ${measuring.total} frames.`
-    : measuring.failed > 0
-      ? `${measuring.failed === 1 ? "An example" : `${measuring.failed} examples`} could not be measured in every frame, so it cannot be adopted as it is.`
-      : `Measuring the examples: ${measuring.answered} of ${measuring.total} frames answered.`;
+  const none =
+    proposal.examples.pass.length + proposal.examples.fail.length === 0;
+  const measured =
+    none ||
+    (measuring.total > 0 &&
+      measuring.answered === measuring.total &&
+      measuring.failed === 0);
+  const progress = none
+    ? "No examples to measure: it only removes rules."
+    : measured
+      ? `Every example measured: ${measuring.total} frames.`
+      : measuring.failed > 0
+        ? `${measuring.failed === 1 ? "An example" : `${measuring.failed} examples`} could not be measured in every frame, so it cannot be adopted as it is.`
+        : `Measuring the examples: ${measuring.answered} of ${measuring.total} frames answered.`;
   const verdict = judgedRefusal
-    ? { tone: "critical" as const, text: `Core cannot judge the examples: [${judgedRefusal.code}] ${judgedRefusal.message}` }
+    ? {
+        tone: "critical" as const,
+        text: `Core cannot judge the examples: [${judgedRefusal.code}] ${judgedRefusal.message}`,
+      }
     : !dryRun
       ? null
       : dryRun.ok
-        ? { tone: "success" as const, text: `Core's adoption dry run: it would be adopted, classified ${classWords(dryRun.value.classification.class)}, and ${dryRun.value.newlyFailing.length === 0 ? "no prototype would newly fail" : `${dryRun.value.newlyFailing.length} ${dryRun.value.newlyFailing.length === 1 ? "prototype" : "prototypes"} would newly fail`}.` }
-        : { tone: "warning" as const, text: `Core's adoption dry run refuses it: [${dryRun.error.code}] ${dryRun.error.message}` };
+        ? {
+            tone: "success" as const,
+            text: `Core's adoption dry run: it would be adopted, classified ${classWords(dryRun.value.classification.class)}, and ${dryRun.value.newlyFailing.length === 0 ? "no prototype would newly fail" : `${dryRun.value.newlyFailing.length} ${dryRun.value.newlyFailing.length === 1 ? "prototype" : "prototypes"} would newly fail`}.`,
+          }
+        : {
+            tone: "warning" as const,
+            text: `Core's adoption dry run refuses it: [${dryRun.error.code}] ${dryRun.error.message}`,
+          };
   return (
     <Card.Root className="review-actions" data-testid="review-actions">
       <Card.Body>
@@ -609,38 +1106,88 @@ function Actions({ proposal, agent, measuring, ready, dryRun, judgedRefusal, onA
               </Button.Root>
             )}
             {status === "approved" && (
-              <Button.Root variant="primary" onClick={onAdopt} disabled={!ready} aria-describedby="review-measuring">
+              <Button.Root
+                variant="primary"
+                onClick={onAdopt}
+                disabled={!ready}
+                aria-describedby="review-measuring"
+              >
                 Adopt
               </Button.Root>
             )}
             {status === "open" && (
-              <Button.Root variant="secondary" onClick={() => setForm(form === "send-back" ? null : "send-back")} aria-expanded={form === "send-back"}>
+              <Button.Root
+                variant="secondary"
+                onClick={() =>
+                  setForm(form === "send-back" ? null : "send-back")
+                }
+                aria-expanded={form === "send-back"}
+              >
                 Send back to the agent
               </Button.Root>
             )}
-            <Button.Root variant="ghost" onClick={() => setForm(form === "decline" ? null : "decline")} aria-expanded={form === "decline"}>
+            <Button.Root
+              variant="ghost"
+              onClick={() => setForm(form === "decline" ? null : "decline")}
+              aria-expanded={form === "decline"}
+            >
               Decline
             </Button.Root>
           </Stack.Root>
-          <Text.Root as="p" tone="muted" id="review-measuring" className="review-small" aria-live="polite" data-testid="review-measuring" data-measured={measured ? "" : undefined}>
+          <Text.Root
+            as="p"
+            tone="muted"
+            id="review-measuring"
+            className="review-small"
+            aria-live="polite"
+            data-testid="review-measuring"
+            data-measured={measured ? "" : undefined}
+          >
             {progress}
-            {status === "approved" && !ready ? " Adoption waits until every example, and every prototype in the project, is measured." : ""}
+            {status === "approved" && !ready
+              ? none
+                ? " Adoption waits until every prototype in the project is measured."
+                : " Adoption waits until every example, and every prototype in the project, is measured."
+              : ""}
           </Text.Root>
           {verdict && (
-            <Text.Root as="p" className="review-small review-verdict" data-tone={verdict.tone} data-testid="review-verdict">
+            <Text.Root
+              as="p"
+              className="review-small review-verdict"
+              data-tone={verdict.tone}
+              data-testid="review-verdict"
+            >
               {verdict.text}
             </Text.Root>
           )}
-          {form === "decline" && <NoteForm key="decline" label="Why decline it?" hint="Declining is final. The note is kept in the proposal's history." submit="Decline proposal" required="Say why you decline it." onCancel={() => setForm(null)} onSubmit={async (note) => {
-            await onDecline(note);
-            setForm(null);
-          }} />}
+          {form === "decline" && (
+            <NoteForm
+              key="decline"
+              label="Why decline it?"
+              hint="Declining is final. The note is kept in the proposal's history."
+              submit="Decline proposal"
+              required="Say why you decline it."
+              onCancel={() => setForm(null)}
+              onSubmit={async (note) => {
+                await onDecline(note);
+                setForm(null);
+              }}
+            />
+          )}
           {form === "send-back" &&
             (agent.ready ? (
-              <NoteForm key="send-back" label="What should the agent change?" hint="The note goes to the agent as a chat message naming this proposal, and into the proposal's history. The proposal stays open." submit="Send to the agent" required="Say what the agent should change." onCancel={() => setForm(null)} onSubmit={async (note) => {
-                await onSendBack(note);
-                setForm(null);
-              }} />
+              <NoteForm
+                key="send-back"
+                label="What should the agent change?"
+                hint="The note goes to the agent as a chat message naming this proposal, and into the proposal's history. The proposal stays open."
+                submit="Send to the agent"
+                required="Say what the agent should change."
+                onCancel={() => setForm(null)}
+                onSubmit={async (note) => {
+                  await onSendBack(note);
+                  setForm(null);
+                }}
+              />
             ) : (
               <Alert.Root tone="info">
                 <Alert.Description>{agent.why}</Alert.Description>
@@ -653,10 +1200,27 @@ function Actions({ proposal, agent, measuring, ready, dryRun, judgedRefusal, onA
 }
 
 /** A note the action needs, which it refuses to go without. */
-function NoteForm({ label, hint, submit, required, onSubmit, onCancel }: { readonly label: string; readonly hint: string; readonly submit: string; readonly required: string; readonly onSubmit: (note: string) => Promise<void> | void; readonly onCancel: () => void }) {
+function NoteForm({
+  label,
+  hint,
+  submit,
+  required,
+  onSubmit,
+  onCancel,
+}: {
+  readonly label: string;
+  readonly hint: string;
+  readonly submit: string;
+  readonly required: string;
+  readonly onSubmit: (note: string) => Promise<void> | void;
+  readonly onCancel: () => void;
+}) {
   const [note, setNote] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
-  const fieldId = useMemo(() => `note-${submit.toLowerCase().replace(/[^a-z]+/g, "-")}`, [submit]);
+  const fieldId = useMemo(
+    () => `note-${submit.toLowerCase().replace(/[^a-z]+/g, "-")}`,
+    [submit],
+  );
   return (
     <form
       className="review-note"
@@ -669,8 +1233,18 @@ function NoteForm({ label, hint, submit, required, onSubmit, onCancel }: { reado
     >
       <Stack.Root gap="condensed">
         <Label.Root htmlFor={fieldId}>{label}</Label.Root>
-        <Field.Root id={fieldId} invalid={problem !== null} {...(problem ? { "aria-describedby": `${fieldId}-problem` } : {})}>
-          <Field.Textarea value={note} onValueChange={setNote} rows={3} autoGrow maxRows={8} />
+        <Field.Root
+          id={fieldId}
+          invalid={problem !== null}
+          {...(problem ? { "aria-describedby": `${fieldId}-problem` } : {})}
+        >
+          <Field.Textarea
+            value={note}
+            onValueChange={setNote}
+            rows={3}
+            autoGrow
+            maxRows={8}
+          />
         </Field.Root>
         {problem && (
           <ErrorMessage.Root id={`${fieldId}-problem`} role="alert">
@@ -694,13 +1268,41 @@ function NoteForm({ label, hint, submit, required, onSubmit, onCancel }: { reado
 }
 
 /** A refusal from core, precisely: what was refused, core's words, the example and the earlier proposal it names, and its findings. */
-function RefusalAlert({ action, refusal, onShowExample, onOpenProposal }: { readonly action: string; readonly refusal: Refusal; readonly onShowExample: (name: string) => void; readonly onOpenProposal: (id: string) => void }) {
+function RefusalAlert({
+  action,
+  refusal,
+  onShowExample,
+  onOpenProposal,
+}: {
+  readonly action: string;
+  readonly refusal: Refusal;
+  readonly onShowExample: (name: string) => void;
+  readonly onOpenProposal: (id: string) => void;
+}) {
   return (
-    <Alert.Root tone="critical" data-testid="review-refusal" data-code={refusal.code}>
-      <Alert.Title>Not {action === "adopt" ? "adopted" : action === "approve" ? "approved" : action === "decline" ? "declined" : "sent back"}: core refused it</Alert.Title>
+    <Alert.Root
+      tone="critical"
+      data-testid="review-refusal"
+      data-code={refusal.code}
+    >
+      <Alert.Title>
+        Not{" "}
+        {action === "adopt"
+          ? "adopted"
+          : action === "approve"
+            ? "approved"
+            : action === "decline"
+              ? "declined"
+              : "sent back"}
+        : core refused it
+      </Alert.Title>
       <Alert.Description>
         <Stack.Root gap="condensed">
-          <Text.Root as="p" className="pre" data-testid="review-refusal-message">
+          <Text.Root
+            as="p"
+            className="pre"
+            data-testid="review-refusal-message"
+          >
             {refusal.message}
           </Text.Root>
           <DataList.Root orientation="horizontal" className="project-facts">
@@ -716,13 +1318,20 @@ function RefusalAlert({ action, refusal, onShowExample, onOpenProposal }: { read
                 <DataList.Details>
                   {refusal.proposal ? (
                     <>
-                      <Code.Root>{refusal.example}</Code.Root> of adopted proposal{" "}
-                      <Button.Root variant="ghost" onClick={() => onOpenProposal(refusal.proposal ?? "")}>
+                      <Code.Root>{refusal.example}</Code.Root> of adopted
+                      proposal{" "}
+                      <Button.Root
+                        variant="ghost"
+                        onClick={() => onOpenProposal(refusal.proposal ?? "")}
+                      >
                         {refusal.proposal}
                       </Button.Root>
                     </>
                   ) : (
-                    <Button.Root variant="ghost" onClick={() => onShowExample(refusal.example ?? "")}>
+                    <Button.Root
+                      variant="ghost"
+                      onClick={() => onShowExample(refusal.example ?? "")}
+                    >
                       {`Show ${exampleLabel(refusal.example)}`}
                     </Button.Root>
                   )}
@@ -734,7 +1343,13 @@ function RefusalAlert({ action, refusal, onShowExample, onOpenProposal }: { read
             <ul className="findings" aria-label="What core found">
               {refusal.findings.slice(0, 8).map((finding, index) => (
                 <li key={index}>
-                  <FindingButton finding={finding} selected={false} onSelect={() => refusal.example && onShowExample(refusal.example)} />
+                  <FindingButton
+                    finding={finding}
+                    selected={false}
+                    onSelect={() =>
+                      refusal.example && onShowExample(refusal.example)
+                    }
+                  />
                 </li>
               ))}
             </ul>
@@ -746,33 +1361,62 @@ function RefusalAlert({ action, refusal, onShowExample, onOpenProposal }: { read
 }
 
 /** Once adopted: the rules now in force, and what the re-check of every prototype found. */
-function InForce({ proposal, config, adoption, prototypes, onOpenPrototype }: { readonly proposal: Proposal; readonly config: ProjectConfig; readonly adoption: Adoption | null; readonly prototypes: readonly PrototypeRecord[]; readonly onOpenPrototype: (id: string, finding?: Finding) => void }) {
+function InForce({
+  proposal,
+  config,
+  adoption,
+  prototypes,
+  onOpenPrototype,
+}: {
+  readonly proposal: Proposal;
+  readonly config: ProjectConfig;
+  readonly adoption: Adoption | null;
+  readonly prototypes: readonly PrototypeRecord[];
+  readonly onOpenPrototype: (id: string, finding?: Finding) => void;
+}) {
   const adopted = proposal.history.at(-1);
-  const inForce = proposal.rules.add.filter((rule) => config.rules.some((item) => item.id === rule.id));
+  const inForce = proposal.rules.add.filter((rule) =>
+    config.rules.some((item) => item.id === rule.id),
+  );
   return (
     <Alert.Root tone="success" data-testid="review-in-force">
       <Alert.Title>
-        Adopted{adopted?.by ? ` by ${adopted.by}` : ""}, <time dateTime={adopted?.at}>{formatTime(adopted?.at ?? "")}</time>
+        Adopted{adopted?.by ? ` by ${adopted.by}` : ""},{" "}
+        <time dateTime={adopted?.at}>{formatTime(adopted?.at ?? "")}</time>
       </Alert.Title>
       <Alert.Description>
         <Stack.Root gap="condensed">
           {inForce.length > 0 ? (
             <Text.Root as="p">
-              In force now, on every prototype: {inForce.map((rule) => rule.id).join(", ")}. The Checks panel runs {inForce.length === 1 ? "it" : "them"} on the open prototype.
+              In force now, on every prototype:{" "}
+              {inForce.map((rule) => rule.id).join(", ")}. The Checks panel runs{" "}
+              {inForce.length === 1 ? "it" : "them"} on the open prototype.
             </Text.Root>
           ) : (
-            <Text.Root as="p">Its changes are in the project&apos;s inventories{proposal.rules.remove.length > 0 ? `, and ${proposal.rules.remove.join(", ")} left force` : ""}.</Text.Root>
+            <Text.Root as="p">
+              Its changes are in the project&apos;s inventories
+              {proposal.rules.remove.length > 0
+                ? `, and ${proposal.rules.remove.join(", ")} left force`
+                : ""}
+              .
+            </Text.Root>
           )}
           {adoption && (
             <Text.Root as="p" data-testid="review-rechecked">
-              Every prototype was re-checked: {adoption.newlyFailing.length === 0 ? "none newly fails." : `${adoption.newlyFailing.map((item) => item.name).join(", ")} newly ${adoption.newlyFailing.length === 1 ? "fails" : "fail"}.`}
+              Every prototype was re-checked:{" "}
+              {adoption.newlyFailing.length === 0
+                ? "none newly fails."
+                : `${adoption.newlyFailing.map((item) => item.name).join(", ")} newly ${adoption.newlyFailing.length === 1 ? "fails" : "fail"}.`}
             </Text.Root>
           )}
           {adoption?.newlyFailing.map((item) => {
             const record = prototypes.find((entry) => entry.name === item.name);
             return record ? (
               <div key={item.name}>
-                <Button.Root variant="secondary" onClick={() => onOpenPrototype(record.id, item.findings[0])}>
+                <Button.Root
+                  variant="secondary"
+                  onClick={() => onOpenPrototype(record.id, item.findings[0])}
+                >
                   {`Open ${item.name} on the board`}
                 </Button.Root>
               </div>
@@ -785,19 +1429,54 @@ function InForce({ proposal, config, adoption, prototypes, onOpenPrototype }: { 
 }
 
 /** What it changes: the inventories and rule inputs before and after, and each rule it adds or removes in words. */
-function Changes({ proposal, config, renderConfig, views, onShowExample }: { readonly proposal: Proposal; readonly config: ProjectConfig; /** The project with the proposal applied. */ readonly renderConfig: ProjectConfig; readonly views: readonly ExampleView[]; readonly onShowExample: (name: string) => void }) {
-  const diff = proposal.status === "adopted" ? null : inventoryDiff(config, proposal);
-  const added = proposal.inventory.flatMap((op) => (op.op === "add-component" ? [op.name] : []));
-  const dropped = proposal.inventory.flatMap((op) => (op.op === "remove-component" ? [op.name] : []));
-  const quiet = renderConfig.inventories.components.filter((name) => !added.includes(name));
+function Changes({
+  proposal,
+  config,
+  renderConfig,
+  views,
+  onShowExample,
+}: {
+  readonly proposal: Proposal;
+  readonly config: ProjectConfig;
+  /** The project with the proposal applied. */ readonly renderConfig: ProjectConfig;
+  readonly views: readonly ExampleView[];
+  readonly onShowExample: (name: string) => void;
+}) {
+  const diff =
+    proposal.status === "adopted" ? null : inventoryDiff(config, proposal);
+  const added = proposal.inventory.flatMap((op) =>
+    op.op === "add-component" ? [op.name] : [],
+  );
+  const dropped = proposal.inventory.flatMap((op) =>
+    op.op === "remove-component" ? [op.name] : [],
+  );
+  const quiet = renderConfig.inventories.components.filter(
+    (name) => !added.includes(name),
+  );
   // The rule inputs it moves, each as its figure: a cap, a step budget, a page type's slots.
-  const figured = proposal.inventory.filter((op) => FIGURED_OPS.includes(op.op));
+  const figured = proposal.inventory.filter((op) =>
+    FIGURED_OPS.includes(op.op),
+  );
   // A rule removed and added again under its id is a changed rule: one line, with core's words before and after, and its proof.
   const lines = ruleLines(proposal, config);
-  const changedIds = new Set(lines.filter((line) => line.kind === "changes").map((line) => line.rule));
-  const addedRules = proposal.rules.add.filter((rule) => !changedIds.has(rule.id));
-  const changedRules = proposal.rules.add.filter((rule) => changedIds.has(rule.id));
-  const removed = lines.filter((line) => line.kind === "removes").map((line) => ({ line, rule: proposal.status === "adopted" ? undefined : config.rules.find((rule) => rule.id === line.rule) }));
+  const changedIds = new Set(
+    lines.filter((line) => line.kind === "changes").map((line) => line.rule),
+  );
+  const addedRules = proposal.rules.add.filter(
+    (rule) => !changedIds.has(rule.id),
+  );
+  const changedRules = proposal.rules.add.filter((rule) =>
+    changedIds.has(rule.id),
+  );
+  const removed = lines
+    .filter((line) => line.kind === "removes")
+    .map((line) => ({
+      line,
+      rule:
+        proposal.status === "adopted"
+          ? undefined
+          : config.rules.find((rule) => rule.id === line.rule),
+    }));
   return (
     <section aria-labelledby="review-changes" className="review-section">
       <Text.Root as="h2" id="review-changes">
@@ -809,11 +1488,16 @@ function Changes({ proposal, config, renderConfig, views, onShowExample }: { rea
         </Text.Root>
       ) : diff === null ? (
         <Text.Root as="p" tone="muted">
-          Adopted: these changes are in the project now. {proposal.inventory.length} {proposal.inventory.length === 1 ? "operation" : "operations"}: {proposal.inventory.map((op) => op.op).join(", ")}.
+          Adopted: these changes are in the project now.{" "}
+          {proposal.inventory.length}{" "}
+          {proposal.inventory.length === 1 ? "operation" : "operations"}:{" "}
+          {proposal.inventory.map((op) => op.op).join(", ")}.
         </Text.Root>
       ) : !diff.ok ? (
         <Alert.Root tone="warning">
-          <Alert.Description>It cannot apply to the project as it is now: {diff.error}</Alert.Description>
+          <Alert.Description>
+            It cannot apply to the project as it is now: {diff.error}
+          </Alert.Description>
         </Alert.Root>
       ) : (
         <div className="diff" data-testid="inventory-diff">
@@ -825,9 +1509,13 @@ function Changes({ proposal, config, renderConfig, views, onShowExample }: { rea
       {(added.length > 0 || dropped.length > 0) && (
         <div className="palette-after" data-testid="palette-after">
           <div className="section-head">
-            <Text.Root as="h3">What a prototype could build with, after</Text.Root>
+            <Text.Root as="h3">
+              What a prototype could build with, after
+            </Text.Root>
             <Text.Root as="p" tone="muted">
-              {added.length > 0 ? `The new ${added.length === 1 ? "part is" : "parts are"} drawn by ${config.library.package} ${config.library.version}, as the examples below draw ${added.length === 1 ? "it" : "them"}.` : `What it removes is drawn by ${config.library.package} ${config.library.version}, as it is in the project now.`}
+              {added.length > 0
+                ? `The new ${added.length === 1 ? "part is" : "parts are"} drawn by ${config.library.package} ${config.library.version}, as the examples below draw ${added.length === 1 ? "it" : "them"}.`
+                : `What it removes is drawn by ${config.library.package} ${config.library.version}, as it is in the project now.`}
             </Text.Root>
           </div>
           <ul className="palette" aria-label="Components it adds or removes">
@@ -835,7 +1523,9 @@ function Changes({ proposal, config, renderConfig, views, onShowExample }: { rea
               <li key={name}>
                 <SpecimenTile config={renderConfig} component={name} mark="new">
                   <Text.Root as="p" tone="muted">
-                    {proposal.status === "adopted" ? "Added by this proposal." : "Before: not in the inventory."}
+                    {proposal.status === "adopted"
+                      ? "Added by this proposal."
+                      : "Before: not in the inventory."}
                   </Text.Root>
                 </SpecimenTile>
               </li>
@@ -844,22 +1534,36 @@ function Changes({ proposal, config, renderConfig, views, onShowExample }: { rea
               <li key={name}>
                 <SpecimenTile config={config} component={name} mark="removed">
                   <Text.Root as="p" tone="muted">
-                    {proposal.status === "adopted" ? "Removed by this proposal." : "After: not in the inventory."}
+                    {proposal.status === "adopted"
+                      ? "Removed by this proposal."
+                      : "After: not in the inventory."}
                   </Text.Root>
                 </SpecimenTile>
               </li>
             ))}
           </ul>
           <Text.Root as="p" tone="muted" className="review-small">
-            {quiet.length === 0 ? "Nothing else is in the inventory." : `Unchanged beside ${added.length + dropped.length === 1 ? "it" : "them"}: ${quiet.join(", ")}.`}
+            {quiet.length === 0
+              ? "Nothing else is in the inventory."
+              : `Unchanged beside ${added.length + dropped.length === 1 ? "it" : "them"}: ${quiet.join(", ")}.`}
           </Text.Root>
         </div>
       )}
       {figured.length > 0 && (
-        <ul className="review-rules op-figures" aria-label="The limits it moves, drawn" data-testid="op-figures">
+        <ul
+          className="review-rules op-figures"
+          aria-label="The limits it moves, drawn"
+          data-testid="op-figures"
+        >
           {figured.map((op, index) => (
             <li key={index} className="op-figure preview" data-op={op.op}>
-              <PreviewFigure preview={proposalPreview({ ...proposal, inventory: [op] }, config)} config={config} />
+              <PreviewFigure
+                preview={proposalPreview(
+                  { ...proposal, inventory: [op] },
+                  config,
+                )}
+                config={config}
+              />
             </li>
           ))}
         </ul>
@@ -867,9 +1571,16 @@ function Changes({ proposal, config, renderConfig, views, onShowExample }: { rea
       {changedRules.length > 0 && (
         <>
           <div className="section-head">
-            <Text.Root as="h3">{changedRules.length === 1 ? "The rule it changes, and its proof" : `The ${changedRules.length} rules it changes, and their proof`}</Text.Root>
+            <Text.Root as="h3">
+              {changedRules.length === 1
+                ? "The rule it changes, and its proof"
+                : `The ${changedRules.length} rules it changes, and their proof`}
+            </Text.Root>
             <Text.Root as="p" tone="muted">
-              It takes the rule out and puts it back under its id with the change. Each limit that moves is before and after in core&apos;s words, with two of the proposal&apos;s examples: one the changed rule must pass and one it must flag.
+              It takes the rule out and puts it back under its id with the
+              change. Each limit that moves is before and after in core&apos;s
+              words, with two of the proposal&apos;s examples: one the changed
+              rule must pass and one it must flag.
             </Text.Root>
           </div>
           <ul className="review-rules" aria-label="Rules it changes">
@@ -877,15 +1588,28 @@ function Changes({ proposal, config, renderConfig, views, onShowExample }: { rea
               const line = lines.find((item) => item.rule === rule.id);
               return (
                 <li key={rule.id}>
-                  <Card.Root className="rule-proof" data-rule-proof={rule.id} data-testid="rule-changed">
+                  <Card.Root
+                    className="rule-proof"
+                    data-rule-proof={rule.id}
+                    data-testid="rule-changed"
+                  >
                     <div className="rule-proof-rule">
-                      <RuleFigure rule={rule} label={ruleBound(rule, renderConfig)} />
+                      <RuleFigure
+                        rule={rule}
+                        label={ruleBound(rule, renderConfig)}
+                      />
                       <div className="rule-change">
                         {line && <RuleLineView line={line} />}
                         <RuleWords rule={rule} config={renderConfig} />
                       </div>
                     </div>
-                    <Proof proposal={proposal} rule={rule.id} views={views} config={renderConfig} onShowExample={onShowExample} />
+                    <Proof
+                      proposal={proposal}
+                      rule={rule.id}
+                      views={views}
+                      config={renderConfig}
+                      onShowExample={onShowExample}
+                    />
                   </Card.Root>
                 </li>
               );
@@ -897,10 +1621,15 @@ function Changes({ proposal, config, renderConfig, views, onShowExample }: { rea
         <>
           <div className="section-head">
             <Text.Root as="h3">
-              {addedRules.length === 1 ? "The rule it adds, and its proof" : `The ${addedRules.length} rules it adds, and their proof`}
+              {addedRules.length === 1
+                ? "The rule it adds, and its proof"
+                : `The ${addedRules.length} rules it adds, and their proof`}
             </Text.Root>
             <Text.Root as="p" tone="muted">
-              Each rule in core&apos;s words, with a picture when it is about how the page looks, and two of the proposal&apos;s examples: one it must pass and one it must flag. They are examples, not a before and after.
+              Each rule in core&apos;s words, with a picture when it is about
+              how the page looks, and two of the proposal&apos;s examples: one
+              it must pass and one it must flag. They are examples, not a before
+              and after.
             </Text.Root>
           </div>
           <ul className="review-rules" aria-label="Rules it adds">
@@ -908,10 +1637,19 @@ function Changes({ proposal, config, renderConfig, views, onShowExample }: { rea
               <li key={rule.id}>
                 <Card.Root className="rule-proof" data-rule-proof={rule.id}>
                   <div className="rule-proof-rule">
-                    <RuleFigure rule={rule} label={ruleBound(rule, renderConfig)} />
+                    <RuleFigure
+                      rule={rule}
+                      label={ruleBound(rule, renderConfig)}
+                    />
                     <RuleWords rule={rule} config={config} />
                   </div>
-                  <Proof proposal={proposal} rule={rule.id} views={views} config={renderConfig} onShowExample={onShowExample} />
+                  <Proof
+                    proposal={proposal}
+                    rule={rule.id}
+                    views={views}
+                    config={renderConfig}
+                    onShowExample={onShowExample}
+                  />
                 </Card.Root>
               </li>
             ))}
@@ -921,10 +1659,13 @@ function Changes({ proposal, config, renderConfig, views, onShowExample }: { rea
       {removed.length > 0 && (
         <>
           <Text.Root as="h3">
-            Removes {removed.length === 1 ? "a rule" : `${removed.length} rules`}
+            Removes{" "}
+            {removed.length === 1 ? "a rule" : `${removed.length} rules`}
           </Text.Root>
           <Text.Root as="p" tone="muted">
-            {proposal.status === "adopted" ? "Nothing checks this any more." : "Once it is adopted, nothing checks this any more, on any prototype in the project."}
+            {proposal.status === "adopted"
+              ? "Nothing checks this any more."
+              : "Once it is adopted, nothing checks this any more, on any prototype in the project."}
           </Text.Root>
           <ul className="review-rules" aria-label="Rules it removes">
             {removed.map(({ line, rule }) => (
@@ -936,7 +1677,9 @@ function Changes({ proposal, config, renderConfig, views, onShowExample }: { rea
                     <RuleWords rule={rule} config={config} />
                   ) : line.was === undefined ? (
                     <Text.Root as="p" tone="muted">
-                      {proposal.status === "adopted" ? "It is no longer in force." : "It is not in force now, so this proposal cannot apply."}
+                      {proposal.status === "adopted"
+                        ? "It is no longer in force."
+                        : "It is not in force now, so this proposal cannot apply."}
                     </Text.Root>
                   ) : null}
                 </Card.Root>
@@ -949,7 +1692,13 @@ function Changes({ proposal, config, renderConfig, views, onShowExample }: { rea
   );
 }
 
-const FIGURED_OPS: readonly InventoryOp["op"][] = ["add-cap", "set-cap", "set-max-steps", "add-task", "add-page-type"];
+const FIGURED_OPS: readonly InventoryOp["op"][] = [
+  "add-cap",
+  "set-cap",
+  "set-max-steps",
+  "add-task",
+  "add-page-type",
+];
 
 /**
  * A rule's proof, right under it: the first failing example the rule must
@@ -958,61 +1707,155 @@ const FIGURED_OPS: readonly InventoryOp["op"][] = ["add-cap", "set-cap", "set-ma
  * where core's finding points, with core's message quoted. The pair is two
  * examples, not a diff: nothing says they differ only by what is outlined.
  */
-function Proof({ proposal, rule, views, config, onShowExample }: { readonly proposal: Proposal; readonly rule: string; readonly views: readonly ExampleView[]; readonly config: ProjectConfig; readonly onShowExample: (name: string) => void }) {
+function Proof({
+  proposal,
+  rule,
+  views,
+  config,
+  onShowExample,
+}: {
+  readonly proposal: Proposal;
+  readonly rule: string;
+  readonly views: readonly ExampleView[];
+  readonly config: ProjectConfig;
+  readonly onShowExample: (name: string) => void;
+}) {
   const pair = proofPair(proposal, rule);
-  const fail = views.find((view) => view.expect === "fail" && view.name === pair.fail);
-  const pass = views.find((view) => view.expect === "pass" && view.name === pair.pass);
+  const fail = views.find(
+    (view) => view.expect === "fail" && view.name === pair.fail,
+  );
+  const pass = views.find(
+    (view) => view.expect === "pass" && view.name === pair.pass,
+  );
   // Both are drawn at the scenario and view the rule flags the failing one in, when it has one there.
-  const flagged = fail?.findings.find((finding) => finding.rule === rule && finding.scenario !== undefined && finding.view !== undefined) ?? fail?.findings.find((finding) => finding.scenario !== undefined) ?? fail?.findings.find((finding) => finding.page !== undefined);
+  const flagged =
+    fail?.findings.find(
+      (finding) =>
+        finding.rule === rule &&
+        finding.scenario !== undefined &&
+        finding.view !== undefined,
+    ) ??
+    fail?.findings.find((finding) => finding.scenario !== undefined) ??
+    fail?.findings.find((finding) => finding.page !== undefined);
   if (!fail && !pass) {
     return (
       <Text.Root as="p" tone="muted" data-testid="proof-none">
-        No example proves this rule. Core adopts a rule only when a failing example is flagged by it.
+        No example proves this rule. Core adopts a rule only when a failing
+        example is flagged by it.
       </Text.Root>
     );
   }
   return (
     <div className="proof" data-testid="rule-proof">
-      {pass ? <ProofExample view={pass} config={config} at={flagged} onShow={() => onShowExample(pass.name)} /> : <Text.Root as="p" tone="muted">No passing example.</Text.Root>}
+      {pass ? (
+        <ProofExample
+          view={pass}
+          config={config}
+          at={flagged}
+          onShow={() => onShowExample(pass.name)}
+        />
+      ) : (
+        <Text.Root as="p" tone="muted">
+          No passing example.
+        </Text.Root>
+      )}
       {fail ? (
-        <ProofExample view={fail} config={config} at={flagged} rule={rule} onShow={() => onShowExample(fail.name)} />
+        <ProofExample
+          view={fail}
+          config={config}
+          at={flagged}
+          rule={rule}
+          onShow={() => onShowExample(fail.name)}
+        />
       ) : (
         <Text.Root as="p" tone="muted" data-testid="proof-none">
-          No failing example is flagged by this rule, so core will refuse to adopt it.
+          No failing example is flagged by this rule, so core will refuse to
+          adopt it.
         </Text.Root>
       )}
     </div>
   );
 }
 
-function ProofExample({ view, config, at, rule, onShow }: { readonly view: ExampleView; readonly config: ProjectConfig; readonly at: Finding | undefined; readonly rule?: string; readonly onShow: () => void }) {
+function ProofExample({
+  view,
+  config,
+  at,
+  rule,
+  onShow,
+}: {
+  readonly view: ExampleView;
+  readonly config: ProjectConfig;
+  readonly at: Finding | undefined;
+  readonly rule?: string;
+  readonly onShow: () => void;
+}) {
   const { prototype } = view.example;
-  const scenario = prototype.scenarios.find((item) => item.id === at?.scenario) ?? prototype.scenarios.find((item) => item.page === at?.page) ?? prototype.scenarios[0];
+  const scenario =
+    prototype.scenarios.find((item) => item.id === at?.scenario) ??
+    prototype.scenarios.find((item) => item.page === at?.page) ??
+    prototype.scenarios[0];
   // The view core's finding is in, else the narrowest, where a page reads at close to its own size.
-  const shownView = config.views.find((item) => item.name === at?.view) ?? [...config.views].sort((a, b) => a.width - b.width)[0];
+  const shownView =
+    config.views.find((item) => item.name === at?.view) ??
+    [...config.views].sort((a, b) => a.width - b.width)[0];
   // One scenario at one view, in a session of its own: the full set is measured in the Examples section below.
   const items = useMemo(() => {
     if (!scenario || !shownView) return [];
-    return [{ id: `proof:${view.name}`, config: { ...config, views: [shownView] }, prototype: { ...prototype, scenarios: [scenario] } }];
+    return [
+      {
+        id: `proof:${view.name}`,
+        config: { ...config, views: [shownView] },
+        prototype: { ...prototype, scenarios: [scenario] },
+      },
+    ];
   }, [config, prototype, scenario, shownView, view.name]);
   const [measured] = useSessions(items);
   const [area, width] = useWidth();
   const frame = measured?.state.frames[0];
-  const frameState = measured && frame ? (measured.state.frameStates[frame.key] ?? { state: "waiting" as const }) : undefined;
+  const frameState =
+    measured && frame
+      ? (measured.state.frameStates[frame.key] ?? { state: "waiting" as const })
+      : undefined;
   // What core's finding points at in this frame: the same element index, since the frame draws the same page at the same view.
-  const finding = rule ? (view.findings.find((item) => item.rule === rule && item.scenario === scenario?.id && item.view === shownView?.name) ?? view.findings.find((item) => item.rule === rule) ?? view.findings[0]) : undefined;
-  const element = finding && finding.scenario === scenario?.id && finding.view === shownView?.name ? finding.element : undefined;
+  const finding = rule
+    ? (view.findings.find(
+        (item) =>
+          item.rule === rule &&
+          item.scenario === scenario?.id &&
+          item.view === shownView?.name,
+      ) ??
+      view.findings.find((item) => item.rule === rule) ??
+      view.findings[0])
+    : undefined;
+  const element =
+    finding &&
+    finding.scenario === scenario?.id &&
+    finding.view === shownView?.name
+      ? finding.element
+      : undefined;
   const measuredNow = frameState?.state === "measured";
   useEffect(() => {
     if (!measured || !frame || !measuredNow) return;
     measured.session.highlight(frame.key, element ?? null);
   }, [measured?.session, frame?.key, measuredNow, element]);
   const badge = verdictBadge(view);
-  const scale = shownView ? Math.min(1, Math.max(0.08, (width - 4) / shownView.width)) : 1;
+  const scale = shownView
+    ? Math.min(1, Math.max(0.08, (width - 4) / shownView.width))
+    : 1;
   return (
-    <figure className="proof-example" data-proof={view.name} data-expect={view.expect} data-verdict={view.verdict.state}>
+    <figure
+      className="proof-example"
+      data-proof={view.name}
+      data-expect={view.expect}
+      data-verdict={view.verdict.state}
+    >
       <figcaption className="proof-head">
-        <span className="proof-mark" data-expect={view.expect} aria-hidden="true">
+        <span
+          className="proof-mark"
+          data-expect={view.expect}
+          aria-hidden="true"
+        >
           {view.expect === "pass" ? <Check /> : <X />}
         </span>
         <Text.Root as="span" weight="medium">
@@ -1026,7 +1869,18 @@ function ProofExample({ view, config, at, rule, onShow }: { readonly view: Examp
         </Badge.Root>
       </figcaption>
       <div className="example-frames proof-frame" ref={area}>
-        {measured && frame && frameState && <FrameViewport session={measured.session} spec={frame} revision={measured.state.revision} frameState={frameState} scale={scale} hidden={false} name={`${view.name}, as proof: ${frame.scenario.id} at ${frame.view.name}`} fit />}
+        {measured && frame && frameState && (
+          <FrameViewport
+            session={measured.session}
+            spec={frame}
+            revision={measured.state.revision}
+            frameState={frameState}
+            scale={scale}
+            hidden={false}
+            name={`${view.name}, as proof: ${frame.scenario.id} at ${frame.view.name}`}
+            fit
+          />
+        )}
       </div>
       <Text.Root as="p" tone="muted" className="review-small">
         {scenario ? scenarioName(scenario) : "No scenario"}
@@ -1050,10 +1904,26 @@ function DiffView({ section }: { readonly section: DiffSection }) {
   if (section.kind === "list") {
     const items = (list: readonly string[], side: "before" | "after") =>
       list.map((item) => {
-        const changed = side === "after" ? section.added.includes(item) : section.removed.includes(item);
+        const changed =
+          side === "after"
+            ? section.added.includes(item)
+            : section.removed.includes(item);
         return (
-          <li key={item} data-change={changed ? (side === "after" ? "added" : "removed") : undefined}>
-            <Badge.Root tone={changed ? (side === "after" ? "success" : "critical") : "neutral"}>
+          <li
+            key={item}
+            data-change={
+              changed ? (side === "after" ? "added" : "removed") : undefined
+            }
+          >
+            <Badge.Root
+              tone={
+                changed
+                  ? side === "after"
+                    ? "success"
+                    : "critical"
+                  : "neutral"
+              }
+            >
               {changed ? (side === "after" ? "+ " : "− ") : ""}
               {item}
             </Badge.Root>
@@ -1101,8 +1971,12 @@ function DiffView({ section }: { readonly section: DiffSection }) {
               <Table.Cell>
                 <Code.Root>{row.name}</Code.Root>
               </Table.Cell>
-              <Table.Cell>{row.before ?? <Badge.Root tone="neutral">none</Badge.Root>}</Table.Cell>
-              <Table.Cell>{row.after ?? <Badge.Root tone="critical">removed</Badge.Root>}</Table.Cell>
+              <Table.Cell>
+                {row.before ?? <Badge.Root tone="neutral">none</Badge.Root>}
+              </Table.Cell>
+              <Table.Cell>
+                {row.after ?? <Badge.Root tone="critical">removed</Badge.Root>}
+              </Table.Cell>
             </Table.Row>
           ))}
         </Table.Body>
@@ -1112,40 +1986,84 @@ function DiffView({ section }: { readonly section: DiffSection }) {
 }
 
 /** Passing examples on one side, failing on the other, each in frames at the chosen scenario and views. */
-function Examples({ views, config, status, focus, onFocused }: { readonly views: readonly ExampleView[]; readonly config: ProjectConfig; readonly status: Proposal["status"]; readonly focus: string | null; readonly onFocused: () => void }) {
-  const scenarios = useMemo(() => [...new Set(views.flatMap((view) => view.example.prototype.scenarios.map((scenario) => scenario.id)))], [views]);
+function Examples({
+  views,
+  config,
+  status,
+  focus,
+  onFocused,
+}: {
+  readonly views: readonly ExampleView[];
+  readonly config: ProjectConfig;
+  readonly status: Proposal["status"];
+  readonly focus: string | null;
+  readonly onFocused: () => void;
+}) {
+  const scenarios = useMemo(
+    () => [
+      ...new Set(
+        views.flatMap((view) =>
+          view.example.prototype.scenarios.map((scenario) => scenario.id),
+        ),
+      ),
+    ],
+    [views],
+  );
   // Every example's scenarios, to name one by its page and state where only its id is in hand.
-  const known = useMemo(() => views.flatMap((view) => view.example.prototype.scenarios), [views]);
+  const known = useMemo(
+    () => views.flatMap((view) => view.example.prototype.scenarios),
+    [views],
+  );
   // The scenario the first failing example is flagged in, so the page opens on what the rule catches.
   const flaggedScenario = useMemo(() => {
     for (const view of views.filter((item) => item.expect === "fail")) {
-      const finding = view.findings.find((item) => item.scenario !== undefined) ?? view.findings.find((item) => item.page !== undefined);
+      const finding =
+        view.findings.find((item) => item.scenario !== undefined) ??
+        view.findings.find((item) => item.page !== undefined);
       if (finding?.scenario) return finding.scenario;
-      if (finding?.page) return view.example.prototype.scenarios.find((scenario) => scenario.page === finding.page)?.id;
+      if (finding?.page)
+        return view.example.prototype.scenarios.find(
+          (scenario) => scenario.page === finding.page,
+        )?.id;
     }
     return undefined;
   }, [views]);
   const [chosen, setChosen] = useState<string | null>(null);
   const scenario = chosen ?? flaggedScenario ?? scenarios[0] ?? "";
   const [viewName, setViewName] = useState<string>("all");
-  const shownViews = viewName === "all" ? config.views : config.views.filter((view) => view.name === viewName);
+  const shownViews =
+    viewName === "all"
+      ? config.views
+      : config.views.filter((view) => view.name === viewName);
 
   useEffect(() => {
     if (!focus) return;
     const view = views.find((item) => item.name === focus);
     const finding = view?.findings.find((item) => item.scenario !== undefined);
     if (finding?.scenario) setChosen(finding.scenario);
-    document.querySelector(`.example[data-example="${CSS.escape(focus)}"]`)?.scrollIntoView({ block: "start" });
+    document
+      .querySelector(`.example[data-example="${CSS.escape(focus)}"]`)
+      ?.scrollIntoView({ block: "start" });
     onFocused();
   }, [focus, views, onFocused]);
 
   const column = (expect: "pass" | "fail") => (
     <div className="review-column" data-expect={expect}>
-      <Text.Root as="h3">{expect === "pass" ? "Must pass" : "Must fail, for the named rule alone"}</Text.Root>
+      <Text.Root as="h3">
+        {expect === "pass"
+          ? "Must pass"
+          : "Must fail, for the named rule alone"}
+      </Text.Root>
       {views
         .filter((view) => view.expect === expect)
         .map((view) => (
-          <ExampleCard key={view.name} view={view} scenario={scenario} views={shownViews} status={status} />
+          <ExampleCard
+            key={view.name}
+            view={view}
+            scenario={scenario}
+            views={shownViews}
+            status={status}
+          />
         ))}
     </div>
   );
@@ -1156,9 +2074,19 @@ function Examples({ views, config, status, focus, onFocused }: { readonly views:
         Examples
       </Text.Root>
       <Text.Root as="p" tone="muted">
-        Each example is a prototype, rendered and measured in its own frames{status === "adopted" ? "; its verdict is re-run on the snapshots stored when it was adopted" : ""}. A failing example is outlined where its rule flags it.
+        Each example is a prototype, rendered and measured in its own frames
+        {status === "adopted"
+          ? "; its verdict is re-run on the snapshots stored when it was adopted"
+          : ""}
+        . A failing example is outlined where its rule flags it.
       </Text.Root>
-      <Stack.Root direction="row" align="center" gap="normal" wrap className="review-pickers">
+      <Stack.Root
+        direction="row"
+        align="center"
+        gap="normal"
+        wrap
+        className="review-pickers"
+      >
         <Stack.Root direction="row" align="center" gap="condensed">
           <Label.Root htmlFor="review-scenario">Scenario</Label.Root>
           <Field.Root id="review-scenario" className="review-picker">
@@ -1201,21 +2129,32 @@ function useWidth(): [RefObject<HTMLDivElement | null>, number] {
     const element = ref.current;
     if (!element) return;
     // The content box: the frames sit inside the area's padding.
-    const observer = new ResizeObserver(([entry]) => entry && setWidth(entry.contentRect.width));
+    const observer = new ResizeObserver(
+      ([entry]) => entry && setWidth(entry.contentRect.width),
+    );
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
   return [ref, width];
 }
 
-function verdictBadge(view: ExampleView): { tone: "success" | "critical" | "info" | "warning" | "neutral"; text: string } {
+function verdictBadge(view: ExampleView): {
+  tone: "success" | "critical" | "info" | "warning" | "neutral";
+  text: string;
+} {
   switch (view.verdict.state) {
     case "measuring":
       return { tone: "info", text: "measuring" };
     case "unmeasured":
       return { tone: "warning", text: "not measured" };
     case "ok":
-      return { tone: "success", text: view.expect === "pass" ? "passes" : `fails for ${(view.example as FailingExample).flaggedBy.rule} alone` };
+      return {
+        tone: "success",
+        text:
+          view.expect === "pass"
+            ? "passes"
+            : `fails for ${(view.example as FailingExample).flaggedBy.rule} alone`,
+      };
     case "bad":
       return { tone: "critical", text: "does not behave" };
     case "not-judged":
@@ -1223,38 +2162,84 @@ function verdictBadge(view: ExampleView): { tone: "success" | "critical" | "info
   }
 }
 
-function ExampleCard({ view, scenario, views, status }: { readonly view: ExampleView; readonly scenario: string; readonly views: readonly View[]; readonly status: Proposal["status"] }) {
+function ExampleCard({
+  view,
+  scenario,
+  views,
+  status,
+}: {
+  readonly view: ExampleView;
+  readonly scenario: string;
+  readonly views: readonly View[];
+  readonly status: Proposal["status"];
+}) {
   const { frames } = view;
   const [area, width] = useWidth();
-  const shown = frames.state.frames.filter((spec) => spec.scenario.id === scenario && views.some((item) => item.name === spec.view.name));
+  const shown = frames.state.frames.filter(
+    (spec) =>
+      spec.scenario.id === scenario &&
+      views.some((item) => item.name === spec.view.name),
+  );
   // Each view fits the card's width on its own, no taller than FRAME_MAX_HEIGHT, so a phone is not a sliver beside a desktop.
-  const scaleOf = (view: View) => Math.min(1, Math.max(0.08, Math.min((width - 4) / view.width, FRAME_MAX_HEIGHT / view.height)));
+  const scaleOf = (view: View) =>
+    Math.min(
+      1,
+      Math.max(
+        0.08,
+        Math.min((width - 4) / view.width, FRAME_MAX_HEIGHT / view.height),
+      ),
+    );
   const badge = verdictBadge(view);
   // Point at what the rule flags, with the frame's own outline, once the frame has measured.
   const pointed = useMemo(() => {
     const out = new Map<string, number>();
     for (const finding of view.findings) {
-      if (finding.scenario === undefined || finding.view === undefined || finding.element === undefined) continue;
+      if (
+        finding.scenario === undefined ||
+        finding.view === undefined ||
+        finding.element === undefined
+      )
+        continue;
       const key = frameKey(finding.scenario, finding.view);
       if (!out.has(key)) out.set(key, finding.element);
     }
     return out;
   }, [view.findings]);
-  const pointedKey = [...pointed.entries()].map(([key, element]) => `${key}=${element}`).join(",");
+  const pointedKey = [...pointed.entries()]
+    .map(([key, element]) => `${key}=${element}`)
+    .join(",");
   const measured = frames.state.measured;
   useEffect(() => {
     if (!measured) return;
-    for (const spec of frames.state.frames) frames.session.highlight(spec.key, pointed.get(spec.key) ?? null);
+    for (const spec of frames.state.frames)
+      frames.session.highlight(spec.key, pointed.get(spec.key) ?? null);
     // Re-pointed when the frames are measured, the session changes or the findings do.
   }, [measured, frames.session, frames.state.revision, pointedKey]);
-  const source = view.findings.find((finding) => finding.file !== undefined && finding.line !== undefined);
-  const flaggedElsewhere = view.findings.length > 0 && !view.findings.some((finding) => finding.scenario === undefined || finding.scenario === scenario);
-  const rule = view.expect === "fail" ? (view.example as FailingExample).flaggedBy : null;
+  const source = view.findings.find(
+    (finding) => finding.file !== undefined && finding.line !== undefined,
+  );
+  const flaggedElsewhere =
+    view.findings.length > 0 &&
+    !view.findings.some(
+      (finding) =>
+        finding.scenario === undefined || finding.scenario === scenario,
+    );
+  const rule =
+    view.expect === "fail" ? (view.example as FailingExample).flaggedBy : null;
   // A failing example's figure: what its rule measured on the scenario shown, or on the first it flags.
-  const pictured = view.expect === "fail" && status !== "declined" ? (view.findings.find((finding) => finding.scenario === scenario) ?? view.findings[0]) : undefined;
+  const pictured =
+    view.expect === "fail" && status !== "declined"
+      ? (view.findings.find((finding) => finding.scenario === scenario) ??
+        view.findings[0])
+      : undefined;
 
   return (
-    <Card.Root className="example" data-example={view.name} data-expect={view.expect} data-verdict={view.verdict.state}>
+    <Card.Root
+      className="example"
+      data-example={view.name}
+      data-expect={view.expect}
+      data-verdict={view.verdict.state}
+    >
       <Card.Header className="example-head">
         <Stack.Root direction="row" align="center" gap="condensed" wrap>
           <Text.Root as="h4" className="example-name">
@@ -1267,7 +2252,10 @@ function ExampleCard({ view, scenario, views, status }: { readonly view: Example
         {rule && (
           <Text.Root as="p" tone="muted" className="review-small">
             Must be flagged by <Code.Root>{rule.rule}</Code.Root>
-            {rule.message ? <> with a finding that says &quot;{rule.message}&quot;</> : null}, and by no other rule.
+            {rule.message ? (
+              <> with a finding that says &quot;{rule.message}&quot;</>
+            ) : null}
+            , and by no other rule.
           </Text.Root>
         )}
       </Card.Header>
@@ -1282,7 +2270,9 @@ function ExampleCard({ view, scenario, views, status }: { readonly view: Example
                   session={frames.session}
                   spec={spec}
                   revision={frames.state.revision}
-                  frameState={frames.state.frameStates[spec.key] ?? { state: "waiting" }}
+                  frameState={
+                    frames.state.frameStates[spec.key] ?? { state: "waiting" }
+                  }
                   scale={scaleOf(spec.view)}
                   focused={false}
                   hidden={!visible}
@@ -1295,25 +2285,50 @@ function ExampleCard({ view, scenario, views, status }: { readonly view: Example
           </div>
           {flaggedElsewhere && (
             <Text.Root as="p" tone="muted" className="review-small">
-              Flagged in another scenario: {[...new Set(view.findings.flatMap((finding) => finding.scenario ?? []))].map((id) => scenarioNameOf(id, view.example.prototype.scenarios)).join("; ")}.
+              Flagged in another scenario:{" "}
+              {[
+                ...new Set(
+                  view.findings.flatMap((finding) => finding.scenario ?? []),
+                ),
+              ]
+                .map((id) =>
+                  scenarioNameOf(id, view.example.prototype.scenarios),
+                )
+                .join("; ")}
+              .
             </Text.Root>
           )}
-          <Text.Root as="p" className="pre review-small example-detail" data-testid="example-detail">
+          <Text.Root
+            as="p"
+            className="pre review-small example-detail"
+            data-testid="example-detail"
+          >
             {view.verdict.text}
           </Text.Root>
           {/* Only a finding whose evidence draws: any other reads whole in core's message, in the list below. */}
           {pictured && drawsFigure(pictured) && (
             <EvidenceFigure finding={pictured} findings={view.findings}>
-              <Text.Root as="p" className="fix-message" data-testid="example-figure-message">
+              <Text.Root
+                as="p"
+                className="fix-message"
+                data-testid="example-figure-message"
+              >
                 {pictured.message}
               </Text.Root>
             </EvidenceFigure>
           )}
           {view.findings.length > 0 && status !== "declined" && (
-            <ul className="findings" aria-label={`What core found in ${exampleLabel(view.name)}`}>
+            <ul
+              className="findings"
+              aria-label={`What core found in ${exampleLabel(view.name)}`}
+            >
               {view.findings.slice(0, 4).map((finding, index) => (
                 <li key={index}>
-                  <FindingButton finding={finding} selected={false} onSelect={() => undefined} />
+                  <FindingButton
+                    finding={finding}
+                    selected={false}
+                    onSelect={() => undefined}
+                  />
                 </li>
               ))}
               {view.findings.length > 4 && (
@@ -1333,7 +2348,13 @@ function ExampleCard({ view, scenario, views, status }: { readonly view: Example
 }
 
 /** The flagged line in the example's file, marked as the code view marks a finding's line. */
-function SourceLine({ view, finding }: { readonly view: ExampleView; readonly finding: Finding }) {
+function SourceLine({
+  view,
+  finding,
+}: {
+  readonly view: ExampleView;
+  readonly finding: Finding;
+}) {
   const file = finding.file ?? "";
   const text = view.example.prototype.files[file];
   if (text === undefined || finding.line === undefined) return null;
@@ -1347,8 +2368,19 @@ function SourceLine({ view, finding }: { readonly view: ExampleView; readonly fi
       <Text.Root as="p" tone="muted" className="review-small">
         {file}, line {finding.line}
       </Text.Root>
-      <Field.Root className="code-field example-code" aria-label={`${exampleLabel(view.name)}: ${file} around line ${finding.line}`}>
-        <Field.Textarea value={excerpt} readOnly highlights={[{ ...range, kind: "finding" }]} rows={to - from + 1} spellCheck={false} className="code-text" data-testid="example-source" />
+      <Field.Root
+        className="code-field example-code"
+        aria-label={`${exampleLabel(view.name)}: ${file} around line ${finding.line}`}
+      >
+        <Field.Textarea
+          value={excerpt}
+          readOnly
+          highlights={[{ ...range, kind: "finding" }]}
+          rows={to - from + 1}
+          spellCheck={false}
+          className="code-text"
+          data-testid="example-source"
+        />
       </Field.Root>
     </div>
   );
@@ -1362,38 +2394,93 @@ function SourceLine({ view, finding }: { readonly view: ExampleView; readonly fi
  * from its measured boxes with what core flags hatched, and opens on the
  * board. The rest carry a name and a mark.
  */
-function Impact({ impact, measuring, dryRun, prototypes, existing, views, onOpenPrototype }: { readonly impact: readonly NewlyFailing[] | null; readonly measuring: boolean; readonly dryRun: ReturnType<typeof dryRunAdoption> | null; readonly prototypes: readonly PrototypeRecord[]; readonly existing: readonly ExistingPrototype[] | null; readonly views: readonly View[]; readonly onOpenPrototype: (id: string, finding?: Finding) => void }) {
+function Impact({
+  impact,
+  measuring,
+  dryRun,
+  prototypes,
+  existing,
+  views,
+  onOpenPrototype,
+}: {
+  readonly impact: readonly NewlyFailing[] | null;
+  readonly measuring: boolean;
+  readonly dryRun: ReturnType<typeof dryRunAdoption> | null;
+  readonly prototypes: readonly PrototypeRecord[];
+  readonly existing: readonly ExistingPrototype[] | null;
+  readonly views: readonly View[];
+  readonly onOpenPrototype: (id: string, finding?: Finding) => void;
+}) {
   return (
-    <section aria-labelledby="review-impact" className="review-section" data-testid="review-impact">
+    <section
+      aria-labelledby="review-impact"
+      className="review-section"
+      data-testid="review-impact"
+    >
       <Text.Root as="h2" id="review-impact">
         Impact on the project
       </Text.Root>
       <Text.Root as="p" tone="muted">
-        Core&apos;s adoption check against every prototype in the project, each measured in frames: the ones that would newly fail{dryRun && !dryRun.ok ? " with the proposal applied, though the dry run refuses it as it is" : ""}.
+        Core&apos;s adoption check against every prototype in the project, each
+        measured in frames: the ones that would newly fail
+        {dryRun && !dryRun.ok
+          ? " with the proposal applied, though the dry run refuses it as it is"
+          : ""}
+        .
       </Text.Root>
       {impact === null || existing === null ? (
         <Text.Root as="p" tone="muted">
-          {measuring ? "Measuring the project's prototypes and the examples…" : "Waiting for the examples to be measured."}
+          {measuring
+            ? "Measuring the project's prototypes and the examples…"
+            : "Waiting for the examples to be measured."}
         </Text.Root>
       ) : (
         <>
-          <Text.Root as="p" data-testid={impact.length === 0 ? "impact-none" : "impact-some"}>
-            {impact.length === 0 ? "No prototype in the project would newly fail." : `${impact.length} of ${existing.length} ${existing.length === 1 ? "prototype" : "prototypes"} would newly fail.`}
+          <Text.Root
+            as="p"
+            data-testid={impact.length === 0 ? "impact-none" : "impact-some"}
+          >
+            {impact.length === 0
+              ? "No prototype in the project would newly fail."
+              : `${impact.length} of ${existing.length} ${existing.length === 1 ? "prototype" : "prototypes"} would newly fail.`}
           </Text.Root>
-          <ul className="impact-grid" aria-label="The project's prototypes, with the proposal applied">
+          <ul
+            className="impact-grid"
+            aria-label="The project's prototypes, with the proposal applied"
+          >
             {existing.map((item) => {
               const failing = impact.find((entry) => entry.name === item.name);
-              const record = prototypes.find((entry) => entry.name === item.name);
-              const flagged = failing ? flaggedIn(failing.findings, item.snapshots ?? []) : null;
-              const view = flagged ? views.find((entry) => entry.name === flagged.snapshot.view) : undefined;
+              const record = prototypes.find(
+                (entry) => entry.name === item.name,
+              );
+              const flagged = failing
+                ? flaggedIn(failing.findings, item.snapshots ?? [])
+                : null;
+              const view = flagged
+                ? views.find((entry) => entry.name === flagged.snapshot.view)
+                : undefined;
               return (
-                <li key={item.name} data-prototype={record?.id ?? item.name} data-impact={failing ? "fails" : "holds"}>
+                <li
+                  key={item.name}
+                  data-prototype={record?.id ?? item.name}
+                  data-impact={failing ? "fails" : "holds"}
+                >
                   <Card.Root className="impact-tile">
                     {failing && flagged && view && (
                       <figure className="impact-thumb">
-                        <SnapshotThumb snapshot={flagged.snapshot} view={view} flagged={flagged.elements} />
+                        <SnapshotThumb
+                          snapshot={flagged.snapshot}
+                          view={view}
+                          flagged={flagged.elements}
+                        />
                         <figcaption className="review-small">
-                          {scenarioNameOf(flagged.snapshot.scenario, item.prototype.scenarios)}, {viewLabel(flagged.snapshot.view).toLowerCase()}, in miniature from measured boxes; what core flags is hatched.
+                          {scenarioNameOf(
+                            flagged.snapshot.scenario,
+                            item.prototype.scenarios,
+                          )}
+                          , {viewLabel(flagged.snapshot.view).toLowerCase()}, in
+                          miniature from measured boxes; what core flags is
+                          hatched.
                         </figcaption>
                       </figure>
                     )}
@@ -1406,18 +2493,31 @@ function Impact({ impact, measuring, dryRun, prototypes, existing, views, onOpen
                           <span className="vis-verdict-icon" aria-hidden="true">
                             <X />
                           </span>
-                          would newly fail {failing.rules.join(", ") || "with new findings"}
+                          would newly fail{" "}
+                          {failing.rules.join(", ") || "with new findings"}
                         </span>
-                        <ul className="findings" aria-label={`New findings in ${item.name}`}>
+                        <ul
+                          className="findings"
+                          aria-label={`New findings in ${item.name}`}
+                        >
                           {failing.findings.map((finding, index) => (
                             <li key={index}>
-                              <FindingButton finding={finding} selected={false} onSelect={() => record && onOpenPrototype(record.id, finding)} />
+                              <FindingButton
+                                finding={finding}
+                                selected={false}
+                                onSelect={() =>
+                                  record && onOpenPrototype(record.id, finding)
+                                }
+                              />
                             </li>
                           ))}
                         </ul>
                         {record && (
                           <div>
-                            <Button.Root variant="secondary" onClick={() => onOpenPrototype(record.id)}>
+                            <Button.Root
+                              variant="secondary"
+                              onClick={() => onOpenPrototype(record.id)}
+                            >
                               Open on the board
                             </Button.Root>
                           </div>
@@ -1443,23 +2543,44 @@ function Impact({ impact, measuring, dryRun, prototypes, existing, views, onOpen
 }
 
 /** Every status change, revision and send-back, by whom and when, with its note; a revision opens to the version it replaced. */
-function History({ proposal, config }: { readonly proposal: Proposal; readonly config: ProjectConfig }) {
+function History({
+  proposal,
+  config,
+}: {
+  readonly proposal: Proposal;
+  readonly config: ProjectConfig;
+}) {
   const timeline = proposalTimeline(proposal);
   return (
     <section aria-labelledby="review-history" className="review-section">
       <Text.Root as="h2" id="review-history">
         History
       </Text.Root>
-      <Steps.Root variant="progress" className="review-history" aria-label="History" data-testid="review-history">
+      <Steps.Root
+        variant="progress"
+        className="review-history"
+        aria-label="History"
+        data-testid="review-history"
+      >
         {timeline.map((entry, index) => (
-          <Steps.Item key={index} status="done" statusLabel="" data-kind={entry.kind} data-entry-status={entry.kind === "status" ? entry.status : undefined}>
+          <Steps.Item
+            key={index}
+            status="done"
+            statusLabel=""
+            data-kind={entry.kind}
+            data-entry-status={
+              entry.kind === "status" ? entry.status : undefined
+            }
+          >
             <HistoryEntry entry={entry} config={config} />
           </Steps.Item>
         ))}
         <Steps.Item status="current" statusLabel="" data-kind="now">
           <Text.Root as="span" tone="muted">
             Now: {proposal.status}
-            {proposal.events?.some((event) => event.kind === "revised") ? `, version ${1 + (proposal.events?.filter((event) => event.kind === "revised").length ?? 0)} shown above` : ""}
+            {proposal.events?.some((event) => event.kind === "revised")
+              ? `, version ${1 + (proposal.events?.filter((event) => event.kind === "revised").length ?? 0)} shown above`
+              : ""}
           </Text.Root>
         </Steps.Item>
       </Steps.Root>
@@ -1467,7 +2588,13 @@ function History({ proposal, config }: { readonly proposal: Proposal; readonly c
   );
 }
 
-function HistoryEntry({ entry, config }: { readonly entry: TimelineEntry; readonly config: ProjectConfig }) {
+function HistoryEntry({
+  entry,
+  config,
+}: {
+  readonly entry: TimelineEntry;
+  readonly config: ProjectConfig;
+}) {
   return (
     <Stack.Root gap="none" className="history-entry">
       <Text.Root as="span" weight="medium">
@@ -1478,13 +2605,19 @@ function HistoryEntry({ entry, config }: { readonly entry: TimelineEntry; readon
         </Text.Root>
       </Text.Root>
       {entry.note && (
-        <Text.Root as="p" className="pre history-note" data-testid="history-note">
+        <Text.Root
+          as="p"
+          className="pre history-note"
+          data-testid="history-note"
+        >
           {entry.note}
         </Text.Root>
       )}
       {entry.kind === "revised" && (
         <Disclosure.Root className="history-previous">
-          <Disclosure.Summary>The version before this revision</Disclosure.Summary>
+          <Disclosure.Summary>
+            The version before this revision
+          </Disclosure.Summary>
           <PreviousVersion content={entry.previous} config={config} />
         </Disclosure.Root>
       )}
@@ -1492,9 +2625,19 @@ function HistoryEntry({ entry, config }: { readonly entry: TimelineEntry; readon
   );
 }
 
-function PreviousVersion({ content, config }: { readonly content: ProposalContent; readonly config: ProjectConfig }): ReactNode {
+function PreviousVersion({
+  content,
+  config,
+}: {
+  readonly content: ProposalContent;
+  readonly config: ProjectConfig;
+}): ReactNode {
   return (
-    <Stack.Root gap="condensed" className="history-version" data-testid="history-previous">
+    <Stack.Root
+      gap="condensed"
+      className="history-version"
+      data-testid="history-previous"
+    >
       <DataList.Root orientation="horizontal" className="project-facts">
         <DataList.Item>
           <DataList.Term>Title</DataList.Term>
@@ -1506,24 +2649,54 @@ function PreviousVersion({ content, config }: { readonly content: ProposalConten
         </DataList.Item>
         <DataList.Item>
           <DataList.Term>Inventory</DataList.Term>
-          <DataList.Details>{content.inventory.map((op) => op.op).join(", ") || "no changes"}</DataList.Details>
+          <DataList.Details>
+            {content.inventory.map((op) => op.op).join(", ") || "no changes"}
+          </DataList.Details>
         </DataList.Item>
         <DataList.Item>
           <DataList.Term>Rules</DataList.Term>
           <DataList.Details>
-            {[...content.rules.add.map((rule) => `adds ${rule.id}: ${describeRule(rule, config)}`), ...content.rules.remove.map((id) => `removes ${id}`)].join(" ") || "none"}
+            {[
+              ...content.rules.add.map(
+                (rule) => `adds ${rule.id}: ${describeRule(rule, config)}`,
+              ),
+              ...content.rules.remove.map((id) => `removes ${id}`),
+            ].join(" ") || "none"}
           </DataList.Details>
         </DataList.Item>
         <DataList.Item>
           <DataList.Term>Examples</DataList.Term>
           <DataList.Details>
-            pass: {content.examples.pass.map((example) => example.name).join(", ") || "none"}; fail: {content.examples.fail.map((example) => `${example.name} (by ${example.flaggedBy.rule})`).join(", ") || "none"}
+            pass:{" "}
+            {content.examples.pass.map((example) => example.name).join(", ") ||
+              "none"}
+            ; fail:{" "}
+            {content.examples.fail
+              .map(
+                (example) => `${example.name} (by ${example.flaggedBy.rule})`,
+              )
+              .join(", ") || "none"}
           </DataList.Details>
         </DataList.Item>
       </DataList.Root>
       <Disclosure.Root>
         <Disclosure.Summary>As data</Disclosure.Summary>
-        <pre className="project-json">{JSON.stringify({ ...content, examples: { pass: content.examples.pass.map((example) => example.name), fail: content.examples.fail.map((example) => ({ name: example.name, flaggedBy: example.flaggedBy })) } }, null, 2)}</pre>
+        <pre className="project-json">
+          {JSON.stringify(
+            {
+              ...content,
+              examples: {
+                pass: content.examples.pass.map((example) => example.name),
+                fail: content.examples.fail.map((example) => ({
+                  name: example.name,
+                  flaggedBy: example.flaggedBy,
+                })),
+              },
+            },
+            null,
+            2,
+          )}
+        </pre>
       </Disclosure.Root>
     </Stack.Root>
   );
