@@ -1,1 +1,0 @@
-{ "what": "A raw <button> in the rooms page's intro", "expect": [{ "rule": "no-raw-controls", "message": "<button> \"Help\" at pages/rooms.tsx" }] }

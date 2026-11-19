@@ -244,7 +244,7 @@ test("the legal prototype passes every rule, the rendered rules included", async
     ["target-size", "pass"],
     ["text-contrast", "pass"],
   ]);
-  assert.equal(value.rules.length, 33);
+  assert.equal(value.rules.length, 30);
   assert.equal(await page.getByTestId("report-status").textContent(), "pass");
 });
 
@@ -347,60 +347,84 @@ test("export then import round-trips the project", async ({ browser, base }) => 
   assert.ok((await page.locator(".app-notices").textContent()).includes('rendered rule "target-size" is in force, but the config names no views'));
 });
 
-// ---- stored TSX prototypes, read-only ----------------------------------------
+// ---- stored TSX prototypes: their files and a notice -------------------------
 
-const TSX_LEGAL = join(root, "..", "..", "packages", "core", "examples", "nook", "prototypes", "legal", "booking");
-
-/** Core's legal TSX booking prototype as a project file stores it, with `change` applied to its files. */
-function tsxBooking(change = (files) => files) {
-  const manifest = JSON.parse(readFileSync(join(TSX_LEGAL, "manifest.json"), "utf8"));
+/**
+ * The open prototype as a stored TSX prototype: the files and manifest the
+ * app's own Export code writes, which is TSX as a person would write it, as a
+ * project stored before every prototype was a spec kept one.
+ */
+async function tsxFromExport(page) {
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByTestId("export-code").click()]);
+  const entries = unzipSync(readFileSync(await download.path()));
+  const prefix = `${download.suggestedFilename().replace(/\.zip$/, "")}/src/prototype/`;
   const files = {};
-  for (const folder of ["data", "layouts", "pages"]) for (const name of readdirSync(join(TSX_LEGAL, folder)).sort()) files[`${folder}/${name}`] = readFileSync(join(TSX_LEGAL, folder, name), "utf8");
-  return { ...manifest, files: change(files) };
+  for (const [path, bytes] of Object.entries(entries)) if (path.startsWith(prefix) && path !== `${prefix}manifest.json`) files[path.slice(prefix.length)] = strFromU8(bytes);
+  return { ...JSON.parse(strFromU8(entries[`${prefix}manifest.json`])), files };
 }
 
 /**
- * Imports the open project again with a TSX prototype, "booking", before its
- * own: a project stored or exported before the app went spec-only. The TSX
- * prototype opens first, read-only, and this waits until its frames are measured.
+ * Imports the open project again with a stored TSX prototype, "booking",
+ * before its own, and returns it. It opens first, as its notice, its files
+ * and nothing else: nothing renders or checks it.
  */
-async function importWithTsx(page, change) {
+async function importWithTsx(page) {
+  const tsx = await tsxFromExport(page);
   const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export", exact: true }).click()]);
   const exported = JSON.parse(readFileSync(await download.path(), "utf8"));
   const file = join(mkdtempSync(join(tmpdir(), "design-harness-tsx-")), "nook.design-harness.json");
-  writeFileSync(file, JSON.stringify({ ...exported, prototypes: [{ id: "booking", name: "Booking", prototype: tsxBooking(change) }, ...exported.prototypes] }));
+  writeFileSync(file, JSON.stringify({ ...exported, prototypes: [{ id: "booking", name: "Booking", prototype: tsx }, ...exported.prototypes] }));
   await page.locator('[data-testid="import-file"]').setInputFiles(file);
   await page.getByTestId("tsx-notice").waitFor();
-  await measured(page, 1);
+  return tsx;
 }
+
+/**
+ * Words a spec puts in a part's text that would be markup, and code, if
+ * anything read them as HTML: an image whose error handler writes into the
+ * app's DOM, and a script that writes into its storage.
+ */
+const HOSTILE_TEXT = `<img src="data:," onerror="window.parent.document.body.setAttribute('data-pwned', '1')"><script>localStorage.setItem("pwned", "1")</script>`;
 
 test("a frame cannot reach the app: no parent DOM, storage, cookies or network", async ({ browser, base }) => {
   const { page } = await openApp(browser, base);
   await measured(page, 1);
-  // A spec runs no prototype code; a stored TSX prototype still renders, read-only. This one tries, at load, to write into the app's DOM and storage.
-  await importWithTsx(page, (files) => ({
-    ...files,
-    "pages/rooms.tsx":
-      `try { window.parent.document.body.setAttribute("data-pwned", "1"); } catch {}\ntry { window.top.localStorage.setItem("pwned", "1"); } catch {}\ntry { localStorage.setItem("pwned", "1"); } catch {}\n` +
-      `try { eval("1"); document.documentElement.dataset.evalProbe = "ran"; } catch (error) { document.documentElement.dataset.evalProbe = error.name; }\n` +
-      `try { new Function("return 1")(); document.documentElement.dataset.functionProbe = "ran"; } catch (error) { document.documentElement.dataset.functionProbe = error.name; }\n${files["pages/rooms.tsx"]}`,
-  }));
+  // A spec runs no prototype code: what it says is data. This one writes markup and a script into a part's text, on every rooms frame.
+  await editFile(page, "pages/rooms.json", (text) => text.replace('"text": "Pick a free room to book or hold."', `"text": ${JSON.stringify(HOSTILE_TEXT)}`));
+  await measured(page, 2);
   assert.equal(await page.evaluate(() => document.body.getAttribute("data-pwned")), null);
   assert.equal(await page.evaluate(() => localStorage.getItem("pwned")), null);
-  const flagged = (await report(page)).findings.filter((item) => item.rule === "no-ambient-globals").map((item) => item.message);
-  assert.ok(flagged.some((message) => message.startsWith("pages/rooms.tsx:1:7 uses window")), `core refuses the prototype that reaches for the app: ${flagged.join(" | ")}`);
 
   // Off-screen frames are parked once measured; every iframe in the DOM is sandboxed, and each frame is visited live below.
   const sandboxes = await page.locator("iframe").evaluateAll((elements) => elements.map((element) => element.getAttribute("sandbox")));
   assert.ok(sandboxes.length > 0 && sandboxes.length <= FRAMES, `${sandboxes.length} live frames`);
   assert.ok(sandboxes.every((value) => value === "allow-scripts"));
 
-  const codeFromStrings = [];
   let visited = 0;
-  for await (const { iframe, frame } of everyLiveFrame(page)) {
+  let rooms = 0;
+  for await (const { title, iframe, frame } of everyLiveFrame(page)) {
     visited += 1;
     assert.equal(await iframe.getAttribute("sandbox"), "allow-scripts");
-    const { strings, ...probe } = await frame.evaluate(async () => {
+    // The spec's words are text in the page, never elements: no image, no script of theirs, and nothing they asked for ran.
+    const drawn = await frame.evaluate((words) => ({
+      asText: [...document.querySelectorAll("#root *")].some((element) => element.children.length === 0 && element.textContent === words),
+      images: document.querySelectorAll("#root img").length,
+      handlers: document.querySelectorAll("[onerror]").length,
+      scripts: [...document.scripts].filter((script) => script.textContent.includes("pwned")).length,
+      storage: (() => {
+        try {
+          return localStorage.getItem("pwned");
+        } catch (error) {
+          return error.name;
+        }
+      })(),
+    }), HOSTILE_TEXT);
+    if (title.startsWith("rooms-list")) {
+      rooms += 1;
+      assert.deepEqual(drawn, { asText: true, images: 0, handlers: 0, scripts: 0, storage: "SecurityError" }, `${title}: the spec's words are text`);
+    } else assert.deepEqual({ ...drawn, asText: false }, { asText: false, images: 0, handlers: 0, scripts: 0, storage: "SecurityError" }, title);
+    // Whatever code ran in a frame, the frame itself keeps it from the app. Playwright's own code in the frame stands in for any code there: a part of the library, json-render, or a renderer bug.
+    const probe = await frame.evaluate(async () => {
       const attempt = async (fn) => {
         try {
           const value = await fn();
@@ -418,8 +442,6 @@ test("a frame cannot reach the app: no parent DOM, storage, cookies or network",
         indexedDB: await attempt(() => indexedDB.open("design-harness")),
         cookie: await attempt(() => document.cookie),
         fetch: await attempt(() => fetch(document.referrer || "/").then((response) => response.status)),
-        // What the prototype's own code saw when it tried to turn strings into code (only the rooms page loads it).
-        strings: [document.documentElement.dataset.evalProbe, document.documentElement.dataset.functionProbe],
         inlineHandler: await new Promise((resolve) => {
           const image = document.createElement("img");
           image.setAttribute("onerror", "document.body.dataset.ran = 'yes'");
@@ -427,7 +449,15 @@ test("a frame cannot reach the app: no parent DOM, storage, cookies or network",
           document.body.append(image);
           setTimeout(() => resolve(document.body.dataset.ran ?? "blocked"), 200);
         }),
+        injectedScript: await new Promise((resolve) => {
+          const script = document.createElement("script");
+          script.textContent = "document.body.dataset.injected = 'yes'";
+          document.body.append(script);
+          setTimeout(() => resolve(document.body.dataset.injected ?? "blocked"), 100);
+        }),
         channelInDom: document.documentElement.getAttribute("data-channel") ?? "hidden",
+        evalString: await attempt(() => eval("1")),
+        functionConstructor: await attempt(() => new Function("return 1")()),
       };
     });
     assert.deepEqual(probe, {
@@ -440,12 +470,14 @@ test("a frame cannot reach the app: no parent DOM, storage, cookies or network",
       cookie: "SecurityError",
       fetch: "TypeError",
       inlineHandler: "blocked",
+      injectedScript: "blocked",
       channelInDom: "hidden",
-    });
-    if (strings[0] !== undefined) codeFromStrings.push(strings);
+      evalString: "EvalError",
+      functionConstructor: "EvalError",
+    }, title);
   }
   assert.equal(visited, FRAMES, "every frame was probed");
-  assert.deepEqual(codeFromStrings, VIEWS.map(() => ["EvalError", "EvalError"]), "the CSP refuses eval and the Function constructor to prototype code in every rooms frame");
+  assert.equal(rooms, VIEWS.length, "every rooms frame drew the spec's words as text");
 });
 
 test("the board opens a frame at full size and the project view reads the config", async ({ browser, base }) => {
@@ -460,7 +492,7 @@ test("the board opens a frame at full size and the project view reads the config
     await page.getByRole("button", { name: "Back to board" }).click();
     await mainView(page, "Project").click();
     await page.getByRole("heading", { name: "What a prototype can build with" }).waitFor();
-    for (const text of ["@tounsoo/todae 0.11.3", "primary-action", "Room details", "TARGET_MIN_PX", "Rules in force (32)", "No proposals yet"]) {
+    for (const text of ["@tounsoo/todae 0.11.3", "primary-action", "Room details", "TARGET_MIN_PX", "Rules in force (29)", "No proposals yet"]) {
       assert.ok((await page.locator(".project").textContent()).includes(text), `the project view shows ${text}`);
     }
     await shot(page, `project-${colorScheme}`);
@@ -1499,7 +1531,7 @@ test("the spec prototype renders every frame from data, and passes every rule", 
   const value = await report(page);
   assert.equal(value.status, "pass", JSON.stringify(value.findings, null, 1));
   assert.deepEqual(value.findings, []);
-  assert.equal(value.rules.length, 33);
+  assert.equal(value.rules.length, 30);
   await shot(page, "spec-board-light");
   assert.deepEqual(errors, []);
   assert.deepEqual(logs.filter((line) => /json-render|No renderer|Missing element/.test(line)), []);
@@ -1723,7 +1755,7 @@ test("the Nook spec draws each layout instance with its own parameters, and pass
   const { page, errors } = await openSpec(browser, base);
   const value = await report(page);
   assert.equal(value.status, "pass", JSON.stringify(value.findings, null, 1));
-  assert.equal(value.rules.length, 33);
+  assert.equal(value.rules.length, 30);
   assert.ok(value.rules.every((rule) => rule.status === "pass"), "every rule runs and passes, the six rendered ones included");
   const open = (await liveFrame(page, 'lantern-open at desktop'));
   // The question's id is scoped to its instance, and its label names it, so a screen reader hears the label.
@@ -1886,56 +1918,64 @@ test("a new prototype is a spec, with no format to choose, and its agent writes 
   await eventually(page, async () => JSON.parse(await page.locator('[data-testid="code-editor"]').inputValue()).format, (format) => format === "spec", "the reloaded prototype is still a spec");
 });
 
-test("an imported TSX prototype is read-only: it renders and checks, says so, refuses every change, exports its code, and starts a spec version", async ({ browser, base, api }) => {
+test("an imported TSX prototype is notice-only: its files read-only, no board and no checks, nothing changes it, it exports as it is, and starts a spec version", async ({ browser, base, api }) => {
   const { page, errors } = await openApp(browser, base);
   await measured(page, 1);
   api.script([]);
   await enterKey(page);
-  await importWithTsx(page);
+  const tsx = await importWithTsx(page);
   // It loads, in the prototype picker, marked as TSX, and opens first.
   const picker = page.getByRole("combobox", { name: "Prototype" });
   assert.equal(await picker.inputValue(), "booking");
   assert.deepEqual(await picker.locator("option").allTextContents(), ["Booking (TSX, read-only)", "Booking"]);
   assert.equal((await page.getByTestId("prototype-format").textContent()).trim(), "TSX, read-only");
-  // Its board renders and its checks run, as before.
-  assert.deepEqual(await page.locator(".frame-card").evaluateAll((cards) => cards.map((card) => card.dataset.state)), Array.from({ length: FRAMES }, () => "measured"));
-  assert.equal((await (await liveFrame(page, "rooms-list at desktop")).locator("h1").textContent()).trim(), "Rooms");
-  assert.equal((await report(page)).status, "pass");
-  // The notice says so plainly, with its two ways on.
+  // The notice says so plainly, with its two ways on, in place of the board.
   const notice = page.getByTestId("tsx-notice");
-  assert.match(await notice.textContent(), /^TSX prototypes are no longer edited here.*Booking is written in TSX\. It still renders and its checks still run, but nothing changes it here: not the agent, the code view, variants or notes\./);
-  await shot(page, "tsx-read-only-light");
+  assert.match(await notice.textContent(), /^TSX prototypes are no longer edited or checked here.*Booking is written in TSX, which this app no longer reads: it is not drawn on the canvas, no rule checks it, and nothing changes it here/);
+  await page.waitForTimeout(500);
+  assert.equal(await page.locator(".frame-card").count(), 0, "no frame is drawn");
+  assert.equal(await page.locator("iframe").count(), 0, "no frame document exists");
+  // The checks say none run, and there is no report.
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  assert.match(await page.getByTestId("checks-tsx").textContent(), /^No checks: TSX prototypes are no longer edited or checked here\./);
+  assert.equal(await page.getByTestId("report-json").count(), 0);
+  await shot(page, "tsx-notice-light");
 
   // The code view shows its files and takes no edit.
   await showCode(page, "pages/rooms.tsx");
   const editor = page.locator('[data-testid="code-editor"]');
-  assert.equal(await page.getByTestId("code-read-only").textContent(), "Read-only: TSX prototypes are no longer edited here.");
+  assert.equal(await page.getByTestId("code-read-only").textContent(), "Read-only: TSX prototypes are no longer edited or checked here.");
   assert.equal(await editor.isEditable(), false);
   const source = await editor.inputValue();
-  assert.match(source, /<Text.Root as="h1">Rooms<\/Text.Root>/);
+  assert.equal(source, tsx.files["pages/rooms.tsx"]);
   await editor.focus();
   await page.keyboard.type("x");
   await page.waitForTimeout(500);
   assert.equal(await editor.inputValue(), source);
   // The agent takes no message: the box is disabled, and says why.
-  assert.match(await page.getByTestId("chat-read-only").textContent(), /^This prototype is TSX\. TSX prototypes are no longer edited here: the agent writes specs only\./);
+  assert.match(await page.getByTestId("chat-read-only").textContent(), /^This prototype is TSX\. TSX prototypes are no longer edited or checked here: the agent writes specs only\./);
   assert.equal(await page.getByRole("textbox", { name: "Message the agent" }).isDisabled(), true);
-  // No note is pinned on it.
-  await page.getByTestId("pin-mode").click();
+  // No note is pinned on it: there is no board to pin on, and the shortcut is refused.
+  assert.equal(await page.getByTestId("pin-mode").count(), 0);
+  await page.locator("body").click({ position: { x: 5, y: 500 } });
+  await page.keyboard.press("Control+Alt+N");
   await eventually(page, () => page.getByTestId("notice").textContent().catch(() => ""), (text) => /No notes on a TSX prototype/.test(text), "pin mode is refused, with the reason");
   assert.equal(await page.getByTestId("pin-hint").count(), 0, "pin mode stays off");
   // No variants or picks.
   await mainView(page, "Variants").click();
-  assert.match(await page.getByTestId("variants-tsx").textContent(), /This prototype is TSX, which is read-only here: it takes no variants and no picks\./);
+  assert.match(await page.getByTestId("variants-tsx").textContent(), /This prototype is TSX, which is no longer edited or checked here: it takes no variants and no picks\./);
   await mainView(page, "Canvas").click();
   assert.equal(api.requests.length, 0, "nothing reached the agent");
-  assert.equal(await page.locator(".checks").getAttribute("data-revision"), "1", "nothing started a revision");
+  assert.equal(await page.locator("iframe").count(), 0, "still no frame");
 
-  // Export code writes its TSX as it is.
+  // Export code writes its TSX as it is, and says nothing checked it.
   const [download] = await Promise.all([page.waitForEvent("download"), notice.getByRole("button", { name: "Export code" }).click()]);
   assert.equal(download.suggestedFilename(), "nook-booking.zip");
   const entries = unzipSync(readFileSync(await download.path()));
-  assert.equal(strFromU8(entries["nook-booking/src/prototype/pages/rooms.tsx"]), source);
+  for (const [path, text] of Object.entries(tsx.files)) assert.equal(strFromU8(entries[`nook-booking/src/prototype/${path}`]), text, `${path} as it is`);
+  const readme = strFromU8(entries["nook-booking/README.md"]);
+  assert.match(readme, /The prototype was written as TSX, which design-harness no longer reads: its files are here as they were stored, and nothing checked them at export\./);
+  assert.doesNotMatch(readme, /Core's checks at export/);
 
   // Start a spec version: a new, empty spec prototype in the same project, opened, which the agent can build.
   await notice.getByRole("button", { name: "Start a spec version" }).click();
@@ -1947,14 +1987,17 @@ test("an imported TSX prototype is read-only: it renders and checks, says so, re
   assert.equal(await page.getByRole("textbox", { name: "Message the agent" }).isDisabled(), false);
   await showCode(page, "manifest.json");
   assert.deepEqual(JSON.parse(await page.locator('[data-testid="code-editor"]').inputValue()), { format: "spec", pages: [], layouts: [], scenarios: [], flow: { states: [], tasks: [] } });
+  // The spec "Booking" still renders and passes after the TSX one was open.
+  await picker.selectOption("booking-spec");
+  await page.locator('.checks[data-measured]').waitFor({ state: "attached", timeout: 60000 });
+  assert.equal((await report(page)).status, "pass");
 
-  // All three are kept: after a reload the TSX prototype is still there, still read-only, and still passes.
+  // All three are kept: after a reload the TSX prototype is still there, first, and still notice-only.
   await page.waitForTimeout(500);
   await page.reload();
   await page.getByTestId("tsx-notice").waitFor();
-  await measured(page, 1);
   assert.deepEqual(await picker.locator("option").evaluateAll((options) => options.map((option) => option.value)), ["booking", "booking-spec", "booking-spec-2"]);
-  assert.equal((await report(page)).status, "pass");
+  assert.equal(await page.locator("iframe").count(), 0);
   assert.deepEqual(errors, []);
 });
 
@@ -2706,7 +2749,7 @@ test("a scripted agent offers three variants: side by side in measured frames, e
   // C fails in core's words, and its report is core's whole report, measured.
   const message = (await failing.locator('[data-rule="one-primary-per-page"] [data-testid="variant-finding"]').first().textContent()).trim();
   assert.match(message, /^Page "booking" has 2 primary actions, more than 1/);
-  assert.match(await page.locator('.variant-card[data-variant="a"] [data-testid="variant-report"]').textContent(), /Every rule passes: 33 rules, the rendered ones measured\./);
+  assert.match(await page.locator('.variant-card[data-variant="a"] [data-testid="variant-report"]').textContent(), /Every rule passes: 30 rules, the rendered ones measured\./);
   // C cannot be picked in any slot, nor whole.
   for (const slot of ["title", "facts", "body", "alternate", "action"]) assert.equal(await pickRadio(page, slot, "Variant C").isDisabled(), true, `${slot}: C cannot be picked`);
   assert.equal(await pickRadio(page, "body", "Variant A").isDisabled(), false);
@@ -3011,12 +3054,9 @@ async function recording(browser, base, tags) {
   await page.goto(tags ? base : `${base}?frame-tags=off`);
   await measured(page, 1);
   const spec = await page.evaluate(() => window.__frameMessages.splice(0));
-  // A stored TSX prototype still renders, read-only, with its elements tagged where they are written.
-  await importWithTsx(page);
-  const tsx = await page.evaluate(() => window.__frameMessages.splice(0));
   await context.close();
   const by = (messages) => Object.fromEntries(messages.filter((item) => item.generation === 1).map((item) => [`${item.snapshot.scenario}@${item.snapshot.view}`, item]));
-  return { tsx: by(tsx), spec: by(spec) };
+  return { spec: by(spec) };
 }
 
 /**
@@ -3074,25 +3114,22 @@ test("core's checks run in a module worker and give the same report, byte for by
     await measured(page, 1);
     assert.equal(await page.locator(".board").getAttribute("data-engine"), where);
     const spec = await page.locator('[data-testid="report-json"]').textContent();
-    // A stored TSX prototype is still checked, read-only, by the same engine.
-    await importWithTsx(page);
-    const tsx = await page.locator('[data-testid="report-json"]').textContent();
     await context.close();
     const tally = await openTally(browser, address);
     assert.equal(await tally.page.locator(".board").getAttribute("data-engine"), where);
-    reports[where] = { tsx, spec, tally: await tally.page.locator('[data-testid="report-json"]').textContent() };
+    reports[where] = { spec, tally: await tally.page.locator('[data-testid="report-json"]').textContent() };
     await tally.context.close();
   }
-  for (const seed of ["tsx", "spec", "tally"]) {
+  for (const seed of ["spec", "tally"]) {
     assert.ok(JSON.parse(reports.worker[seed]).rules.length > 0, `${seed}: a report`);
     assert.equal(reports.worker[seed], reports.main[seed], `${seed}: the worker's report is the main thread's`);
   }
 });
 
-test("element tags change nothing a rule measures: Nook's snapshots are identical with and without them, TSX and spec", async ({ browser, base }) => {
+test("element tags change nothing a rule measures: Nook's snapshots are identical with and without them", async ({ browser, base }) => {
   const tagged = await recording(browser, base, true);
   const plain = await recording(browser, base, false);
-  for (const format of ["tsx", "spec"]) {
+  for (const format of ["spec"]) {
     const keys = SCENARIOS.flatMap((scenario) => VIEWS.map((view) => `${scenario}@${view}`));
     assert.deepEqual(Object.keys(tagged[format]).sort(), [...keys].sort(), `every ${format} frame answered with tags`);
     assert.deepEqual(Object.keys(plain[format]).sort(), [...keys].sort(), `every ${format} frame answered without tags`);
@@ -3102,15 +3139,14 @@ test("element tags change nothing a rule measures: Nook's snapshots are identica
       assert.ok(tagged[format][key].tags.length > 0, `${format} ${key}: the frame drew tagged elements`);
     }
   }
-  assert.ok(tagged.tsx["lantern-open@desktop"].tags.some((tag) => /^pages\/booking\.tsx:\d+:\d+$/.test(tag)), "a TSX frame draws tags at source positions");
   assert.ok(tagged.spec["lantern-open@desktop"].tags.includes("details/summary"), "a spec frame draws tags at expanded keys, scoped by instance");
 });
 
-test("code export writes no element tags, for a TSX prototype or a spec", async ({ browser, base }) => {
+test("code export writes no element tags, for a spec or a stored TSX prototype", async ({ browser, base }) => {
   const { page } = await openApp(browser, base);
   await measured(page, 1);
   for (const prototype of ["booking-spec", "booking"]) {
-    // A stored TSX prototype exports its code as it is written.
+    // A stored TSX prototype exports its files as they were stored.
     if (prototype === "booking") await importWithTsx(page);
     const [download] = await Promise.all([page.waitForEvent("download"), page.getByTestId("export-code").click()]);
     const entries = unzipSync(readFileSync(await download.path()));
@@ -3829,12 +3865,12 @@ test("new project on Todae: named, roles confirmed by eye with a correction and 
   await page.getByRole("button", { name: "Review" }).click();
   // Step 6: core's project, and its starter drawn and measured before anything is saved.
   assert.match((await page.getByTestId("review-summary").textContent()) ?? "", /Ledger.*ledger.*Field\.Root or Switch\.Root \(changed by you\).*Pay an invoice, in 2 steps.*1\. Pay now \(primary\).*without rank-2-secondary/s);
-  assert.equal(await page.getByTestId("review-rules").textContent(), "31", "the built-in rules and Todae's own, less the one that reads a rank the project lacks");
+  assert.equal(await page.getByTestId("review-rules").textContent(), "28", "the built-in rules and Todae's own, less the one that reads a rank the project lacks");
   await createFromReview(page);
   // The board: the new project, its starter, every rule passing as drawn.
   assert.equal(await page.getByRole("combobox", { name: "Project" }).inputValue(), "ledger");
   assert.deepEqual(await page.getByRole("combobox", { name: "Project" }).locator("option").allTextContents(), ["Ledger", "Nook"]);
-  assert.match((await page.getByTestId("notice").textContent()) ?? "", /Ledger was created.*31 rules in force/s);
+  assert.match((await page.getByTestId("notice").textContent()) ?? "", /Ledger was created.*28 rules in force/s);
   const start = (await liveFrame(page, 'start at desktop'));
   assert.equal(await start.getByRole("heading", { level: 1 }).textContent(), "Ledger");
   assert.deepEqual(await start.getByRole("button").allTextContents(), ["Pay now"]);
@@ -3846,7 +3882,7 @@ test("new project on Todae: named, roles confirmed by eye with a correction and 
   assert.equal(await page.getByTestId("confirmed-question").textContent(), "Changed from the draft: A switch asks a yes or no question too.");
   assert.equal(await page.getByTestId("confirmed-action").textContent(), "As drafted (high confidence)");
   await mainView(page, "Canvas").click();
-  const file = await passesReloadsAndRoundTrips(page, browser, base, { id: "ledger", rules: 31 });
+  const file = await passesReloadsAndRoundTrips(page, browser, base, { id: "ledger", rules: 28 });
   assert.deepEqual(file.project.library.roles.question, { components: ["Field.Root", "Switch.Root"] });
   assert.equal(file.project.library.confirmed.roles.find((entry) => entry.role === "question").why, "A switch asks a yes or no question too.");
   assert.deepEqual(file.project.inputs.tasks, [{ id: "pay-an-invoice", description: "Pay an invoice", successState: "pay-an-invoice-done", maxSteps: 2 }]);
@@ -3899,7 +3935,7 @@ test("new project on Mantine: every variant drawn to pick from, a role with no p
   await page.getByTestId("exclusion-accept").click();
   await page.getByRole("button", { name: "Next" }).click();
   await page.getByRole("button", { name: "Review" }).click();
-  assert.equal(await page.getByTestId("review-rules").textContent(), "32");
+  assert.equal(await page.getByTestId("review-rules").textContent(), "29");
   await createFromReview(page);
   const start = (await liveFrame(page, 'start at desktop'));
   assert.equal(await start.locator("h1.mantine-Title-root").textContent(), "Fieldnotes");
@@ -3907,7 +3943,7 @@ test("new project on Mantine: every variant drawn to pick from, a role with no p
   assert.equal(await start.locator(":root").getAttribute("data-mantine-color-scheme"), "light");
   assert.equal(await (await liveFrame(page, 'start at phone')).locator(":root").getAttribute("data-mantine-color-scheme"), "dark");
   await shot(page, "wizard-board-mantine");
-  const file = await passesReloadsAndRoundTrips(page, browser, base, { id: "fieldnotes", rules: 32 });
+  const file = await passesReloadsAndRoundTrips(page, browser, base, { id: "fieldnotes", rules: 29 });
   assert.deepEqual(file.project.library.roles.question, { components: ["TextInput", "NumberInput"] });
   assert.deepEqual(file.project.library.root, { component: "MantineProvider", schemeProp: "forceColorScheme" });
   assert.equal(file.project.library.excludedProps.length, 56);
@@ -4187,8 +4223,8 @@ test("the Project tab draws page types as slot diagrams, a length cap at its siz
 
   // Rules: every rule is a card in one group, and the filter shows a group alone.
   const rules = page.getByTestId("project-rules");
-  assert.equal(await rules.locator(".rule-card").count(), 32);
-  assert.deepEqual(await rules.locator(".rule-group").evaluateAll((items) => items.map((item) => [item.dataset.group, item.querySelectorAll(".rule-card").length])), [["count", 10], ["where", 4], ["rendered", 6], ["inventory", 5], ["flow", 2], ["code", 5]]);
+  assert.equal(await rules.locator(".rule-card").count(), 29);
+  assert.deepEqual(await rules.locator(".rule-group").evaluateAll((items) => items.map((item) => [item.dataset.group, item.querySelectorAll(".rule-card").length])), [["count", 10], ["where", 4], ["rendered", 6], ["inventory", 5], ["flow", 2], ["code", 2]]);
   assert.deepEqual(await rules.locator(".rule-glyph").evaluateAll((items) => items.map((item) => item.dataset.glyph)), ["target-size", "headings", "contrast", "first-view", "sideways"], "only a rule about how a rendered page looks has a picture");
   assert.match(await rules.locator('.rule-card[data-rule="one-primary-per-page"]').textContent(), /A page holds at most one primary action\..*Each page holds at most 1 primary action\./s);
   assert.equal(await rules.locator('.rule-card[data-rule="target-size"] .rule-glyph').getAttribute("data-glyph"), "target-size");
@@ -4437,7 +4473,7 @@ test("a person removes a rule from its card: the proposal needs no examples, and
 
   // The rule is gone from Rules in force, and from the report with its findings; every other rule reads as it did.
   await mainView(page, "Project").click();
-  assert.match(await page.getByTestId("project-rules").textContent(), /Rules in force \(31\)/);
+  assert.match(await page.getByTestId("project-rules").textContent(), /Rules in force \(28\)/);
   assert.equal(await ruleCard(page, "one-primary-per-page").count(), 0);
   const after = await reportWhen(page, (value) => !value.rules.some((rule) => rule.rule === "one-primary-per-page"), "the report drops the removed rule");
   assert.equal(after.status, "pass");
@@ -4521,7 +4557,7 @@ test("a person changes a count limit from 1 to 2: live before and after, classif
   assert.equal(after.rules.find((rule) => rule.rule === "one-primary-per-page").status, "pass");
   await mainView(page, "Project").click();
   assert.match(await ruleCard(page, "one-primary-per-page").textContent(), /Each page holds at most 2 primary actions\./);
-  assert.match(await page.getByTestId("project-rules").textContent(), /Rules in force \(32\)/);
+  assert.match(await page.getByTestId("project-rules").textContent(), /Rules in force \(29\)/);
   // Tightening it back would break the example this proposal keeps as a test: the flow says core would refuse.
   const back = await openRuleFlow(page, "one-primary-per-page", "Change");
   await setLimit(back, "max", 1);
@@ -4621,7 +4657,7 @@ test("a limit that reads a cap routes to set-cap, and names the other rules that
   assert.equal(await review.getByTestId("rule-changed").count() + (await review.getByTestId("rule-removed").count()), 0);
   await approveAndAdopt(page);
   const after = await reportWhen(page, (value) => value.status === "pass", "two questions pass once the cap is 2");
-  assert.equal(after.rules.length, 34, "every rule is still in force, the second reader included");
+  assert.equal(after.rules.length, 31, "every rule is still in force, the second reader included");
   await mainView(page, "Project").click();
   assert.match(await ruleCard(page, "visible-questions").textContent(), /Reads the cap MAX_VISIBLE_QUESTIONS, now 2\./);
   assert.match(await ruleCard(page, "questions-on-lists").textContent(), /Reads the cap MAX_VISIBLE_QUESTIONS, now 2\./);

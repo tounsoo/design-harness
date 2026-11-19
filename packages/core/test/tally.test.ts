@@ -124,19 +124,14 @@ describe("a library's root part", () => {
 });
 
 describe("the Tally prototype as TSX", () => {
-  const exported = specToTsx(legal, tally);
-  if (!exported.ok) throw new Error(exported.error);
-  const tsx = exported.value.prototype;
-  const cases = loadCases(tsx, join(EXAMPLE, "prototypes", "illegal"));
-
-  it("passes as the export writes it: the export sets no excluded prop", () => {
-    expect(checkPrototype({ config: tally, prototype: tsx }).findings).toEqual([]);
+  it("is written with no excluded prop: a spec cannot hold one, so the export cannot write one", () => {
+    const exported = specToTsx(legal, tally);
+    if (!exported.ok) throw new Error(exported.error);
+    const excluded = tally.library.excludedProps ?? [];
+    expect(excluded.length).toBeGreaterThan(10);
+    for (const [path, text] of Object.entries(exported.value.prototype.files)) {
+      const attributes = new Set([...text.matchAll(/\s([A-Za-z][\w-]*)=[{"]/g)].map((match) => match[1] as string));
+      for (const prop of excluded) if (!prop.includes("*")) expect(attributes.has(prop), `${path} sets ${prop}`).toBe(false);
+    }
   });
-
-  it("has cases, each replacing a file the export writes", () => {
-    expect(cases.length).toBeGreaterThan(0);
-    for (const item of cases) for (const [path, text] of Object.entries(item.prototype.files)) if (text !== tsx.files[path]) expect(Object.keys(tsx.files), `${item.name} replaces ${path}`).toContain(path);
-  });
-
-  for (const item of cases) it(`${item.name}: ${item.what}`, () => expectCase(item));
 });

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { ROLE_NAMES, describeRule, flowFacts, rerunExamples, type ConfirmedRole, type ExampleRun, type ProjectConfig, type RoleMapping, type RuleSpec } from "@design-harness/core";
 import { waitingOn, waitingWords } from "../review/rule-change";
 import { formatTime } from "../review/timeline";
-import type { PrototypeRecord } from "../store/project-file";
+import { isSpecRecord, type PrototypeRecord } from "../store/project-file";
 import { BudgetFigure, CapMeterView, PageTypeFigure, RuleFigure, SlotLegend } from "../visual/project-figures";
 import { RULE_GROUPS, budgetMeter, capReaders, capsRead, groupRules, projectTimeline, ruleBound, ruleGroup, ruleSource, type RuleGroupId } from "../visual/project-model";
 import { TaskMaps } from "./ChecksPanel";
@@ -69,7 +69,9 @@ export function ProjectView({
   const [ruleFlow, setRuleFlow] = useState<RuleFlow | null>(null);
   const editable = board !== undefined && onStartProposal !== undefined;
   // Core's facts about the open prototype's flow: each task's routes against its budget.
-  const flow = prototype ? flowFacts(config, prototype.prototype) : null;
+  // A TSX prototype is kept for its files alone: core reads no flow from it.
+  const spec = prototype && isSpecRecord(prototype) ? prototype : null;
+  const flow = spec ? flowFacts(config, spec.prototype) : null;
   const { library, inventories, inputs } = config;
   const open = config.proposals.filter((proposal) => proposal.status === "open").length;
   const ranking = [...inputs.ranking].sort((a, b) => a.rank - b.rank);
@@ -95,7 +97,7 @@ export function ProjectView({
 
       {onSave && <LibraryVersionSection config={config} prototypes={prototypes} onSave={onSave} target={libraryTarget} />}
 
-      {prototype?.prototype.format === "spec" && <LayoutsView config={config} record={prototype} />}
+      {spec && <LayoutsView config={config} record={spec} />}
 
       <section aria-labelledby="project-inventories">
         <SectionHead

@@ -5,7 +5,7 @@ import { SHIPPED_LIBRARIES } from "../libraries/registry";
 import { currentDescription, describedVersions } from "../libraries/versions";
 import { sortVersions, type PackageSource } from "../runtime/package-source";
 import type { SessionState } from "../runtime/session";
-import type { PrototypeRecord } from "../store/project-file";
+import { isSpecRecord, type PrototypeRecord } from "../store/project-file";
 import { formatTime } from "../review/timeline";
 import { ESM_FALLBACK, packageSources } from "./runtime";
 
@@ -199,7 +199,7 @@ export function LibraryVersionSection({ config, prototypes, onSave, target }: Se
     const description = await entry.describe();
     const shipped = SHIPPED_LIBRARIES.find((library) => library.package === name && library.version === to);
     const stylesheets = shipped?.setup.stylesheets;
-    const plan = planLibraryMove(config, from, description, prototypes.map((record) => ({ id: record.id, name: record.name, prototype: record.prototype })), stylesheets ? { stylesheets } : {});
+    const plan = planLibraryMove(config, from, description, prototypes.filter(isSpecRecord).map((record) => ({ id: record.id, name: record.name, prototype: record.prototype })), stylesheets ? { stylesheets } : {});
     setCompared({ to, from, description, ...(stylesheets ? { stylesheets } : {}), plan });
   };
 

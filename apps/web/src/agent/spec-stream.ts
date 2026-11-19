@@ -69,10 +69,10 @@ export class SpecStreamPreview {
     private readonly everyMs = 120,
   ) {}
 
-  /** A tool call started streaming. Only a spec prototype's patch_spec is followed. */
+  /** A tool call started streaming. Only patch_spec is followed. */
   start(name: string): void {
     this.finish();
-    if (name !== "patch_spec" || this.prototype().format !== "spec") return;
+    if (name !== "patch_spec") return;
     this.active = true;
     this.input = "";
     this.loading ??= import("@json-render/core");

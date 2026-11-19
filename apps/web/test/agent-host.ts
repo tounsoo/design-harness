@@ -5,11 +5,12 @@ import { seedSpec } from "./nook";
 
 /**
  * An agent host over plain values, for tests in Node, on the legal Nook spec
- * prototype unless given another: changes apply at once,
+ * prototype unless given another (`tsx` makes the open prototype a stored
+ * TSX one, which takes no turn and no tool): changes apply at once,
  * and "measured" checks the source with core, without frames (so rendered
  * rules report not-run).
  */
-export function fakeHost(initial: Prototype = seedSpec(), config: ProjectConfig = nook, startVariants: VariantState = NO_VARIANTS) {
+export function fakeHost(initial: Prototype = seedSpec(), config: ProjectConfig = nook, startVariants: VariantState = NO_VARIANTS, options: { readonly tsx?: boolean } = {}) {
   let prototype = initial;
   let variants = startVariants;
   const savedVariants: (readonly Variant[])[] = [];
@@ -21,6 +22,7 @@ export function fakeHost(initial: Prototype = seedSpec(), config: ProjectConfig 
   const host: AgentHost = {
     config: () => current,
     prototype: () => prototype,
+    ...(options.tsx ? { tsx: () => true } : {}),
     apply(next) {
       prototype = next;
       revision += 1;

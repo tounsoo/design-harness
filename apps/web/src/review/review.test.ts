@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseProjectConfig, rerunExamples, revise, type ProjectConfig, type Refusal, type Result } from "@design-harness/core";
 import { exportProject, importProject } from "../store/project-file";
-import { seedLegal } from "../../test/nook";
+import { seedSpec } from "../../test/nook";
 import { drafted, harborBelowFold, harborDraft, legalSnapshots, toastDraft } from "../../test/proposals";
 import { adoptProposal, approveProposal, declineProposal, sendBackMessage, sendBackProposal } from "./actions";
 import { inventoryDiff } from "./diff";
@@ -81,14 +81,14 @@ describe("the review's actions", () => {
     const config = ok(approveProposal(drafted(harborDraft()), "harbor", "t1"));
     const measurement = { "as-is": legalSnapshots(), "long-intro": harborBelowFold() };
     expect(adoptProposal(config, "harbor", { "as-is": legalSnapshots() }, [], "t2")).toMatchObject({ ok: false, error: { code: "incomplete-measurement" } });
-    const adoption = ok(adoptProposal(config, "harbor", measurement, [{ name: "Booking", prototype: seedLegal(), snapshots: legalSnapshots() }], "t2"));
+    const adoption = ok(adoptProposal(config, "harbor", measurement, [{ name: "Booking", prototype: seedSpec(), snapshots: legalSnapshots() }], "t2"));
     expect(proposal(adoption.config, "harbor").history.at(-1)).toEqual({ status: "adopted", at: "t2", by: "you" });
     expect(adoption.config.rules.some((rule) => rule.id === "harbor-in-first-view")).toBe(true);
     const before = rerunExamples(adoption.config);
     expect(before.map((run) => [run.example, run.ok])).toEqual([["as-is", true], ["long-intro", true]]);
 
     // A reload reads the project back from the export format and core's validation, with no frames.
-    const file = exportProject(adoption.config, [{ projectId: "nook", id: "booking", name: "Booking", prototype: seedLegal() }]);
+    const file = exportProject(adoption.config, [{ projectId: "nook", id: "booking", name: "Booking", prototype: seedSpec() }]);
     const reloaded = ok(importProject(file) as Result<{ config: ProjectConfig }, string>).config;
     expect(rerunExamples(reloaded)).toEqual(before);
     const stored = parseProjectConfig(JSON.parse(JSON.stringify(adoption.config)));

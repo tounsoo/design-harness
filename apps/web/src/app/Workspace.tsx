@@ -9,12 +9,12 @@ import { latestMeasured, waitForMeasured } from "../agent/measure";
 import { detectPatterns, suggestion as suggestionOf, patternMessage } from "../agent/patterns";
 import type { AgentSettings } from "../agent/models";
 import { loadSettings, saveSettings } from "../agent/settings";
-import { TSX_READ_ONLY, isSpec, type AgentHost } from "../agent/tools";
+import { TSX_READ_ONLY, type AgentHost } from "../agent/tools";
 import { frameKey, type SessionState } from "../runtime/session";
 import { planOutline } from "../runtime/tags";
 import type { Store } from "../store/db";
 import type { LoadNote } from "../store/migrate";
-import { exportFileName, exportProject, importProject, type Imported, type PrototypeRecord } from "../store/project-file";
+import { exportFileName, exportProject, importProject, isSpecRecord, specOf, type Imported, type PrototypeRecord, type StoredPrototype } from "../store/project-file";
 import { fingerprint, reanchor, type FrameMeasure } from "../pins/anchor";
 import { NO_PINS, addPin, closePin, editPin, openPins, reopenPin, type Pin, type PinResult, type PinState } from "../pins/model";
 import { PinNotes, type NoteFrame } from "../pins/PinNotes";
@@ -208,8 +208,8 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     (next: boolean) => {
       // Notes are pinned on the canvas, and on the Variants view's frames; from anywhere else, the canvas comes up.
       const record = recordsRef.current.find((item) => item.id === currentId) ?? recordsRef.current[0];
-      const spec = record !== undefined && isSpec(record.prototype);
-      // A TSX prototype is read-only, its notes included: no new note is pinned on it.
+      const spec = record !== undefined && isSpecRecord(record);
+      // A TSX prototype has no frames to pin on: no new note is pinned on it.
       if (next && !spec) {
         setNotice({ tone: "info", title: "No notes on a TSX prototype", lines: [TSX_READ_ONLY] });
         return;
@@ -241,9 +241,16 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   });
 
   // A new revision for each settled edit; the first one at once. The agent's changes start theirs at once, so they are skipped here.
-  const prototype = current?.prototype;
+  // A stored TSX prototype is no revision at all: nothing renders or checks it, so the board and the checks show nothing for it.
+  const prototype = current ? (specOf(current.prototype) ?? undefined) : undefined;
+  const tsxOpen = current !== undefined && prototype === undefined;
   const first = useRef(true);
   useEffect(() => {
+    if (tsxOpen) {
+      first.current = false;
+      if (session.current()) session.clear();
+      return;
+    }
     if (!prototype) return;
     const checks = checked(config);
     const running = session.current();
@@ -255,7 +262,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     }
     const timer = setTimeout(() => session.update(checks, prototype), EDIT_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [session, config, prototype, checked]);
+  }, [session, config, prototype, tsxOpen, checked]);
 
   // Edits are saved in the browser once typing pauses.
   useEffect(() => {
@@ -268,7 +275,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     (next: Prototype) => {
       // A TSX prototype is read-only: the code view does not offer an edit, and none is taken here.
       const record = recordsRef.current.find((item) => item.id === currentId);
-      if (record && !isSpec(record.prototype)) return;
+      if (record && !isSpecRecord(record)) return;
       setSelected(null);
       setRecords((items) => items.map((item) => (item.id === currentId ? { ...item, prototype: next } : item)));
     },
@@ -315,13 +322,22 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
 
   // The agent's view of the app, for the prototype open now: its changes are revisions at once, and its checks wait for every frame.
   const host = useMemo((): AgentHost => {
-    const prototypeOf = () => recordsRef.current.find((record) => record.id === currentId)?.prototype ?? recordsRef.current[0]?.prototype;
+    const storedOf = () => recordsRef.current.find((record) => record.id === currentId)?.prototype ?? recordsRef.current[0]?.prototype;
+    // The open spec; never a TSX prototype, which the controller and every tool refuse before asking (`tsx`).
+    const prototypeOf = () => {
+      const stored = storedOf();
+      return stored ? specOf(stored) : undefined;
+    };
     return {
       config: () => configRef.current,
       prototype: () => {
         const value = prototypeOf();
-        if (!value) throw new Error("no prototype is open");
+        if (!value) throw new Error(storedOf() ? "the open prototype is TSX" : "no prototype is open");
         return value;
+      },
+      tsx: () => {
+        const stored = storedOf();
+        return stored !== undefined && specOf(stored) === null;
       },
       apply: (next) => {
         setSelected(null);
@@ -515,7 +531,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
       const record = recordOf();
       const pick = record?.variants?.picks[index];
       const page = record?.prototype.pages.find((item) => item.id === pick?.page);
-      if (!record || !pick || !page) return;
+      if (!record || !isSpecRecord(record) || !pick || !page) return;
       const restored: Prototype = { ...record.prototype, files: { ...record.prototype.files, [page.component.file]: pick.before } };
       setSelected(null);
       updateVariants((state) => ({ ...state, picks: state.picks.map((item, at) => (at === index ? { ...item, undone: true } : item)) }), restored);
@@ -546,7 +562,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   const pinActions = useMemo((): PinActions => {
     const run = (change: (state: PinState) => PinResult): boolean => {
       const record = recordOf();
-      if (record && !isSpec(record.prototype)) {
+      if (record && !isSpecRecord(record)) {
         setNotice({ tone: "info", title: "The note was not changed", lines: [TSX_READ_ONLY] });
         return false;
       }
@@ -569,7 +585,6 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
       reopen: (number) => void run((state) => reopenPin(state, number, at())),
     };
   }, [recordOf, updatePins]);
-  const tagKind = prototype?.format === "spec" ? "key" : "source";
   const pinRevision = useMemo(() => (prototype ? fingerprint(prototype) : ""), [prototype]);
   // Each time frames are measured for the prototype as it is now, every pin on its own frames is placed again: on its element where that
   // still exists, "moved or gone" where it does not. Everything that decides is in the pin and in the measurement (`pins/anchor.ts`), so
@@ -577,20 +592,19 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   useEffect(() => {
     const record = recordOf();
     const running = session.current();
-    if (!record || !running || running.prototype !== record.prototype) return;
-    // A TSX prototype's notes stay as they were stored: it is read-only.
-    if (!record.pins || record.pins.pins.length === 0 || !isSpec(record.prototype)) return;
+    // A TSX prototype is no revision, so `running` is never it: its notes stay as they were stored.
+    if (!record || !isSpecRecord(record) || !running || running.prototype !== record.prototype) return;
+    if (!record.pins || record.pins.pins.length === 0) return;
     const revision = fingerprint(record.prototype);
     const frames: Record<string, FrameMeasure> = {};
     for (const frame of state.frames) {
       const value = state.frameStates[frame.key];
       if (value?.state === "measured") frames[frame.key] = { snapshot: value.snapshot, places: value.places ?? [], width: frame.view.width, height: frame.view.height };
     }
-    const kind = record.prototype.format === "spec" ? "key" : "source";
-    const next = reanchor(record.pins, frames, revision, kind);
-    if (next !== record.pins) updatePins((latest) => reanchor(latest, frames, revision, kind));
+    const next = reanchor(record.pins, frames, revision);
+    if (next !== record.pins) updatePins((latest) => reanchor(latest, frames, revision));
   }, [state.frames, state.frameStates, session, recordOf, updatePins, pinState]);
-  const boardPins = useMemo((): BoardPins => ({ prototype: current?.id ?? "", state: pinState, pinning, onPinning: setPinning, actions: pinActions, revision: pinRevision, kind: tagKind, onHold: setBoardHolds }), [current?.id, pinState, pinning, setPinning, pinActions, pinRevision, tagKind]);
+  const boardPins = useMemo((): BoardPins => ({ prototype: current?.id ?? "", state: pinState, pinning, onPinning: setPinning, actions: pinActions, revision: pinRevision, onHold: setBoardHolds }), [current?.id, pinState, pinning, setPinning, pinActions, pinRevision]);
   const variantsPins = useMemo((): BoardPins => ({ ...boardPins, onHold: setVariantsHold }), [boardPins]);
   const keptVariants = current?.variants?.variants;
   /** A note's frame in words, and what became of it when it is no longer there: the prototype's own frame, or a variant's. */
@@ -632,7 +646,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   const proposable = useCallback(
     (finding: Finding) => {
       const rule = configRef.current.rules.find((item) => item.id === finding.rule);
-      return rule?.type === "membership" && rule.of !== "imports";
+      return rule?.type === "membership";
     },
     [],
   );
@@ -666,7 +680,8 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   /** Code export: the open prototype as a runnable React project, zipped in the browser. */
   const downloadCode = () => {
     if (!current) return;
-    const zipped = codeZip({ config: configRef.current, prototype: current.prototype, name: current.name, at: new Date().toISOString(), report: state.measured ? state.report : null });
+    // A stored TSX prototype goes out with its files as they are, and no report: nothing checked it.
+    const zipped = codeZip({ config: configRef.current, prototype: current.prototype, name: current.name, at: new Date().toISOString(), report: isSpecRecord(current) && state.measured ? state.report : null });
     if (!zipped.ok) {
       setNotice({ tone: "critical", title: "The code was not exported", lines: [zipped.error] });
       return;
@@ -692,9 +707,9 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   };
 
   const measuredCount = state.frames.filter((frame) => state.frameStates[frame.key]?.state === "measured").length;
-  const verdict = verdictOf(state);
-  /** The open prototype is TSX: kept and shown, never changed here. */
-  const readOnly = current !== undefined && !isSpec(current.prototype);
+  const verdict = tsxOpen ? NOT_CHECKED : verdictOf(state);
+  /** The open prototype is TSX: its files kept and shown, never rendered, checked or changed here. */
+  const readOnly = tsxOpen;
   const prototypeName = current?.name ?? "No prototype";
 
   return (
@@ -746,7 +761,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
               >
                 {records.map((record) => (
                   <option key={record.id} value={record.id}>
-                    {isSpec(record.prototype) ? record.name : `${record.name} (TSX, read-only)`}
+                    {isSpecRecord(record) ? record.name : `${record.name} (TSX, read-only)`}
                   </option>
                 ))}
               </Field.Select>
@@ -757,7 +772,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
             </Text.Root>
           )}
           {readOnly && (
-            <Badge.Root tone="neutral" data-testid="prototype-format" title="A TSX prototype: pages and layouts as React code, kept read-only">
+            <Badge.Root tone="neutral" data-testid="prototype-format" title="A TSX prototype: pages and layouts as React code, kept read-only and no longer rendered or checked">
               TSX, read-only
             </Badge.Root>
           )}
@@ -911,6 +926,8 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
                 {/* The board stays laid out under the project view, so frames keep their viewport and keep measuring; out of sight, they are parked once measured. */}
                 <div className="app-main-pane" data-inactive={center === "canvas" ? undefined : ""} aria-hidden={center === "canvas" ? undefined : true}>
                   {readOnly && current && <TsxNotice name={current.name} unavailable={cannotCreate(config)} onExport={downloadCode} onStart={() => createPrototype(`${current.name} (spec)`)} />}
+                  {!readOnly && (
+                  <>
                   <PackagesNotice
                     config={config}
                     packages={state.packages}
@@ -961,6 +978,8 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
                     }
                   />
                   </FramesShown>
+                  </>
+                  )}
                 </div>
                 {center === "variants" && (
                   <div className="app-main-pane app-main-scroll" data-testid="variants-pane">
@@ -1049,12 +1068,18 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
                     </Button.Root>
                   </div>
                   <Tabs.Panel value="checks" keepMounted className="app-side-panel">
-                    <ChecksPanel state={state} measuredCount={measuredCount} selected={selected} onSelect={select} onShowCode={(finding) => showCode(finding, true)} onFix={fix} {...(key.present ? { onAsk: ask } : {})} proposable={proposable} config={config} flow={flow} onGoToState={goToState} />
+                    {readOnly ? (
+                      <Text.Root as="p" tone="muted" className="checks-waiting" data-testid="checks-tsx">
+                        No checks: TSX prototypes are no longer edited or checked here. Start a spec version to check it against the project&apos;s rules.
+                      </Text.Root>
+                    ) : (
+                      <ChecksPanel state={state} measuredCount={measuredCount} selected={selected} onSelect={select} onShowCode={(finding) => showCode(finding, true)} onFix={fix} {...(key.present ? { onAsk: ask } : {})} proposable={proposable} config={config} flow={flow} onGoToState={goToState} />
+                    )}
                     {current && <PinNotes state={pinState} frameOf={pinFrame} actions={pinActions} onShow={showPin} onStart={() => setPinning(true)} onAsk={askAboutNotes} />}
                   </Tabs.Panel>
                   <Tabs.Panel value="code" keepMounted className="app-side-panel">
                     {/* One code view per prototype: the manifest's draft belongs to the prototype it was opened on. */}
-                    {current && <CodePanel key={current.id} prototype={current.prototype} target={code} onTarget={setCode} onEdit={edit} problems={state.compileProblems} readOnly={readOnly} />}
+                    {current && <CodePanel key={current.id} prototype={current.prototype} target={code} onTarget={setCode} onEdit={edit} />}
                   </Tabs.Panel>
                 </Tabs.Root>
               </aside>
@@ -1067,18 +1092,19 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
 }
 
 /**
- * What the canvas says over a TSX prototype: it is kept and still renders
- * and checks, but is no longer edited here. Its code can be exported, and a
- * spec version started beside it, empty, for the agent to build.
+ * What the canvas shows for a TSX prototype, in place of its board: it is
+ * kept for its files, which the code view shows read-only, and nothing
+ * renders, checks or changes it. Its code can be exported, and a spec
+ * version started beside it, empty, for the agent to build.
  */
 function TsxNotice({ name, unavailable, onExport, onStart }: { readonly name: string; readonly unavailable: string | null; readonly onExport: () => void; readonly onStart: () => void }) {
   return (
     <Alert.Root tone="info" className="app-preview" data-testid="tsx-notice">
-      <Alert.Title>TSX prototypes are no longer edited here</Alert.Title>
+      <Alert.Title>TSX prototypes are no longer edited or checked here</Alert.Title>
       <Alert.Description>
         <Stack.Root gap="condensed">
           <Text.Root as="p">
-            {name} is written in TSX. It still renders and its checks still run, but nothing changes it here: not the agent, the code view, variants or notes. Export its code to keep working on it as React, or start a spec version, an empty spec prototype in this project, and describe it to the agent.
+            {name} is written in TSX, which this app no longer reads: it is not drawn on the canvas, no rule checks it, and nothing changes it here, not the agent, the code view, variants or notes. Its files are in the code view, read-only. Export its code to keep working on it as React, or start a spec version, an empty spec prototype in this project, and describe it to the agent.
           </Text.Root>
           {unavailable !== null && <Text.Root as="p">{unavailable}</Text.Root>}
           <Stack.Root direction="row" gap="condensed" wrap>
@@ -1094,6 +1120,9 @@ function TsxNotice({ name, unavailable, onExport, onStart }: { readonly name: st
     </Alert.Root>
   );
 }
+
+/** What the header and the canvas-only bar say for a TSX prototype: nothing checks it. */
+const NOT_CHECKED = { tone: "neutral", short: "Not checked", count: 0 } as const;
 
 /** The prototype's state in a few words, for the Checks tab and the canvas-only bar: core's report, counted. */
 function verdictOf(state: SessionState): { readonly tone: "success" | "critical" | "warning" | "neutral"; readonly short: string; readonly count: number } {
@@ -1112,7 +1141,7 @@ function checksKey(config: ProjectConfig): string {
   return JSON.stringify({ ...config, proposals: [] });
 }
 
-function firstFile(prototype: Prototype | undefined): string {
+function firstFile(prototype: StoredPrototype | undefined): string {
   if (!prototype) return MANIFEST_FILE;
   return prototype.pages[0]?.component.file ?? Object.keys(prototype.files).sort()[0] ?? MANIFEST_FILE;
 }

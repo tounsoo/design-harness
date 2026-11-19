@@ -1,5 +1,6 @@
-import { formatIssues, parseProjectConfig, parsePrototype, parseVariantState, type ProjectConfig, type Prototype, type VariantState } from "@design-harness/core";
+import { formatIssues, parseProjectConfig, parsePrototype, parseVariantState, type ProjectConfig, type Prototype, type TsxPrototype, type VariantState } from "@design-harness/core";
 import { parsePinState, type PinState } from "../pins/model";
+import { withoutTsxRules } from "./migrate";
 
 /**
  * A project and its prototypes as one JSON file, for export and import.
@@ -12,22 +13,47 @@ export const PROJECT_FILE_FORMAT = "design-harness/project";
 export const PROJECT_FILE_VERSION = 1;
 
 /**
+ * What a stored prototype holds: a spec, which core reads, or a TSX
+ * prototype from before every prototype was a spec, which core refuses and
+ * hands back as it was stored. The app keeps a TSX one to show its files and
+ * export them, and never checks, renders or edits it.
+ */
+export type StoredPrototype = Prototype | TsxPrototype;
+
+/** The spec a stored prototype is, or null for a TSX one, which nothing checks or renders. */
+export const specOf = (prototype: StoredPrototype): Prototype | null => (prototype.format === "spec" ? prototype : null);
+
+/**
  * A stored prototype. `variants` holds the variants of its pages and the
  * picks applied from them, apart from its files; absent when it has none.
  * `pins` holds the notes a person pinned on its frames, with their history
  * (`pins/model.ts`): beside the prototype, never in it, so no check reads
  * them; absent when it has none.
  */
-export type PrototypeRecord = { readonly projectId: string; readonly id: string; readonly name: string; readonly prototype: Prototype; readonly variants?: VariantState; readonly pins?: PinState };
+export type PrototypeRecord = { readonly projectId: string; readonly id: string; readonly name: string; readonly prototype: StoredPrototype; readonly variants?: VariantState; readonly pins?: PinState };
+
+/** A stored prototype that is a spec: what everything that checks, renders or changes a prototype takes. */
+export type SpecRecord = PrototypeRecord & { readonly prototype: Prototype };
+
+export const isSpecRecord = (record: PrototypeRecord): record is SpecRecord => record.prototype.format === "spec";
 
 export type ProjectFile = {
   readonly format: typeof PROJECT_FILE_FORMAT;
   readonly version: typeof PROJECT_FILE_VERSION;
   readonly project: ProjectConfig;
-  readonly prototypes: readonly { readonly id: string; readonly name: string; readonly prototype: Prototype; readonly variants?: VariantState; readonly pins?: PinState }[];
+  readonly prototypes: readonly { readonly id: string; readonly name: string; readonly prototype: StoredPrototype; readonly variants?: VariantState; readonly pins?: PinState }[];
 };
 
-export type Imported = { readonly config: ProjectConfig; readonly prototypes: readonly PrototypeRecord[] };
+/** An imported project. `removed` lists the rules only TSX had, which the import took out of the config (`store/migrate.ts`); empty when there were none. */
+export type Imported = { readonly config: ProjectConfig; readonly prototypes: readonly PrototypeRecord[]; readonly removed: readonly string[] };
+
+/** A stored prototype read back: a spec; a TSX one core refused but handed back whole; or the issues, as text. */
+export function readStoredPrototype(json: unknown): { readonly ok: true; readonly value: StoredPrototype } | { readonly ok: false; readonly error: string } {
+  const read = parsePrototype(json);
+  if (read.ok) return read;
+  if ("tsx" in read) return { ok: true, value: read.tsx };
+  return { ok: false, error: formatIssues(read.error) };
+}
 
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -64,7 +90,8 @@ export function importProject(text: string): { ok: true; value: Imported } | { o
   const errors: string[] = [];
   const unknownKeys = Object.keys(json).filter((key) => !["format", "version", "project", "prototypes"].includes(key));
   if (unknownKeys.length > 0) errors.push(`$: has unknown fields ${unknownKeys.map((key) => `"${key}"`).join(", ")}`);
-  const config = parseProjectConfig(json.project);
+  const { json: project, removed } = withoutTsxRules(json.project);
+  const config = parseProjectConfig(project);
   if (!config.ok) errors.push(...formatIssues(config.error).split("\n").map((line) => `project: ${line.replace(/^\$/, "$.project")}`));
   const records: PrototypeRecord[] = [];
   if (!Array.isArray(json.prototypes)) {
@@ -80,8 +107,8 @@ export function importProject(text: string): { ok: true; value: Imported } | { o
       else if (seen.has(entry.id)) errors.push(`${at}.id: prototype "${entry.id}" appears twice`);
       else seen.add(entry.id);
       if (typeof entry.name !== "string" || entry.name.trim() === "") errors.push(`${at}.name: expected a non-empty string`);
-      const prototype = parsePrototype(entry.prototype);
-      if (!prototype.ok) errors.push(...formatIssues(prototype.error).split("\n").map((line) => line.replace(/^\$/, `${at}.prototype`)));
+      const prototype = readStoredPrototype(entry.prototype);
+      if (!prototype.ok) errors.push(...prototype.error.split("\n").map((line) => line.replace(/^\$/, `${at}.prototype`)));
       const variants = entry.variants === undefined ? null : parseVariantState(entry.variants);
       if (variants && !variants.ok) errors.push(...formatIssues(variants.error).split("\n").map((line) => line.replace(/^\$/, `${at}.variants`)));
       const pins = entry.pins === undefined ? null : parsePinState(entry.pins);
@@ -93,5 +120,5 @@ export function importProject(text: string): { ok: true; value: Imported } | { o
     });
   }
   if (errors.length > 0 || !config.ok) return { ok: false, error: errors };
-  return { ok: true, value: { config: config.value, prototypes: records } };
+  return { ok: true, value: { config: config.value, prototypes: records, removed } };
 }

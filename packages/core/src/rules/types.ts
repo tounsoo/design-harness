@@ -28,12 +28,12 @@ export type TextMatch = string | { readonly rank: number } | { readonly each: tr
 
 /**
  * Which elements a rule talks about. Every field present must hold. A field
- * the extractor cannot decide for an element, such as a prop given by a
- * computed expression, makes the match unknown, and the rule reports that the
- * element cannot be checked rather than passing it.
+ * core cannot decide for an element, such as a prop read from state the page
+ * changes, makes the match unknown, and the rule reports that the element
+ * cannot be checked rather than passing it.
  */
 export type Selector = {
-  /** Library part names as written after import aliases are undone (`Button.Root`), or lowercase HTML tags (`button`). */
+  /** Library part names (`Button.Root`), or lowercase HTML tags (`button`), which the spec catalog refuses before any rule runs. */
   readonly component?: string | readonly string[];
   readonly role?: RoleName;
   /** Each prop equals the literal. A missing prop is not equal. */
@@ -41,7 +41,7 @@ export type Selector = {
   readonly hasProp?: string;
   /** The element's whole text, whitespace collapsed. */
   readonly text?: TextMatch;
-  /** A page component from the prototype's manifest, rendered inside another page. */
+  /** A page from the prototype's manifest, drawn inside another page. */
   readonly page?: true;
   /** An instance of a layout from the manifest: any layout, or the one with this id. */
   readonly layout?: true | string;
@@ -64,7 +64,7 @@ export type PageFilter = { readonly kinds?: readonly PageKind[]; readonly types?
  * Where a count looks.
  * `page`: each page's rendered tree, one count per page.
  * `pages`: every page's tree together, one count.
- * `source`: every JSX element written in the prototype's files, rendered or not.
+ * `source`: every element written in the prototype's spec files, drawn or not.
  */
 export type CountScope = "page" | "pages" | "source";
 
@@ -72,7 +72,7 @@ export type CountScope = "page" | "pages" | "source";
 export type EachList = "disclosedSections";
 
 /** Lists a membership rule checks against the project's inventories. */
-export type MembershipSubject = "components" | "imports" | "page-types" | "layouts" | "flow-states";
+export type MembershipSubject = "components" | "page-types" | "layouts" | "flow-states";
 
 /** A slot by name, or `$primary` (the page type's primary slot), `$body` (every slot neither chrome nor primary), or `$chrome`. */
 export type SlotName = string;
@@ -123,27 +123,8 @@ export type SlotRule = Base<"slot"> & {
 /** Elements matching `select` anywhere in the source must be reached from a page, so per-page rules can count them. */
 export type ReachableRule = Base<"reachable"> & { readonly select: Selector };
 
-/** Every page fills only its page type's slots, each at most once, and puts nothing outside them. A named built-in: it reads the page kit's Slot elements. */
+/** Every page fills only its page type's slots and puts nothing outside them. A named built-in: it reads a page's Slot elements. */
 export type PageStructureRule = Base<"page-structure">;
-
-/**
- * Prototype code reaches only its imports and plain language built-ins: no
- * browser globals, frame plumbing, DOM handles, constructors or property
- * reads by a computed key. A named built-in: it reads the source scan of what
- * each file reaches. A prototype runs in the frame that measures it, so this
- * is what keeps its rendered snapshots its own.
- */
-export type IsolationRule = Base<"isolation">;
-
-/**
- * No element written in the source sets a style prop: `style`, on any
- * element, or a prop the project excludes (`library.excludedProps`), on a
- * library part or an HTML element, whatever value it takes. A named
- * built-in: it reads the config's excluded props, and names the prop and the
- * pattern that excludes it as a spec's refusal does. A prop a spread the
- * extractor cannot see through may set cannot be checked.
- */
-export type StylePropsRule = Base<"style-props">;
 
 export type FlowCheck = "state-coverage" | "step-budget";
 /**
@@ -171,8 +152,6 @@ export type RuleSpec =
   | SlotRule
   | ReachableRule
   | PageStructureRule
-  | IsolationRule
-  | StylePropsRule
   | FlowRule
   | RenderedRule;
 

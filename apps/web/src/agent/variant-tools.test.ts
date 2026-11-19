@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fakeHost } from "../../test/agent-host";
-import { seedLegal, seedSpec } from "../../test/nook";
+import { seedSpec } from "../../test/nook";
 import { runTool, TOOL_DEFINITIONS } from "./tools";
 
 const signal = new AbortController().signal;
@@ -76,8 +76,8 @@ describe("propose_variants", () => {
     expect((await runTool(call("propose_variants", { page: "booking", variants: [first] }), parts.host, signal)).content).toMatch(/variants: expected at least 2 items/);
     const same = await runTool(call("propose_variants", { page: "booking", variants: [first, { note: "No change", spec: booking() }] }), parts.host, signal);
     expect(same.content).toMatch(/Variant 2 \("No change"\) is the page as it is now/);
-    const tsx = fakeHost(seedLegal());
-    expect((await runTool(call("propose_variants", { page: "booking", variants: three() }), tsx.host, signal)).content).toMatch(/^This prototype is TSX\. TSX prototypes are no longer edited here/);
+    const tsx = fakeHost(seedSpec(), undefined, undefined, { tsx: true });
+    expect((await runTool(call("propose_variants", { page: "booking", variants: three() }), tsx.host, signal)).content).toMatch(/^This prototype is TSX\. TSX prototypes are no longer edited or checked here/);
   });
 
   it("asks for more like one, and gives new ids after the ones in use", async () => {

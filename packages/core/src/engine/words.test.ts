@@ -8,7 +8,6 @@ const words = (rule: RuleSpec) => describeRule(rule, nook);
 group("a rule in plain words", () => {
   it("says what every membership subject allows, listing the inventory it reads", () => {
     expect(words({ type: "membership", id: "a", of: "components" })).toBe("Pages render only the library parts in the component inventory (Alert, Button, Card, Disclosure, EmptyState, Field, Label, Stack, Text).");
-    expect(words({ type: "membership", id: "a", of: "imports" })).toBe("Files import only @tounsoo/todae, React, the page kit and the prototype's own files, by static imports.");
     expect(words({ type: "membership", id: "a", of: "page-types" })).toBe("Every page is of a page type in the inventory (booking, rooms).");
     expect(words({ type: "membership", id: "a", of: "layouts" })).toBe("Every layout the manifest registers is in the layout inventory (room-cards, room-details, select-question).");
     expect(words({ type: "membership", id: "a", of: "flow-states" })).toBe("The flow uses only flow states in the inventory (rooms, room-open, booked, held).");
@@ -55,11 +54,9 @@ group("a rule in plain words", () => {
     expect(words({ type: "slot", id: "a", slot: "intro" })).toBe('The "intro" slot of each page is not limited.');
   });
 
-  it("describes the named checks: reachable, page structure, isolation, style props, both flow checks", () => {
+  it("describes the named checks: reachable, page structure, both flow checks", () => {
     expect(words({ type: "reachable", id: "a", select: { anyOf: [{ role: "action" }, { role: "question" }] } })).toBe("Every action or question written anywhere in the source is rendered from a page, so the per-page rules count it.");
     expect(words({ type: "page-structure", id: "a" })).toBe("Every page fills only its page type's slots, each at most once, and puts nothing outside them.");
-    expect(words({ type: "isolation", id: "a" })).toMatch(/^Prototype code reaches only its imports and plain language built-ins/);
-    expect(words({ type: "style-props", id: "a" })).toBe("No element sets a style prop: style, on any element, or a prop the project excludes (className, style), on a library part or an HTML element. Styling comes from the library's own variants and tokens.");
     expect(words({ type: "flow", id: "a", check: "state-coverage" })).toBe("Every flow state has a scenario, and every scenario shows a modeled state on a page of the prototype.");
     expect(words({ type: "flow", id: "a", check: "step-budget" })).toBe("Every route from a task's start to its success state, not only the shortest, fits the task's max steps (book-room: 3, hold-room: 2).");
   });
@@ -77,7 +74,7 @@ group("a rule in plain words", () => {
 
   it("covers every rule type of the vocabulary, never by the rule's description, and is deterministic", () => {
     const types = new Set<RuleType>(nook.rules.map((rule) => rule.type));
-    expect([...types].sort()).toEqual(["containment", "count", "flow", "isolation", "membership", "page-structure", "prop-values", "reachable", "rendered", "requires", "slot", "style-props"]);
+    expect([...types].sort()).toEqual(["containment", "count", "flow", "membership", "page-structure", "prop-values", "reachable", "rendered", "requires", "slot"]);
     for (const rule of nook.rules) {
       const said = words(rule);
       expect(said.length).toBeGreaterThan(20);

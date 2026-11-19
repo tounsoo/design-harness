@@ -62,7 +62,7 @@ const rendered = tagged("check", {
 });
 
 const ruleVariants = tagged("type", {
-  membership: obj({ ...base, type: oneOf(["membership"]), of: oneOf(["components", "imports", "page-types", "layouts", "flow-states"]) }, extra),
+  membership: obj({ ...base, type: oneOf(["membership"]), of: oneOf(["components", "page-types", "layouts", "flow-states"]) }, extra),
   count,
   containment,
   "prop-values": obj({ ...base, type: oneOf(["prop-values"]), select: selector, prop: str(), allowed: arr(scalar, { min: 1 }) }, { ...extra, required: oneOf([true, false]) }),
@@ -70,8 +70,6 @@ const ruleVariants = tagged("type", {
   slot: obj({ ...base, type: oneOf(["slot"]), slot: str() }, { ...extra, pages: pageFilter, holds: selector, min: bound, max: bound, only: selector }),
   reachable: obj({ ...base, type: oneOf(["reachable"]), select: selector }, extra),
   "page-structure": obj({ ...base, type: oneOf(["page-structure"]) }, extra),
-  isolation: obj({ ...base, type: oneOf(["isolation"]) }, extra),
-  "style-props": obj({ ...base, type: oneOf(["style-props"]) }, extra),
   flow: obj({ ...base, type: oneOf(["flow"]), check: oneOf(["state-coverage", "step-budget"]) }, extra),
   rendered,
 });

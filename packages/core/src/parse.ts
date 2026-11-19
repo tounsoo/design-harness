@@ -1,8 +1,8 @@
 import { configReferenceIssues } from "./config/references";
 import { configSchema } from "./config/schema";
 import type { ProjectConfig } from "./config/types";
-import { prototypeSchema } from "./prototype/schema";
-import type { Prototype } from "./prototype/types";
+import { TSX_REFUSED, prototypeSchema, saysTsx, tsxPrototypeSchema } from "./prototype/schema";
+import type { Prototype, TsxPrototype } from "./prototype/types";
 import { snapshotSchema } from "./rendered/schema";
 import type { RenderedSnapshot } from "./rendered/types";
 import { partDescription, partName } from "./config/parts";
@@ -17,8 +17,25 @@ export function parseProjectConfig(json: unknown): Result<ProjectConfig> {
   return issues.length > 0 ? { ok: false, error: issues } : shaped;
 }
 
-/** Validates a prototype from JSON: its shape, and that its manifest ids are unique and its files are referenced by path. */
-export function parsePrototype(json: unknown): Result<Prototype> {
+/**
+ * What reading a prototype gives: a spec prototype; or a refusal with every
+ * issue; or, for stored data that says it is TSX and is otherwise whole, the
+ * refusal and the TSX prototype as it was stored (`tsx`), so a caller can
+ * still show and export its files. Core reads no TSX: nothing checks or
+ * renders `tsx`.
+ */
+export type PrototypeResult = Result<Prototype> | { readonly ok: false; readonly error: readonly Issue[]; readonly tsx: TsxPrototype };
+
+/** Validates a prototype from JSON: its shape, and that its manifest ids are unique and its files are referenced by path. A TSX prototype is refused, and handed back as `tsx` when its shape is whole. */
+export function parsePrototype(json: unknown): PrototypeResult {
+  if (saysTsx(json)) {
+    const refusal: Issue = { path: "$.format", message: TSX_REFUSED };
+    const shaped = run(tsxPrototypeSchema, json);
+    if (!shaped.ok) return { ok: false, error: [refusal, ...shaped.error] };
+    const tsx: TsxPrototype = { ...shaped.value, format: "tsx" };
+    const issues = prototypeIssues(tsx);
+    return issues.length > 0 ? { ok: false, error: [refusal, ...issues] } : { ok: false, error: [refusal], tsx };
+  }
   const shaped = run(prototypeSchema, json);
   if (!shaped.ok) return shaped;
   const issues = prototypeIssues(shaped.value);
@@ -43,7 +60,7 @@ export function parseSnapshots(json: unknown): Result<readonly RenderedSnapshot[
   return run(arr(snapshotSchema), json);
 }
 
-export function prototypeIssues(prototype: Prototype, root = "$"): Issue[] {
+export function prototypeIssues(prototype: Prototype | TsxPrototype, root = "$"): Issue[] {
   const issues: Issue[] = [];
   const unique = (path: string, ids: readonly string[], what: string) => {
     const seen = new Set<string>();

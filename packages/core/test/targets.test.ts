@@ -12,9 +12,7 @@ import { EXAMPLES, loadCases, loadPrototype, type IllegalCase } from "./fixtures
  * that draws it. A finding about a whole page names none.
  */
 
-const legalTsx = loadPrototype(join(EXAMPLES, "legal", "booking"));
 const legalSpec = loadPrototype(join(EXAMPLES, "spec", "legal", "booking"));
-const tsxCases = new Map(loadCases(legalTsx, join(EXAMPLES, "illegal")).map((item) => [item.name, item]));
 const specCases = new Map(loadCases(legalSpec, join(EXAMPLES, "spec", "illegal")).map((item) => [item.name, item]));
 
 function configFor(item: IllegalCase) {
@@ -31,55 +29,6 @@ function findingOf(report: CheckReport, rule: string): Finding {
   if (!found) throw new Error(`${rule} found nothing`);
   return found;
 }
-
-function lineOf(text: string, fragment: string): number {
-  const index = text.split("\n").findIndex((line) => line.includes(fragment));
-  if (index < 0) throw new Error(`no line has ${fragment}`);
-  return index + 1;
-}
-
-describe("finding targets in a TSX prototype", () => {
-  it("names both primary actions of a page with two, each where it is written, on its page", () => {
-    const file = "pages/booking.tsx";
-    const text = legalTsx.files[file]?.replace('<Button.Root variant="secondary">Hold room</Button.Root>', '<Button.Root variant="primary">Hold room</Button.Root>') ?? "";
-    const report = checkPrototype({ config: nook, prototype: { ...legalTsx, files: { ...legalTsx.files, [file]: text } } });
-    const finding = findingOf(report, "one-primary-per-page");
-    expect(finding.targets).toEqual([
-      { file, line: lineOf(text, ">Hold room<"), column: 9, page: "booking" },
-      { file, line: lineOf(text, ">Book room<"), column: 9, page: "booking" },
-    ]);
-    // The finding's own place is still the extra one, as before.
-    expect(finding).toMatchObject({ file, line: lineOf(text, ">Book room<"), column: 9 });
-  });
-
-  it("finds an element read from the source on the page that renders it", () => {
-    const finding = findingOf(reportOf(tsxCases.get("raw-button")), "no-raw-controls");
-    expect(finding.page).toBeUndefined();
-    expect(finding.targets).toEqual([{ file: finding.file, line: finding.line, column: finding.column, page: "rooms" }]);
-  });
-
-  it("names an element no page renders with no page, so no frame can show it", () => {
-    const finding = findingOf(reportOf(tsxCases.get("primary-built-in-a-handler")), "counted-parts-reached");
-    expect(finding.targets?.length).toBeGreaterThan(0);
-    for (const target of finding.targets ?? []) expect(target.page).toBeUndefined();
-  });
-
-  it("stands a local component for the outermost elements it renders", () => {
-    // A layout component inside the primary slot: what the slot holds is the layout's own outermost part.
-    const finding = findingOf(reportOf(tsxCases.get("extra-in-primary-slot")), "primary-slot");
-    expect(finding.targets?.length).toBeGreaterThan(0);
-    for (const target of finding.targets ?? []) expect(target.page).toBe("booking");
-  });
-
-  it("gives a finding about a whole page, a flow or an import no targets", () => {
-    const missing = reportOf(tsxCases.get("state-without-scenario"));
-    expect(findingOf(missing, "state-coverage").targets).toBeUndefined();
-    const foreign = reportOf(tsxCases.get("foreign-module"));
-    expect(findingOf(foreign, "imports-from-library").targets).toBeUndefined();
-    const budget = reportOf(tsxCases.get("route-over-budget"));
-    expect(findingOf(budget, "step-budget").targets).toBeUndefined();
-  });
-});
 
 describe("finding targets in a spec prototype", () => {
   it("names both primary actions by their keys in the expanded page, one passed into a layout's slot", () => {
@@ -101,9 +50,33 @@ describe("finding targets in a spec prototype", () => {
     expect(finding.targets?.map((target) => target.key)).toEqual([expect.stringMatching(/^page\/slots\//)]);
   });
 
-  it("gives a finding about a whole page no targets", () => {
-    const missing = findingOf(reportOf(specCases.get("unknown-page-type")), "page-types-from-inventory");
-    expect(missing.targets).toBeUndefined();
+  it("finds an element read from a file as written on the page that draws it, under its key", () => {
+    const rule = { type: "count" as const, id: "no-hold", scope: "source" as const, select: { component: "Button.Root", text: "Hold room" }, max: 0 };
+    const finding = findingOf(checkPrototype({ config: { ...nook, rules: [rule] }, prototype: legalSpec }), "no-hold");
+    expect(finding.page).toBeUndefined();
+    expect(finding.targets).toEqual([{ file: "pages/booking.json", line: finding.line, column: finding.column, page: "booking", key: "hold" }]);
+  });
+
+  it("names an element no page draws with no page, so no frame can show it", () => {
+    const spare = JSON.stringify({ root: "spare", elements: { spare: { type: "Button.Root", props: { text: "Book room" }, children: [] } } });
+    const prototype = { ...legalSpec, files: { ...legalSpec.files, "layouts/spare.json": spare } };
+    const finding = findingOf(checkPrototype({ config: nook, prototype }), "counted-parts-reached");
+    expect(finding.targets?.length).toBeGreaterThan(0);
+    for (const target of finding.targets ?? []) expect(target.page).toBeUndefined();
+  });
+
+  it("stands a layout instance for the outermost elements it draws", () => {
+    // Room details moved from the body into the primary slot: what the slot holds is the instance, outlined as the layout's root.
+    const file = (legalSpec.files["pages/booking.json"] as string).replace('"body": ["question", "details"]', '"body": ["question"]').replace('"action": ["book"]', '"action": ["book", "details"]');
+    const report = checkPrototype({ config: nook, prototype: { ...legalSpec, files: { ...legalSpec.files, "pages/booking.json": file } } });
+    const finding = report.findings.find((item) => item.rule === "primary-slot" && item.message.includes("room-details"));
+    expect(finding?.targets?.map((target) => [target.page, target.key, target.file])).toEqual([["booking", "details/details", "layouts/room-details.json"]]);
+  });
+
+  it("gives a finding about a whole page or a flow no targets", () => {
+    expect(findingOf(reportOf(specCases.get("unknown-page-type")), "page-types-from-inventory").targets).toBeUndefined();
+    expect(findingOf(reportOf(specCases.get("state-without-scenario")), "state-coverage").targets).toBeUndefined();
+    expect(findingOf(reportOf(specCases.get("route-over-budget")), "step-budget").targets).toBeUndefined();
   });
 
   it("gives every finding the same targets in the same order, whatever order the files come in", () => {

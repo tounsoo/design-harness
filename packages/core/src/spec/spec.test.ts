@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { nook } from "../../examples/nook/project";
 import { EXAMPLES, loadPrototype } from "../../test/fixtures";
 import { checkPrototype } from "../engine/check";
-import type { ElementNode } from "../extract/model";
+import type { ElementNode } from "../prototype/model";
 import { applyProposal } from "../proposals/apply";
 import type { Prototype } from "../prototype/types";
 import { LAYOUT_TYPE, PAGE_TYPE, specCatalog } from "./catalog";

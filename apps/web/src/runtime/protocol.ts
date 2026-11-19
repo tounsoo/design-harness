@@ -39,8 +39,8 @@ export type SpecPayload = { readonly library: string; readonly spec: FlatSpec; r
  */
 export type RootRef = { readonly module: string; readonly component: string; readonly props: Readonly<Record<string, string | number | boolean | null>> };
 
-/** What a frame renders: a module's export (a TSX prototype's page), or a spec (a spec prototype's page, no prototype code). */
-export type PageRef = { readonly module: string; readonly export: string } | { readonly spec: SpecPayload };
+/** What a frame renders: a spec, drawn by the spec renderer, with no prototype code. */
+export type PageRef = { readonly spec: SpecPayload };
 
 /** App → frame: render one page for one scenario at one view, then measure it. */
 export type RenderRequest = {
@@ -48,10 +48,10 @@ export type RenderRequest = {
   readonly type: "render";
   readonly channel: string;
   readonly generation: number;
-  /** Every module the page can import, by bare specifier: React, the library, the page kit and the prototype's files. */
+  /** Every module the frame imports, by bare specifier: React, the library, the page kit and the spec renderer. No prototype code is among them. */
   readonly modules: Readonly<Record<string, ModuleSource>>;
   readonly styles: readonly StyleSource[];
-  /** The page component: a module specifier from `modules` and an export name; or a spec, drawn by the spec renderer in `modules`. */
+  /** The page: a spec, drawn by the spec renderer in `modules`. */
   readonly page: PageRef;
   readonly scenario: ScenarioRef;
   readonly pageType: PageType;
@@ -62,8 +62,8 @@ export type RenderRequest = {
   readonly root?: RootRef;
   /**
    * Whether the frame finds element tags (`tags.ts`) and reports which it
-   * drew. The app sends false only with untagged modules, to show tags change
-   * nothing a rule measures.
+   * drew. The app sends false only when opened with `frame-tags=off`, to show
+   * tags change nothing a rule measures.
    */
   readonly tags: boolean;
 };
@@ -169,10 +169,8 @@ function isSpecPayload(value: unknown): value is SpecPayload {
   return isObject(spec) && hasOnly(spec, ["root", "elements", "state"]) && isString(spec.root) && isObject(spec.elements) && Object.values(spec.elements).every((element) => isObject(element) && isString(element.type)) && isObject(spec.state);
 }
 
-function isPageRef(value: unknown, modules: Json): value is PageRef {
-  if (!isObject(value)) return false;
-  if ("spec" in value) return hasOnly(value, ["spec"]) && isSpecPayload(value.spec);
-  return hasOnly(value, ["module", "export"]) && isString(value.module) && isString(value.export) && value.module in modules;
+function isPageRef(value: unknown): value is PageRef {
+  return isObject(value) && hasOnly(value, ["spec"]) && isSpecPayload(value.spec);
 }
 
 function isRoot(value: unknown, modules: Json): value is RootRef {
@@ -223,7 +221,7 @@ export function readParentMessage(data: unknown, channel: string): ParentMessage
   const { modules, styles, page, settleMs } = data;
   if (!isObject(modules) || !Object.values(modules).every(isModuleSource)) return null;
   if (!Array.isArray(styles) || !styles.every(isStyleSource)) return null;
-  if (!isPageRef(page, modules)) return null;
+  if (!isPageRef(page)) return null;
   if (!isScenario(data.scenario) || !isPageType(data.pageType) || !isView(data.view)) return null;
   if (typeof settleMs !== "number" || !Number.isFinite(settleMs) || settleMs < 0 || settleMs > 60000) return null;
   if (data.root !== undefined && !isRoot(data.root, modules)) return null;

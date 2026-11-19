@@ -1,14 +1,14 @@
 import { Alert, Button, Field, Label, Stack, Text } from "@tounsoo/todae";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatIssues, parsePrototype, type Prototype } from "@design-harness/core";
-import type { CompileProblem } from "../runtime/transform";
+import type { StoredPrototype } from "../store/project-file";
 import type { CodeTarget } from "./Workspace";
 
 /** The manifest, edited as JSON beside the source files. */
 export const MANIFEST_FILE = "manifest.json";
 
 /** The prototype without its files: what `manifest.json` shows. */
-function manifestOf(prototype: Prototype): string {
+function manifestOf(prototype: StoredPrototype): string {
   const { files: _files, ...manifest } = prototype;
   return `${JSON.stringify(manifest, null, 2)}\n`;
 }
@@ -56,24 +56,21 @@ function InstancePlaces({ target, onTarget }: { readonly target: CodeTarget; rea
 /**
  * A plain code view: pick a file, edit it, and the board and the checks
  * follow. A finding with a file and line opens here with that line marked.
- * `readOnly` shows a TSX prototype's files as they are, with no way to
- * change them: TSX prototypes are no longer edited in the app.
+ * A stored TSX prototype's files are shown as they are, read-only: TSX
+ * prototypes are no longer edited or checked in the app.
  */
 export function CodePanel({
   prototype,
   target,
   onTarget,
   onEdit,
-  problems,
-  readOnly = false,
 }: {
-  readonly prototype: Prototype;
+  readonly prototype: StoredPrototype;
   readonly target: CodeTarget;
   readonly onTarget: (target: CodeTarget) => void;
   readonly onEdit: (next: Prototype) => void;
-  readonly problems: readonly CompileProblem[];
-  readonly readOnly?: boolean;
 }) {
+  const readOnly = prototype.format !== "spec";
   const files = useMemo(() => [...Object.keys(prototype.files).sort(), MANIFEST_FILE], [prototype.files]);
   const file = files.includes(target.file) ? target.file : (files[0] ?? MANIFEST_FILE);
   const isManifest = file === MANIFEST_FILE;
@@ -98,10 +95,9 @@ export function CodePanel({
   }, [target, file]);
 
   const highlights = target.line !== undefined && target.file === file ? [{ ...lineRange(value, target.line), kind: "finding" }] : [];
-  const fileProblems = problems.filter((problem) => problem.file === file);
 
   const change = (text: string) => {
-    if (readOnly) return;
+    if (prototype.format !== "spec") return;
     if (isManifest) {
       setManifestDraft(text);
       let json: unknown;
@@ -150,7 +146,7 @@ export function CodePanel({
       </Stack.Root>
       {readOnly && (
         <Text.Root as="p" tone="muted" data-testid="code-read-only">
-          Read-only: TSX prototypes are no longer edited here.
+          Read-only: TSX prototypes are no longer edited or checked here.
         </Text.Root>
       )}
       {target.instance && <InstancePlaces target={target} onTarget={onTarget} />}
@@ -164,15 +160,6 @@ export function CodePanel({
           </Alert.Description>
         </Alert.Root>
       )}
-      {fileProblems.map((problem, index) => (
-        <Alert.Root key={index} tone="warning">
-          <Alert.Description>
-            <Text.Root as="p" className="pre">
-              {problem.message}
-            </Text.Root>
-          </Alert.Description>
-        </Alert.Root>
-      ))}
       <Field.Root className="code-field" aria-label={`Source of ${file}`}>
         <Field.Textarea ref={textarea} value={value} onValueChange={change} readOnly={readOnly} highlights={highlights} spellCheck={false} autoCapitalize="off" autoComplete="off" className="code-text" rows={30} data-testid="code-editor" />
       </Field.Root>

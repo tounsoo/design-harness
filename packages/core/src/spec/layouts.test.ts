@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { nook } from "../../examples/nook/project";
 import { EXAMPLES, loadPrototype } from "../../test/fixtures";
 import { checkPrototype } from "../engine/check";
-import type { ElementNode } from "../extract/model";
+import type { ElementNode } from "../prototype/model";
 import type { Prototype } from "../prototype/types";
 import { expandPage } from "./expand";
 import { layoutPreview, specLayouts } from "./layouts";

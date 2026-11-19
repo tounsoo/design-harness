@@ -18,7 +18,7 @@ const ON_BUTTON: PinAnchor = {
   seen: "rev-1",
   point: { x: 270, y: 210 },
   element: {
-    source: { tag: "pages/booking.tsx:15:9", kind: "source", nth: 0, rect: { x: 240, y: 200, width: 120, height: 40 }, within: { x: 0.25, y: 0.25 } },
+    source: { tag: "book", kind: "key", nth: 0, rect: { x: 240, y: 200, width: 120, height: 40 }, within: { x: 0.25, y: 0.25 } },
     label: { role: "button", name: "Book room", html: "button", rect: { x: 240, y: 200, width: 120, height: 40 }, within: { x: 0.25, y: 0.25 } },
   },
   near: ['button "Hold room"', 'heading "Lantern"'],
@@ -49,7 +49,7 @@ describe("pins as the agent reads them", () => {
   it("writes each open note as a finding: its words, where it is written, the scenario and view, the element, and where on the page", () => {
     const text = describePins(pins()) ?? "";
     expect(text.split("\n")[0]).toBe(`${NOTES_LEAD}: 2 open notes pinned on the canvas. They are the person's own feedback, not checks: no rule reads them and they change no verdict. Treat each as a finding to fix: change the prototype for it, within the project's rules, then call address_note with its number and a short reply. Only the person closes or reopens a note.`);
-    expect(text).toContain('- note 1: "Make this the \\"main\\" action" [pages/booking.tsx:15:9, scenario lantern-open, view desktop]\n  on: button "Book room"\n  where: top left of the view, at x 270, y 210 of 1280 × 900; 25% across and 25% down its element, which is 120 × 40 px; nearest: button "Hold room", heading "Lantern"');
+    expect(text).toContain('- note 1: "Make this the \\"main\\" action" [spec element "book", scenario lantern-open, view desktop]\n  on: button "Book room"\n  where: top left of the view, at x 270, y 210 of 1280 × 900; 25% across and 25% down its element, which is 120 × 40 px; nearest: button "Hold room", heading "Lantern"');
     expect(text).toContain('- note 2: "Too far down" [spec element "details/summary", scenario lantern-open, view phone]\n  on: the part "details/summary", which is no longer on this page (moved or gone since the note was pinned); the note stays where it last was\n  where: below the first view, at x 195, y 1020 of 390 × 844');
     expect(text).not.toContain("Closed one");
   });

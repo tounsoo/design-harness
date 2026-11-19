@@ -1,5 +1,5 @@
 import type { PageType } from "../../config/types";
-import type { ElementNode } from "../../extract/model";
+import type { ElementNode } from "../../prototype/model";
 import type { PageStructureRule, ReachableRule, SlotRule } from "../../rules/types";
 import { bound, boundLabel, everyNode, locate, named, pagesFor, pointAt, where, type CheckContext } from "../context";
 import { article, describe } from "../describe";
@@ -34,21 +34,11 @@ function slotsOf(root: ElementNode): { node: ElementNode; ancestors: ElementNode
   return out;
 }
 
-/**
- * The elements a slot holds at its top level. A local component that is not a
- * layout or a page is a wrapper, so the elements it renders count instead.
- */
+/** The elements a slot holds at its top level: a layout instance there is one element, the layout, not what it draws. */
 function topLevel(slot: ElementNode, ancestors: readonly ElementNode[]): { node: ElementNode; ancestors: ElementNode[]; repeated: boolean }[] {
-  const out: { node: ElementNode; ancestors: ElementNode[]; repeated: boolean }[] = [];
-  const walk = (node: ElementNode, above: ElementNode[], repeated: boolean) => {
-    for (const child of node.children) {
-      const again = repeated || child.repeated;
-      if (child.kind === "component" && child.layout === undefined && child.page === undefined) walk(child, [...above, child], again);
-      else out.push({ node: child, ancestors: above, repeated: again });
-    }
-  };
-  walk(slot, [...ancestors, slot], slot.repeated || ancestors.some((node) => node.repeated));
-  return out;
+  const above = [...ancestors, slot];
+  const repeated = slot.repeated || ancestors.some((node) => node.repeated);
+  return slot.children.map((child) => ({ node: child, ancestors: above, repeated: repeated || child.repeated }));
 }
 
 /** What a named slot holds: how many top-level elements match `holds`, and whether every one matches `only`. */
@@ -142,47 +132,41 @@ export function evaluateReachable(rule: ReachableRule, ctx: CheckContext): Outco
       kind: result.v === true ? "violation" : "unverifiable",
       message:
         result.v === true
-          ? `${named(node)} at ${where(node.at)} is ${article(what)} that no page reaches, so the per-page rules cannot count it. Render it from a page's components, not from a handler, a value the extractor cannot follow, or an unused file.`
+          ? `${named(node)} at ${where(node.at)} is ${article(what)} that no page reaches, so the per-page rules cannot count it. Draw it from a page, not from an element nothing lists or an unused file.`
           : `${named(node)} at ${where(node.at)} may be ${article(what)} (${result.why ?? "it cannot be read statically"}), and no page reaches it, so the per-page rules cannot count it.`,
     });
   }
   return { findings };
 }
 
-/** Each page fills only its page type's slots, each once, puts nothing outside them, and does not nest slots. */
+/**
+ * Each page fills only its page type's slots and puts nothing outside them.
+ * A spec page's slots are the keys of its root's `slots`, so each is filled
+ * once, by name, and none sits inside another: what is left to check is a
+ * slot the page type lacks and an element outside every slot.
+ */
 export function evaluatePageStructure(rule: PageStructureRule, ctx: CheckContext): Outcome {
   const findings: Finding[] = [];
   for (const { page, type } of pagesFor(undefined, ctx)) {
-    const seen = new Map<string, ElementNode>();
-    const walk = (node: ElementNode, slot: string | null, repeated: boolean) => {
+    const walk = (node: ElementNode) => {
       for (const child of node.children) {
-        const again = repeated || child.repeated;
-        const base = { rule: rule.id, page: page.id, ...locate(child.at) };
-        const here = () => pointAt(ctx, [child], page.id);
+        const base = { rule: rule.id, page: page.id, ...locate(child.at), ...pointAt(ctx, [child], page.id) };
         if (child.kind === "component" && child.page !== undefined) continue;
         if (child.kind === "kit" && child.name === "Slot") {
           const name = slotName(child);
-          if (name === null) {
-            findings.push({ ...base, ...here(), kind: "unverifiable", message: `The Slot at ${where(child.at)} has a computed name, so which slot it fills cannot be told. Write the name as a string.` });
-          } else if (slot !== null) {
-            findings.push({ ...base, ...here(), kind: "violation", message: `Slot "${name}" at ${where(child.at)} is inside slot "${slot}". Slots sit side by side, not inside each other.` });
-          } else if (!type.slots.includes(name)) {
-            findings.push({ ...base, ...here(), kind: "violation", message: `Page "${page.id}" fills slot "${name}" at ${where(child.at)}, but page type "${type.id}" has no such slot; its slots are ${type.slots.map((item) => `"${item}"`).join(", ")}.` });
-          } else if (seen.has(name) || again) {
-            findings.push({ ...base, ...(seen.has(name) && !again ? pointAt(ctx, [seen.get(name) as ElementNode, child], page.id) : here()), kind: "violation", message: `Page "${page.id}" fills slot "${name}" ${again ? "once per item of a list" : `twice, at ${where((seen.get(name) as ElementNode).at)} and ${where(child.at)}`}. A page fills each slot once.` });
+          if (name !== null && !type.slots.includes(name)) {
+            findings.push({ ...base, kind: "violation", message: `Page "${page.id}" fills slot "${name}" at ${where(child.at)}, but page type "${type.id}" has no such slot; its slots are ${type.slots.map((item) => `"${item}"`).join(", ")}.` });
           }
-          if (name !== null) seen.set(name, child);
-          walk(child, name ?? "?", again);
           continue;
         }
-        if (slot === null && child.kind !== "component") {
-          findings.push({ ...base, ...here(), kind: child.kind === "unresolved" ? "unverifiable" : "violation", message: `${named(child)} at ${where(child.at)} is outside every slot of page "${page.id}". Put it in one of page type "${type.id}"'s slots: ${type.slots.map((item) => `"${item}"`).join(", ")}.` });
+        if (child.kind === "component") {
+          walk(child);
           continue;
         }
-        walk(child, slot, again);
+        findings.push({ ...base, kind: child.kind === "unresolved" ? "unverifiable" : "violation", message: `${named(child)} at ${where(child.at)} is outside every slot of page "${page.id}". Put it in one of page type "${type.id}"'s slots: ${type.slots.map((item) => `"${item}"`).join(", ")}.` });
       }
     };
-    walk(page.root, null, false);
+    walk(page.root);
   }
   return { findings };
 }

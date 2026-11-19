@@ -60,7 +60,7 @@ describe("the spec renderer's element tags", () => {
     const finding = report.findings.find((item) => item.rule === "one-primary-per-page");
     expect(finding?.targets?.map(tagOf)).toEqual(["hold", "book"]);
     const drawn = new Set(draw("lantern-open", true));
-    for (const target of finding?.targets ?? []) expect(drawn.has(tagOf(target))).toBe(true);
+    for (const target of finding?.targets ?? []) expect(drawn.has(tagOf(target) ?? "")).toBe(true);
   });
 
   it("passes no tag with tags off", () => {

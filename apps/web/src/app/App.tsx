@@ -4,7 +4,7 @@ import type { ProjectConfig } from "@design-harness/core";
 import { SEED_PROTOTYPE_ID, seedProject } from "../seed/nook";
 import { KeyVault } from "../agent/key-vault";
 import { Store } from "../store/db";
-import { withLibraryParts, type LoadNote } from "../store/migrate";
+import { tsxRulesNote, withLibraryParts, type LoadNote } from "../store/migrate";
 import type { Imported, PrototypeRecord } from "../store/project-file";
 import type { CreatedProject } from "./ProjectWizard";
 import { recallProject, rememberProject, type ProjectEntry } from "./projects";
@@ -17,13 +17,18 @@ const ProjectWizard = lazy(() => import("./ProjectWizard").then((module) => ({ d
 type Open = { readonly config: ProjectConfig; readonly prototypes: readonly PrototypeRecord[]; readonly problems: readonly string[]; readonly notes: readonly LoadNote[] };
 type Loaded = Open & { readonly store: Store; readonly vault: KeyVault; readonly projects: readonly ProjectEntry[]; readonly opened: number };
 
-/** Reads one stored project and its prototypes, bringing an older one up to date. */
-async function open(store: Store, config: ProjectConfig, problems: readonly string[]): Promise<Open> {
+/**
+ * Reads one stored project and its prototypes, bringing an older one up to
+ * date. `removed` is what the store took out of its config as rules only
+ * TSX had; the project is stored again without them.
+ */
+async function open(store: Store, config: ProjectConfig, problems: readonly string[], removed: readonly string[] = []): Promise<Open> {
   // A project stored before spec prototypes gets its library's part description, when the app ships one.
   const migration = withLibraryParts(config);
   const notes: LoadNote[] = [];
+  if (removed.length > 0) notes.push(tsxRulesNote(config.name, removed));
+  if (migration.kind === "added-parts" || removed.length > 0) await store.putProject(migration.config);
   if (migration.kind === "added-parts") {
-    await store.putProject(migration.config);
     notes.push({ tone: "info", title: "The project was brought up to date", text: migration.note });
   } else if (migration.kind === "no-parts") notes.push({ tone: "warning", title: "Spec prototypes cannot be checked in this project", text: migration.note });
   const prototypes = await store.prototypes(migration.config.id);
@@ -43,7 +48,7 @@ async function load(): Promise<Loaded> {
   }
   const stored = projects.items.find((config) => config.id === recallProject()) ?? projects.items[0];
   if (!stored) throw new Error(`No stored project validates.\n${projects.problems.join("\n")}`);
-  return { store, vault, projects: entries(projects.items), opened: 0, ...(await open(store, stored, projects.problems)) };
+  return { store, vault, projects: entries(projects.items), opened: 0, ...(await open(store, stored, projects.problems, projects.removed[stored.id])) };
 }
 
 export function App() {
@@ -86,14 +91,14 @@ export function App() {
     const projects = await store.projects();
     const config = projects.items.find((item) => item.id === id);
     if (!config) return;
-    const opened = await open(store, config, projects.problems);
+    const opened = await open(store, config, projects.problems, projects.removed[id]);
     rememberProject(id);
     setWizard(false);
     setState({ loaded: { ...loaded, ...opened, notes: [...notes, ...opened.notes], projects: entries(projects.items), opened: loaded.opened + 1 } });
   };
   const onImported = async (imported: Imported) => {
     await store.replaceProject(imported.config, imported.prototypes);
-    await show(imported.config.id);
+    await show(imported.config.id, imported.removed.length > 0 ? [tsxRulesNote(imported.config.name, imported.removed)] : []);
   };
   const onCreated = async (created: CreatedProject) => {
     await store.replaceProject(created.config, created.prototypes);

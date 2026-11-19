@@ -4,14 +4,15 @@ import { MAX_ERROR_LENGTH, MAX_SCROLL, PROTOCOL, clip, readFrameMessage, readPar
 import { MAX_FRAME_TAGS, MAX_OUTLINE_TAGS, MAX_TAG_LENGTH } from "./tags";
 
 const channel = "c-1";
+const PAGE_SPEC = { library: "@tounsoo/todae", spec: { root: "page", elements: { page: { type: "Page", props: {}, children: [] } }, state: {} }, parts: { Page: { kind: "page", content: "none", props: [], binds: {}, events: [] } } } as const;
 const request: RenderRequest = {
   protocol: PROTOCOL,
   type: "render",
   channel,
   generation: 3,
-  modules: { react: { url: "https://esm.sh/react@19.3.1" }, "@prototype/pages/home.tsx": { code: "export default 1" } },
+  modules: { react: { url: "https://esm.sh/react@19.3.1" }, "@design-harness/spec": { code: "export const specPage = 1" } },
   styles: [{ css: "body{}" }],
-  page: { module: "@prototype/pages/home.tsx", export: "Home" },
+  page: { spec: PAGE_SPEC } as RenderRequest["page"],
   scenario: { id: "rooms-list", state: "rooms", page: "home" },
   pageType: { id: "rooms", kind: "collection", slots: ["title", "body"], chrome: ["title"] },
   view: { name: "phone", width: 390, height: 844, scheme: "light" },
@@ -28,7 +29,7 @@ describe("the frame's reader of its parent's messages", () => {
 
   it("accepts an outline of a finding's elements by their tags, and drops one that is empty, too long, mixed with an index, or not strings", () => {
     const outline = { protocol: PROTOCOL, type: "highlight", channel, generation: 3 };
-    expect(readParentMessage({ ...outline, tags: ["pages/booking.tsx:34:9", "details/summary"] }, channel)).toEqual({ ...outline, tags: ["pages/booking.tsx:34:9", "details/summary"] });
+    expect(readParentMessage({ ...outline, tags: ["book", "details/summary"] }, channel)).toEqual({ ...outline, tags: ["book", "details/summary"] });
     expect(readParentMessage({ ...outline, tags: [] }, channel)).toBeNull();
     expect(readParentMessage({ ...outline, tags: Array.from({ length: MAX_OUTLINE_TAGS + 1 }, (_, index) => `t${index}`) }, channel)).toBeNull();
     expect(readParentMessage({ ...outline, tags: ["x".repeat(MAX_TAG_LENGTH + 1)] }, channel)).toBeNull();
@@ -39,11 +40,13 @@ describe("the frame's reader of its parent's messages", () => {
     expect(readParentMessage({ ...outline, tags: ["book"] }, "c-2")).toBeNull();
   });
 
-  it("accepts a spec page, whose spec and parts are data, and drops one of the wrong shape", () => {
+  it("accepts a spec page, whose spec and parts are data, and drops one of the wrong shape or a module of prototype code", () => {
     const spec = { library: "@tounsoo/todae", spec: { root: "page", elements: { page: { type: "Page", props: {}, children: [] } }, state: {} }, parts: { Page: { kind: "page", content: "none", props: [], binds: {}, events: [] } } };
     expect(readParentMessage({ ...request, page: { spec } }, channel)).not.toBeNull();
     expect(readParentMessage({ ...request, page: { spec: { ...spec, code: "alert(1)" } } }, channel)).toBeNull();
-    expect(readParentMessage({ ...request, page: { spec, module: "@prototype/pages/home.tsx" } }, channel)).toBeNull();
+    expect(readParentMessage({ ...request, page: { spec, module: "@design-harness/spec" } }, channel)).toBeNull();
+    // A page that is a module's export, as a TSX prototype's page was, is no page any more, even when the module is sent.
+    expect(readParentMessage({ ...request, modules: { ...request.modules, "@prototype/pages/home.tsx": { code: "export const Home = () => null" } }, page: { module: "@prototype/pages/home.tsx", export: "Home" } }, channel)).toBeNull();
     expect(readParentMessage({ ...request, page: { spec: { ...spec, parts: { Page: { kind: "page", content: "html", props: [], binds: {}, events: [] } } } } }, channel)).toBeNull();
     expect(readParentMessage({ ...request, page: { spec: { ...spec, spec: { ...spec.spec, elements: { page: { props: {} } } } } } }, channel)).toBeNull();
   });
@@ -66,13 +69,12 @@ describe("the frame's reader of its parent's messages", () => {
     expect(readParentMessage({ protocol: PROTOCOL, type: "redraw", channel: "c-2", generation: 3, spec }, channel)).toBeNull();
   });
 
-  it("drops another channel, another protocol, an unknown field, a bad shape, and a page that is not one of the modules", () => {
+  it("drops another channel, another protocol, an unknown field and a bad shape", () => {
     expect(readParentMessage(request, "c-2")).toBeNull();
     expect(readParentMessage({ ...request, protocol: "other" }, channel)).toBeNull();
     expect(readParentMessage({ ...request, extra: true }, channel)).toBeNull();
     expect(readParentMessage({ ...request, modules: { react: { url: 1 } } }, channel)).toBeNull();
     expect(readParentMessage({ ...request, modules: { react: { url: "x", code: "y" } } }, channel)).toBeNull();
-    expect(readParentMessage({ ...request, page: { module: "@prototype/elsewhere.tsx", export: "Home" } }, channel)).toBeNull();
     expect(readParentMessage({ ...request, view: { ...request.view, width: -1 } }, channel)).toBeNull();
     expect(readParentMessage({ ...request, pageType: { ...request.pageType, kind: "action" } }, channel)).toBeNull();
     expect(readParentMessage({ ...request, settleMs: Number.NaN }, channel)).toBeNull();

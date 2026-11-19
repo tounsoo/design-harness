@@ -1,6 +1,6 @@
 import type { Prototype, Rect, RenderedElement, RenderedSnapshot } from "@design-harness/core";
 import type { TagPlace } from "../runtime/tags";
-import { MAX_ELSEWHERE, moveAnchor, type PinAnchor, type PinElement, type PinSource, type PinState, type Point } from "./model";
+import { moveAnchor, type PinAnchor, type PinElement, type PinSource, type PinState, type Point } from "./model";
 
 /**
  * Where a pin is, and where it is after the prototype changes.
@@ -59,52 +59,18 @@ function innermost<T>(items: readonly T[], rectOf: (item: T) => Rect, point: Poi
 
 const sameRect = (a: Rect, b: Rect) => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 
-/** A measured element's short print: 32 bits of its role, HTML tag and accessible name, as hex. Compared, never trusted. */
-function printOf(element: { readonly role: string; readonly name: string }, html: string): string {
-  const text = `${element.role}\n${html}\n${element.name}`;
-  let value = 0x811c9dc5;
-  for (let index = 0; index < text.length; index += 1) value = Math.imul(value ^ text.charCodeAt(index), 0x01000193);
-  return (value >>> 0).toString(16).padStart(8, "0");
-}
-
-const drewCache = new WeakMap<RenderedSnapshot, { readonly places: readonly TagPlace[]; readonly drew: readonly { readonly print: string; readonly tag: string }[] }>();
-
-/** Every visible, named element a frame drew, as its print and the tag of the innermost tagged part around its middle. */
-function drewOf(measure: FrameMeasure): readonly { readonly print: string; readonly tag: string }[] {
-  const known = drewCache.get(measure.snapshot);
-  if (known && known.places === measure.places) return known.drew;
-  const drew = measure.snapshot.elements.flatMap((item) => {
-    if (!item.visible || !drawn(item.rect) || item.name === "") return [];
-    const under = measure.places[innermost(measure.places, (place) => place.rect, centre(item.rect))];
-    return under ? [{ print: printOf(item, item.tag), tag: under.tag }] : [];
-  });
-  drewCache.set(measure.snapshot, { places: measure.places, drew });
-  return drew;
-}
-
-/**
- * What a frame drew under tags other than `tag`: the prints of its named
- * elements, sorted, each once, at most `MAX_ELSEWHERE`. Kept with a pin on a
- * TSX element (`PinSource.elsewhere`), it is all re-anchoring needs of the
- * measurement the pin was last found on.
- */
-export function elsewhereOf(measure: FrameMeasure, tag: string): string[] {
-  return [...new Set(drewOf(measure).flatMap((item) => (item.tag === tag ? [] : [item.print])))].sort().slice(0, MAX_ELSEWHERE);
-}
-
-/** A pin's source on a tagged part: a place in a TSX file also keeps what the frame drew elsewhere. */
-function sourceOn(measure: FrameMeasure, kind: "source" | "key", part: { readonly tag: string; readonly nth: number; readonly rect: Rect; readonly within: Point }): PinSource {
-  const base = { tag: part.tag, nth: part.nth, rect: part.rect, within: part.within };
-  return kind === "key" ? { ...base, kind } : { ...base, kind, elsewhere: elsewhereOf(measure, part.tag) };
+/** A pin's source on a tagged part: the spec element's key, which of its boxes, and where in that box. */
+function sourceOn(part: { readonly tag: string; readonly nth: number; readonly rect: Rect; readonly within: Point }): PinSource {
+  return { tag: part.tag, nth: part.nth, rect: part.rect, within: part.within, kind: "key" };
 }
 
 /** The tagged part under a point, when there is one. */
-function sourceAt(measure: FrameMeasure, point: Point, kind: "source" | "key"): PinElement["source"] {
+function sourceAt(measure: FrameMeasure, point: Point): PinElement["source"] {
   const index = innermost(measure.places, (place) => place.rect, point);
   const place = measure.places[index];
   if (!place) return undefined;
   const nth = measure.places.slice(0, index).filter((item) => item.tag === place.tag && drawn(item.rect)).length;
-  return sourceOn(measure, kind, { tag: place.tag, nth, rect: place.rect, within: within(place.rect, point) });
+  return sourceOn({ tag: place.tag, nth, rect: place.rect, within: within(place.rect, point) });
 }
 
 function labelOf(element: RenderedElement, point: Point): NonNullable<PinElement["label"]> {
@@ -147,16 +113,12 @@ export type FrameRef = { readonly scenario: string; readonly view: string; reado
 /** Whether an anchor is on a surface: the prototype's own frames (`undefined`), or one variant's. */
 export const onSurface = (anchor: { readonly variant?: string }, variant: string | undefined): boolean => (anchor.variant ?? null) === (variant ?? null);
 
-/**
- * A new pin's anchor: the frame, the point, and what the frame drew under
- * it. `kind` says what the frame's element tags are: where TSX is written
- * (`source`), or a spec's element keys (`key`).
- */
-export function anchorAt(measure: FrameMeasure | null, frame: FrameRef, point: Point, revision: string, kind: "source" | "key"): PinAnchor {
+/** A new pin's anchor: the frame, the point, and what the frame drew under it, by the spec's element keys. */
+export function anchorAt(measure: FrameMeasure | null, frame: FrameRef, point: Point, revision: string): PinAnchor {
   const base = { scenario: frame.scenario, view: frame.view, ...(frame.variant !== undefined ? { variant: frame.variant } : {}), revision, seen: revision, point: { x: round(point.x), y: round(point.y) } };
   if (!measure) return base;
   const label = labelAt(measure, point);
-  return { ...base, ...elementOf(sourceAt(measure, point, kind), label), near: nearby(measure, point, label), size: { width: measure.width, height: measure.height } };
+  return { ...base, ...elementOf(sourceAt(measure, point), label), near: nearby(measure, point, label), size: { width: measure.width, height: measure.height } };
 }
 
 /** One element of a frame a person can pin a note to without a pointer. */
@@ -177,9 +139,9 @@ export function elementChoices(measure: FrameMeasure): ElementChoice[] {
 }
 
 /** The anchor of a pin put on one element of the list: its middle. */
-export function anchorOn(measure: FrameMeasure, frame: FrameRef, index: number, revision: string, kind: "source" | "key"): PinAnchor | null {
+export function anchorOn(measure: FrameMeasure, frame: FrameRef, index: number, revision: string): PinAnchor | null {
   const element = measure.snapshot.elements[index];
-  return element && drawn(element.rect) ? anchorAt(measure, frame, centre(element.rect), revision, kind) : null;
+  return element && drawn(element.rect) ? anchorAt(measure, frame, centre(element.rect), revision) : null;
 }
 
 /** Of several boxes, the one whose middle is nearest a point. */
@@ -201,19 +163,15 @@ function nearest<T>(items: readonly T[], rectOf: (item: T) => Rect, point: Point
  * A pin's anchor on a new measurement of its frame.
  *
  * The pin stays on its element while that element is still on the page. An
- * element is found by its tag first. A TSX tag is a place in a file, which
- * another element can come to hold after an edit above it, so a tag is
- * believed when what it draws there is still the element the pin named
- * (its role, HTML tag and accessible name); otherwise the element is looked
- * for by that name, and its new tag adopted; and when the name is nowhere,
- * the tag alone is believed (the element was renamed where it stands),
- * unless what the tag draws now is an element this frame drew under another
- * tag when the pin was last found (`PinSource.elsewhere`, kept with the pin):
- * then another element moved into that place in the file and the pin's own
- * is gone. Nothing else is remembered between measurements, so the answer is
- * the same in the session the pin was made in, after a reload, and after an
- * export and import. The point keeps its place within the element's box,
- * wherever the box moved.
+ * element is found by its tag first, a spec element's key, which names it
+ * whatever is around it: the tag is believed when what it draws there is
+ * still the element the pin named (its role, HTML tag and accessible name);
+ * otherwise the element is looked for by that name, and its new tag
+ * adopted; and when the name is nowhere, the tag alone is believed (the
+ * element was renamed where it stands). Nothing else is remembered between
+ * measurements, so the answer is the same in the session the pin was made
+ * in, after a reload, and after an export and import. The point keeps its
+ * place within the element's box, wherever the box moved.
  *
  * When neither finds it, the pin is `lost`: it stays where it last was, to
  * be shown as "moved or gone". It is found again if the element comes back.
@@ -221,7 +179,7 @@ function nearest<T>(items: readonly T[], rectOf: (item: T) => Rect, point: Point
  *
  * Returns the same object when nothing changed.
  */
-export function resolveAnchor(anchor: PinAnchor, measure: FrameMeasure, revision: string, kind: "source" | "key"): PinAnchor {
+export function resolveAnchor(anchor: PinAnchor, measure: FrameMeasure, revision: string): PinAnchor {
   const element = anchor.element;
   const size = { width: measure.width, height: measure.height };
   const frame = { scenario: anchor.scenario, view: anchor.view, ...(anchor.variant !== undefined ? { variant: anchor.variant } : {}), revision: anchor.revision, seen: revision };
@@ -238,19 +196,17 @@ export function resolveAnchor(anchor: PinAnchor, measure: FrameMeasure, revision
     if (source && box && byTag) {
       const same = label ? nearest(named.filter((item) => contains(item.rect, byTag)), (item) => item.rect, byTag) : undefined;
       const now = same ? labelOf(same, byTag) : labelAt(measure, byTag);
-      // Where a TSX element is written is not who it is: an element this frame drew under another tag when the pin was last found has moved into this one's place.
-      const usurped = !same && source.kind === "source" && source.elsewhere !== undefined && now !== undefined && now.name !== "" && source.elsewhere.includes(printOf(now, now.html));
       // The element it named is still under the point; or it was renamed where it stands, and the pin names what is there now.
-      // A pin already lost is found again only by its element's name, never by a place in a file alone.
+      // A pin already lost is found again only by its element's name, never by its tag alone.
       const trusted = !anchor.lost || !label || label.name === "";
-      if (same || (named.length === 0 && !usurped && trusted)) found = { point: byTag, source: sourceOn(measure, source.kind, { tag: source.tag, nth: Math.max(0, boxes.indexOf(box)), rect: box.rect, within: source.within }), label: now };
+      if (same || (named.length === 0 && trusted)) found = { point: byTag, source: sourceOn({ tag: source.tag, nth: Math.max(0, boxes.indexOf(box)), rect: box.rect, within: source.within }), label: now };
     }
     if (found) {
       // Found by its tag: nothing more to look for.
     } else if (label && named.length > 0) {
       const match = nearest(named, (item) => item.rect, anchor.point) as RenderedElement;
       const point = pointIn(match.rect, label.within);
-      found = { point, source: sourceAt(measure, point, source?.kind ?? kind), label: { ...label, rect: match.rect } };
+      found = { point, source: sourceAt(measure, point), label: { ...label, rect: match.rect } };
     } else if (!source && label && label.name === "") {
       // Nothing names it (no tag, no accessible name), so nothing can say it is gone: it stays at its point, on what is there now.
       found = { point: anchor.point, source: undefined, label: labelAt(measure, anchor.point) };
@@ -270,13 +226,13 @@ export function resolveAnchor(anchor: PinAnchor, measure: FrameMeasure, revision
  * another surface. Returns the same state when no anchor changed, so calling
  * it again changes nothing.
  */
-export function reanchor(state: PinState, frames: Readonly<Record<string, FrameMeasure | undefined>>, revision: string, kind: "source" | "key", variant?: string): PinState {
+export function reanchor(state: PinState, frames: Readonly<Record<string, FrameMeasure | undefined>>, revision: string, variant?: string): PinState {
   let next = state;
   for (const pin of state.pins) {
     if (!onSurface(pin.anchor, variant)) continue;
     const measure = frames[`${pin.anchor.scenario}@${pin.anchor.view}`];
     if (!measure) continue;
-    const anchor = resolveAnchor(pin.anchor, measure, revision, kind);
+    const anchor = resolveAnchor(pin.anchor, measure, revision);
     if (anchor !== pin.anchor) next = moveAnchor(next, pin.number, anchor);
   }
   return next;

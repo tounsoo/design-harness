@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { RenderedElement, RenderedSnapshot } from "@design-harness/core";
-import { seedLegal } from "../../test/nook";
-import { anchorAt, anchorOn, elementChoices, elsewhereOf, fingerprint, intoView, reanchor, resolveAnchor, spots, toOverlay, toPage, type FrameMeasure } from "./anchor";
-import { MAX_ELSEWHERE, NO_PINS, addPin, parsePinState, type PinAnchor, type PinState } from "./model";
+import { seedSpec } from "../../test/nook";
+import { anchorAt, anchorOn, elementChoices, fingerprint, intoView, reanchor, resolveAnchor, spots, toOverlay, toPage, type FrameMeasure } from "./anchor";
+import { NO_PINS, addPin, type PinState } from "./model";
 
 const el = (role: string, name: string, tag: string, rect: [number, number, number, number], more: Partial<RenderedElement> = {}): RenderedElement => ({ role, name, tag, rect: { x: rect[0], y: rect[1], width: rect[2], height: rect[3] }, interactive: role === "button", visible: true, ...more });
 const snapshot = (elements: readonly RenderedElement[]): RenderedSnapshot => ({ scenario: "lantern-open", view: "desktop", scrollWidth: 1280, canvas: [255, 255, 255, 1], elements });
@@ -10,10 +10,10 @@ const place = (tag: string, rect: [number, number, number, number]) => ({ tag, r
 const measure = (elements: readonly RenderedElement[], places: readonly ReturnType<typeof place>[]): FrameMeasure => ({ snapshot: snapshot(elements), places, width: 1280, height: 900 });
 const FRAME = { scenario: "lantern-open", view: "desktop" };
 
-/** A page: a title, and a row of two buttons inside a tagged slot. */
+/** A page: a title, and a row of two buttons inside a tagged slot, each tagged with its spec key. */
 const first = measure(
   [el("heading", "Lantern", "h1", [100, 40, 300, 40]), el("button", "Hold room", "button", [100, 200, 120, 40]), el("button", "Book room", "button", [240, 200, 120, 40])],
-  [place("pages/booking.tsx:8:5", [80, 20, 600, 400]), place("pages/booking.tsx:10:7", [100, 40, 300, 40]), place("pages/booking.tsx:14:9", [100, 200, 120, 40]), place("pages/booking.tsx:15:9", [240, 200, 120, 40])],
+  [place("page", [80, 20, 600, 400]), place("name", [100, 40, 300, 40]), place("hold", [100, 200, 120, 40]), place("book", [240, 200, 120, 40])],
 );
 
 describe("mapping a click on an artboard to its page", () => {
@@ -42,27 +42,24 @@ describe("mapping a click on an artboard to its page", () => {
 
 describe("anchoring a pin", () => {
   it("names the innermost tagged part and the measured element under the point, and where in each the point is", () => {
-    const anchor = anchorAt(first, FRAME, { x: 270, y: 210 }, "rev-1", "source");
+    const anchor = anchorAt(first, FRAME, { x: 270, y: 210 }, "rev-1");
     expect(anchor).toMatchObject({ scenario: "lantern-open", view: "desktop", revision: "rev-1", seen: "rev-1", point: { x: 270, y: 210 }, size: { width: 1280, height: 900 } });
-    // A place in a TSX file also keeps a print of each named element the frame drew elsewhere: the title and the other button.
-    expect(anchor.element?.source).toEqual({ tag: "pages/booking.tsx:15:9", kind: "source", nth: 0, rect: { x: 240, y: 200, width: 120, height: 40 }, within: { x: 0.25, y: 0.25 }, elsewhere: elsewhereOf(first, "pages/booking.tsx:15:9") });
-    expect(elsewhereOf(first, "pages/booking.tsx:15:9")).toHaveLength(2);
-    // A spec element's key names it whatever is around it, so it keeps none.
-    expect(anchorAt(first, FRAME, { x: 270, y: 210 }, "rev-1", "key").element?.source).toEqual({ tag: "pages/booking.tsx:15:9", kind: "key", nth: 0, rect: { x: 240, y: 200, width: 120, height: 40 }, within: { x: 0.25, y: 0.25 } });
+    // A spec element's key names it whatever is around it: that, which of its boxes, and where in it, is all a pin keeps of it.
+    expect(anchor.element?.source).toEqual({ tag: "book", kind: "key", nth: 0, rect: { x: 240, y: 200, width: 120, height: 40 }, within: { x: 0.25, y: 0.25 } });
     expect(anchor.element?.label).toMatchObject({ role: "button", name: "Book room", html: "button", within: { x: 0.25, y: 0.25 } });
     expect(anchor.near).toEqual(['button "Hold room"', 'heading "Lantern"']);
   });
 
   it("names the control under the point, not the run of text inside it; a heading before plain text", () => {
     const nested = measure([el("button", "Book room", "button", [240, 200, 120, 40]), el("generic", "Book room", "span", [260, 210, 80, 20], { interactive: false }), el("heading", "Lantern", "h1", [100, 40, 300, 40], { headingLevel: 1 }), el("generic", "Lantern", "span", [100, 45, 90, 30])], []);
-    expect(anchorAt(nested, FRAME, { x: 300, y: 220 }, "rev-1", "source").element?.label).toMatchObject({ role: "button", html: "button" });
-    expect(anchorAt(nested, FRAME, { x: 120, y: 60 }, "rev-1", "source").element?.label).toMatchObject({ role: "heading", html: "h1" });
+    expect(anchorAt(nested, FRAME, { x: 300, y: 220 }, "rev-1").element?.label).toMatchObject({ role: "button", html: "button" });
+    expect(anchorAt(nested, FRAME, { x: 120, y: 60 }, "rev-1").element?.label).toMatchObject({ role: "heading", html: "h1" });
   });
 
   it("anchors to the page when nothing is under the point, and to the point alone on an unmeasured frame", () => {
-    expect(anchorAt(first, FRAME, { x: 1000, y: 700 }, "rev-1", "source").element).toBeUndefined();
-    expect(anchorAt(first, FRAME, { x: 500, y: 300 }, "rev-1", "source").element).toEqual({ source: expect.objectContaining({ tag: "pages/booking.tsx:8:5" }) });
-    expect(anchorAt(null, FRAME, { x: 5, y: 6 }, "rev-1", "source")).toEqual({ scenario: "lantern-open", view: "desktop", revision: "rev-1", seen: "rev-1", point: { x: 5, y: 6 } });
+    expect(anchorAt(first, FRAME, { x: 1000, y: 700 }, "rev-1").element).toBeUndefined();
+    expect(anchorAt(first, FRAME, { x: 500, y: 300 }, "rev-1").element).toEqual({ source: expect.objectContaining({ tag: "page" }) });
+    expect(anchorAt(null, FRAME, { x: 5, y: 6 }, "rev-1")).toEqual({ scenario: "lantern-open", view: "desktop", revision: "rev-1", seen: "rev-1", point: { x: 5, y: 6 } });
   });
 
   it("lists a frame's named, visible elements for a keyboard, telling equals apart, and pins the middle of the one picked", () => {
@@ -73,117 +70,68 @@ describe("anchoring a pin", () => {
       { index: 2, label: 'button "Book room"' },
       { index: 3, label: 'button "Book room" (2)' },
     ]);
-    const anchor = anchorOn(first, FRAME, 1, "rev-1", "source");
+    const anchor = anchorOn(first, FRAME, 1, "rev-1");
     expect(anchor?.point).toEqual({ x: 160, y: 220 });
-    expect(anchor?.element?.source?.tag).toBe("pages/booking.tsx:14:9");
-    expect(anchorOn(first, FRAME, 99, "rev-1", "source")).toBeNull();
+    expect(anchor?.element?.source?.tag).toBe("hold");
+    expect(anchorOn(first, FRAME, 99, "rev-1")).toBeNull();
   });
 });
 
 describe("a pin across revisions", () => {
-  const pinned = anchorAt(first, FRAME, { x: 270, y: 210 }, "rev-1", "source");
+  const pinned = anchorAt(first, FRAME, { x: 270, y: 210 }, "rev-1");
 
   it("is unchanged, the very same object, when the frame measures the same again", () => {
-    expect(resolveAnchor(pinned, first, "rev-1", "source")).toBe(pinned);
+    expect(resolveAnchor(pinned, first, "rev-1")).toBe(pinned);
   });
 
   it("follows its element when the element moves, keeping its place within it", () => {
     const moved = measure(
       [el("heading", "Lantern", "h1", [100, 40, 300, 40]), el("button", "Hold room", "button", [100, 500, 120, 40]), el("button", "Book room", "button", [240, 500, 240, 80])],
-      [place("pages/booking.tsx:8:5", [80, 20, 600, 700]), place("pages/booking.tsx:10:7", [100, 40, 300, 40]), place("pages/booking.tsx:14:9", [100, 500, 120, 40]), place("pages/booking.tsx:15:9", [240, 500, 240, 80])],
+      [place("page", [80, 20, 600, 700]), place("name", [100, 40, 300, 40]), place("hold", [100, 500, 120, 40]), place("book", [240, 500, 240, 80])],
     );
-    const next = resolveAnchor(pinned, moved, "rev-2", "source");
+    const next = resolveAnchor(pinned, moved, "rev-2");
     expect(next.point).toEqual({ x: 300, y: 520 });
     expect(next).toMatchObject({ revision: "rev-1", seen: "rev-2" });
     expect(next.lost).toBeUndefined();
-    expect(next.element?.source).toMatchObject({ tag: "pages/booking.tsx:15:9", rect: { x: 240, y: 500, width: 240, height: 80 } });
+    expect(next.element?.source).toMatchObject({ tag: "book", rect: { x: 240, y: 500, width: 240, height: 80 } });
   });
 
-  it("finds its element by name when an edit above moved where it is written, and never takes the element now written there", () => {
-    // A line was added above: Hold room is now written at 15:9, where Book room was, and Book room at 16:9.
-    const shifted = measure(first.snapshot.elements, [place("pages/booking.tsx:8:5", [80, 20, 600, 400]), place("pages/booking.tsx:10:7", [100, 40, 300, 40]), place("pages/booking.tsx:15:9", [100, 200, 120, 40]), place("pages/booking.tsx:16:9", [240, 200, 120, 40])]);
-    const next = resolveAnchor(pinned, shifted, "rev-2", "source");
+  it("finds its element by name when its key changed, and never takes the element now under its old key", () => {
+    // The spec was rewritten: Hold room is now keyed "book", where Book room was, and Book room "book-now".
+    const rekeyed = measure(first.snapshot.elements, [place("page", [80, 20, 600, 400]), place("name", [100, 40, 300, 40]), place("book", [100, 200, 120, 40]), place("book-now", [240, 200, 120, 40])]);
+    const next = resolveAnchor(pinned, rekeyed, "rev-2");
     expect(next.point).toEqual({ x: 270, y: 210 });
     expect(next.element?.label?.name).toBe("Book room");
-    expect(next.element?.source).toMatchObject({ tag: "pages/booking.tsx:16:9", kind: "source" });
+    expect(next.element?.source).toMatchObject({ tag: "book-now", kind: "key" });
     expect(next.lost).toBeUndefined();
   });
 
-  it("is gone, not moved onto a neighbour, when its element is removed and another is now written in its place", () => {
-    // Hold room pinned at 14:9. Its line is deleted, so Book room is now written at 14:9.
-    const hold = anchorAt(first, FRAME, { x: 130, y: 210 }, "rev-1", "source");
-    const after = measure([el("heading", "Lantern", "h1", [100, 40, 300, 40]), el("button", "Book room", "button", [100, 200, 120, 40])], [place("pages/booking.tsx:8:5", [80, 20, 600, 400]), place("pages/booking.tsx:10:7", [100, 40, 300, 40]), place("pages/booking.tsx:14:9", [100, 200, 120, 40])]);
-    const lost = resolveAnchor(hold, after, "rev-2", "source");
+  it("is gone when its element is removed, stays on its key when the element is renamed there, and stays gone once lost", () => {
+    const hold = anchorAt(first, FRAME, { x: 130, y: 210 }, "rev-1");
+    const after = measure([el("heading", "Lantern", "h1", [100, 40, 300, 40]), el("button", "Book room", "button", [100, 200, 120, 40])], [place("page", [80, 20, 600, 400]), place("name", [100, 40, 300, 40]), place("book", [100, 200, 120, 40])]);
+    const lost = resolveAnchor(hold, after, "rev-2");
     expect(lost).toMatchObject({ lost: true, point: { x: 130, y: 210 }, element: { label: { name: "Hold room" } } });
-    // The same measurement, when the element there is new to the page, is a rename where it stands.
-    const renamed = measure([el("heading", "Lantern", "h1", [100, 40, 300, 40]), el("button", "Hold for 10 minutes", "button", [100, 200, 160, 40])], [place("pages/booking.tsx:8:5", [80, 20, 600, 400]), place("pages/booking.tsx:10:7", [100, 40, 300, 40]), place("pages/booking.tsx:14:9", [100, 200, 160, 40])]);
-    expect(resolveAnchor(hold, renamed, "rev-2", "source")).toMatchObject({ element: { label: { name: "Hold for 10 minutes" }, source: { tag: "pages/booking.tsx:14:9" } } });
-    expect(resolveAnchor(hold, renamed, "rev-2", "source").lost).toBeUndefined();
+    // The same key drawing a new name is the element renamed where it stands.
+    const renamed = measure([el("heading", "Lantern", "h1", [100, 40, 300, 40]), el("button", "Hold for 10 minutes", "button", [100, 200, 160, 40])], [place("page", [80, 20, 600, 400]), place("name", [100, 40, 300, 40]), place("hold", [100, 200, 160, 40])]);
+    expect(resolveAnchor(hold, renamed, "rev-2")).toMatchObject({ element: { label: { name: "Hold for 10 minutes" }, source: { tag: "hold" } } });
+    expect(resolveAnchor(hold, renamed, "rev-2").lost).toBeUndefined();
     // Once lost it stays lost on that page.
-    expect(resolveAnchor(lost, after, "rev-2", "source")).toBe(lost);
-    // And Book room's own pin, whose tag is gone, is found by name at its new place.
-    const book = anchorAt(first, FRAME, { x: 270, y: 210 }, "rev-1", "source");
-    expect(resolveAnchor(book, after, "rev-2", "source")).toMatchObject({ point: { x: 130, y: 210 }, element: { source: { tag: "pages/booking.tsx:14:9" }, label: { name: "Book room" } } });
+    expect(resolveAnchor(lost, after, "rev-2")).toBe(lost);
+    // And Book room's own pin follows its key to its new place.
+    const book = anchorAt(first, FRAME, { x: 270, y: 210 }, "rev-1");
+    expect(resolveAnchor(book, after, "rev-2")).toMatchObject({ point: { x: 130, y: 210 }, element: { source: { tag: "book" }, label: { name: "Book room" } } });
     // All of it through reanchor.
     let state: PinState = NO_PINS;
     for (const anchor of [hold, book]) {
       const added = addPin(state, anchor, "A note", "2026-11-19T10:00:00.000Z");
       if (added.ok) state = added.value;
     }
-    expect(reanchor(state, { "lantern-open@desktop": after }, "rev-2", "source").pins.map((pin) => pin.anchor.lost ?? false)).toEqual([true, false]);
-  });
-
-  it("decides a rename from a neighbour the same after a reload and after an export and import: all it needs is kept with the pin", () => {
-    const hold = anchorAt(first, FRAME, { x: 130, y: 210 }, "rev-1", "source");
-    const added = addPin(NO_PINS, hold, "Is a hold needed?", "2026-11-19T10:00:00.000Z");
-    if (!added.ok) throw new Error(added.error);
-    // What the store and the project file hold is JSON; nothing else outlives the page.
-    const stored = parsePinState(JSON.parse(JSON.stringify(added.value)));
-    if (!stored.ok) throw new Error(stored.error.join("\n"));
-    const after = measure([el("heading", "Lantern", "h1", [100, 40, 300, 40]), el("button", "Book room", "button", [100, 200, 120, 40])], [place("pages/booking.tsx:8:5", [80, 20, 600, 400]), place("pages/booking.tsx:10:7", [100, 40, 300, 40]), place("pages/booking.tsx:14:9", [100, 200, 120, 40])]);
-    const renamed = measure([el("heading", "Lantern", "h1", [100, 40, 300, 40]), el("button", "Hold for 10 minutes", "button", [100, 200, 160, 40])], after.places);
-    for (const state of [added.value, stored.value]) {
-      expect(reanchor(state, { "lantern-open@desktop": after }, "rev-2", "source").pins[0]?.anchor).toMatchObject({ lost: true, element: { label: { name: "Hold room" } } });
-      const kept = reanchor(state, { "lantern-open@desktop": renamed }, "rev-2", "source").pins[0]?.anchor;
-      expect(kept?.lost).toBeUndefined();
-      expect(kept?.element?.label?.name).toBe("Hold for 10 minutes");
-    }
-    expect(reanchor(stored.value, { "lantern-open@desktop": after }, "rev-2", "source")).toEqual(reanchor(added.value, { "lantern-open@desktop": after }, "rev-2", "source"));
-    // What is kept is refreshed each time the pin is found, so a later edit is judged against the page as it last was, not as it first was.
-    const withHelp = measure([...first.snapshot.elements, el("button", "Help", "button", [400, 200, 80, 40])], [...first.places, place("pages/booking.tsx:16:9", [400, 200, 80, 40])]);
-    const seen = resolveAnchor(hold, withHelp, "rev-2", "source");
-    expect(seen.element?.source).toMatchObject({ kind: "source", elsewhere: elsewhereOf(withHelp, "pages/booking.tsx:14:9") });
-    const helpMoved = measure([el("heading", "Lantern", "h1", [100, 40, 300, 40]), el("button", "Help", "button", [100, 200, 80, 40])], [place("pages/booking.tsx:8:5", [80, 20, 600, 400]), place("pages/booking.tsx:10:7", [100, 40, 300, 40]), place("pages/booking.tsx:14:9", [100, 200, 80, 40])]);
-    expect(resolveAnchor(seen, helpMoved, "rev-3", "source").lost).toBe(true);
-    // A pin stored before this was kept has nothing to go by, and believes the tag as it always did, until it is next found.
-    const source = hold.element?.source;
-    if (source?.kind !== "source") throw new Error("expected a TSX source");
-    const { elsewhere: _dropped, ...bare } = source;
-    const old: PinAnchor = { ...hold, element: { ...hold.element, source: bare } };
-    expect(resolveAnchor(old, after, "rev-2", "source")).toMatchObject({ element: { label: { name: "Book room" } } });
-    expect(resolveAnchor(old, first, "rev-1", "source").element?.source).toMatchObject({ elsewhere: elsewhereOf(first, "pages/booking.tsx:14:9") });
-  });
-
-  it("keeps what was drawn elsewhere small: sorted, each once, short prints, never more than the cap", () => {
-    const many = measure(
-      Array.from({ length: 400 }, (_item, index) => el("button", `Button ${index}`, "button", [0, index * 10, 50, 8])),
-      Array.from({ length: 400 }, (_item, index) => place(`pages/list.tsx:${index + 1}:3`, [0, index * 10, 50, 8])),
-    );
-    const prints = elsewhereOf(many, "pages/list.tsx:1:3");
-    expect(prints).toHaveLength(MAX_ELSEWHERE);
-    expect(prints.every((print) => /^[0-9a-f]{8}$/.test(print))).toBe(true);
-    expect([...prints].sort()).toEqual(prints);
-    expect(new Set(prints).size).toBe(prints.length);
-    // The same element drawn twice is one print, and an element with no name is none.
-    const twice = measure([el("button", "Open", "button", [0, 0, 50, 20]), el("button", "Open", "button", [0, 40, 50, 20]), el("generic", "", "div", [0, 80, 50, 20])], [place("a.tsx:1:1", [0, 0, 50, 20]), place("a.tsx:2:1", [0, 40, 50, 20]), place("a.tsx:3:1", [0, 80, 50, 20])]);
-    expect(elsewhereOf(twice, "a.tsx:9:9")).toHaveLength(1);
-    expect(elsewhereOf(twice, "a.tsx:1:1")).toHaveLength(1);
-    expect(elsewhereOf(measure(twice.snapshot.elements, [place("a.tsx:1:1", [0, 0, 50, 60])]), "a.tsx:1:1")).toEqual([]);
+    expect(reanchor(state, { "lantern-open@desktop": after }, "rev-2").pins.map((pin) => pin.anchor.lost ?? false)).toEqual([true, false]);
   });
 
   it("places a variant's notes on the variant's frames only, and the prototype's on its own", () => {
-    const onBoard = anchorAt(first, FRAME, { x: 270, y: 210 }, "rev-1", "key");
-    const onVariant = anchorAt(first, { ...FRAME, variant: "b" }, { x: 270, y: 210 }, "var-1", "key");
+    const onBoard = anchorAt(first, FRAME, { x: 270, y: 210 }, "rev-1");
+    const onVariant = anchorAt(first, { ...FRAME, variant: "b" }, { x: 270, y: 210 }, "var-1");
     expect(onVariant.variant).toBe("b");
     expect(onBoard.variant).toBeUndefined();
     let state: PinState = NO_PINS;
@@ -192,15 +140,15 @@ describe("a pin across revisions", () => {
       if (added.ok) state = added.value;
     }
     // The variant drew the button lower; the prototype's own frame did not move.
-    const moved = measure([el("heading", "Lantern", "h1", [100, 40, 300, 40]), el("button", "Hold room", "button", [100, 500, 120, 40]), el("button", "Book room", "button", [240, 500, 120, 40])], [place("pages/booking.tsx:8:5", [80, 20, 600, 700]), place("pages/booking.tsx:10:7", [100, 40, 300, 40]), place("pages/booking.tsx:14:9", [100, 500, 120, 40]), place("pages/booking.tsx:15:9", [240, 500, 120, 40])]);
-    const forVariant = reanchor(state, { "lantern-open@desktop": moved }, "var-2", "key", "b");
+    const moved = measure([el("heading", "Lantern", "h1", [100, 40, 300, 40]), el("button", "Hold room", "button", [100, 500, 120, 40]), el("button", "Book room", "button", [240, 500, 120, 40])], [place("page", [80, 20, 600, 700]), place("name", [100, 40, 300, 40]), place("hold", [100, 500, 120, 40]), place("book", [240, 500, 120, 40])]);
+    const forVariant = reanchor(state, { "lantern-open@desktop": moved }, "var-2", "b");
     expect(forVariant.pins.map((pin) => [pin.anchor.point.y, pin.anchor.seen, pin.anchor.variant])).toEqual([[210, "rev-1", undefined], [510, "var-2", "b"]]);
-    const forBoard = reanchor(state, { "lantern-open@desktop": moved }, "rev-2", "key");
+    const forBoard = reanchor(state, { "lantern-open@desktop": moved }, "rev-2");
     expect(forBoard.pins.map((pin) => [pin.anchor.point.y, pin.anchor.seen, pin.anchor.variant])).toEqual([[510, "rev-2", undefined], [210, "var-1", "b"]]);
     // Another variant's frames move neither.
-    expect(reanchor(state, { "lantern-open@desktop": moved }, "var-9", "key", "c")).toBe(state);
+    expect(reanchor(state, { "lantern-open@desktop": moved }, "var-9", "c")).toBe(state);
     // A lost note on a variant keeps saying which variant it is on.
-    const gone = reanchor(state, { "lantern-open@desktop": measure([], []) }, "var-3", "key", "b");
+    const gone = reanchor(state, { "lantern-open@desktop": measure([], []) }, "var-3", "b");
     expect(gone.pins[1]?.anchor).toMatchObject({ lost: true, variant: "b" });
   });
 });
@@ -222,62 +170,62 @@ describe("notes that share a spot", () => {
 });
 
 describe("a pin across revisions, renamed, lost and found", () => {
-  const pinned = anchorAt(first, FRAME, { x: 270, y: 210 }, "rev-1", "source");
+  const pinned = anchorAt(first, FRAME, { x: 270, y: 210 }, "rev-1");
   it("stays on its element when the element is renamed where it stands, and names it anew", () => {
     const renamed = measure([el("heading", "Lantern", "h1", [100, 40, 300, 40]), el("button", "Hold room", "button", [100, 200, 120, 40]), el("button", "Reserve", "button", [240, 200, 120, 40])], first.places);
-    const next = resolveAnchor(pinned, renamed, "rev-2", "source");
+    const next = resolveAnchor(pinned, renamed, "rev-2");
     expect(next.lost).toBeUndefined();
     expect(next.point).toEqual({ x: 270, y: 210 });
     expect(next.element?.label?.name).toBe("Reserve");
-    expect(next.element?.source?.tag).toBe("pages/booking.tsx:15:9");
+    expect(next.element?.source?.tag).toBe("book");
   });
 
   it("is moved or gone, at its last position, when its element is removed; and is found again when it comes back", () => {
     const without = measure(first.snapshot.elements.slice(0, 2), first.places.slice(0, 3));
-    const lost = resolveAnchor(pinned, without, "rev-2", "source");
+    const lost = resolveAnchor(pinned, without, "rev-2");
     expect(lost.lost).toBe(true);
     expect(lost.point).toEqual(pinned.point);
     expect(lost.element).toEqual(pinned.element);
     expect(lost.seen).toBe("rev-1");
-    expect(resolveAnchor(lost, without, "rev-2", "source")).toBe(lost);
-    const back = resolveAnchor(lost, first, "rev-3", "source");
+    expect(resolveAnchor(lost, without, "rev-2")).toBe(lost);
+    const back = resolveAnchor(lost, first, "rev-3");
     expect(back.lost).toBeUndefined();
     expect(back).toMatchObject({ point: pinned.point, seen: "rev-3" });
   });
 
-  it("keeps a spec pin on its element key, and a pin on bare page at its point", () => {
+  it("keeps a pin on its element key wherever the key is drawn, and a pin on bare page at its point", () => {
     const spec = measure([el("button", "Book room", "button", [240, 200, 120, 40])], [place("actions/book", [240, 200, 120, 40])]);
-    const anchor = anchorAt(spec, FRAME, { x: 300, y: 220 }, "rev-1", "key");
+    const anchor = anchorAt(spec, FRAME, { x: 300, y: 220 }, "rev-1");
     expect(anchor.element?.source).toMatchObject({ tag: "actions/book", kind: "key" });
     const moved = measure([el("button", "Book", "button", [40, 600, 120, 40])], [place("actions/book", [40, 600, 120, 40])]);
-    expect(resolveAnchor(anchor, moved, "rev-2", "key")).toMatchObject({ point: { x: 100, y: 620 }, element: { label: { name: "Book" } } });
-    const bare = anchorAt(first, FRAME, { x: 1000, y: 700 }, "rev-1", "source");
-    expect(resolveAnchor(bare, moved, "rev-2", "source")).toMatchObject({ point: { x: 1000, y: 700 }, seen: "rev-2" });
+    expect(resolveAnchor(anchor, moved, "rev-2")).toMatchObject({ point: { x: 100, y: 620 }, element: { label: { name: "Book" } } });
+    const bare = anchorAt(first, FRAME, { x: 1000, y: 700 }, "rev-1");
+    expect(resolveAnchor(bare, moved, "rev-2")).toMatchObject({ point: { x: 1000, y: 700 }, seen: "rev-2" });
   });
 
   it("re-anchors every pin whose frame is measured, leaves the others, and returns the same state when nothing moved", () => {
     let state: PinState = NO_PINS;
     for (const [frame, point] of [[FRAME, { x: 270, y: 210 }], [{ scenario: "rooms-list", view: "phone" }, { x: 10, y: 10 }]] as const) {
-      const added = addPin(state, anchorAt(first, frame, point, "rev-1", "source"), "A note", "2026-11-19T10:00:00.000Z");
+      const added = addPin(state, anchorAt(first, frame, point, "rev-1"), "A note", "2026-11-19T10:00:00.000Z");
       if (added.ok) state = added.value;
     }
-    expect(reanchor(state, { "lantern-open@desktop": first }, "rev-1", "source")).toBe(state);
+    expect(reanchor(state, { "lantern-open@desktop": first }, "rev-1")).toBe(state);
     const without = measure(first.snapshot.elements.slice(0, 2), first.places.slice(0, 3));
-    const next = reanchor(state, { "lantern-open@desktop": without }, "rev-2", "source");
+    const next = reanchor(state, { "lantern-open@desktop": without }, "rev-2");
     expect(next.pins.map((pin) => pin.anchor.lost ?? false)).toEqual([true, false]);
     expect(next.pins[1]).toBe(state.pins[1]);
     expect(next.pins[0]).toMatchObject({ note: "A note", status: "open", history: state.pins[0]?.history });
-    expect(reanchor(next, { "lantern-open@desktop": without }, "rev-2", "source")).toBe(next);
+    expect(reanchor(next, { "lantern-open@desktop": without }, "rev-2")).toBe(next);
   });
 });
 
 describe("a revision's fingerprint", () => {
   it("is the same for the same prototype and different after any change", () => {
-    const a = seedLegal();
-    const b = seedLegal();
+    const a = seedSpec();
+    const b = seedSpec();
     expect(fingerprint(a)).toMatch(/^[0-9a-f]{16}$/);
     expect(fingerprint(b)).toBe(fingerprint(a));
     expect(fingerprint(Object.fromEntries(Object.entries(a).reverse()) as typeof a)).toBe(fingerprint(a));
-    expect(fingerprint({ ...a, files: { ...a.files, "pages/rooms.tsx": `${a.files["pages/rooms.tsx"] ?? ""} ` } })).not.toBe(fingerprint(a));
+    expect(fingerprint({ ...a, files: { ...a.files, "pages/rooms.json": `${a.files["pages/rooms.json"] ?? ""} ` } })).not.toBe(fingerprint(a));
   });
 });

@@ -27,7 +27,10 @@ export type Measured = { readonly revision: number; readonly report: CheckReport
 /** What the tools need from the app. */
 export interface AgentHost {
   config(): ProjectConfig;
+  /** The open prototype. Never called while `tsx` says the open one is TSX: there is no spec to give. */
   prototype(): Prototype;
+  /** True while the open prototype is a stored TSX one, which takes no turn and no tool; absent where every prototype is a spec. */
+  tsx?(): boolean;
   /** Makes `next` the prototype at once, as a new revision, and returns that revision. */
   apply(next: Prototype): { readonly revision: number };
   saveConfig(next: ProjectConfig): Promise<void>;
@@ -205,11 +208,8 @@ const TOOLS: readonly Tool[] = [
 /** The tool definitions sent with every request. */
 export const TOOL_DEFINITIONS: readonly BetaTool[] = TOOLS.map((item) => item.definition);
 
-/** Why a prototype that is not a spec takes no tool and no turn: TSX prototypes are kept, read-only. */
-export const TSX_READ_ONLY = "This prototype is TSX. TSX prototypes are no longer edited here: the agent writes specs only. It still renders and checks, read-only. Export its code, or start a spec version of it.";
-
-/** Whether the agent can work on a prototype: only a spec one. */
-export const isSpec = (prototype: Prototype): boolean => prototype.format === "spec";
+/** Why a stored TSX prototype takes no tool and no turn: core no longer reads TSX, so nothing renders, checks or changes it. */
+export const TSX_READ_ONLY = "This prototype is TSX. TSX prototypes are no longer edited or checked here: the agent writes specs only. Export its code, or start a spec version of it.";
 
 export type ToolCall = { readonly id: string; readonly name: string; readonly input: unknown };
 
@@ -249,7 +249,7 @@ const refused = (title: string, content: string): ToolOutcome => ({ content, isE
 
 /** Validates a call's input against its tool's schema, then runs it. */
 export async function runTool(call: ToolCall, host: AgentHost, signal: AbortSignal): Promise<ToolOutcome> {
-  if (!isSpec(host.prototype())) return refused(`${call.name} not run: TSX is read-only`, `${TSX_READ_ONLY} Nothing ran.`);
+  if (host.tsx?.()) return refused(`${call.name} not run: TSX is read-only`, `${TSX_READ_ONLY} Nothing ran.`);
   const found = TOOLS.find((item) => item.definition.name === call.name);
   if (!found) return refused(`Unknown tool ${call.name}`, `There is no tool "${call.name}" for this prototype. The tools are ${TOOLS.map((item) => item.definition.name).join(", ")}.`);
   const issues = validateInput(found.schema, call.input);

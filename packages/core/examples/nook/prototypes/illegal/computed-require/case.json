@@ -1,1 +1,0 @@
-{ "what": "require() of a computed name", "expect": [{ "rule": "imports-from-library", "message": "with a computed specifier, so what it loads cannot be checked" }] }
