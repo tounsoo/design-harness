@@ -31,7 +31,7 @@ import { frameKey, type Session, type SessionState } from "../runtime/session";
 import type { PrototypeRecord } from "../store/project-file";
 import { adoptProposal, approveProposal, declineProposal, sendBackProposal, type ExampleMeasurement } from "../review/actions";
 import { inventoryDiff, type DiffSection } from "../review/diff";
-import { REVIEWER, draftedBy, formatTime, proposalTimeline, timelineTitle, type TimelineEntry } from "../review/timeline";
+import { REVIEWER, draftedBy, formatTime, ownProposal, proposalTimeline, timelineTitle, type TimelineEntry } from "../review/timeline";
 import { FrameCard, FrameViewport } from "./Board";
 import { EvidenceFigure, drawsFigure } from "../visual/figures";
 import { ClassScale, ProposalTrack, RuleFigure } from "../visual/project-figures";
@@ -291,7 +291,7 @@ function RequestActions({ proposal, agent, onDecline, onSendBack }: { readonly p
         <Stack.Root gap="condensed">
           <Stack.Root direction="row" align="center" gap="condensed" wrap>
             <Button.Root variant="secondary" onClick={() => setForm(form === "send-back" ? null : "send-back")} aria-expanded={form === "send-back"}>
-              Send back to the agent
+              {sendBackWords(proposal)}
             </Button.Root>
             <Button.Root variant="ghost" onClick={() => setForm(form === "decline" ? null : "decline")} aria-expanded={form === "decline"}>
               Decline
@@ -615,7 +615,7 @@ function Actions({ proposal, agent, measuring, ready, dryRun, judgedRefusal, onA
             )}
             {status === "open" && (
               <Button.Root variant="secondary" onClick={() => setForm(form === "send-back" ? null : "send-back")} aria-expanded={form === "send-back"}>
-                Send back to the agent
+                {sendBackWords(proposal)}
               </Button.Root>
             )}
             <Button.Root variant="ghost" onClick={() => setForm(form === "decline" ? null : "decline")} aria-expanded={form === "decline"}>
@@ -650,6 +650,15 @@ function Actions({ proposal, agent, measuring, ready, dryRun, judgedRefusal, onA
       </Card.Body>
     </Card.Root>
   );
+}
+
+/**
+ * What the action that sends the agent a note is called. The agent's own
+ * proposal goes back to it; one the person drafted was never the agent's, so
+ * there the same action is named for what it does. Both are core's `sendBack`.
+ */
+function sendBackWords(proposal: Proposal): string {
+  return ownProposal(proposal) ? "Ask the agent to revise it" : "Send back to the agent";
 }
 
 /** A note the action needs, which it refuses to go without. */
@@ -1453,7 +1462,7 @@ function History({ proposal, config }: { readonly proposal: Proposal; readonly c
       <Steps.Root variant="progress" className="review-history" aria-label="History" data-testid="review-history">
         {timeline.map((entry, index) => (
           <Steps.Item key={index} status="done" statusLabel="" data-kind={entry.kind} data-entry-status={entry.kind === "status" ? entry.status : undefined}>
-            <HistoryEntry entry={entry} config={config} />
+            <HistoryEntry entry={entry} config={config} own={ownProposal(proposal)} />
           </Steps.Item>
         ))}
         <Steps.Item status="current" statusLabel="" data-kind="now">
@@ -1467,11 +1476,11 @@ function History({ proposal, config }: { readonly proposal: Proposal; readonly c
   );
 }
 
-function HistoryEntry({ entry, config }: { readonly entry: TimelineEntry; readonly config: ProjectConfig }) {
+function HistoryEntry({ entry, config, own }: { readonly entry: TimelineEntry; readonly config: ProjectConfig; readonly own: boolean }) {
   return (
     <Stack.Root gap="none" className="history-entry">
       <Text.Root as="span" weight="medium">
-        {timelineTitle(entry)}
+        {timelineTitle(entry, own)}
         <Text.Root as="span" tone="muted">
           {" "}
           · <time dateTime={entry.at}>{formatTime(entry.at)}</time>

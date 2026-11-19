@@ -186,7 +186,12 @@ describe("changing a rule's own limit", () => {
     const two = withMax(2);
     const stricter = impactOf(two, changed(previewChange(two, ruleOf(two, onePrimary.id), { limits: { max: 1 } }, "")).draft, [booking, early], [onePrimary.id]);
     if (!stricter.ok) throw new Error(stricter.refusal.message);
-    expect(stricter.summary).toBe("0 of 2 prototypes have findings from this rule now; 1 would newly fail.");
+    expect(stricter.summary).toBe("None of the 2 prototypes has findings from this rule now; 1 would newly fail.");
+    // One prototype is not "0 of 1 prototype have": the sentence is about the one.
+    const alone = impactOf(two, changed(previewChange(two, ruleOf(two, onePrimary.id), { limits: { max: 1 } }, "")).draft, [early], [onePrimary.id]);
+    expect(alone.ok && alone.summary).toBe("The one prototype has no findings from this rule now; it would newly fail.");
+    const cleared = impactOf(nook, changed(previewChange(nook, onePrimary, { limits: { max: 2 } }, "")).draft, [early], [onePrimary.id]);
+    expect(cleared.ok && cleared.summary).toBe("The one prototype has findings from this rule now; it would stop failing.");
     expect(stricter.rows[1]).toMatchObject({ name: "Early booking", effect: "fails" });
     expect(stricter.rows[1]?.text).toMatch(/^No finding from this rule now\. It would newly fail one-primary-per-page: Page "booking" has 2 primary actions, more than 1/);
   });

@@ -142,7 +142,7 @@ describe("a proposal on its card and its track", () => {
     expect(changeLine(proposal({}))).toBe("Changes nothing.");
   });
 
-  it("orders the list open first, newest first in each status, and keeps the Project tab's timeline to five", () => {
+  it("orders the list open first, newest first in each status, and keeps the Project view's timeline to five", () => {
     const at = (day: number) => `2026-11-${String(day).padStart(2, "0")}T10:00:00.000Z`;
     const many = [1, 2, 3, 4, 5, 6, 7].map((day) => proposal({ id: `p${day}`, status: day % 2 === 0 ? "adopted" : "open", history: [{ status: "open", at: at(day) }, ...(day % 2 === 0 ? [{ status: "adopted" as const, at: at(day + 10) }] : [])] }));
     expect(sortProposals(many, ["open", "approved", "adopted", "declined"]).map((item) => item.id)).toEqual(["p7", "p5", "p3", "p1", "p6", "p4", "p2"]);

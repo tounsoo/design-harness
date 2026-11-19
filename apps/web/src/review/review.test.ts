@@ -5,7 +5,7 @@ import { seedLegal } from "../../test/nook";
 import { drafted, harborBelowFold, harborDraft, legalSnapshots, toastDraft } from "../../test/proposals";
 import { adoptProposal, approveProposal, declineProposal, sendBackMessage, sendBackProposal } from "./actions";
 import { inventoryDiff } from "./diff";
-import { REVIEWER, proposalTimeline, timelineTitle } from "./timeline";
+import { REVIEWER, ownProposal, proposalTimeline, timelineTitle } from "./timeline";
 
 function ok<T>(result: Result<T, Refusal | string>): T {
   if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
@@ -62,6 +62,19 @@ describe("the review's actions", () => {
     expect(sent.message).toContain('proposal "booking-toast" (A toast that confirms a booking)');
     expect(sent.message).toContain("revise_proposal");
     expect(sent.message.endsWith("Two examples, please.")).toBe(true);
+  });
+
+  it("a proposal the person drafted is not sent back: the agent is asked to revise it, and the history says so", () => {
+    const mine = drafted();
+    const own = { ...mine, proposals: mine.proposals.map((item) => ({ ...item, history: item.history.map((entry, index) => (index === 0 ? { ...entry, by: REVIEWER } : entry)) })) };
+    const sent = ok(sendBackProposal(own, "booking-toast", "Keep it to the booking page.", "2026-11-18T09:05:00.000Z"));
+    expect(sent.message).toBe('I started proposal "booking-toast" (A toast that confirms a booking) myself, and I am asking you to revise it from its review page. Revise it with revise_proposal, keeping its id. My note:\n\nKeep it to the booking page.');
+    expect(sent.message).not.toContain("back");
+    expect(ownProposal(proposal(sent.config))).toBe(true);
+    expect(proposalTimeline(proposal(sent.config)).map((entry) => timelineTitle(entry, true))).toEqual(["Drafted by you", "Revision asked by you"]);
+    // The agent's proposal reads as it did.
+    expect(ownProposal(proposal(drafted()))).toBe(false);
+    expect(ok(sendBackProposal(drafted(), "booking-toast", "Tighter.", "t")).message).toMatch(/^I sent proposal "booking-toast" \(A toast that confirms a booking\) back to you from its review page\./);
   });
 
   it("adopts on measured examples, storing the snapshots, so a reload re-runs the examples to the same result", () => {
