@@ -22,6 +22,7 @@ import { CodePanel, MANIFEST_FILE } from "./CodePanel";
 import { NewPrototype } from "./NewPrototype";
 import { blankPrototype, prototypeId, type PrototypeFormat } from "./new-prototype";
 import { ProjectView } from "./ProjectView";
+import { PackagesNotice } from "./LibraryVersion";
 import { ProposalPage } from "./ProposalPage";
 import { ProposalsView } from "./ProposalsView";
 import { PANEL_SIZES, usePanels } from "./panels";
@@ -98,6 +99,8 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   const [settings, setSettings] = useState<AgentSettings>(() => loadSettings());
   const settingsRef = useRef(settings);
   const [center, setCenter] = useState<"canvas" | "project" | "proposals" | "variants">("canvas");
+  /** A library version the canvas's packages notice picked, for the Project view to compare. */
+  const [libraryTarget, setLibraryTarget] = useState<string | undefined>(undefined);
   /** The proposal whose review page is open in the Proposals view, or null for the list. */
   const [reviewing, setReviewing] = useState<string | null>(null);
   /** Text put into the chat's message box for the person to edit and send; the nonce makes the same text land twice. */
@@ -682,6 +685,15 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
               <main id={mainId} tabIndex={-1} className="app-main" aria-label={center === "canvas" ? "Canvas" : center === "project" ? "Project" : center === "variants" ? "Variants" : "Proposals"}>
                 {/* The board stays laid out under the project view, so frames keep their viewport and keep measuring. */}
                 <div className="app-main-pane" data-inactive={center === "canvas" ? undefined : ""} aria-hidden={center === "canvas" ? undefined : true}>
+                  <PackagesNotice
+                    config={config}
+                    packages={state.packages}
+                    onSave={(next) => void saveConfig(next)}
+                    onMove={(target) => {
+                      setLibraryTarget(target);
+                      setCenter("project");
+                    }}
+                  />
                   {previewing && (
                     <Alert.Root tone="info" className="app-preview" data-testid="spec-preview">
                       <Alert.Title>Drawing the agent&apos;s change as it arrives</Alert.Title>
@@ -728,7 +740,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
                 )}
                 {center === "project" && (
                   <div className="app-main-pane app-main-scroll">
-                    <ProjectView config={config} onOpenProposal={openProposal} prototype={current} onGoToState={goToState} />
+                    <ProjectView config={config} onOpenProposal={openProposal} prototype={current} onGoToState={goToState} prototypes={records} onSave={(next) => void saveConfig(next)} libraryTarget={libraryTarget} />
                   </div>
                 )}
                 {center === "proposals" && (

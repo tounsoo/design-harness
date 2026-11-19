@@ -5,6 +5,7 @@ import { formatTime } from "../review/timeline";
 import type { PrototypeRecord } from "../store/project-file";
 import { TaskMaps } from "./ChecksPanel";
 import { LayoutsView } from "./LayoutsView";
+import { LibraryVersionSection } from "./LibraryVersion";
 
 /**
  * The project, read-only, for a designer first: what a prototype here can
@@ -13,7 +14,27 @@ import { LayoutsView } from "./LayoutsView";
  * mapping, the views and the raw rules sit one step away under their
  * details. Every adopted proposal's examples re-run on demand.
  */
-export function ProjectView({ config, onOpenProposal, prototype, onGoToState }: { readonly config: ProjectConfig; readonly onOpenProposal: (id: string) => void; readonly prototype?: PrototypeRecord | undefined; /** Goes to a flow state's artboard on the canvas, from a flow map. */ readonly onGoToState?: ((state: string) => void) | undefined }) {
+export function ProjectView({
+  config,
+  onOpenProposal,
+  prototype,
+  onGoToState,
+  prototypes = [],
+  onSave,
+  libraryTarget,
+}: {
+  readonly config: ProjectConfig;
+  readonly onOpenProposal: (id: string) => void;
+  readonly prototype?: PrototypeRecord | undefined;
+  /** Goes to a flow state's artboard on the canvas, from a flow map. */
+  readonly onGoToState?: ((state: string) => void) | undefined;
+  /** Every prototype in the project, for a library move's dry run. */
+  readonly prototypes?: readonly PrototypeRecord[];
+  /** Saves a library move or source choice the person confirmed; without it the library section is read-only. */
+  readonly onSave?: ((next: ProjectConfig) => void) | undefined;
+  /** A version to compare at once, picked from the canvas's packages notice. */
+  readonly libraryTarget?: string | undefined;
+}) {
   // Core's facts about the open prototype's flow: each task's routes against its budget.
   const flow = prototype ? flowFacts(config, prototype.prototype) : null;
   const { library, inventories, inputs } = config;
@@ -26,7 +47,7 @@ export function ProjectView({ config, onOpenProposal, prototype, onGoToState }: 
         </Text.Root>
         <Text.Root as="h1">{config.name}</Text.Root>
         <Text.Root as="p" tone="muted">
-          The parts and rules every prototype in {config.name} follows. It changes only through proposals you approve.
+          The parts and rules every prototype in {config.name} follows. It changes only through proposals you approve, and a library version move you confirm.
         </Text.Root>
       </div>
 
@@ -36,6 +57,8 @@ export function ProjectView({ config, onOpenProposal, prototype, onGoToState }: 
         <Stat value={config.rules.length} label="rules checked on every change" />
         <Stat value={open} label={open === 1 ? "proposal waiting for you" : "proposals waiting for you"} />
       </ul>
+
+      {onSave && <LibraryVersionSection config={config} prototypes={prototypes} onSave={onSave} target={libraryTarget} />}
 
       {prototype?.prototype.format === "spec" && <LayoutsView config={config} record={prototype} />}
 
