@@ -33,6 +33,8 @@ export interface AgentHost {
   saveConfig(next: ProjectConfig): Promise<void>;
   /** Core's report for the current source, once every frame has measured that revision. */
   measured(signal: AbortSignal): Promise<Measured>;
+  /** Core's report for the current source if every frame has measured it already, without waiting; null otherwise. */
+  checked?(): CheckReport | null;
   /** The time, as ISO 8601, for a proposal's history. */
   now(): string;
   /** The open prototype's variants and the picks the person applied. */
@@ -74,6 +76,17 @@ const EXAMPLE: JsonSchema = {
   additionalProperties: false,
 };
 
+const WORD_EXAMPLE: JsonSchema = {
+  type: "object",
+  properties: {
+    name: { type: "string", pattern: SLUG },
+    description: { type: "string", minLength: 1, maxLength: 1000, description: "What the prototype is like, so a person can build it." },
+    snippet: { type: "string", maxLength: 4000, description: "Optional: the part of a page or spec that shows it." },
+  },
+  required: ["name", "description"],
+  additionalProperties: false,
+};
+
 /** What a proposal says, as draft_proposal and revise_proposal take it. There is no status field: a status is the user's to set. */
 const PROPOSAL_FIELDS: Readonly<Record<string, JsonSchema>> = {
   title: { type: "string", minLength: 1, maxLength: 200 },
@@ -100,6 +113,19 @@ const PROPOSAL_FIELDS: Readonly<Record<string, JsonSchema>> = {
       },
     },
     required: ["pass", "fail"],
+    additionalProperties: false,
+  },
+  needs_rule_type: {
+    type: "object",
+    description:
+      "Only when no rule type in the vocabulary can express the rule: a request for a new rule type, which is a code change to core that the user files. Give it instead of rules, inventory and examples. Core never approves or adopts it.",
+    properties: {
+      checks: { type: "string", minLength: 1, maxLength: 2000, description: "What the rule should check, exactly." },
+      why_not: { type: "string", minLength: 1, maxLength: 2000, description: "Why no rule type in the vocabulary (read_project's rules show them) can say it: name the types you considered and what each cannot express." },
+      pass: { type: "array", minItems: 1, items: WORD_EXAMPLE, description: "Prototypes the rule must pass, in words." },
+      fail: { type: "array", minItems: 1, items: WORD_EXAMPLE, description: "Prototypes the rule must fail, in words." },
+    },
+    required: ["checks", "why_not", "pass", "fail"],
     additionalProperties: false,
   },
 };
@@ -150,8 +176,8 @@ const TOOLS: readonly Tool[] = [
   ),
   tool(
     "draft_proposal",
-    "Draft a proposal when the request needs something the inventories lack or a rule in force forbids: a component, layout, page type, flow state or task, a changed cap or ranking, or a new rule. Use it instead of working around a check. It is saved as open, and core's adoption dry run tells you whether it would be adopted or why not. To change a proposal you drafted, use revise_proposal, which keeps its history; draft_proposal refuses an id that exists. Only the user can approve, decline or adopt it. Each example starts from the current prototype: files replace or add files, remove_files removes some, manifest replaces the manifest.",
-    { type: "object", properties: { id: { type: "string", pattern: SLUG }, ...PROPOSAL_FIELDS }, required: ["id", "title", "reason", "examples"], additionalProperties: false },
+    "Draft a proposal when the request needs something the inventories lack or a rule in force forbids: a component, layout, page type, flow state or task, a changed cap or ranking, or a new rule. Use it instead of working around a check. It is saved as open, and core's adoption dry run tells you whether it would be adopted or why not. To change a proposal you drafted, use revise_proposal, which keeps its history; draft_proposal refuses an id that exists. Only the user can approve, decline or adopt it. Each example starts from the current prototype: files replace or add files, remove_files removes some, manifest replaces the manifest. Give examples, or, only when no rule type in the vocabulary can express the rule, needs_rule_type in place of rules, inventory and examples: a request for a code change that can never be adopted.",
+    { type: "object", properties: { id: { type: "string", pattern: SLUG }, ...PROPOSAL_FIELDS }, required: ["id", "title", "reason"], additionalProperties: false },
   ),
   tool(
     "revise_proposal",
@@ -218,6 +244,8 @@ export type ProposalCard = {
   readonly action: "drafted" | "revised";
   /** The dry run could not judge a rendered rule without snapshots; the review page measures the examples. */
   readonly needsMeasurement?: true;
+  /** It asks for a new rule type: a code change, never adopted. */
+  readonly request?: true;
 };
 
 const refused = (title: string, content: string): ToolOutcome => ({ content, isError: true, changed: false, title });
@@ -298,6 +326,7 @@ function projectText(config: ProjectConfig): string {
         status: proposal.status,
         inventory: proposal.inventory,
         rules: proposal.rules,
+        ...(proposal.needsRuleType ? { needsRuleType: proposal.needsRuleType } : {}),
         // What happened to it, notes included, so a send-back's note can be read again; earlier versions stay out.
         history: [...proposal.history.map((entry) => ({ ...entry })), ...(proposal.events ?? []).map(({ kind, at, by, note }) => ({ event: kind, at, by, note }))],
       })),
@@ -408,6 +437,14 @@ export function describeMeasured({ revision, report, frames }: Measured): string
   return lines.join("\n");
 }
 
+type WordExampleInput = { readonly name: string; readonly description: string; readonly snippet?: string };
+type RuleTypeInput = { readonly checks: string; readonly why_not: string; readonly pass: readonly WordExampleInput[]; readonly fail: readonly WordExampleInput[] };
+
+function ruleTypeOf(input: RuleTypeInput): NonNullable<ProposalDraft["needsRuleType"]> {
+  const words = (example: WordExampleInput) => ({ name: example.name, description: example.description, ...(example.snippet !== undefined ? { snippet: example.snippet } : {}) });
+  return { checks: input.checks, whyNot: input.why_not, pass: input.pass.map(words), fail: input.fail.map(words) };
+}
+
 type ExampleInput = { readonly name: string; readonly files?: Record<string, string>; readonly remove_files?: readonly string[]; readonly manifest?: Partial<Omit<Prototype, "files">>; readonly flagged_by?: { readonly rule: string; readonly message?: string } };
 
 function examplePrototype(current: Prototype, example: ExampleInput): Prototype {
@@ -433,6 +470,7 @@ function examplesOf(current: Prototype, examples: { pass: ExampleInput[]; fail: 
 function draftFrom(input: Record<string, unknown>, current: Prototype, base?: Proposal): ProposalDraft {
   const rules = input.rules as { add?: unknown[]; remove?: string[] } | undefined;
   const examples = input.examples as { pass: ExampleInput[]; fail: ExampleInput[] } | undefined;
+  const request = input.needs_rule_type !== undefined ? ruleTypeOf(input.needs_rule_type as RuleTypeInput) : base?.needsRuleType;
   return {
     id: String(input.id),
     title: input.title !== undefined ? String(input.title) : (base?.title ?? ""),
@@ -441,12 +479,17 @@ function draftFrom(input: Record<string, unknown>, current: Prototype, base?: Pr
     inventory: (input.inventory ?? base?.inventory ?? []) as ProposalDraft["inventory"],
     rules: rules ? { add: (rules.add ?? []) as ProposalDraft["rules"]["add"], remove: rules.remove ?? [] } : (base?.rules ?? { add: [], remove: [] }),
     examples: examples ? examplesOf(current, examples) : (base?.examples ?? { pass: [], fail: [] }),
+    ...(request ? { needsRuleType: request } : {}),
   };
 }
 
 /** Core's adoption dry run on a saved proposal, as the agent reads it and as the chat's card shows it. */
-function dryRun(host: AgentHost, config: ProjectConfig, id: string, at: string): { adoptable: boolean; needsMeasurement?: true; verdict: string } {
+function dryRun(host: AgentHost, config: ProjectConfig, id: string, at: string): { adoptable: boolean; needsMeasurement?: true; request?: true; verdict: string } {
   const proposal = config.proposals.find((item) => item.id === id);
+  // A request for a new rule type is not judged: core refuses to approve or adopt one, and that is what it is for.
+  if (proposal?.needsRuleType) {
+    return { adoptable: false, request: true, verdict: "It asks for a new rule type, which is a code change to core: the user can copy it as a request to file, and core will never approve or adopt it as a check." };
+  }
   const rendered = (proposal?.rules.add ?? []).filter((rule) => rule.type === "rendered").map((rule) => `"${rule.id}"`);
   // The dry run here reads source only: frames measure the examples on the proposal's review page, before the user can adopt it.
   const measuring = rendered.length > 0 ? ` It adds rendered ${rendered.length === 1 ? "rule" : "rules"} ${rendered.join(", ")}, which need measured snapshots: this dry run has none, so a rendered rule that did not run is expected here. The review page measures every example in frames before the user can adopt it.` : "";
@@ -474,19 +517,24 @@ async function draftProposal(host: AgentHost, input: Record<string, unknown>): P
         : `Proposal "${id}" is ${existing.status}, so it cannot be drafted again. Choose a new id.`,
     );
   }
+  if (input.examples === undefined && input.needs_rule_type === undefined) {
+    return refused(`Proposal ${id} not drafted`, "Give examples that pass and fail, which prove the proposal's rules; or, only when no rule type in the vocabulary can express the rule, needs_rule_type instead. Nothing was saved.");
+  }
   const draft = draftFrom(input, host.prototype());
   const at = host.now();
   const proposed = propose(config, draft, { at, by: "agent" });
   if (!proposed.ok) return refused(`Proposal ${id} not drafted`, `Core refused the draft, so it was not saved: [${proposed.error.code}] ${proposed.error.message}`);
   await host.saveConfig(proposed.value);
-  const { adoptable, needsMeasurement, verdict } = dryRun(host, proposed.value, id, at);
-  const next = adoptable || needsMeasurement ? "" : " Fix it with revise_proposal.";
+  const { adoptable, needsMeasurement, request, verdict } = dryRun(host, proposed.value, id, at);
+  const next = adoptable || needsMeasurement || request ? "" : " Fix it with revise_proposal.";
   return {
-    content: `Saved proposal "${id}" as open. ${verdict}${next} Only the user can approve or adopt it; until then it stays open and the rules in force are unchanged.`,
+    content: request
+      ? `Saved request "${id}" for a new rule type as open. ${verdict} The rules in force are unchanged; until core has the rule type, keep the prototype to the rules it has.`
+      : `Saved proposal "${id}" as open. ${verdict}${next} Only the user can approve or adopt it; until then it stays open and the rules in force are unchanged.`,
     isError: false,
     changed: false,
-    title: `Drafted proposal ${id}`,
-    proposal: { id, title: draft.title, adoptable, verdict, action: "drafted", ...(needsMeasurement ? { needsMeasurement } : {}) },
+    title: request ? `Filed a request for a new rule type, ${id}` : `Drafted proposal ${id}`,
+    proposal: { id, title: draft.title, adoptable, verdict, action: "drafted", ...(needsMeasurement ? { needsMeasurement } : {}), ...(request ? { request } : {}) },
   };
 }
 
@@ -503,12 +551,12 @@ async function reviseProposal(host: AgentHost, input: Record<string, unknown>): 
     return refused(`Proposal ${id} not revised`, `Core refused the revision, so nothing changed: [${revised.error.code}] ${revised.error.message}.${why}`);
   }
   await host.saveConfig(revised.value);
-  const { adoptable, needsMeasurement, verdict } = dryRun(host, revised.value, id, at);
+  const { adoptable, needsMeasurement, request, verdict } = dryRun(host, revised.value, id, at);
   return {
     content: `Revised proposal "${id}"; it is still open, and its history keeps the version before this one. ${verdict} Only the user can approve or adopt it.`,
     isError: false,
     changed: false,
     title: `Revised proposal ${id}`,
-    proposal: { id, title: draft.title, adoptable, verdict, action: "revised", ...(needsMeasurement ? { needsMeasurement } : {}) },
+    proposal: { id, title: draft.title, adoptable, verdict, action: "revised", ...(needsMeasurement ? { needsMeasurement } : {}), ...(request ? { request } : {}) },
   };
 }

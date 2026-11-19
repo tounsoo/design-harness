@@ -201,3 +201,48 @@ describe("a drafted proposal with a rendered rule", () => {
     expect(outcome.content).not.toContain("Fix it with revise_proposal");
   });
 });
+
+describe("a request for a new rule type", () => {
+  const signal = new AbortController().signal;
+  const call = (name: string, input: unknown) => ({ id: `toolu_${name}`, name, input });
+  const request = {
+    id: "date-before-rooms",
+    title: "The date question comes before the room cards",
+    reason: "Two variants were rejected for putting the rooms first.",
+    needs_rule_type: {
+      checks: "On a booking page, the date question is drawn above the first room card.",
+      why_not: "No rule type compares the order of two elements.",
+      pass: [{ name: "date-first", description: "The date question, then the rooms." }],
+      fail: [{ name: "rooms-first", description: "The rooms, then the date question.", snippet: "<RoomCards />" }],
+    },
+  };
+
+  it("is saved open with draft_proposal, as a request core never adopts, and the agent is told so", async () => {
+    const { host, saved } = fakeHost();
+    const outcome = await runTool(call("draft_proposal", request), host, signal);
+    expect(outcome).toMatchObject({ isError: false, title: "Filed a request for a new rule type, date-before-rooms", proposal: { id: "date-before-rooms", adoptable: false, request: true } });
+    expect(outcome.content).toContain('Saved request "date-before-rooms" for a new rule type as open.');
+    expect(outcome.content).toContain("core will never approve or adopt it as a check");
+    expect(saved).toHaveLength(1);
+    expect(host.config().proposals[0]).toMatchObject({ status: "open", needsRuleType: { checks: request.needs_rule_type.checks, whyNot: request.needs_rule_type.why_not, fail: [{ name: "rooms-first", snippet: "<RoomCards />" }] } });
+    expect(JSON.parse((await runTool(call("read_project", {}), host, signal)).content).proposals[0]).toMatchObject({ id: "date-before-rooms", needsRuleType: { whyNot: request.needs_rule_type.why_not } });
+  });
+
+  it("is refused with rules or examples beside it, and a draft with neither examples nor a request saves nothing", async () => {
+    const { host, saved } = fakeHost();
+    const mixed = await runTool(call("draft_proposal", { ...request, rules: { remove: ["visible-questions"] } }), host, signal);
+    expect(mixed.content).toContain("[invalid-proposal] a request for a new rule type changes nothing, so it carries no rules");
+    const empty = await runTool(call("draft_proposal", { id: "empty", title: "t", reason: "r" }), host, signal);
+    expect(empty).toMatchObject({ isError: true });
+    expect(empty.content).toContain("Give examples that pass and fail");
+    expect(saved).toEqual([]);
+  });
+
+  it("is revised like any open proposal, and keeps the request it does not replace", async () => {
+    const { host } = fakeHost();
+    await runTool(call("draft_proposal", request), host, signal);
+    const revised = await runTool(call("revise_proposal", { id: request.id, note: "A clearer title.", title: "Date first" }), host, signal);
+    expect(revised).toMatchObject({ isError: false, proposal: { request: true, action: "revised" } });
+    expect(host.config().proposals[0]).toMatchObject({ title: "Date first", status: "open", needsRuleType: { checks: request.needs_rule_type.checks } });
+  });
+});

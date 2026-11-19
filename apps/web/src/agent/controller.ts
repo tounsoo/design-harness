@@ -6,6 +6,7 @@ import { History, toolCalls } from "./history";
 import { NO_USAGE, addUsage, requestCost, type AgentSettings, type Usage } from "./models";
 import { createClient, requestBody, type AgentMode, type MessagesApi } from "./request";
 import { specCatalogPrompt } from "./spec-prompt";
+import { reportRules, type LoopEvent } from "./patterns";
 import type { SpecStreamPreview } from "./spec-stream";
 import { checksTitle, describeMeasured, runTool, type AgentHost, type ToolOutcome } from "./tools";
 
@@ -25,9 +26,10 @@ export type TurnItem =
   | { readonly kind: "thinking"; readonly text: string }
   | { readonly kind: "text"; readonly text: string }
   | { readonly kind: "tool"; readonly id: string; readonly name: string; readonly status: "streaming" | "running" | "done" | "error"; readonly title: string; readonly input: string; readonly result?: string }
-  | { readonly kind: "checks"; readonly revision: number; readonly status: CheckStatus; readonly title: string; readonly text: string }
-  /** A proposal the agent drafted or revised; `action` is absent on chats saved before revisions existed, which only drafted. */
-  | { readonly kind: "proposal"; readonly id: string; readonly title: string; readonly adoptable: boolean; readonly verdict: string; readonly action?: "drafted" | "revised"; readonly needsMeasurement?: true }
+  /** Core's report after a change; `failing` and `notRun` (rule ids) are absent on chats saved before the loop read them. */
+  | { readonly kind: "checks"; readonly revision: number; readonly status: CheckStatus; readonly title: string; readonly text: string; readonly failing?: readonly string[]; readonly notRun?: readonly string[] }
+  /** A proposal the agent drafted or revised; `action` is absent on chats saved before revisions existed, which only drafted. `request`: it asks for a new rule type. */
+  | { readonly kind: "proposal"; readonly id: string; readonly title: string; readonly adoptable: boolean; readonly verdict: string; readonly action?: "drafted" | "revised"; readonly needsMeasurement?: true; readonly request?: true }
   | { readonly kind: "notice"; readonly text: string }
   /** Variants the agent offered or revised, beside the prototype: a card that opens the comparison. */
   | { readonly kind: "variants"; readonly page: string; readonly ids: readonly string[]; readonly action: "offered" | "revised" };
@@ -54,14 +56,16 @@ export type Turn = {
   /** The prototype as it was before the turn's first change; null when the turn changed nothing. */
   readonly before: Prototype | null;
   readonly undone: boolean;
+  /** The rules failing when the turn started, when every frame had measured the prototype then; absent otherwise. */
+  readonly failingAtStart?: readonly string[];
 };
 
-/** What is saved per prototype. It never holds the API key. */
-export type ChatRecord = { readonly version: 1; readonly history: readonly BetaMessageParam[]; readonly turns: readonly Turn[]; readonly pending: readonly string[] };
+/** What is saved per prototype. It never holds the API key. `log` is what the person did that the loop reads (patterns.ts); absent on older chats. */
+export type ChatRecord = { readonly version: 1; readonly history: readonly BetaMessageParam[]; readonly turns: readonly Turn[]; readonly pending: readonly string[]; readonly log?: readonly LoopEvent[] };
 
 export type ChatStore = { load(): Promise<ChatRecord | null>; save(record: ChatRecord): Promise<void> };
 
-export type AgentState = { readonly turns: readonly Turn[]; readonly running: boolean; readonly loaded: boolean; readonly problem: string | null };
+export type AgentState = { readonly turns: readonly Turn[]; readonly running: boolean; readonly loaded: boolean; readonly problem: string | null; readonly log: readonly LoopEvent[] };
 
 export type AgentOptions = {
   readonly host: AgentHost;
@@ -90,7 +94,8 @@ export function isChatRecord(value: unknown): value is ChatRecord {
     record.history.every((message) => typeof message === "object" && message !== null && ((message as { role?: unknown }).role === "user" || (message as { role?: unknown }).role === "assistant")) &&
     Array.isArray(record.turns) &&
     record.turns.every((turn) => typeof turn === "object" && turn !== null && typeof (turn as { id?: unknown }).id === "string" && Array.isArray((turn as { items?: unknown }).items)) &&
-    Array.isArray(record.pending)
+    Array.isArray(record.pending) &&
+    (record.log === undefined || (Array.isArray(record.log) && record.log.every((event) => typeof event === "object" && event !== null && typeof (event as { kind?: unknown }).kind === "string" && typeof (event as { at?: unknown }).at === "string")))
   );
 }
 
@@ -102,7 +107,7 @@ function usageOf(message: BetaMessage): Usage {
 const short = (text: string) => (text.length > 60 ? `${text.slice(0, 57)}...` : text);
 
 export class AgentController {
-  private state: AgentState = { turns: [], running: false, loaded: false, problem: null };
+  private state: AgentState = { turns: [], running: false, loaded: false, problem: null, log: [] };
   private readonly listeners = new Set<() => void>();
   private history = new History();
   private pending: string[] = [];
@@ -171,7 +176,7 @@ export class AgentController {
         if (unanswered.length > 0) this.history.appendToolResults(unanswered.map((id) => ({ type: "tool_result", tool_use_id: id, content: "Not run: the page closed before this ran.", is_error: true })));
         // A turn that was running when the page closed did not finish.
         const turns = record.turns.map((turn) => (turn.end.status === "running" ? { ...turn, end: { status: "stopped" as const } } : turn));
-        this.set({ turns, loaded: true });
+        this.set({ turns, loaded: true, log: [...(record.log ?? [])] });
         return;
       }
       this.set({ loaded: true });
@@ -181,7 +186,7 @@ export class AgentController {
   }
 
   private save(): Promise<void> {
-    const record: ChatRecord = { version: 1, history: this.history.toJSON(), turns: this.state.turns, pending: this.pending };
+    const record: ChatRecord = { version: 1, history: this.history.toJSON(), turns: this.state.turns, pending: this.pending, ...(this.state.log.length > 0 ? { log: this.state.log } : {}) };
     this.saving = this.saving.then(() => this.options.store.save(record)).catch(() => undefined);
     return this.saving;
   }
@@ -193,6 +198,7 @@ export class AgentController {
     if (this.loading) await this.loading;
     if (!message || this.state.running) return;
     const settings = this.options.settings();
+    const start = this.options.host.checked?.() ?? null;
     const turn: Turn = {
       id: this.options.newId?.() ?? crypto.randomUUID(),
       text: message,
@@ -205,6 +211,7 @@ export class AgentController {
       rounds: 0,
       before: null,
       undone: false,
+      ...(start ? { failingAtStart: reportRules(start).failing } : {}),
     };
     this.history.appendUser(message, this.pending);
     this.pending = [];
@@ -238,6 +245,17 @@ export class AgentController {
     this.options.host.apply(turn.before);
     this.pending.push(`The person undid your changes from their message "${short(turn.text)}": the prototype is back to what it was before that message. Read the files again before you change them.`);
     this.patchTurn(id, () => ({ undone: true }));
+    await this.save();
+  }
+
+  /**
+   * Keeps something the person did that the loop reads for patterns, such as
+   * a press of "Ask the agent to fix" or a variant rejected with a note. It
+   * tells the agent nothing; it is saved with the chat.
+   */
+  async record(event: LoopEvent): Promise<void> {
+    if (this.loading) await this.loading;
+    this.set({ log: [...this.state.log, event] });
     await this.save();
   }
 
@@ -410,7 +428,7 @@ export class AgentController {
       const now = this.toolIndex(id, call.id);
       const current = now >= 0 ? this.turn(id)?.items[now] : undefined;
       if (current?.kind === "tool") this.setItem(id, now, { ...current, input, status: outcome.isError ? "error" : "done", title: outcome.title, result: outcome.content });
-      if (outcome.measured) this.addItem(id, { kind: "checks", revision: outcome.measured.revision, status: outcome.measured.report.status, title: checksTitle(outcome.measured.report), text: outcome.content });
+      if (outcome.measured) this.addItem(id, { kind: "checks", revision: outcome.measured.revision, status: outcome.measured.report.status, title: checksTitle(outcome.measured.report), text: outcome.content, ...reportRules(outcome.measured.report) });
       if (outcome.proposal) this.addItem(id, { kind: "proposal", ...outcome.proposal });
       if (outcome.variants) this.addItem(id, { kind: "variants", page: outcome.variants.page, ids: outcome.variants.ids, action: call.name === "revise_variant" ? "revised" : "offered" });
     }
@@ -421,7 +439,7 @@ export class AgentController {
         const measured = await host.measured(signal);
         const text = describeMeasured(measured);
         notes.push(`The app re-rendered every frame after your changes and ran the checks.\n${text}`);
-        this.addItem(id, { kind: "checks", revision: measured.revision, status: measured.report.status, title: checksTitle(measured.report), text });
+        this.addItem(id, { kind: "checks", revision: measured.revision, status: measured.report.status, title: checksTitle(measured.report), text, ...reportRules(measured.report) });
       } catch {
         // Stopped while waiting: the results still go back, without checks.
       }

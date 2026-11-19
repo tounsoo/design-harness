@@ -247,4 +247,21 @@ describe("an agent turn", () => {
     expect(reopened.messages()).toEqual(controller.messages());
     expect(reopened.getState().turns.map((item) => item.end.status)).toEqual(["done"]);
   });
+
+  it("keeps what the loop reads: the rules each check failed, those failing at the turn's start, and the person's log, saved and opened again", async () => {
+    const parts = fakeHost();
+    const host: AgentHost = { ...parts.host, checked: () => ({ status: "fail", findings: [], rules: [{ rule: "visible-questions", type: "count", status: "fail", findings: [] }] }) };
+    const { controller, saved, turn } = setup([tool("edit", "edit_file", SECOND_PRIMARY), tool("fix", "edit_file", BACK), done("Fixed.")], { host });
+    await controller.record({ kind: "fix-asked", at: "2026-11-19T09:00:00Z", rule: "one-primary-per-page" });
+    await controller.send("Make Hold room primary");
+    expect(turn().failingAtStart).toEqual(["visible-questions"]);
+    const checks = turn().items.flatMap((item) => (item.kind === "checks" ? [item.failing] : []));
+    expect(checks[0]).toContain("one-primary-per-page");
+    expect(checks[1]).not.toContain("one-primary-per-page");
+    const last = saved.at(-1) as ChatRecord;
+    expect(last.log).toEqual([{ kind: "fix-asked", at: "2026-11-19T09:00:00Z", rule: "one-primary-per-page" }]);
+    const reopened = new AgentController({ host: fakeHost().host, store: { load: async () => last, save: async () => undefined }, key: () => KEY, settings: () => DEFAULT_SETTINGS });
+    await reopened.load();
+    expect(reopened.getState().log).toEqual(last.log);
+  });
 });

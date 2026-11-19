@@ -7,6 +7,7 @@ import {
   dryRunAdoption,
   newlyFailingOf,
   rerunExamples,
+  ruleTypeIssue,
   tryExamples,
   withExampleSnapshots,
   type Adoption,
@@ -21,6 +22,7 @@ import {
   type Proposal,
   type ProposalContent,
   type Refusal,
+  type RuleTypeExample,
   type View,
 } from "@design-harness/core";
 import { frameKey, type Session, type SessionState } from "../runtime/session";
@@ -31,7 +33,7 @@ import { REVIEWER, draftedBy, formatTime, proposalTimeline, timelineTitle, type 
 import { FrameCard } from "./Board";
 import { FindingButton } from "./ChecksPanel";
 import { lineRange } from "./CodePanel";
-import { ClassBadge, RuleWords, StatusBadge, classWords, classificationOf } from "./proposal-parts";
+import { ClassBadge, RequestBadge, RuleWords, StatusBadge, classWords, classificationOf } from "./proposal-parts";
 import { measurementOf, useSessions, type Measured, type Measurement } from "./sessions";
 import { exampleLabel, frameNameOf, scenarioNameOf, viewLabel } from "./words";
 
@@ -97,7 +99,217 @@ export function ProposalPage(props: Props) {
       </EmptyState.Root>
     );
   }
-  return <Review {...props} proposal={proposal} />;
+  return proposal.needsRuleType ? <RequestReview {...props} proposal={proposal} /> : <Review {...props} proposal={proposal} />;
+}
+
+/** What copying a request does, and what the page says after. */
+type Copied = { readonly state: "idle" } | { readonly state: "copied" } | { readonly state: "failed"; readonly message: string };
+
+/**
+ * The review page of a request for a new rule type. It is a code change, and
+ * the page says so first: what the rule should check, why core's vocabulary
+ * cannot say it, its examples in words, and the request ready to copy and
+ * file. There is no Approve or Adopt: core refuses both, and the page shows
+ * core's refusal word for word. Send back and decline work as on any proposal.
+ */
+function RequestReview({ config, proposal, agent, onBack, onSave, onSendBack }: Props & { readonly proposal: Proposal }) {
+  const request = proposal.needsRuleType;
+  const issue = ruleTypeIssue(proposal);
+  const id = proposal.id;
+  const [refusal, setRefusal] = useState<{ readonly action: string; readonly refusal: Refusal } | null>(null);
+  const [copied, setCopied] = useState<Copied>({ state: "idle" });
+  if (!request || !issue) return null;
+  const text = `# ${issue.title}\n\n${issue.body}\n`;
+  // Core's own answer to approving it, shown so the page never claims more than core says.
+  const approval = approveProposal(config, id, "dry run");
+  const refused = approval.ok ? null : approval.error;
+  const drafted = draftedBy(proposal);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied({ state: "copied" });
+    } catch (error) {
+      setCopied({ state: "failed", message: error instanceof Error ? error.message : String(error) });
+    }
+  };
+  const act = async (action: string, run: () => ReturnType<typeof approveProposal>) => {
+    const result = run();
+    if (!result.ok) return setRefusal({ action, refusal: result.error });
+    setRefusal(null);
+    await onSave(result.value);
+  };
+  return (
+    <div className="review" data-proposal={id} data-status={proposal.status} data-request="">
+      <Stack.Root gap="spacious">
+        <Stack.Root gap="condensed">
+          <div>
+            <Button.Root variant="ghost" onClick={onBack} className="review-back">
+              ← All proposals
+            </Button.Root>
+          </div>
+          <Text.Root as="h1" className="review-title">
+            {proposal.title}
+          </Text.Root>
+          <Stack.Root direction="row" align="center" gap="condensed" wrap>
+            <StatusBadge status={proposal.status} />
+            <RequestBadge />
+            <Code.Root>{id}</Code.Root>
+            <Text.Root as="span" tone="muted">
+              Drafted by {drafted.by}, <time dateTime={drafted.at}>{formatTime(drafted.at)}</time>
+            </Text.Root>
+          </Stack.Root>
+        </Stack.Root>
+
+        <Alert.Root tone="warning" data-testid="rule-type-request">
+          <Alert.Title>Needs a new rule type: this is a code change</Alert.Title>
+          <Alert.Description>
+            <Stack.Root gap="condensed">
+              <Text.Root as="p">
+                Core&apos;s rule vocabulary cannot express this rule, so it can never become a check here. A person adds the rule type to core; then the agent can propose a rule that uses it, with examples that prove it, for you to adopt.
+              </Text.Root>
+              {refused && (
+                <Text.Root as="p" tone="muted" className="review-small" data-testid="request-refusal" data-code={refused.code}>
+                  Core on approving it: {refused.message}
+                </Text.Root>
+              )}
+              <Stack.Root direction="row" align="center" gap="condensed" wrap>
+                <Button.Root variant="primary" onClick={() => void copy()}>
+                  Copy the request to file
+                </Button.Root>
+                <Text.Root as="span" className="review-small" aria-live="polite" data-testid="request-copied" data-state={copied.state}>
+                  {copied.state === "copied" ? "Copied: a title and a Markdown body, ready to file as an issue." : copied.state === "failed" ? `Could not copy (${copied.message}); select the request below instead.` : ""}
+                </Text.Root>
+              </Stack.Root>
+            </Stack.Root>
+          </Alert.Description>
+        </Alert.Root>
+
+        <RequestActions
+          proposal={proposal}
+          agent={agent}
+          onDecline={(note) => act("decline", () => declineProposal(config, id, note, now()))}
+          onSendBack={async (note) => {
+            const sent = sendBackProposal(config, id, note, now());
+            if (!sent.ok) return setRefusal({ action: "send back", refusal: sent.error });
+            setRefusal(null);
+            await onSave(sent.value.config);
+            onSendBack(sent.value.message);
+          }}
+        />
+        {refusal && <RefusalAlert action={refusal.action} refusal={refusal.refusal} onShowExample={() => undefined} onOpenProposal={() => undefined} />}
+
+        <section aria-labelledby="request-checks" className="review-section">
+          <Text.Root as="h2" id="request-checks">
+            What the rule should check
+          </Text.Root>
+          <Text.Root as="p" className="pre" data-testid="request-checks">
+            {request.checks}
+          </Text.Root>
+        </section>
+        <section aria-labelledby="request-why-not" className="review-section">
+          <Text.Root as="h2" id="request-why-not">
+            Why the vocabulary cannot express it
+          </Text.Root>
+          <Text.Root as="p" className="pre" data-testid="request-why-not">
+            {request.whyNot}
+          </Text.Root>
+        </section>
+        <section aria-labelledby="request-examples" className="review-section">
+          <Text.Root as="h2" id="request-examples">
+            Examples
+          </Text.Root>
+          <Text.Root as="p" tone="muted">
+            In words: there is no rule to run them against yet.
+          </Text.Root>
+          <div className="review-columns">
+            <WordExamples title="Must pass" examples={request.pass} expect="pass" />
+            <WordExamples title="Must fail" examples={request.fail} expect="fail" />
+          </div>
+        </section>
+        <section aria-labelledby="review-why" className="review-section">
+          <Text.Root as="h2" id="review-why">
+            Why
+          </Text.Root>
+          <Text.Root as="p" className="pre" data-testid="proposal-reason">
+            {proposal.reason}
+          </Text.Root>
+        </section>
+        <section aria-labelledby="request-text-title" className="review-section">
+          <Text.Root as="h2" id="request-text-title">
+            The request as it is copied
+          </Text.Root>
+          <Field.Root id="request-text" aria-label="The request as it is copied">
+            <Field.Textarea value={text} readOnly rows={12} autoGrow maxRows={24} data-testid="request-text" />
+          </Field.Root>
+        </section>
+
+        <History proposal={proposal} config={config} />
+      </Stack.Root>
+    </div>
+  );
+}
+
+function WordExamples({ title, examples, expect }: { readonly title: string; readonly examples: readonly RuleTypeExample[]; readonly expect: "pass" | "fail" }) {
+  return (
+    <div className="review-column">
+      <Text.Root as="h3">{title}</Text.Root>
+      <ul className="review-rules" aria-label={title}>
+        {examples.map((example) => (
+          <li key={example.name} data-example={example.name} data-expect={expect}>
+            <Stack.Root gap="condensed">
+              <Text.Root as="span" className="example-name">
+                {example.name}
+              </Text.Root>
+              <Text.Root as="p" className="review-small pre">
+                {example.description}
+              </Text.Root>
+              {example.snippet && <pre className="project-json">{example.snippet}</pre>}
+            </Stack.Root>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** A request's actions: send it back or decline it, each with its note. Approve and Adopt are not offered: core refuses both. */
+function RequestActions({ proposal, agent, onDecline, onSendBack }: { readonly proposal: Proposal; readonly agent: { readonly ready: boolean; readonly why: string }; readonly onDecline: (note: string) => Promise<void> | void; readonly onSendBack: (note: string) => Promise<void> | void }) {
+  const [form, setForm] = useState<"decline" | "send-back" | null>(null);
+  if (proposal.status !== "open") return null;
+  return (
+    <Card.Root className="review-actions" data-testid="review-actions">
+      <Card.Body>
+        <Stack.Root gap="condensed">
+          <Stack.Root direction="row" align="center" gap="condensed" wrap>
+            <Button.Root variant="secondary" onClick={() => setForm(form === "send-back" ? null : "send-back")} aria-expanded={form === "send-back"}>
+              Send back to the agent
+            </Button.Root>
+            <Button.Root variant="ghost" onClick={() => setForm(form === "decline" ? null : "decline")} aria-expanded={form === "decline"}>
+              Decline
+            </Button.Root>
+          </Stack.Root>
+          <Text.Root as="p" tone="muted" className="review-small">
+            Once the request is filed, decline it here with a note that says where. Send it back if the vocabulary can say it after all.
+          </Text.Root>
+          {form === "decline" && <NoteForm key="decline" label="Why decline it?" hint="Declining is final. The note is kept in the request's history." submit="Decline proposal" required="Say why you decline it." onCancel={() => setForm(null)} onSubmit={async (note) => {
+            await onDecline(note);
+            setForm(null);
+          }} />}
+          {form === "send-back" &&
+            (agent.ready ? (
+              <NoteForm key="send-back" label="What should the agent change?" hint="The note goes to the agent as a chat message naming this request, and into its history. It stays open." submit="Send to the agent" required="Say what the agent should change." onCancel={() => setForm(null)} onSubmit={async (note) => {
+                await onSendBack(note);
+                setForm(null);
+              }} />
+            ) : (
+              <Alert.Root tone="info">
+                <Alert.Description>{agent.why}</Alert.Description>
+              </Alert.Root>
+            ))}
+        </Stack.Root>
+      </Card.Body>
+    </Card.Root>
+  );
 }
 
 function Review({ config, proposal, prototypes, openPrototypeId, board, agent, onBack, onSave, onSendBack, onOpenPrototype, onOpenProposal }: Props & { readonly proposal: Proposal }) {

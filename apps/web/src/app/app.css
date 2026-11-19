@@ -205,6 +205,9 @@
   .chat-proposal { padding: var(--todae-space-3) var(--todae-space-4); border: var(--todae-border-width) solid var(--todae-color-border-subtle); border-inline-start: var(--todae-harness-edge-status) solid var(--todae-color-status-info-border); border-radius: var(--todae-radius-lg); background: var(--todae-color-bg-canvas); }
   .chat-proposal[data-tone="warning"] { border-inline-start-color: var(--todae-color-status-warning-border); }
   .chat-proposal-title { margin: 0; }
+  /* The loop's suggestion sits above the composer, quiet: the proposal card's frame, inset to the panel's padding. */
+  .chat-pattern { flex: none; margin: var(--todae-space-3) var(--todae-harness-panel-padding) 0; }
+  .chat-pattern-list { margin: var(--todae-space-2) 0 0; padding-inline-start: var(--todae-space-5); display: grid; gap: var(--todae-space-1); overflow-wrap: anywhere; max-height: var(--todae-harness-size-log); overflow: auto; }
   .chat-actions { flex-wrap: wrap; align-items: center; gap: var(--todae-space-2); }
   .chat-turn-details { font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); color: var(--todae-color-fg-muted); }
   .chat-thinking { margin-block-start: var(--todae-space-2); }

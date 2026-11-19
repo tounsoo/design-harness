@@ -5,7 +5,8 @@ import { NO_VARIANTS, variantLabel, type Finding, type LayoutUse, type PickRecor
 import { AgentController, type ChatRecord, type ChatStore } from "../agent/controller";
 import { SpecStreamPreview } from "../agent/spec-stream";
 import type { KeyVault } from "../agent/key-vault";
-import { waitForMeasured } from "../agent/measure";
+import { latestMeasured, waitForMeasured } from "../agent/measure";
+import { detectPatterns, suggestion as suggestionOf, patternMessage } from "../agent/patterns";
 import type { AgentSettings } from "../agent/models";
 import { loadSettings, saveSettings } from "../agent/settings";
 import type { AgentHost } from "../agent/tools";
@@ -229,6 +230,10 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
           },
           signal,
         ),
+      checked: () => {
+        const value = prototypeOf();
+        return value ? latestMeasured(session, () => ({ config: checked(configRef.current), prototype: value })) : null;
+      },
       now: () => new Date().toISOString(),
       variants: () => recordOf()?.variants ?? NO_VARIANTS,
       // Only the list of variants: the picks are kept as they are, and the prototype is not touched.
@@ -275,6 +280,18 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     : agentState.running
       ? { ready: false, why: "The agent is working on something now; send it back once it stops." }
       : { ready: agentState.loaded, why: "The chat is still loading." };
+
+  // What keeps coming up, read from this prototype's history by app code; offered quietly while the agent is idle, never acted on alone.
+  const patterns = useMemo(() => detectPatterns({ turns: agentState.turns, log: agentState.log, proposals: config.proposals }), [agentState.turns, agentState.log, config.proposals]);
+  const offered = agentState.running || !agentState.loaded ? undefined : suggestionOf(patterns, agentState.log);
+  const answerSuggestion = useCallback(
+    async (answer: "accepted" | "dismissed") => {
+      if (!offered) return;
+      await controller.record({ kind: "suggestion", at: new Date().toISOString(), key: offered.key, answer, evidence: offered.evidence });
+      if (answer === "accepted") await controller.send(patternMessage(offered, configRef.current));
+    },
+    [offered, controller],
+  );
 
   const openProposal = useCallback((id: string) => {
     setReviewing(id);
@@ -344,8 +361,10 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
       setPrefill((previous) => ({ text, nonce: (previous?.nonce ?? 0) + 1 }));
       setCanvasOnly(false);
       toggle("chat", true);
+      // The loop counts asks per rule (agent/patterns.ts); a press tells the agent nothing by itself.
+      void controller.record({ kind: "fix-asked", at: new Date().toISOString(), rule: finding.rule });
     },
-    [toggle],
+    [toggle, controller],
   );
   /** The person's pick: the recombined page as a new revision, recorded with where each slot came from. Nothing but this view's Apply calls it. */
   const applyPick = useCallback(
@@ -375,7 +394,15 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     },
     [recordOf, updateVariants, session, checked, controller],
   );
-  const dismissVariant = useCallback((id: string) => updateVariants((state) => ({ ...state, variants: state.variants.filter((variant) => variant.id !== id) })), [updateVariants]);
+  /** Dismisses a variant; a note on why is kept for the loop, which notices notes that repeat. */
+  const dismissVariant = useCallback(
+    (id: string, note = "") => {
+      const variant = recordOf()?.variants?.variants.find((item) => item.id === id);
+      updateVariants((state) => ({ ...state, variants: state.variants.filter((item) => item.id !== id) }));
+      if (variant) void controller.record({ kind: "variant-rejected", at: new Date().toISOString(), page: variant.page, variant: id, note: note.trim() });
+    },
+    [recordOf, updateVariants, controller],
+  );
   const prefillChat = useCallback(
     (text: string) => {
       setPrefill((previous) => ({ text, nonce: (previous?.nonce ?? 0) + 1 }));
@@ -604,7 +631,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
 
       <Splitter.Root className="shell-body" show={canvasOnly ? "end" : "both"} value={panels.chat.open ? panels.chat.width : 0} onValueChange={(value) => resize("chat", value)} min={PANEL_SIZES.chat.min} max={PANEL_SIZES.chat.max} collapsible>
         <Splitter.Panel id={chatId} className="shell-panel">
-          <ChatPanel controller={controller} vault={vault} settings={settings} onSettings={changeSettings} onOpenProposal={openProposal} onOpenVariants={() => setCenter("variants")} prefill={prefill} onClose={() => toggle("chat", false)} />
+          <ChatPanel controller={controller} vault={vault} settings={settings} onSettings={changeSettings} onOpenProposal={openProposal} onOpenVariants={() => setCenter("variants")} prefill={prefill} onClose={() => toggle("chat", false)} {...(offered ? { suggestion: { pattern: offered, onAccept: () => void answerSuggestion("accepted"), onDismiss: () => void answerSuggestion("dismissed") } } : {})} />
         </Splitter.Panel>
         <Splitter.Handle aria-label="Resize the chat" className="shell-handle" data-side="start" />
         <Splitter.Panel className="shell-panel">
