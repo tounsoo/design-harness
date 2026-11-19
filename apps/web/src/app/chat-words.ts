@@ -59,7 +59,7 @@ export function toolSummary(item: ToolItem): string {
     case "run_checks":
       return running ? "Checking the rules…" : "Checked the rules";
     case "draft_proposal":
-      return running ? "Drafting a proposal…" : "Drafted a proposal";
+      return running ? "Drafting a proposal…" : item.title.startsWith("Filed a request") ? "Asked for a new rule type" : "Drafted a proposal";
     case "revise_proposal":
       return running ? "Revising the proposal…" : "Revised the proposal";
     default:

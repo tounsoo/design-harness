@@ -34,7 +34,8 @@ type Props = {
   readonly agent: { readonly ready: boolean; readonly why: string };
   readonly onApply: (pick: ApplyPick) => void;
   readonly onUndo: (index: number) => void;
-  readonly onDismiss: (id: string) => void;
+  /** Dismisses a variant, with the person's note on why when they give one. */
+  readonly onDismiss: (id: string, note?: string) => void;
   /** Sends a message to the agent, as the person's. */
   readonly onSend: (message: string) => void;
   /** Puts a message in the chat's box for the person to edit and send. */
@@ -495,9 +496,11 @@ function ReportList({ standing, config }: { readonly standing: Standing; readonl
   );
 }
 
-function SourceCard({ source, page, config, standing, frames, agent, onSend, onDismiss }: { readonly source: Source; readonly page: string; readonly config: ProjectConfig; readonly standing: Standing; readonly frames: ReactNode; readonly agent: Props["agent"]; readonly onSend: (message: string) => void; readonly onDismiss: (id: string) => void }) {
+function SourceCard({ source, page, config, standing, frames, agent, onSend, onDismiss }: { readonly source: Source; readonly page: string; readonly config: ProjectConfig; readonly standing: Standing; readonly frames: ReactNode; readonly agent: Props["agent"]; readonly onSend: (message: string) => void; readonly onDismiss: (id: string, note?: string) => void }) {
   const [more, setMore] = useState(false);
   const [note, setNote] = useState("");
+  const [dismissing, setDismissing] = useState(false);
+  const [why, setWhy] = useState("");
   // What the agent is asked to fix: what blocks a pick of this variant, never another page's failure.
   const failing = standing.state === "fail" ? blocking(standing) : [];
   const fix = () =>
@@ -542,13 +545,37 @@ function SourceCard({ source, page, config, standing, frames, agent, onSend, onD
                 </Button.Icon>
                 More like this
               </Button.Root>
-              <Button.Root variant="ghost" onClick={() => onDismiss(source.id)}>
+              <Button.Root variant="ghost" aria-expanded={dismissing} onClick={() => setDismissing(!dismissing)}>
                 <Button.Icon>
                   <X />
                 </Button.Icon>
                 Dismiss
               </Button.Root>
             </Stack.Root>
+          )}
+          {source.variant && dismissing && (
+            <form
+              className="variant-more"
+              onSubmit={(event) => {
+                event.preventDefault();
+                onDismiss(source.id, why);
+              }}
+            >
+              <Stack.Root gap="condensed">
+                <Label.Root htmlFor={`dismiss-${source.id}`}>Why not this one? (optional)</Label.Root>
+                <Field.Root id={`dismiss-${source.id}`}>
+                  <Field.Textarea value={why} onValueChange={setWhy} rows={2} />
+                </Field.Root>
+                <Text.Root as="span" tone="muted" className="variants-small">
+                  A note is kept with the prototype, so the app can notice when the same thing keeps coming up.
+                </Text.Root>
+                <div>
+                  <Button.Root type="submit" variant="secondary">
+                    {`Dismiss ${source.label}`}
+                  </Button.Root>
+                </div>
+              </Stack.Root>
+            </form>
           )}
           {source.variant && more && (
             <form

@@ -1,9 +1,11 @@
 import { Alert, Badge, Button, Checkbox, Code, CodeBlock, Conversation, DataList, Disclosure, ErrorMessage, Field, Label, Loader, Message, Stack, Text } from "@tounsoo/todae";
-import { ArrowUp, Check, CircleAlert, CircleCheck, Columns2, KeyRound, Pencil, Sparkles, Square, TriangleAlert, X } from "lucide-react";
+import { ArrowUp, Check, CircleAlert, CircleCheck, Columns2, FileCode2, KeyRound, Lightbulb, Pencil, Sparkles, Square, TriangleAlert, X } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
 import type { AgentController, Turn, TurnItem } from "../agent/controller";
 import { KEY_DB, keyProblem, type KeyVault } from "../agent/key-vault";
 import { EFFORTS, MODELS, formatCost, isEffort, isModel, type AgentSettings } from "../agent/models";
+import { evidenceLines, patternSummary, type Pattern } from "../agent/patterns";
+import { formatTime } from "../review/timeline";
 import { DB_NAME } from "../store/db";
 import { checksSummary, toolSummary } from "./chat-words";
 
@@ -28,6 +30,7 @@ export function ChatPanel({
   onOpenVariants,
   prefill,
   onClose,
+  suggestion,
 }: {
   readonly controller: AgentController;
   readonly vault: KeyVault;
@@ -40,6 +43,8 @@ export function ChatPanel({
   readonly prefill: { readonly text: string; readonly nonce: number } | null;
   /** Hides the chat panel. */
   readonly onClose?: () => void;
+  /** Something that keeps coming up, offered quietly: accepting sends the agent the evidence; nothing happens unless the person presses. */
+  readonly suggestion?: { readonly pattern: Pattern; readonly onAccept: () => void; readonly onDismiss: () => void };
 }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getState);
   const key = useSyncExternalStore(vault.subscribe, vault.getState);
@@ -144,6 +149,8 @@ export function ChatPanel({
         <Conversation.ScrollButton />
       </Conversation.Root>
 
+      {suggestion && key.present && <LoopSuggestion {...suggestion} />}
+
       <form className="chat-composer" onSubmit={send}>
         <Field.Root aria-label="Message the agent" disabled={!key.present} className="chat-input">
           <Field.Textarea ref={field} value={draft} onValueChange={setDraft} onKeyDown={onKeyDown} rows={2} maxRows={8} autoGrow placeholder={key.present ? "Describe a change…" : "Add your API key above to start"} />
@@ -169,6 +176,43 @@ export function ChatPanel({
         </Field.Root>
       </form>
     </aside>
+  );
+}
+
+/** The loop's quiet suggestion: what keeps coming up, its evidence one click away, and the person's two answers. */
+function LoopSuggestion({ pattern, onAccept, onDismiss }: { readonly pattern: Pattern; readonly onAccept: () => void; readonly onDismiss: () => void }) {
+  return (
+    <section className="chat-proposal chat-pattern" data-tone="info" data-testid="loop-suggestion" data-pattern={pattern.key} aria-label="Suggestion" aria-live="polite">
+      <Stack.Root gap="condensed">
+        <Stack.Root direction="row" align="center" gap="condensed">
+          <span className="chat-step-icon" aria-hidden="true">
+            <Lightbulb />
+          </span>
+          <Text.Root as="p" weight="medium" className="chat-proposal-title">
+            This keeps coming up. Ask the agent to propose a rule?
+          </Text.Root>
+        </Stack.Root>
+        <Text.Root as="p" tone="muted" className="chat-small" data-testid="loop-summary">
+          {patternSummary(pattern)}
+        </Text.Root>
+        <Disclosure.Root className="chat-pattern-evidence">
+          <Disclosure.Summary>The evidence</Disclosure.Summary>
+          <ul className="chat-small chat-pattern-list" data-testid="loop-evidence">
+            {evidenceLines(pattern, formatTime).map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </Disclosure.Root>
+        <Stack.Root direction="row" gap="condensed" wrap>
+          <Button.Root type="button" variant="secondary" onClick={onAccept}>
+            Ask the agent to propose a rule
+          </Button.Root>
+          <Button.Root type="button" variant="ghost" onClick={onDismiss}>
+            Not now
+          </Button.Root>
+        </Stack.Root>
+      </Stack.Root>
+    </section>
   );
 }
 
@@ -478,28 +522,28 @@ function Item({ item, onOpenProposal, onOpenVariants }: { readonly item: TurnIte
       );
     case "proposal":
       return (
-        <div className="chat-proposal" data-proposal={item.id} data-action={item.action ?? "drafted"} data-tone={item.adoptable || item.needsMeasurement ? "info" : "warning"}>
+        <div className="chat-proposal" data-proposal={item.id} data-action={item.action ?? "drafted"} data-request={item.request ? "" : undefined} data-tone={item.adoptable || item.needsMeasurement || item.request ? "info" : "warning"}>
           <Stack.Root gap="condensed">
             <Stack.Root direction="row" align="center" gap="condensed" wrap>
               <span className="chat-step-icon" aria-hidden="true">
-                <Pencil />
+                {item.request ? <FileCode2 /> : <Pencil />}
               </span>
               <Text.Root as="span" variant="label">
-                {`Proposal ${item.action ?? "drafted"}`}
+                {item.request ? `Request for a new rule type ${item.action ?? "drafted"}` : `Proposal ${item.action ?? "drafted"}`}
               </Text.Root>
             </Stack.Root>
             <Text.Root as="p" weight="medium" className="chat-proposal-title">
               {item.title}
             </Text.Root>
             <Text.Root as="p" tone="muted" className="chat-small">
-              {item.verdict} Only you can approve, decline or adopt it.
+              {item.request ? "Needs a new rule type: this is a code change. Its review page copies a request ready to file; it never becomes a check here." : `${item.verdict} Only you can approve, decline or adopt it.`}
             </Text.Root>
             <div>
               <Button.Root type="button" variant="secondary" onClick={() => onOpenProposal(item.id)}>
                 <Button.Icon>
                   <CircleCheck />
                 </Button.Icon>
-                Review the proposal
+                {item.request ? "Review the request" : "Review the proposal"}
               </Button.Root>
             </div>
           </Stack.Root>
