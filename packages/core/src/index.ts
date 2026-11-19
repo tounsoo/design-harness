@@ -61,7 +61,7 @@ export { describeRule } from "./engine/words";
 
 export type { BoundChange, ChangeClass, Classification, ClassifiedChange } from "./proposals/classify";
 export { classifyProposal } from "./proposals/classify";
-export { applyProposal } from "./proposals/apply";
+export { applyProposal, opLabel } from "./proposals/apply";
 export type { Adoption, ExampleResult, ExampleRun, ExistingPrototype, NewlyFailing, ProposalDraft, ProposalImpact, PrototypeImpact, Refusal, RefusalCode, Stamp } from "./proposals/lifecycle";
 export { adopt, approve, contentOf, decline, dryRunAdoption, newlyFailingOf, proposalImpact, propose, rerunExamples, revise, sendBack, tryExamples, withExampleSnapshots } from "./proposals/lifecycle";
 

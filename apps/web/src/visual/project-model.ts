@@ -1,4 +1,4 @@
-import { classifyProposal, type BoundChange, type Bound, type Cap, type ChangeClass, type InventoryOp, type PageType, type ProjectConfig, type Proposal, type ProposalStatus, type RuleSpec, type Task, type TaskFacts } from "@design-harness/core";
+import { classifyProposal, opLabel, type BoundChange, type Bound, type Cap, type ChangeClass, type InventoryOp, type PageType, type ProjectConfig, type Proposal, type ProposalStatus, type RuleSpec, type Task, type TaskFacts } from "@design-harness/core";
 import { humanize } from "../app/words";
 
 /**
@@ -284,6 +284,36 @@ export function ruleLines(proposal: Proposal, config: ProjectConfig): readonly R
   });
 }
 
+/**
+ * One task's step budget a proposal moves, as a line to read: "Changes the
+ * step budget of Pick a free room and book it: at most 4 → at most 3,
+ * stricter". The budget before is core's, from its classification: kept
+ * with an adopted proposal, whose config already holds the new number.
+ */
+export type BudgetLine = {
+  readonly task: string;
+  /** The task as a person reads it. */
+  readonly name: string;
+  readonly words: string;
+  readonly after: number;
+  /** Before and after with the way it moved; absent when core could not say what it was before. */
+  readonly move?: BoundChange;
+};
+
+/** The step budgets a proposal moves, in the order it names them. */
+export function budgetLines(proposal: Proposal, config: ProjectConfig): readonly BudgetLine[] {
+  const classified = proposal.classification ?? classifyProposal(proposal, config);
+  return proposal.inventory.flatMap((op): BudgetLine[] => {
+    if (op.op !== "set-max-steps") return [];
+    const task = config.inputs.tasks.find((item) => item.id === op.task);
+    const name = task?.description ?? humanize(op.task);
+    // An adopted proposal with no kept classification would be read against the budget it already set: nothing says what it was.
+    const kept = proposal.status === "adopted" && !proposal.classification ? undefined : classified.changes.find((change) => change.change === opLabel(op))?.bounds?.[0];
+    const move = kept && kept.before !== kept.after ? kept : undefined;
+    return [{ task: op.task, name, words: `Changes the step budget of ${name}: ${move ? moveWords(move) : `to at most ${op.value}`}`, after: op.value, ...(move ? { move } : {}) }];
+  });
+}
+
 /** How many separate changes a proposal makes: a rule removed and added again under its id is one. */
 export function changeCount(proposal: Proposal): number {
   const changed = proposal.rules.remove.filter((id) => proposal.rules.add.some((rule) => rule.id === id)).length;
@@ -294,7 +324,8 @@ export function changeCount(proposal: Proposal): number {
 export type ProposalPreview =
   | { readonly kind: "component"; readonly name: string; readonly removed: boolean }
   | { readonly kind: "cap"; readonly name: string; readonly cap: Cap; readonly before?: number; readonly moved: "stricter" | "looser" | "the same" | "new" }
-  | { readonly kind: "budget"; readonly task: string; readonly before?: number; readonly after: number }
+  | { readonly kind: "budget"; readonly task: string; readonly after: number }
+  | { readonly kind: "budget-line"; readonly line: BudgetLine }
   | { readonly kind: "page-type"; readonly pageType: PageType }
   | { readonly kind: "flow-state"; readonly state: string; readonly removed: boolean }
   | { readonly kind: "words"; readonly label: string; readonly text: string }
@@ -357,8 +388,8 @@ export function proposalPreview(proposal: Proposal, config: ProjectConfig): Prop
       return { kind: "cap", name: op.name, cap: { ...cap, value: op.value }, ...(adopted ? {} : { before: cap.value }), moved: adopted ? "the same" : capDirection(cap, cap.value, op.value) };
     }
     case "set-max-steps": {
-      const task = config.inputs.tasks.find((item) => item.id === op.task);
-      return { kind: "budget", task: task?.description ?? humanize(op.task), ...(task && proposal.status !== "adopted" ? { before: task.maxSteps } : {}), after: op.value };
+      const line = budgetLines({ ...proposal, inventory: [op] }, config)[0];
+      return line ? { kind: "budget-line", line } : { kind: "none" };
     }
     case "add-task":
       return { kind: "budget", task: op.task.description ?? humanize(op.task.id), after: op.task.maxSteps };

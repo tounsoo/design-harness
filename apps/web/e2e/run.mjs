@@ -4296,7 +4296,7 @@ const SECOND_QUESTION = (text) =>
 
 /**
  * Imports the open Nook project again with `prototypes` in place of its one:
- * each is the seeded Booking with a change to its booking page. `project`
+ * each is the seeded Booking with a change to its booking page, or to its flow. `project`
  * changes the config. The two light views only, so each prototype is eight
  * frames. The first prototype opens, and this waits until it is measured.
  */
@@ -4306,11 +4306,12 @@ async function importNook(page, prototypes, project = (config) => config) {
   const seed = exported.prototypes[0].prototype;
   const file = join(mkdtempSync(join(tmpdir(), "design-harness-rules-")), "nook.design-harness.json");
   const config = project({ ...exported.project, views: exported.project.views.filter((view) => !view.name.endsWith("-dark")) });
-  const made = prototypes.map(({ id, name, change }) => {
+  const made = prototypes.map(({ id, name, change, flow }) => {
     const before = seed.files["pages/booking.json"];
     const after = change ? change(before) : before;
     if (change) assert.notEqual(after, before, `the change for ${name} changes nothing`);
-    return { id, name, prototype: { ...seed, files: { ...seed.files, "pages/booking.json": after } } };
+    // `flow` changes the prototype's flow instead of, or as well as, its booking page.
+    return { id, name, prototype: { ...seed, ...(flow ? { flow: flow(seed.flow) } : {}), files: { ...seed.files, "pages/booking.json": after } } };
   });
   writeFileSync(file, JSON.stringify({ ...exported, project: config, prototypes: made }));
   await page.locator('[data-testid="import-file"]').setInputFiles(file);
@@ -4743,6 +4744,252 @@ test("the rule flows at phone width: the dialog fits the screen, and its actions
   const remove = page.getByRole("dialog", { name: "Remove this rule" });
   await remove.getByTestId("rule-examples").waitFor({ timeout: 60000 });
   await shot(page, "rule-remove-phone-light");
+  assert.deepEqual(errors, []);
+});
+
+// ---- a task's step budget, changed from the Project view ---------------------
+
+/** book-room without its way through a held room: its longest route is then 2 steps, where the seeded prototype's is 3. */
+const STRAIGHT_TO_BOOKING = (flow) => ({ ...flow, tasks: flow.tasks.map((task) => (task.task === "book-room" ? { ...task, transitions: task.transitions.filter((step) => step.from !== "held" && step.to !== "held") } : task)) });
+/** The project with another step budget for one task. */
+const withBudget = (task, maxSteps) => (config) => ({ ...config, inputs: { ...config.inputs, tasks: config.inputs.tasks.map((item) => (item.id === task ? { ...item, maxSteps } : item)) } });
+const taskRow = (page, id) => page.locator(`[data-testid="project-tasks"] li[data-task="${id}"]`);
+
+/** Opens a task's step-budget flow from the task in the Project view. */
+async function openBudgetFlow(page, id) {
+  await mainView(page, "Project").click();
+  await taskRow(page, id).getByRole("button", { name: /^Change its step budget…/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Change its step budget" });
+  await dialog.waitFor();
+  return dialog;
+}
+
+const words = async (locator) => ((await locator.textContent()) ?? "").replace(/\s+/g, " ").trim();
+const moveOf = async (dialog) => [await dialog.getByTestId("rule-move-before").textContent(), await dialog.getByTestId("rule-move-after").textContent(), await dialog.getByTestId("rule-move").getAttribute("data-direction")];
+
+test("a person lowers a task's step budget from the Project view: live before and after, classified tightens, proven on a prototype the new budget flags, and that prototype fails step-budget once adopted", async ({ browser, base, api }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  api.script([]);
+  await importNook(page, [
+    { id: "booking-spec", name: "Booking" },
+    { id: "straight", name: "Straight to booking", flow: STRAIGHT_TO_BOOKING },
+  ]);
+  assert.equal((await report(page)).status, "pass");
+  const dialog = await openBudgetFlow(page, "book-room");
+  assert.equal(await dialog.getAttribute("data-task"), "book-room");
+  // The task, its budget against today's routes, and the rule that reads it lead.
+  assert.match(await words(dialog.getByTestId("budget-subject")), /^Pick a free room and book it ?at most 3 steps ?Booking's longest route today: 3 steps, at the limit\..*The rule that reads it:/);
+  const preview = dialog.getByTestId("rule-preview");
+  assert.equal(await preview.getAttribute("data-state"), "unchanged");
+  assert.equal(await dialog.getByRole("button", { name: "Open the proposal" }).isDisabled(), true, "nothing to propose until the number differs");
+  // The step button moves it by one.
+  await dialog.locator('.rule-limit[data-limit="max"]').getByRole("button", { name: /decre|lower|minus/i }).click();
+  await eventually(page, () => preview.getAttribute("data-class"), (value) => value === "tightens", "one less is stricter");
+  assert.deepEqual(await moveOf(dialog), ["at most 3 steps", "at most 2", "stricter"]);
+  assert.equal(await preview.getByTestId("proposal-class").getAttribute("data-class"), "tightens");
+  assert.equal(await preview.getByTestId("rule-class-reason").textContent(), "lowers max steps from 3 to 2.");
+  // Core's reading of every prototype's routes with the budget lowered.
+  await dialog.getByTestId("rule-impact-summary").waitFor({ timeout: 60000 });
+  assert.equal(await dialog.getByTestId("rule-impact-summary").textContent(), "0 of 2 prototypes have findings from the rule step-budget now; 1 would newly fail.");
+  assert.match(await dialog.locator('.rule-impact > li[data-effect="fails"]').textContent(), /Booking.*It would newly fail step-budget: The route open-room → hold → book takes 3 steps, which exceeds max steps 2 for "book-room"/s);
+  assert.equal(await dialog.locator('.rule-impact > li[data-prototype="Straight to booking"]').getAttribute("data-effect"), "same");
+  // A tightening is proven by a prototype the new budget flags: the project has one, and the flow names it.
+  assert.match(await dialog.getByTestId("rule-examples").textContent(), /one whose route the new budget flags and no other rule does/);
+  assert.deepEqual(await dialog.locator(".rule-examples > li").evaluateAll((items) => items.map((item) => [item.dataset.example, item.dataset.expect])), [
+    ["straight-to-booking", "pass"],
+    ["booking", "fail"],
+  ]);
+  assert.match(await dialog.locator('.rule-examples > li[data-expect="fail"]').textContent(), /must fail, flagged by step-budget: the prototype Booking, as it is now\./);
+  assert.equal(await dialog.getByTestId("rule-needs").count(), 0);
+  // It needs its reason.
+  await dialog.getByRole("button", { name: "Open the proposal" }).click();
+  assert.match(await dialog.getByRole("alert").textContent(), /Say why/);
+  await dialog.getByRole("textbox", { name: "Why" }).fill("Two taps to a booked room is the promise.");
+  await shot(page, "step-budget-tighten-light");
+  await shotDark(page, "step-budget-tighten-dark");
+  await dialog.getByRole("button", { name: "Open the proposal" }).click();
+
+  // An open proposal by the person, on its review page, reading words first.
+  const review = page.locator('.review[data-proposal="budget-book-room"]');
+  await review.waitFor();
+  assert.equal(await reviewStatus(page), "open");
+  assert.equal(await review.locator('[data-testid="class-scale"]').getAttribute("data-class"), "tightens");
+  const line = review.getByTestId("op-figures").getByTestId("budget-line");
+  assert.equal(await line.getAttribute("data-direction"), "stricter");
+  assert.equal(await words(line), "Changes the step budget of Pick a free room and book itat most 3 becomes at most 2stricter");
+  await judged(page);
+  assert.match(await example(page, "booking").textContent(), /flagged by "step-budget" and no other rule/);
+  await review.getByTestId("impact-some").waitFor({ timeout: 60000 });
+  assert.equal(await review.getByTestId("impact-some").textContent(), "1 of 2 prototypes would newly fail.");
+  await shot(page, "step-budget-review-light");
+  await shotDark(page, "step-budget-review-dark");
+  // The task says a proposal waits on its budget, and the list reads the same words.
+  await mainView(page, "Project").click();
+  assert.match(await taskRow(page, "book-room").getByTestId("budget-waiting-proposal").textContent(), /A proposal waiting for you moves this budget to at most 2 steps\./);
+  await mainView(page, "Proposals").click();
+  // The Proposals view is still on the review page it last opened.
+  await page.getByRole("button", { name: "All proposals" }).click();
+  const listed = page.locator('.proposal-cards [data-proposal="budget-book-room"]');
+  assert.equal(await listed.getByTestId("proposal-preview").getAttribute("data-preview"), "budget-line");
+  assert.equal(await words(listed.getByTestId("budget-line")), "Changes the step budget of Pick a free room and book itat most 3 becomes at most 2stricter");
+  assert.equal(await listed.getByTestId("proposal-class").getAttribute("data-class"), "tightens");
+  await shot(page, "step-budget-list-light");
+  await listed.getByRole("button", { name: /^Lower the step budget/ }).click();
+  await review.waitFor();
+
+  await approveAndAdopt(page);
+  assert.match(await page.getByTestId("review-rechecked").textContent(), /Every prototype was re-checked: Booking newly fails\./);
+  // Adopted, the config holds the new budget; the line still says what it was, from core's kept classification.
+  assert.equal(await words(review.getByTestId("op-figures").getByTestId("budget-line")), "Changes the step budget of Pick a free room and book itat most 3 becomes at most 2stricter");
+  const after = await reportWhen(page, (value) => value.status === "fail", "Booking, whose longest route is 3 steps, fails the budget of 2");
+  assert.deepEqual(failing(after), ["step-budget"]);
+  assert.match(after.findings.find((finding) => finding.rule === "step-budget").message, /takes 3 steps, which exceeds max steps 2 for "book-room"/);
+  await mainView(page, "Project").click();
+  assert.equal(await taskRow(page, "book-room").getByTestId("budget-limit").textContent(), "at most 2 steps");
+  assert.equal(await taskRow(page, "book-room").getByTestId("budget-waiting-proposal").count(), 0);
+  assert.equal(api.requests.length, 0);
+  assert.deepEqual(errors, []);
+});
+
+test("a person raises a task's step budget: classified looser, with examples as core's adoption asks, and once adopted the prototype that was over it passes", async ({ browser, base, api }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  api.script([]);
+  // A project that gives booking two steps: the seeded prototype's way through a held room is one over.
+  await importNook(
+    page,
+    [
+      { id: "booking-spec", name: "Booking" },
+      { id: "early", name: "Early booking", change: MORE_PRIMARIES(1) },
+    ],
+    withBudget("book-room", 2),
+  );
+  assert.deepEqual(failing(await report(page)), ["step-budget"]);
+  const dialog = await openBudgetFlow(page, "book-room");
+  assert.match(await words(dialog.getByTestId("budget-subject")), /at most 2 steps ?Booking's longest route today: 3 steps, 1 over the limit\./);
+  await setLimit(dialog, "max", 3);
+  const preview = dialog.getByTestId("rule-preview");
+  await eventually(page, () => preview.getAttribute("data-class"), (value) => value === "loosens-or-removes", "one more is looser");
+  assert.deepEqual(await moveOf(dialog), ["at most 2 steps", "at most 3", "looser"]);
+  assert.equal(await preview.getByTestId("proposal-class").textContent(), "loosens or removes");
+  assert.equal(await preview.getByTestId("rule-class-reason").textContent(), "raises max steps from 2 to 3.");
+  await dialog.getByTestId("rule-impact-summary").waitFor({ timeout: 60000 });
+  assert.equal(await dialog.getByTestId("rule-impact-summary").textContent(), "2 of 2 prototypes have findings from the rule step-budget now; 1 would stop failing.");
+  assert.deepEqual(await dialog.locator(".rule-impact > li").evaluateAll((items) => items.map((item) => [item.dataset.prototype, item.dataset.effect])), [
+    ["Booking", "clears"],
+    ["Early booking", "still-fails"],
+  ]);
+  // A loosening adds no rule to prove: core asks for one that passes and one a rule still in force flags.
+  assert.match(await dialog.getByTestId("rule-examples").textContent(), /one that a rule still in force flags/);
+  assert.deepEqual(await dialog.locator(".rule-examples > li").evaluateAll((items) => items.map((item) => [item.dataset.example, item.dataset.expect])), [
+    ["booking", "pass"],
+    ["early-booking", "fail"],
+  ]);
+  assert.match(await dialog.locator('.rule-examples > li[data-expect="fail"]').textContent(), /flagged by one-primary-per-page/);
+  // A task cannot be without its budget: an empty field is refused in words, and nothing can be opened on it.
+  await setLimit(dialog, "max", "");
+  await eventually(page, () => preview.getAttribute("data-state"), (value) => value === "invalid", "an empty field is not a budget");
+  assert.match(await preview.getByRole("alert").textContent(), /cannot be left out/);
+  assert.equal(await dialog.getByRole("button", { name: "Open the proposal" }).isDisabled(), true);
+  await setLimit(dialog, "max", 3);
+  await eventually(page, () => preview.getAttribute("data-class"), (value) => value === "loosens-or-removes", "3 again");
+  await dialog.getByTestId("rule-examples").waitFor({ timeout: 60000 });
+  await dialog.getByRole("textbox", { name: "Why" }).fill("Holding a room first is a real way to book.");
+  await shot(page, "step-budget-loosen-light");
+  await shotDark(page, "step-budget-loosen-dark");
+  await dialog.getByRole("button", { name: "Open the proposal" }).click();
+  const review = page.locator('.review[data-proposal="budget-book-room"]');
+  await review.waitFor();
+  assert.equal(await review.locator('[data-testid="class-scale"]').getAttribute("data-class"), "loosens-or-removes");
+  const line = review.getByTestId("op-figures").getByTestId("budget-line");
+  assert.equal(await line.getAttribute("data-direction"), "looser");
+  assert.equal(await words(line), "Changes the step budget of Pick a free room and book itat most 2 becomes at most 3looser");
+  await approveAndAdopt(page);
+  assert.equal((await reportWhen(page, (value) => value.status === "pass", "Booking's three steps fit the budget of 3")).status, "pass");
+  await mainView(page, "Project").click();
+  assert.equal(await taskRow(page, "book-room").getByTestId("budget-limit").textContent(), "at most 3 steps");
+  assert.equal(api.requests.length, 0);
+  assert.deepEqual(errors, []);
+});
+
+test("the step-budget flow at phone width, by keyboard: the dialog fits the screen, Arrow Down lowers the budget, what the project lacks is named, and the proposal opens", async ({ browser, base, api }) => {
+  const { page, errors } = await openApp(browser, base, { viewport: { width: 390, height: 844 } });
+  api.script([]);
+  await mainView(page, "Project").click();
+  const action = taskRow(page, "book-room").getByRole("button", { name: /^Change its step budget…/ });
+  await action.scrollIntoViewIfNeeded();
+  await shot(page, "step-budget-task-phone-light");
+  // By keyboard alone: focus the task's action, open the flow, and the dialog takes focus.
+  await action.focus();
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Change its step budget" });
+  await dialog.waitFor();
+  assert.equal(await dialog.evaluate((element) => element.contains(document.activeElement)), true, "focus moves into the dialog");
+  // The number field is named for what it limits.
+  const input = dialog.getByRole("spinbutton", { name: "At most (steps)" });
+  await input.focus();
+  await page.keyboard.press("ArrowDown");
+  const preview = dialog.getByTestId("rule-preview");
+  await eventually(page, () => preview.getAttribute("data-class"), (value) => value === "tightens", "Arrow Down lowers the budget by one");
+  assert.deepEqual(await moveOf(dialog), ["at most 3 steps", "at most 2", "stricter"]);
+  const box = await dialog.boundingBox();
+  assert.ok(box && box.x >= 0 && box.x + box.width <= 390, `the dialog is as wide as the phone at most: ${JSON.stringify(box)}`);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, "nothing scrolls sideways");
+  const widest = await dialog.evaluate((element) => Math.max(...[...element.querySelectorAll("*")].map((item) => item.getBoundingClientRect().right)));
+  assert.ok(widest <= 390.5, `nothing in the dialog reaches past the screen: ${widest}`);
+  // The one prototype would fail the lower budget, so the project has nothing that passes: the flow says so and writes no example.
+  await dialog.getByTestId("rule-needs").waitFor({ timeout: 60000 });
+  assert.match(await dialog.getByTestId("rule-needs").textContent(), /The project has none of: a prototype that passes every rule once this is adopted\./);
+  assert.deepEqual(await dialog.locator(".rule-examples > li").evaluateAll((items) => items.map((item) => [item.dataset.example, item.dataset.expect])), [["booking", "fail"]]);
+  await shot(page, "step-budget-phone-light");
+  await shotDark(page, "step-budget-phone-dark");
+  const why = dialog.getByRole("textbox", { name: "Why" });
+  await why.focus();
+  await page.keyboard.type("Two taps to a booked room.");
+  await dialog.getByTestId("rule-needs").scrollIntoViewIfNeeded();
+  await shot(page, "step-budget-phone-needs-light");
+  await shotDark(page, "step-budget-phone-needs-dark");
+  // The way out is reachable: the dialog scrolls to its actions, inside the screen.
+  const open = dialog.getByRole("button", { name: "Open the proposal" });
+  await open.scrollIntoViewIfNeeded();
+  const at = await open.boundingBox();
+  assert.ok(at && at.y >= 0 && at.y + at.height <= 844 && at.x + at.width <= 390, `Open the proposal is on screen: ${JSON.stringify(at)}`);
+  assert.equal(await dialog.getByRole("button", { name: "Open it and ask the agent for examples" }).count(), 1, "the way to ask the agent for what is missing is offered");
+  await open.focus();
+  await page.keyboard.press("Enter");
+  const review = page.locator('.review[data-proposal="budget-book-room"]');
+  await review.waitFor();
+  assert.equal(await reviewStatus(page), "open");
+  assert.equal(await words(review.getByTestId("op-figures").getByTestId("budget-line")), "Changes the step budget of Pick a free room and book itat most 3 becomes at most 2stricter");
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, "the review page does not scroll sideways");
+  await review.getByTestId("op-figures").scrollIntoViewIfNeeded();
+  await shot(page, "step-budget-review-phone-light");
+  assert.equal(api.requests.length, 0);
+  assert.deepEqual(errors, []);
+});
+
+test("a step budget the project cannot prove: the flow names what is missing, opens the proposal, and leaves the message for the agent in the chat", async ({ browser, base, api }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  api.script([]);
+  // The one prototype takes three steps to book: under a budget of 2 it is the failing example, and nothing passes.
+  const dialog = await openBudgetFlow(page, "book-room");
+  await setLimit(dialog, "max", 2);
+  await dialog.getByTestId("rule-needs").waitFor({ timeout: 60000 });
+  assert.deepEqual(await dialog.locator(".rule-examples > li").evaluateAll((items) => items.map((item) => [item.dataset.example, item.dataset.expect])), [["booking", "fail"]]);
+  assert.match(await dialog.getByTestId("rule-needs").textContent(), /It cannot be adopted until it has one more example.*The project has none of: a prototype that passes every rule once this is adopted\./s);
+  await dialog.getByRole("textbox", { name: "Why" }).fill("Two taps to a booked room.");
+  await shot(page, "step-budget-needs-light");
+  await shotDark(page, "step-budget-needs-dark");
+  await dialog.getByRole("button", { name: "Open it and ask the agent for examples" }).click();
+  await page.locator('.review[data-proposal="budget-book-room"]').waitFor();
+  await page.waitForFunction(() => (document.querySelector(".chat-composer textarea")?.value ?? "") !== "");
+  const asked = await page.locator(".chat-composer textarea").inputValue();
+  assert.match(asked, /^I opened proposal "budget-book-room" \(Lower the step budget of “Pick a free room and book it” from 3 to 2\)\./);
+  assert.match(asked, /- a prototype that passes every rule once this is adopted/);
+  assert.match(asked, /revise_proposal, keeping its id, and give only examples/);
+  assert.equal(api.requests.length, 0, "nothing is sent until the person sends it");
   assert.deepEqual(errors, []);
 });
 

@@ -243,6 +243,14 @@ describe("classification", () => {
     expect(classify([{ op: "add-layout", id: "side-panel" }, { op: "remove-layout", id: "room-cards" }])).toBe("loosens-or-removes");
     expect(classify([], { add: [], remove: ["no-raw-controls"] })).toBe("loosens-or-removes");
   });
+
+  it("says a moved step budget before and after in the words of a limit, with the way it moved", () => {
+    const changes = (value: number) => classifyProposal({ ...draft("x"), status: "open", history: [{ status: "open", at: "t" }], inventory: [{ op: "set-max-steps", task: "book-room", value }], rules: { add: [], remove: [] } }, nook).changes;
+    expect(changes(2)).toEqual([{ change: 'set-max-steps "book-room" to 2', class: "tightens", reason: "lowers max steps from 3 to 2", bounds: [{ bound: "max", before: "at most 3", after: "at most 2", direction: "stricter" }] }]);
+    expect(changes(4)).toEqual([{ change: 'set-max-steps "book-room" to 4', class: "loosens-or-removes", reason: "raises max steps from 3 to 4", bounds: [{ bound: "max", before: "at most 3", after: "at most 4", direction: "looser" }] }]);
+    // A task the config does not have has no budget to say.
+    expect(classifyProposal({ ...draft("x"), status: "open", history: [{ status: "open", at: "t" }], inventory: [{ op: "set-max-steps", task: "no-such-task", value: 2 }], rules: { add: [], remove: [] } }, nook).changes[0]).toEqual({ change: 'set-max-steps "no-such-task" to 2', class: "loosens-or-removes", reason: "names a task the config does not have" });
+  });
 });
 
 /** A rendered rule only a measurement can prove: Harbor's open button is in the first view. */

@@ -1,12 +1,14 @@
 import { Badge, Button, Card, Code, DataList, Disclosure, Stack, Table, Text, ToggleGroup, VisuallyHidden } from "@tounsoo/todae";
 import { Pencil, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { ROLE_NAMES, describeRule, flowFacts, rerunExamples, type ConfirmedRole, type ExampleRun, type ProjectConfig, type RoleMapping, type RuleSpec } from "@design-harness/core";
+import { ROLE_NAMES, describeRule, flowFacts, rerunExamples, type ConfirmedRole, type ExampleRun, type ProjectConfig, type RoleMapping, type RuleSpec, type Task } from "@design-harness/core";
+import { budgetWaiting, budgetWaitingWords, taskName } from "../review/budget-change";
 import { waitingOn, waitingWords } from "../review/rule-change";
 import { formatTime } from "../review/timeline";
 import type { PrototypeRecord } from "../store/project-file";
 import { BudgetFigure, CapMeterView, PageTypeFigure, RuleFigure, SlotLegend } from "../visual/project-figures";
-import { RULE_GROUPS, budgetMeter, capReaders, capsRead, groupRules, projectTimeline, ruleBound, ruleGroup, ruleSource, type RuleGroupId } from "../visual/project-model";
+import { RULE_GROUPS, budgetMeter, capReaders, capsRead, groupRules, projectTimeline, ruleBound, ruleGroup, ruleSource, type BudgetMeter, type RuleGroupId } from "../visual/project-model";
+import { BudgetFlowDialog, type BudgetFlow } from "./BudgetChange";
 import { TaskMaps } from "./ChecksPanel";
 import { LayoutsView } from "./LayoutsView";
 import { LibraryVersionSection } from "./LibraryVersion";
@@ -65,8 +67,8 @@ export function ProjectView({
   /** Puts a message in the chat for the person to edit and send. */
   readonly onAskAgent?: ((message: string) => void) | undefined;
 }) {
-  /** The rule a person is removing or changing, from its card. The flow ends in a proposal; nothing here edits a rule. */
-  const [ruleFlow, setRuleFlow] = useState<RuleFlow | null>(null);
+  /** The rule a person is removing or changing, from its card, or the task whose step budget they are changing. The flow ends in a proposal; nothing here edits a rule or a task. */
+  const [ruleFlow, setRuleFlow] = useState<RuleFlow | BudgetFlow | null>(null);
   const editable = board !== undefined && onStartProposal !== undefined;
   // Core's facts about the open prototype's flow: each task's routes against its budget.
   const flow = prototype ? flowFacts(config, prototype.prototype) : null;
@@ -74,6 +76,8 @@ export function ProjectView({
   const open = config.proposals.filter((proposal) => proposal.status === "open").length;
   const ranking = [...inputs.ranking].sort((a, b) => a.rank - b.rank);
   const caps = Object.entries(inputs.caps).sort(([a], [b]) => (a < b ? -1 : 1));
+  const meterOf = (task: Task) => budgetMeter(task, flow?.tasks.find((item) => item.task === task.id), prototype?.name);
+  const budgetTask = ruleFlow?.kind === "budget" ? inputs.tasks.find((task) => task.id === ruleFlow.task) : undefined;
   return (
     <Stack.Root gap="spacious" className="project">
       <div className="project-intro">
@@ -134,6 +138,7 @@ export function ProjectView({
       {editable && ruleFlow && (
         <RuleFlowHost
           flow={ruleFlow}
+          meter={budgetTask ? meterOf(budgetTask) : undefined}
           config={config}
           prototypes={prototypes}
           openPrototypeId={prototype?.id ?? ""}
@@ -153,7 +158,7 @@ export function ProjectView({
       )}
 
       <section aria-labelledby="project-inputs">
-        <SectionHead id="project-inputs" title="Tasks and limits" text={`The numbers the rules read: how many steps each task may take, which action matters most, and the project's caps.${prototype && flow ? ` Under each task is what ${prototype.name}'s longest route takes today.` : ""}`} />
+        <SectionHead id="project-inputs" title="Tasks and limits" text={`The numbers the rules read: how many steps each task may take, which action matters most, and the project's caps.${editable ? " To change a task's step budget, start from the task: that opens a proposal, and the budget stays as it is until you approve and adopt it." : ""}${prototype && flow ? ` Under each task is what ${prototype.name}'s longest route takes today.` : ""}`} />
         <div className="limits">
           <Card.Root className="figure-card" data-testid="project-tasks">
             <Text.Root as="h3" className="figure-title">
@@ -170,10 +175,32 @@ export function ProjectView({
                   <Text.Root as="h4" className="figure-title">
                     {task.description ?? humanize(task.id)}
                   </Text.Root>
-                  <BudgetFigure meter={budgetMeter(task, flow?.tasks.find((item) => item.task === task.id), prototype?.name)} />
+                  <BudgetFigure meter={meterOf(task)} />
                   <Text.Root as="p" tone="muted">
                     Done at <Badge.Root tone="neutral">{humanize(task.successState)}</Badge.Root> <Code.Root>{task.id}</Code.Root>
                   </Text.Root>
+                  {editable &&
+                    budgetWaiting(config, task.id).map((proposal) => (
+                      <div key={proposal.id} className="rule-card-source" data-testid="budget-waiting-proposal">
+                        <Badge.Root tone="warning">{proposal.status}</Badge.Root>
+                        <Text.Root as="p" tone="muted">
+                          A proposal waiting for you {budgetWaitingWords(proposal, task.id)}.
+                        </Text.Root>
+                        <Button.Root variant="ghost" onClick={() => onOpenProposal(proposal.id)}>
+                          {`Open ${proposal.title}`}
+                        </Button.Root>
+                      </div>
+                    ))}
+                  {editable && (
+                    <div className="rule-card-actions">
+                      <Button.Root variant="ghost" onClick={() => setRuleFlow({ kind: "budget", task: task.id })} aria-label={`Change its step budget… ${taskName(task)}`}>
+                        <Button.Icon>
+                          <Pencil />
+                        </Button.Icon>
+                        Change its step budget…
+                      </Button.Root>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -383,11 +410,18 @@ function Rules({ config, onOpenProposal, onFlow }: { readonly config: ProjectCon
  * project is measured while a flow is open, so core reads each as it is
  * drawn, and not at all while none is.
  */
-function RuleFlowHost({ prototypes, openPrototypeId, board, ...rest }: Omit<Parameters<typeof RuleFlowDialog>[0], "existing" | "progress"> & { readonly prototypes: readonly PrototypeRecord[]; readonly openPrototypeId: string; readonly board: BoardSession }) {
+function RuleFlowHost({
+  flow,
+  meter,
+  prototypes,
+  openPrototypeId,
+  board,
+  ...rest
+}: Omit<Parameters<typeof RuleFlowDialog>[0], "existing" | "progress" | "flow"> & { readonly flow: RuleFlow | BudgetFlow; /** The budget as the page shows it, for a flow on a task. */ readonly meter: BudgetMeter | undefined; readonly prototypes: readonly PrototypeRecord[]; readonly openPrototypeId: string; readonly board: BoardSession }) {
   const { existing, frames, progress } = useProjectExisting({ config: rest.config, prototypes, openPrototypeId, board, live: true });
   return (
     <>
-      <RuleFlowDialog {...rest} existing={existing} progress={progress} />
+      {flow.kind !== "budget" ? <RuleFlowDialog flow={flow} {...rest} existing={existing} progress={progress} /> : meter ? <BudgetFlowDialog flow={flow} meter={meter} {...rest} existing={existing} progress={progress} /> : null}
       <MeasureFrames items={frames} />
     </>
   );
