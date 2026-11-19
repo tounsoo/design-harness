@@ -98,3 +98,5 @@ export type { ConfirmedRoles, ExclusionGuess, LibraryDescription, MissingRole, M
 export { confirmRoles, describeMapping, draftRoles, missingRoleEffects, sameMapping } from "./library/roles";
 export type { BuiltProject, ExclusionChoice, LibrarySetup, ProjectAnswers, RoleChoice, RoleOptions, RolePreview, StarterCap, StarterRules, StarterTask, TextParts } from "./library/project";
 export { STARTER_CAPS, STARTER_CAP_NOTES, STARTER_LAYOUT, STARTER_PAGE_TYPES, STARTER_STATE, STARTER_VIEWS, buildProject, confirmationFrom, defaultStarterRules, isExcluded, projectId, projectNameIssues, roleComponents, roleOptions, rolePreview, slugOf, starterInventory, starterPrototype, textParts } from "./library/project";
+export type { PartSpecimen, SpecimenSample } from "./library/specimen";
+export { partSpecimen, unplacedRoles } from "./library/specimen";
