@@ -674,7 +674,8 @@
   .proof-mark { display: inline-grid; place-items: center; color: var(--todae-color-status-success-fg); }
   .proof-mark[data-expect="fail"] { color: var(--todae-color-status-critical-fg); }
   .proof-example[data-expect="fail"] .proof-frame { box-shadow: 0 0 0 var(--todae-focus-ring-width) var(--todae-color-status-critical-border); }
-  .proof-frame { justify-content: center; min-block-size: var(--todae-harness-size-stage); max-block-size: var(--todae-harness-size-editor); overflow: auto; }
+  /* A fixed height: the frame inside is cut to what its page fills once measured, and the page below must not move when it is. */
+  .proof-frame { justify-content: center; box-sizing: border-box; block-size: var(--todae-harness-size-stage-max); overflow: auto; }
   @media (max-width: 40rem) { .rule-proof-rule { grid-template-columns: minmax(0, 1fr); } }
 
   .impact-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--todae-harness-size-name)), 1fr)); gap: var(--todae-space-3); align-items: start; }
