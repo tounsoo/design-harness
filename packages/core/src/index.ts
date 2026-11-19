@@ -63,7 +63,7 @@ export type { BoundChange, ChangeClass, Classification, ClassifiedChange } from 
 export { classifyProposal } from "./proposals/classify";
 export { applyProposal } from "./proposals/apply";
 export type { Adoption, ExampleResult, ExampleRun, ExistingPrototype, NewlyFailing, ProposalDraft, ProposalImpact, PrototypeImpact, Refusal, RefusalCode, Stamp } from "./proposals/lifecycle";
-export { adopt, approve, contentOf, decline, dryRunAdoption, newlyFailingOf, proposalImpact, propose, rerunExamples, revise, sendBack, tryExamples, withExampleSnapshots } from "./proposals/lifecycle";
+export { adopt, approve, contentOf, decline, dryRunAdoption, newlyFailingOf, onlyRemovesRules, proposalImpact, propose, rerunExamples, revise, sendBack, tryExamples, withExampleSnapshots } from "./proposals/lifecycle";
 
 export type { CatalogComponent, SpecCatalog } from "./spec/catalog";
 export { LAYOUT_TYPE, PAGE_TYPE, SCENARIO_STATE, SPEC_ACTIONS, TEXT_PROP, specCatalog } from "./spec/catalog";

@@ -4,6 +4,7 @@ import {
   checkPrototype,
   classifyProposal,
   describeRule,
+  onlyRemovesRules,
   proposalImpact,
   propose,
   ruleBounds,
@@ -319,9 +320,12 @@ type Source = { readonly label: string; readonly from: string; readonly prototyp
  * prototypes come first, one the draft clears before the rest, then the
  * examples adopted proposals keep. Each is read by `checkPrototype` under
  * the draft's config, on the snapshots it has, as `adopt` will read it.
- * What is missing is named in `needs`: the agent writes those.
+ * What is missing is named in `needs`: the agent writes those. A draft
+ * that only removes rules needs none (core's `onlyRemovesRules`), so none
+ * are taken.
  */
 export function chooseExamples(config: ProjectConfig, draft: ProposalDraft, existing: readonly ExistingPrototype[]): ExampleChoice {
+  if (onlyRemovesRules(draft)) return { examples: NO_EXAMPLES, picked: [], needs: [] };
   const impact = proposalImpact(config, draft, existing);
   if (!impact.ok) return { examples: NO_EXAMPLES, picked: [], needs: [] };
   const candidate = impact.value.config;
