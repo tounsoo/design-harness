@@ -1,6 +1,7 @@
-import { Children, Component, createElement, Fragment, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
+import { Children, Component, createElement, Fragment, useMemo, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
 import { JSONUIProvider, Renderer, useBoundProp, type ComponentRegistry, type ComponentRenderProps } from "@json-render/react";
 import type { SpecPart, SpecPayload } from "../runtime/protocol";
+import { TAG_PROP } from "../runtime/tags";
 
 /**
  * `@design-harness/spec`, the spec renderer a frame loads for a spec
@@ -18,9 +19,29 @@ import type { SpecPart, SpecPayload } from "../runtime/protocol";
  * when the spec binds one. A Page fills its slots with the kit's Slot. A
  * part that throws is reported to the frame through `onError`, so the frame
  * fails rather than measuring the page without it.
+ *
+ * With tags on, each part also gets the element tag prop
+ * (`runtime/tags.ts`): its key in the expanded page, which carries the
+ * layout instance's scope, and each of a Page's slots `<key>/slots/<name>`.
+ * The frame finds what each drew in React's tree, so a part that does not
+ * pass the prop on to the DOM is found all the same.
  */
 
 type Slot = ComponentType<{ readonly name: string; readonly children?: ReactNode }>;
+
+/** Where the renderer keeps an element's key on the element, since json-render hands a part its element but not its key. */
+const KEY_FIELD = "dhKey";
+
+/** An element's key, as the renderer stored it, when tags are on. */
+function keyOf(element: object): string | undefined {
+  const key = (element as Record<string, unknown>)[KEY_FIELD];
+  return typeof key === "string" ? key : undefined;
+}
+
+/** The spec with each element's key stored on it, for the parts to tag themselves with. */
+export function withKeys(spec: SpecPayload["spec"]): SpecPayload["spec"] {
+  return { ...spec, elements: Object.fromEntries(Object.entries(spec.elements).map(([key, element]) => [key, { ...element, [KEY_FIELD]: key }])) };
+}
 
 function partOf(library: Readonly<Record<string, unknown>>, type: string): ComponentType<Record<string, unknown>> | null {
   let value: unknown = library;
@@ -71,6 +92,8 @@ function partRenderer(type: string, Part: ComponentType<Record<string, unknown>>
       }
     }
     if (part.events.includes("press") && on("press").bound) given.onClick = () => emit("press");
+    const key = keyOf(element);
+    if (key !== undefined) given[TAG_PROP] = key;
     let content: ReactNode = undefined;
     if (part.content === "children") {
       const text = typeof props.text === "string" || typeof props.text === "number" ? String(props.text) : null;
@@ -97,19 +120,20 @@ export type SpecPage = ComponentType & { readonly redraw: (payload: SpecPayload)
  * updates: elements that stay keep their DOM. A change of the spec's
  * starting state remounts the state provider, so the draft's state shows.
  */
-export function specPage(library: Readonly<Record<string, unknown>>, Slot: Slot, payload: SpecPayload, slotOrder: readonly string[], onError: (error: Error) => void = () => undefined): SpecPage {
+export function specPage(library: Readonly<Record<string, unknown>>, Slot: Slot, payload: SpecPayload, slotOrder: readonly string[], options: { readonly tags?: boolean; readonly onError?: (error: Error) => void } = {}): SpecPage {
   const rank = (name: string) => (slotOrder.includes(name) ? slotOrder.indexOf(name) : slotOrder.length);
   const registry: ComponentRegistry = {};
   for (const [type, part] of Object.entries(payload.parts)) {
     if (part.kind === "page") {
       registry[type] = function Page({ element, slots, children }: ComponentRenderProps) {
         const named = Object.keys(element.slots ?? {}).sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0));
-        return createElement(Fragment, null, ...named.map((name) => createElement(Slot, { key: name, name }, slots?.[name])), children);
+        const key = keyOf(element);
+        return createElement(Fragment, null, ...named.map((name) => createElement(Slot, { key: name, name, ...(key !== undefined ? { [TAG_PROP]: `${key}/slots/${name}` } : {}) }, slots?.[name])), children);
       };
       continue;
     }
     const Part = partOf(library, type);
-    if (Part) registry[type] = partRenderer(type, Part, part, onError);
+    if (Part) registry[type] = partRenderer(type, Part, part, options.onError ?? (() => undefined));
   }
   let current = payload;
   const listeners = new Set<() => void>();
@@ -118,8 +142,9 @@ export function specPage(library: Readonly<Record<string, unknown>>, Slot: Slot,
     return () => listeners.delete(listener);
   };
   function SpecPage() {
-    const shown = useSyncExternalStore(subscribe, () => current);
-    const spec = shown.spec as unknown as Parameters<typeof Renderer>[0]["spec"];
+    const shown = useSyncExternalStore(subscribe, () => current, () => current);
+    const keyed = useMemo(() => (options.tags ? withKeys(shown.spec) : shown.spec), [shown.spec]);
+    const spec = keyed as unknown as Parameters<typeof Renderer>[0]["spec"];
     return createElement(JSONUIProvider, { key: JSON.stringify(shown.spec.state), registry, initialState: shown.spec.state as Record<string, unknown>, children: createElement(Renderer, { spec, registry }) });
   }
   return Object.assign(SpecPage, {

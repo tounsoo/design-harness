@@ -1,6 +1,7 @@
 import { parse } from "@babel/parser";
 import { isScript, resolvePath } from "@design-harness/core";
 import { transform } from "sucrase";
+import { TAG_PROP, type TagSites } from "./tags";
 
 /**
  * Turns a prototype's files into ES modules a frame can run, in the browser,
@@ -10,6 +11,13 @@ import { transform } from "sucrase";
  * frame's import map points at that file's module. Resolution is core's
  * `resolvePath`, so a file loads exactly what the extractor checked. Bare
  * imports (React, the library, the page kit) are left for the import map.
+ *
+ * Given the tag sites of core's model (`tags.ts`), it first adds the
+ * element tag prop as the last attribute of every JSX element, so it wins
+ * over any spread or attribute written before it: a library part, a page
+ * kit part or an HTML element gets where it is written, anything else gets
+ * undefined. This happens here only, after core has checked the source: core
+ * reads the files as written, and code export writes them as written.
  *
  * Pure and deterministic: the same files give the same modules.
  */
@@ -57,12 +65,52 @@ function specifiers(code: string): { start: number; end: number; value: string }
   return found.sort((a, b) => a.start - b.start);
 }
 
+/**
+ * The file with the tag prop added as the last attribute of each JSX element
+ * core located, or the file as it is when it does not parse (sucrase then
+ * reports why) or has no JSX core saw.
+ */
+export function withTags(path: string, code: string, sites: ReadonlyMap<string, string | null> | undefined): string {
+  if (!sites || sites.size === 0 || path.endsWith(".ts")) return code;
+  let program: unknown;
+  try {
+    program = parse(code, { sourceType: "module", plugins: path.endsWith(".tsx") ? ["jsx", "typescript"] : ["jsx"] }).program;
+  } catch {
+    return code;
+  }
+  const inserts: { at: number; text: string }[] = [];
+  const visit = (node: unknown): void => {
+    if (typeof node !== "object" || node === null) return;
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+    const item = node as { type?: string; loc?: { start: { line: number; column: number } }; openingElement?: { end: number; selfClosing: boolean } };
+    if (item.type === "JSXElement" && item.loc && item.openingElement) {
+      const site = `${item.loc.start.line}:${item.loc.start.column + 1}`;
+      if (sites.has(site)) {
+        const tag = sites.get(site) ?? null;
+        // Before the opening element's closing ">" or "/>".
+        const at = item.openingElement.end - (item.openingElement.selfClosing ? 2 : 1);
+        inserts.push({ at, text: ` ${TAG_PROP}={${tag === null ? "undefined" : JSON.stringify(tag)}}` });
+      }
+    }
+    for (const [key, value] of Object.entries(item)) {
+      if (key !== "loc" && key !== "extra" && key !== "start" && key !== "end") visit(value);
+    }
+  };
+  visit(program);
+  let out = code;
+  for (const insert of inserts.sort((a, b) => b.at - a.at)) out = `${out.slice(0, insert.at)}${insert.text}${out.slice(insert.at)}`;
+  return out;
+}
+
 /** A module that fails to load with `message`, standing in for a file that does not compile. */
 function failing(message: string): string {
   return `throw new SyntaxError(${JSON.stringify(message)});\n`;
 }
 
-export function compilePrototype(files: Readonly<Record<string, string>>): CompiledPrototype {
+export function compilePrototype(files: Readonly<Record<string, string>>, tags?: TagSites): CompiledPrototype {
   const paths = Object.keys(files).sort();
   const known = new Set(paths);
   const modules: Record<string, string> = {};
@@ -70,14 +118,17 @@ export function compilePrototype(files: Readonly<Record<string, string>>): Compi
   for (const path of paths) {
     if (!isScript(path)) continue;
     let code: string;
+    const compile = (text: string) => transform(text, { transforms: transformsFor(path), jsxRuntime: "automatic", production: true, disableESTransforms: true, filePath: path }).code;
     try {
-      code = transform(files[path] ?? "", {
-        transforms: transformsFor(path),
-        jsxRuntime: "automatic",
-        production: true,
-        disableESTransforms: true,
-        filePath: path,
-      }).code;
+      const source = files[path] ?? "";
+      const tagged = withTags(path, source, tags?.get(path));
+      try {
+        code = compile(tagged);
+      } catch (error) {
+        // Report where the file as written fails, not the tagged one, whose columns moved.
+        if (tagged === source) throw error;
+        code = compile(source);
+      }
     } catch (error) {
       const loc = (error as { loc?: { line: number; column: number } }).loc;
       const message = `${path} does not compile: ${error instanceof Error ? error.message : String(error)}`;

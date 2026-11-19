@@ -93,6 +93,33 @@ const UNDERSIZED = (text) =>
     '{lantern.seats} seats, {lantern.floor}\n        </Text.Root>\n        <Text.Root as="span" role="button" tabIndex={0}>A</Text.Root>\n        <Text.Root as="span" role="button" tabIndex={0}>B</Text.Root>',
   );
 
+const BOOKING_SCENARIOS = SCENARIOS.filter((scenario) => scenario !== "rooms-list");
+
+/** Each overlay's box in one frame. */
+async function overlays(page, scenario, view) {
+  const frame = page.frameLocator(`iframe[title="${scenario} at ${view}"]`);
+  return frame.locator("[data-design-harness-overlay]").evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().toJSON()));
+}
+
+/** True when `outer` (an overlay) surrounds `inner`. */
+const surrounds = (outer, inner) => outer.x <= inner.x && outer.y <= inner.y && outer.x + outer.width >= inner.x + inner.width && outer.y + outer.height >= inner.y + inner.height;
+
+/** Waits until every frame of the booking page has `count` overlays, and the rooms page's frames none. */
+async function outlinedInBookingFrames(page, count) {
+  for (const scenario of BOOKING_SCENARIOS) {
+    for (const view of VIEWS) {
+      await page.frameLocator(`iframe[title="${scenario} at ${view}"]`).locator("[data-design-harness-overlay]").nth(count - 1).waitFor({ state: "attached" });
+      assert.equal((await overlays(page, scenario, view)).length, count, `${scenario} at ${view} outlines ${count}`);
+    }
+  }
+  for (const view of VIEWS) assert.equal((await overlays(page, "rooms-list", view)).length, 0, `rooms-list at ${view} outlines nothing`);
+}
+
+/** The boxes of every button named `name` in a frame. */
+async function buttonBoxes(page, scenario, view, name) {
+  return page.frameLocator(`iframe[title="${scenario} at ${view}"]`).getByRole("button", { name, exact: true }).evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().toJSON()));
+}
+
 // ---- tests -----------------------------------------------------------------
 
 test("the seeded Nook project renders every frame", async ({ browser, base }) => {
@@ -132,7 +159,7 @@ test("the legal prototype passes every rule, the rendered rules included", async
   assert.equal(await page.getByTestId("report-status").textContent(), "pass");
 });
 
-test("a second primary action brings core's finding, and selecting it marks the line", async ({ browser, base }) => {
+test("a second primary action brings core's finding: selecting it outlines both actions in every frame, and Show in code marks the line", async ({ browser, base }) => {
   const { page } = await openApp(browser, base);
   await measured(page, 1);
   const edited = await editFile(page, "pages/booking.tsx", SECOND_PRIMARY);
@@ -141,10 +168,30 @@ test("a second primary action brings core's finding, and selecting it marks the 
   assert.ok(failing(value).includes("one-primary-per-page"), `one-primary-per-page fails: ${failing(value)}`);
   const finding = value.findings.find((item) => item.rule === "one-primary-per-page");
   assert.match(finding.message, /^Page "booking" has 2 primary actions, more than 1/);
+  const lines = edited.split("\n");
+  assert.deepEqual(finding.targets, [
+    { file: "pages/booking.tsx", line: lines.findIndex((line) => line.includes(">Hold room<")) + 1, column: 9, page: "booking" },
+    { file: "pages/booking.tsx", line: lines.findIndex((line) => line.includes(">Book room<")) + 1, column: 9, page: "booking" },
+  ]);
   await page.getByRole("tab", { name: /Checks/ }).click();
   const button = page.locator('.rule[data-rule="one-primary-per-page"] .finding').first();
   assert.equal((await button.locator(".finding-message").textContent()).trim(), finding.message, "the panel shows core's message word for word");
   await button.click();
+  // Both primary actions, outlined in every frame of the booking page, and nowhere else.
+  await outlinedInBookingFrames(page, 2);
+  for (const scenario of BOOKING_SCENARIOS) {
+    for (const view of VIEWS) {
+      const boxes = await overlays(page, scenario, view);
+      for (const name of ["Hold room", "Book room"]) {
+        const [target] = await buttonBoxes(page, scenario, view, name);
+        assert.ok(boxes.some((box) => surrounds(box, target)), `${name} is outlined in ${scenario} at ${view}`);
+      }
+      assert.equal(await page.locator(`.frame-card[data-frame-key="${scenario}@${view}"]`).getAttribute("data-selected"), "");
+    }
+  }
+  assert.equal(await page.getByTestId("finding-outline").textContent(), "Outlined in 6 frames (lantern-open, lantern-booked, lantern-held).");
+  await shot(page, "failing-source-outlined-light");
+  await page.locator('.rule[data-rule="one-primary-per-page"]').getByRole("button", { name: "Show in code" }).first().click();
   await page.waitForSelector('[data-testid="code-line"]');
   assert.equal(await page.locator('[data-testid="code-line"]').textContent(), `line ${finding.line}, column ${finding.column}`);
   const marked = (await page.locator('.code-field [data-kind="finding"]').textContent()) ?? "";
@@ -448,6 +495,25 @@ test("a project on another library, Mantine, renders on the board with every rul
   assert.match(await card.textContent(), /NumberInput could not render/);
   assert.equal((await report(page)).status === "pass", false, "a frame that failed to render does not pass");
   assert.deepEqual(errors, []);
+});
+
+test("Tally's spec frames carry element tags at the expanded keys, Mantine parts included", async ({ browser, base }) => {
+  const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
+  await context.addInitScript(() => {
+    if (window.top !== window) return;
+    window.__frameMessages = [];
+    window.addEventListener("message", (event) => {
+      if (event.data && event.data.type === "snapshot") window.__frameMessages.push(JSON.parse(JSON.stringify(event.data)));
+    });
+  });
+  const page = await context.newPage();
+  await page.goto(base);
+  await importTally(page);
+  const messages = await page.evaluate(() => window.__frameMessages);
+  await context.close();
+  const open = messages.filter((item) => item.snapshot.scenario === "lunch-open" && item.snapshot.view === "desktop").pop();
+  assert.ok(open, "the lunch-open frame answered");
+  for (const tag of ["submit", "save", "amount/field", "rules/control"]) assert.ok(open.tags.includes(tag), `the frame drew ${tag}: ${open.tags.join(", ")}`);
 });
 
 test("a Mantine project loads its library and stylesheet by name and version from a CDN-shaped origin", async ({ browser, base }) => {
@@ -1263,8 +1329,22 @@ test("a violation injected into a spec is flagged: its JSON line marked, a rende
   assert.ok(failing(value).includes("one-primary-per-page"), `one-primary-per-page fails: ${failing(value)}`);
   const finding = value.findings.find((item) => item.rule === "one-primary-per-page");
   assert.match(finding.message, /^Page "booking" has 2 primary actions, more than 1: Button.Root "Hold room" at pages\/booking.json:22:5, Button.Root "Book room" at pages\/booking.json:23:5\.$/);
+  assert.deepEqual(finding.targets.map((target) => [target.key, target.page, target.line]), [["hold", "booking", 22], ["book", "booking", 23]]);
   await page.getByRole("tab", { name: /Checks/ }).click();
   await page.locator('.rule[data-rule="one-primary-per-page"] .finding').first().click();
+  // Both, outlined in every frame of the booking page by their keys in the expanded spec.
+  await outlinedInBookingFrames(page, 2);
+  for (const scenario of BOOKING_SCENARIOS) {
+    for (const view of VIEWS) {
+      const boxes = await overlays(page, scenario, view);
+      for (const name of ["Hold room", "Book room"]) {
+        const [target] = await buttonBoxes(page, scenario, view, name);
+        assert.ok(boxes.some((box) => surrounds(box, target)), `${name} is outlined in ${scenario} at ${view}`);
+      }
+    }
+  }
+  await shot(page, "spec-failing-source-outlined-light");
+  await page.locator('.rule[data-rule="one-primary-per-page"]').getByRole("button", { name: "Show in code" }).first().click();
   await page.waitForSelector('[data-testid="code-line"]');
   assert.equal(await page.locator('[data-testid="code-line"]').textContent(), `line ${finding.line}, column ${finding.column}`);
   const marked = (await page.locator('.code-field [data-kind="finding"]').textContent()) ?? "";
@@ -1479,7 +1559,24 @@ test("a violation inside a layout instance is flagged and highlighted: the layou
   await page.getByRole("tab", { name: /Checks/ }).click();
   const row = page.locator('.rule[data-rule="primary-outside-disclosure"] .finding').first();
   assert.match(await row.locator(".finding-place").textContent(), /layouts\/room-details\.json:11:5 · in room-details used at pages\/booking\.json:21/);
+  assert.deepEqual(inside.targets, [{ file: "layouts/room-details.json", line: 11, column: 5, via: inside.via, page: "booking", key: "details/go" }]);
   await row.click();
+  // Outlined in every frame of the booking page, by its key under the instance (or, where the disclosure hides it, around the disclosure).
+  await outlinedInBookingFrames(page, 1);
+  for (const scenario of BOOKING_SCENARIOS) {
+    for (const view of VIEWS) {
+      const [box] = await overlays(page, scenario, view);
+      // In the frame's own coordinates: the action the layout draws, and the disclosure it is in.
+      const { go, details } = await page.frameLocator(`iframe[title="${scenario} at ${view}"]`).locator("details", { hasText: "Room details" }).evaluate((element) => {
+        const inner = [...element.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Book room");
+        return { go: inner?.getBoundingClientRect().toJSON(), details: element.getBoundingClientRect().toJSON() };
+      });
+      const drawn = go && (go.width > 0 || go.height > 0) ? go : details;
+      assert.ok(box && drawn && surrounds(box, drawn), `the layout's action, or the closed disclosure it is in, is outlined in ${scenario} at ${view}: ${JSON.stringify([box, go, details])}`);
+    }
+  }
+  await shot(page, "layout-finding-outlined-light");
+  await page.locator('.rule[data-rule="primary-outside-disclosure"]').getByRole("button", { name: "Show in code" }).first().click();
   await page.getByTestId("instance-places").waitFor();
   assert.equal(await page.locator('[data-testid="code-line"]').textContent(), "line 11, column 5");
   assert.match((await page.locator('.code-field [data-kind="finding"]').textContent()) ?? "", /"go": \{"type":"Button\.Root"|"go": \{ "type": "Button\.Root"/);
@@ -1954,6 +2051,80 @@ test("export code downloads a zip of a runnable project, which builds with Vite,
   assert.deepEqual(errors, []);
   await context.close();
   await new Promise((resolve) => server.httpServer.close(resolve));
+});
+
+// ---- findings in frames ----------------------------------------------------
+
+test("a finding about a whole page outlines nothing, and opens its code at once", async ({ browser, base }) => {
+  const { page } = await openApp(browser, base);
+  await measured(page, 1);
+  await editFile(page, "pages/booking.tsx", (text) => text.replace(/\n {6}<Slot name="action">\n.*\n {6}<\/Slot>/, ""));
+  await measured(page, 2);
+  const value = await report(page);
+  const finding = value.findings.find((item) => item.rule === "primary-slot");
+  assert.ok(finding, `primary-slot fails: ${failing(value)}`);
+  assert.match(finding.message, /^Page "booking" does not fill its slot "action"/);
+  assert.equal(finding.targets, undefined, "a finding about a whole page has no elements to outline");
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  await page.locator('.rule[data-rule="primary-slot"] .finding').first().click();
+  await page.waitForSelector('[data-testid="code-line"]');
+  assert.equal(await page.getByTestId("finding-outline").count(), 0);
+  assert.equal(await page.locator('.rule[data-rule="primary-slot"]').getByRole("button", { name: "Show in code" }).count(), 0);
+  await page.waitForTimeout(300);
+  for (const scenario of SCENARIOS) for (const view of VIEWS) assert.equal((await overlays(page, scenario, view)).length, 0, `${scenario} at ${view} outlines nothing`);
+});
+
+/** Opens the app with every frame's snapshot message recorded as it reaches the app, tags on or off. */
+async function recording(browser, base, tags) {
+  const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
+  await context.addInitScript(() => {
+    if (window.top !== window) return;
+    window.__frameMessages = [];
+    window.addEventListener("message", (event) => {
+      if (event.data && event.data.type === "snapshot") window.__frameMessages.push(JSON.parse(JSON.stringify(event.data)));
+    });
+  });
+  const page = await context.newPage();
+  await page.goto(tags ? base : `${base}?frame-tags=off`);
+  await measured(page, 1);
+  await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
+  await measured(page, 2);
+  const messages = await page.evaluate(() => window.__frameMessages);
+  await context.close();
+  const by = (generation) => Object.fromEntries(messages.filter((item) => item.generation === generation).map((item) => [`${item.snapshot.scenario}@${item.snapshot.view}`, item]));
+  return { tsx: by(1), spec: by(2) };
+}
+
+test("element tags change nothing a rule measures: Nook's snapshots are identical with and without them, TSX and spec", async ({ browser, base }) => {
+  const tagged = await recording(browser, base, true);
+  const plain = await recording(browser, base, false);
+  for (const format of ["tsx", "spec"]) {
+    const keys = SCENARIOS.flatMap((scenario) => VIEWS.map((view) => `${scenario}@${view}`));
+    assert.deepEqual(Object.keys(tagged[format]).sort(), [...keys].sort(), `every ${format} frame answered with tags`);
+    assert.deepEqual(Object.keys(plain[format]).sort(), [...keys].sort(), `every ${format} frame answered without tags`);
+    for (const key of keys) {
+      assert.deepEqual(tagged[format][key].snapshot, plain[format][key].snapshot, `${format} ${key}: the same snapshot with and without tags`);
+      assert.deepEqual(plain[format][key].tags, [], `${format} ${key}: no tags when they are off`);
+      assert.ok(tagged[format][key].tags.length > 0, `${format} ${key}: the frame drew tagged elements`);
+    }
+  }
+  assert.ok(tagged.tsx["lantern-open@desktop"].tags.some((tag) => /^pages\/booking\.tsx:\d+:\d+$/.test(tag)), "a TSX frame draws tags at source positions");
+  assert.ok(tagged.spec["lantern-open@desktop"].tags.includes("details/summary"), "a spec frame draws tags at expanded keys, scoped by instance");
+});
+
+test("code export writes no element tags, for a TSX prototype or a spec", async ({ browser, base }) => {
+  const { page } = await openApp(browser, base);
+  await measured(page, 1);
+  for (const prototype of ["booking", "booking-spec"]) {
+    if (prototype !== "booking") {
+      await page.getByRole("combobox", { name: "Prototype" }).selectOption(prototype);
+      await measured(page, 2);
+    }
+    const [download] = await Promise.all([page.waitForEvent("download"), page.getByTestId("export-code").click()]);
+    const entries = unzipSync(readFileSync(await download.path()));
+    assert.ok(Object.keys(entries).some((path) => path.endsWith("pages/booking.tsx")), `${prototype}: the export has the booking page`);
+    for (const [path, bytes] of Object.entries(entries)) assert.ok(!strFromU8(bytes).includes("data-dh-source"), `${prototype}: ${path} has no element tag`);
+  }
 });
 
 // ---- runner ----------------------------------------------------------------

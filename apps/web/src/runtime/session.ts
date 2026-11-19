@@ -1,8 +1,9 @@
-import { checkPrototype, type CheckReport, type ComponentLibrary, type PageType, type ProjectConfig, type Prototype, type RenderedSnapshot, type Scenario, type View } from "@design-harness/core";
+import { checkPrototype, extractPrototype, specModel, type CheckReport, type ComponentLibrary, type PageType, type ProjectConfig, type Prototype, type PrototypeModel, type RenderedSnapshot, type Scenario, type View } from "@design-harness/core";
 import { frameDocument } from "./frame-document";
 import { resolvePackages, type PackageSource, type RuntimePackages } from "./package-source";
 import { PROTOCOL, readFrameMessage, type FrameMessage, type FrameStage, type ModuleSource, type PageRef, type RenderRequest, type RootRef } from "./protocol";
 import { SPEC_RENDERER, specParts, specPayload } from "./spec-payload";
+import { tagSites } from "./tags";
 import { compilePrototype, moduleSpecifier, type CompileProblem } from "./transform";
 
 /**
@@ -44,7 +45,8 @@ export type FrameSpec = {
 export type FrameState =
   | { readonly state: "waiting" }
   | { readonly state: "rendering" }
-  | { readonly state: "measured"; readonly snapshot: RenderedSnapshot }
+  /** `tags`: the element tags the frame drew (`tags.ts`), sorted. */
+  | { readonly state: "measured"; readonly snapshot: RenderedSnapshot; readonly tags: readonly string[] }
   | { readonly state: "failed"; readonly stage: FrameStage | "setup" | "timeout"; readonly message: string };
 
 export type SessionState = {
@@ -75,7 +77,19 @@ export type SessionOptions = {
   readonly channel?: () => string;
   /** A random script nonce for each frame document; injectable for tests. */
   readonly nonce?: () => string;
+  /**
+   * Whether frames tag elements so findings can be outlined (`tags.ts`).
+   * Defaults to true, or false when the app's address has `frame-tags=off`,
+   * which the end-to-end tests use to show tags change no measurement.
+   */
+  readonly tags?: boolean;
 };
+
+/** Element tags are on unless the app was opened with `frame-tags=off`. */
+function tagsByDefault(): boolean {
+  const search = (globalThis as { location?: { search?: string } }).location?.search ?? "";
+  return new URLSearchParams(search).get("frame-tags") !== "off";
+}
 
 /** An iframe in the DOM for one frame. `ready` is set once its boot script says it listens: a message sent before then is lost. */
 type Attached = { readonly frame: HTMLIFrameElement; readonly generation: number; readonly channel: string; ready: boolean; timer?: ReturnType<typeof setTimeout> };
@@ -88,6 +102,9 @@ export class Session {
   private readonly attached = new Map<FrameKey, Attached>();
   private config: ProjectConfig | null = null;
   private prototype: Prototype | null = null;
+  /** Core's model of the current revision, extracted once for its checks and its tags. */
+  private model: PrototypeModel | null = null;
+  private readonly tags: boolean;
   private modules: Readonly<Record<string, ModuleSource>> = {};
   private packages: { key: string; value: Promise<RuntimePackages> } | null = null;
   private resolved: RuntimePackages | null = null;
@@ -96,6 +113,7 @@ export class Session {
   private redrawn = false;
 
   constructor(private readonly options: SessionOptions) {
+    this.tags = options.tags ?? tagsByDefault();
     options.window.addEventListener("message", this.onMessage);
   }
 
@@ -128,15 +146,18 @@ export class Session {
     this.prototype = prototype;
     const revision = this.state.revision + 1;
     const spec = prototype.format === "spec";
+    const model = spec ? specModel(prototype, config) : extractPrototype(prototype, config.library.package);
+    this.model = model;
     // A spec prototype has no code to compile: its frames load the spec renderer and get each page's spec as data.
-    const compiled = spec ? { modules: {}, problems: [] } : compilePrototype(prototype.files);
+    // A TSX prototype's elements are tagged where core found them, after core has read the source.
+    const compiled = spec ? { modules: {}, problems: [] } : compilePrototype(prototype.files, this.tags ? tagSites(model) : undefined);
     this.modules = spec ? { [SPEC_RENDERER]: { code: this.options.spec ?? "throw new Error('this app has no spec renderer');" } } : Object.fromEntries(Object.entries(compiled.modules).map(([specifier, code]) => [specifier, { code }]));
     const frames = frameSpecs(config, prototype);
     const frameStates: Record<FrameKey, FrameState> = {};
     for (const frame of frames) frameStates[frame.key] = frame.blocked ? { state: "failed", stage: "setup", message: frame.blocked } : { state: "waiting" };
     for (const attached of this.attached.values()) clearTimeout(attached.timer);
     this.redrawn = false;
-    this.set({ revision, frames, frameStates, compileProblems: compiled.problems, report: checkPrototype({ config, prototype }), measured: false });
+    this.set({ revision, frames, frameStates, compileProblems: compiled.problems, report: checkPrototype({ config, prototype, model }), measured: false });
 
     const libraryKey = JSON.stringify([config.library.package, config.library.version, config.library.react, config.library.stylesheets ?? [], spec]);
     if (this.packages?.key !== libraryKey) {
@@ -238,9 +259,18 @@ export class Session {
 
   /** Outlines element `index` of a frame's last snapshot, or clears it with null. */
   highlight(key: FrameKey, index: number | null): void {
+    this.post(key, { element: index });
+  }
+
+  /** Outlines every element a frame drew under one of `tags` (`tags.ts`): a finding's elements. */
+  outline(key: FrameKey, tags: readonly string[]): void {
+    if (tags.length > 0) this.post(key, { tags });
+  }
+
+  private post(key: FrameKey, what: { readonly element: number | null } | { readonly tags: readonly string[] }): void {
     const attached = this.attached.get(key);
     if (!attached || attached.generation !== this.state.revision) return;
-    attached.frame.contentWindow?.postMessage({ protocol: PROTOCOL, type: "highlight", channel: attached.channel, generation: attached.generation, element: index }, "*");
+    attached.frame.contentWindow?.postMessage({ protocol: PROTOCOL, type: "highlight", channel: attached.channel, generation: attached.generation, ...what }, "*");
   }
 
   private readonly onMessage = (event: MessageEvent): void => {
@@ -268,7 +298,7 @@ export class Session {
     // A frame answers once, for the generation it was rendered at; anything else is stale or a second word.
     if (message.generation !== attached.generation || this.state.frameStates[key]?.state !== "rendering") return;
     clearTimeout(attached.timer);
-    if (message.type === "snapshot") this.setFrame(key, { state: "measured", snapshot: message.snapshot });
+    if (message.type === "snapshot") this.setFrame(key, { state: "measured", snapshot: message.snapshot, tags: message.tags });
     else this.setFrame(key, { state: "failed", stage: message.stage, message: message.message });
     this.finishIfDone();
   }
@@ -290,6 +320,7 @@ export class Session {
       pageType: spec.pageType,
       view: spec.view,
       settleMs: this.options.settleMs ?? 3000,
+      tags: this.tags,
       ...(this.config?.library.root ? { root: rootRef(this.config.library, spec.view.scheme) as RootRef } : {}),
     };
     this.setFrame(key, { state: "rendering" });
@@ -319,7 +350,7 @@ export class Session {
     const states = frames.map((frame) => frameStates[frame.key]);
     if (states.some((state) => state === undefined || state.state === "waiting" || state.state === "rendering")) return;
     const snapshots = states.flatMap((state) => (state?.state === "measured" ? [state.snapshot] : []));
-    this.set({ report: checkPrototype({ config: this.config, prototype: this.prototype, snapshots }), measured: true });
+    this.set({ report: checkPrototype({ config: this.config, prototype: this.prototype, snapshots, ...(this.model ? { model: this.model } : {}) }), measured: true });
   }
 }
 

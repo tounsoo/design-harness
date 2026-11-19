@@ -1,4 +1,5 @@
 import { parseSnapshots, type FlatSpec, type PageType, type RenderedSnapshot, type View } from "@design-harness/core";
+import { MAX_FRAME_TAGS, MAX_OUTLINE_TAGS, MAX_TAG_LENGTH } from "./tags";
 
 /**
  * The messages between the app and a frame. A frame is a sandboxed iframe
@@ -59,10 +60,22 @@ export type RenderRequest = {
   readonly settleMs: number;
   /** The library part the page renders inside, when the library needs one. */
   readonly root?: RootRef;
+  /**
+   * Whether the frame finds element tags (`tags.ts`) and reports which it
+   * drew. The app sends false only with untagged modules, to show tags change
+   * nothing a rule measures.
+   */
+  readonly tags: boolean;
 };
 
-/** App → frame: outline one element of the last snapshot, by its index, or clear the outline. */
-export type HighlightRequest = { readonly protocol: typeof PROTOCOL; readonly type: "highlight"; readonly channel: string; readonly generation: number; readonly element: number | null };
+/**
+ * App → frame: outline one element of the last snapshot, by its index, or
+ * clear the outline (`element: null`); or outline every element drawn under
+ * any of `tags` (`tags.ts`), a finding's elements.
+ */
+export type HighlightRequest =
+  | { readonly protocol: typeof PROTOCOL; readonly type: "highlight"; readonly channel: string; readonly generation: number; readonly element: number | null }
+  | { readonly protocol: typeof PROTOCOL; readonly type: "highlight"; readonly channel: string; readonly generation: number; readonly tags: readonly string[] };
 
 /**
  * App → frame: draw this spec in place of the one the frame rendered, with
@@ -75,8 +88,8 @@ export type ParentMessage = RenderRequest | HighlightRequest | RedrawRequest;
 
 /** Frame → app: the boot script is listening. */
 export type ReadyMessage = { readonly protocol: typeof PROTOCOL; readonly type: "ready"; readonly channel: string };
-/** Frame → app: the page as it was painted. */
-export type SnapshotMessage = { readonly protocol: typeof PROTOCOL; readonly type: "snapshot"; readonly channel: string; readonly generation: number; readonly snapshot: RenderedSnapshot };
+/** Frame → app: the page as it was painted, and the element tags it drew (sorted, each once; empty when asked for none). */
+export type SnapshotMessage = { readonly protocol: typeof PROTOCOL; readonly type: "snapshot"; readonly channel: string; readonly generation: number; readonly snapshot: RenderedSnapshot; readonly tags: readonly string[] };
 export type FrameStage = "load" | "render" | "measure";
 /** Frame → app: the page could not be loaded, rendered or measured. */
 export type ErrorMessage = { readonly protocol: typeof PROTOCOL; readonly type: "error"; readonly channel: string; readonly generation: number; readonly stage: FrameStage; readonly message: string };
@@ -153,6 +166,13 @@ function isRoot(value: unknown, modules: Json): value is RootRef {
   return isString(component) && /^[A-Z][\w$]*$/.test(component) && isObject(props) && Object.values(props).every((prop) => prop === null || ["string", "number", "boolean"].includes(typeof prop));
 }
 
+const isTag = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.length <= MAX_TAG_LENGTH;
+
+/** A list of element tags: strings of bounded length, at most `max` of them. */
+function isTagList(value: unknown, max: number): value is readonly string[] {
+  return Array.isArray(value) && value.length <= max && value.every(isTag);
+}
+
 function isScenario(value: unknown): value is ScenarioRef {
   return isObject(value) && hasOnly(value, ["id", "state", "page"]) && isString(value.id) && isString(value.state) && isString(value.page);
 }
@@ -161,13 +181,18 @@ function isScenario(value: unknown): value is ScenarioRef {
 export function readParentMessage(data: unknown, channel: string): ParentMessage | null {
   if (!isObject(data) || data.protocol !== PROTOCOL || data.channel !== channel || !isGeneration(data.generation)) return null;
   if (data.type === "highlight") {
+    if ("tags" in data) {
+      // A finding's elements: one tag at least, each a bounded string.
+      return hasOnly(data, ["protocol", "type", "channel", "generation", "tags"]) && isTagList(data.tags, MAX_OUTLINE_TAGS) && data.tags.length > 0 ? (data as HighlightRequest) : null;
+    }
     const element = data.element;
     const valid = element === null || (typeof element === "number" && Number.isSafeInteger(element) && element >= 0);
     return valid && hasOnly(data, ["protocol", "type", "channel", "generation", "element"]) ? (data as HighlightRequest) : null;
   }
   if (data.type === "redraw") return hasOnly(data, ["protocol", "type", "channel", "generation", "spec"]) && isSpecPayload(data.spec) ? (data as RedrawRequest) : null;
   if (data.type !== "render") return null;
-  if (!hasOnly(data, ["protocol", "type", "channel", "generation", "modules", "styles", "page", "scenario", "pageType", "view", "settleMs", "root"])) return null;
+  if (!hasOnly(data, ["protocol", "type", "channel", "generation", "modules", "styles", "page", "scenario", "pageType", "view", "settleMs", "tags", "root"])) return null;
+  if (typeof data.tags !== "boolean") return null;
   const { modules, styles, page, settleMs } = data;
   if (!isObject(modules) || !Object.values(modules).every(isModuleSource)) return null;
   if (!Array.isArray(styles) || !styles.every(isStyleSource)) return null;
@@ -195,11 +220,12 @@ export function readFrameMessage(data: unknown, channel: string, expect: { reado
       return data as ErrorMessage;
     }
     case "snapshot": {
-      if (!hasOnly(data, ["protocol", "type", "channel", "generation", "snapshot"]) || !isGeneration(data.generation)) return null;
+      if (!hasOnly(data, ["protocol", "type", "channel", "generation", "snapshot", "tags"]) || !isGeneration(data.generation)) return null;
+      if (!isTagList(data.tags, MAX_FRAME_TAGS)) return null;
       const parsed = parseSnapshots([data.snapshot]);
       const snapshot = parsed.ok ? parsed.value[0] : undefined;
       if (!snapshot || snapshot.scenario !== expect.scenario || snapshot.view !== expect.view) return null;
-      return { protocol: PROTOCOL, type: "snapshot", channel, generation: data.generation, snapshot };
+      return { protocol: PROTOCOL, type: "snapshot", channel, generation: data.generation, snapshot, tags: [...new Set(data.tags)].sort() };
     }
     default:
       return null;
