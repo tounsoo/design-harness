@@ -29,9 +29,22 @@
   .shell-project { white-space: nowrap; }
   .shell-slash { color: var(--todae-color-fg-placeholder); }
   .shell-prototype { min-inline-size: var(--todae-harness-size-picker); }
-  .shell-views { margin-inline: auto; }
-  .shell-views [role="tablist"] { border-block-end: 0; }
-  .shell-tab-count, .side-count { margin-inline-start: var(--todae-space-1); }
+  /* The main views as one segmented control, drawn with Todae's own ToggleGroup tokens: a subtle track, with the pressed view raised on it. The gap keeps each segment's box clear of the next, where joined segments share a border. */
+  .shell-views {
+    margin-inline: auto;
+    --todae-togglegroup-bg: var(--todae-color-bg-subtle);
+    --todae-togglegroup-padding: calc(var(--todae-border-width) * 2);
+    --todae-togglegroup-gap: calc(var(--todae-border-width) * 2);
+    --todae-togglegroup-radius: var(--todae-radius-md);
+    --todae-togglegroup-item-radius: var(--todae-radius-sm);
+    --todae-togglegroup-item-padding-y: calc(var(--todae-space-1) - var(--todae-border-width));
+    --todae-togglegroup-item-bg-default: var(--todae-color-bg-transparent);
+    --todae-togglegroup-item-bg-pressed: var(--todae-color-bg-elevated);
+    --todae-togglegroup-item-shadow-pressed: var(--todae-harness-shadow-raised);
+    --todae-button-secondary-border-default: var(--todae-color-bg-transparent);
+    --todae-button-secondary-border-hover: var(--todae-color-bg-transparent);
+  }
+  .side-count { margin-inline-start: var(--todae-space-1); }
   .shell-actions { flex: none; }
   .shell-body { flex: 1; min-height: 0; background: var(--todae-harness-panel-bg); }
   .shell-inner { block-size: 100%; min-height: 0; }
@@ -47,6 +60,10 @@
   .shell:is([data-width="phone"], [data-width="tablet"]) .shell-header { flex-wrap: wrap; }
   .shell:is([data-width="phone"], [data-width="tablet"]) .shell-title { flex: 1 1 0; }
   .shell:is([data-width="phone"], [data-width="tablet"]) .shell-views { order: 1; flex: 0 0 100%; min-width: 0; margin-inline: 0; }
+  /* On its own row the control spans it, each segment taking its share, so four views and their counts fit a phone. */
+  .shell:is([data-width="phone"], [data-width="tablet"]) .shell-views > * { flex: 1 1 auto; min-width: 0; }
+  /* A phone's row is narrow enough that two counts would cut the labels short, so each segment keeps less room beside its label. */
+  .shell[data-width="phone"] .shell-views { --todae-button-padding-x: var(--todae-space-1); }
   .shell-project, .shell-prototype-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* A phone's first row has room for the pickers and three buttons, so the mark and the slash step aside and a picker may be narrower. */
   .shell[data-width="phone"] :is(.shell-mark, .shell-slash) { display: none; }

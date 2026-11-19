@@ -1,4 +1,4 @@
-import { Alert, Badge, Button, Field, Kbd, Link, Menu, Splitter, Stack, Tabs, Text, Toolbar, VisuallyHidden, useAnnouncer, useHotkey } from "@tounsoo/todae";
+import { Alert, Badge, Button, Field, Kbd, Link, Menu, Splitter, Stack, Tabs, Text, ToggleGroup, Toolbar, VisuallyHidden, useAnnouncer, useHotkey } from "@tounsoo/todae";
 import { CircleCheck, CodeXml, Download, Ellipsis, Expand, FileCode2, FolderPlus, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Shapes, Shrink, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { NO_VARIANTS, flowFacts, variantLabel, type Finding, type LayoutUse, type PickRecord, type ProjectConfig, type Prototype, type Variant, type VariantState } from "@design-harness/core";
@@ -762,36 +762,35 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
             </Badge.Root>
           )}
         </Stack.Root>
-        <Tabs.Root
+        {/* Which main view shows is a mode, not tabbed content, so it is a toggle group: one button pressed. A press on the pressed button asks for none, which the app never has, so the view stays; on a phone that press still brings the main view forward. */}
+        <ToggleGroup.Root
+          aria-label="Main view"
           value={center}
           onValueChange={(value) => {
-            if (value === "proposals" && center === "proposals") setReviewing(null);
-            setCenter(value === "project" ? "project" : value === "proposals" ? "proposals" : value === "variants" ? "variants" : "canvas");
+            if (value === "canvas" || value === "variants" || value === "project" || value === "proposals") setCenter(value);
           }}
+          onClick={revealMain}
           className="shell-views"
         >
-          {/* A press on the tab already chosen changes no value, and on a phone it still brings the main view forward. */}
-          <Tabs.List aria-label="Main view" onClick={revealMain}>
-            <Tabs.Tab value="canvas">Canvas</Tabs.Tab>
-            <Tabs.Tab value="variants">
-              Variants
-              {variantCount > 0 && (
-                <Badge.Root tone="neutral" className="shell-tab-count" data-testid="variant-count" aria-label={`${variantCount} variants`}>
-                  {variantCount}
-                </Badge.Root>
-              )}
-            </Tabs.Tab>
-            <Tabs.Tab value="project">Project</Tabs.Tab>
-            <Tabs.Tab value="proposals" onClick={() => center === "proposals" && setReviewing(null)}>
-              Proposals
-              {openCount > 0 && (
-                <Badge.Root tone="warning" className="shell-tab-count" data-testid="open-proposals" aria-label={`${openCount} open`}>
-                  {openCount}
-                </Badge.Root>
-              )}
-            </Tabs.Tab>
-          </Tabs.List>
-        </Tabs.Root>
+          <ToggleGroup.Item value="canvas">Canvas</ToggleGroup.Item>
+          <ToggleGroup.Item value="variants">
+            Variants
+            {variantCount > 0 && (
+              <Badge.Root tone="neutral" data-testid="variant-count" aria-label={`${variantCount} variants`}>
+                {variantCount}
+              </Badge.Root>
+            )}
+          </ToggleGroup.Item>
+          <ToggleGroup.Item value="project">Project</ToggleGroup.Item>
+          <ToggleGroup.Item value="proposals" onClick={() => center === "proposals" && setReviewing(null)}>
+            Proposals
+            {openCount > 0 && (
+              <Badge.Root tone="warning" data-testid="open-proposals" aria-label={`${openCount} open`}>
+                {openCount}
+              </Badge.Root>
+            )}
+          </ToggleGroup.Item>
+        </ToggleGroup.Root>
         <Toolbar.Root aria-label="Prototype actions" className="shell-actions">
           {width === "desktop" ? (
             <>
