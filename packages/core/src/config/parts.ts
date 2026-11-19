@@ -1,6 +1,6 @@
 import { ROLE_NAMES, type PageKind, type RoleName } from "../rules/types";
 import { arr, bool, either, int, obj, oneOf, record, scalar, slug, str, tagged, type Check } from "../validate";
-import type { Cap, ConfirmedExclusion, ConfirmedRole, PageType, PartDescription, PropSchema, RankedAction, RoleMapping, Task } from "./types";
+import type { Cap, ConfirmedExclusion, ConfirmedRole, LibraryEvent, PageType, PartDescription, PropSchema, RankedAction, RoleMapping, Task } from "./types";
 
 /** The config parts a proposal's inventory operations also carry. */
 export const roleMapping: Check<RoleMapping> = obj({ components: arr(str()) }, { prop: obj({ name: str(), values: arr(scalar, { min: 1 }), whenMissing: bool }) });
@@ -23,6 +23,12 @@ const confirmedExclusion: Check<ConfirmedExclusion> = tagged("decision", {
   corrected: obj({ decision: oneOf(["corrected"]), props: arr(str()), drafted: arr(str()), why: str() }),
   none: obj({ decision: oneOf(["none"]), props: arr(str()) }),
 }) as Check<ConfirmedExclusion>;
+/** One entry of `library.history`. */
+export const libraryEvent: Check<LibraryEvent> = tagged("kind", {
+  moved: obj({ kind: oneOf(["moved"]), from: str(), to: str(), at: str() }, { by: str(), note: str() }),
+  source: obj({ kind: oneOf(["source"]), source: oneOf(["esm.sh", "deployment"]), version: str(), at: str() }, { by: str() }),
+}) as Check<LibraryEvent>;
+
 /** The record of a library's confirmed roles (`library.confirmed`). */
 export const confirmedLibrary = obj({ roles: arr(confirmedRole), exclusion: confirmedExclusion });
 
