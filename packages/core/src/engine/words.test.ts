@@ -55,10 +55,11 @@ group("a rule in plain words", () => {
     expect(words({ type: "slot", id: "a", slot: "intro" })).toBe('The "intro" slot of each page is not limited.');
   });
 
-  it("describes the named checks: reachable, page structure, isolation, both flow checks", () => {
+  it("describes the named checks: reachable, page structure, isolation, style props, both flow checks", () => {
     expect(words({ type: "reachable", id: "a", select: { anyOf: [{ role: "action" }, { role: "question" }] } })).toBe("Every action or question written anywhere in the source is rendered from a page, so the per-page rules count it.");
     expect(words({ type: "page-structure", id: "a" })).toBe("Every page fills only its page type's slots, each at most once, and puts nothing outside them.");
     expect(words({ type: "isolation", id: "a" })).toMatch(/^Prototype code reaches only its imports and plain language built-ins/);
+    expect(words({ type: "style-props", id: "a" })).toBe("No element sets a style prop: style, on any element, or a prop the project excludes (className, style), on a library part or an HTML element. Styling comes from the library's own variants and tokens.");
     expect(words({ type: "flow", id: "a", check: "state-coverage" })).toBe("Every flow state has a scenario, and every scenario shows a modeled state on a page of the prototype.");
     expect(words({ type: "flow", id: "a", check: "step-budget" })).toBe("Every route from a task's start to its success state, not only the shortest, fits the task's max steps (book-room: 3, hold-room: 2).");
   });
@@ -76,7 +77,7 @@ group("a rule in plain words", () => {
 
   it("covers every rule type of the vocabulary, never by the rule's description, and is deterministic", () => {
     const types = new Set<RuleType>(nook.rules.map((rule) => rule.type));
-    expect([...types].sort()).toEqual(["containment", "count", "flow", "isolation", "membership", "page-structure", "prop-values", "reachable", "rendered", "requires", "slot"]);
+    expect([...types].sort()).toEqual(["containment", "count", "flow", "isolation", "membership", "page-structure", "prop-values", "reachable", "rendered", "requires", "slot", "style-props"]);
     for (const rule of nook.rules) {
       const said = words(rule);
       expect(said.length).toBeGreaterThan(20);

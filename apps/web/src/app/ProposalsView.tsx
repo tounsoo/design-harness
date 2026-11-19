@@ -2,7 +2,7 @@ import { Button, Code, EmptyState, Stack, Table, Text, ToggleGroup } from "@toun
 import { useState } from "react";
 import { PROPOSAL_STATUSES, type ProjectConfig, type ProposalStatus } from "@design-harness/core";
 import { draftedBy, formatTime } from "../review/timeline";
-import { ClassBadge, StatusBadge, classificationOf } from "./proposal-parts";
+import { ClassBadge, RequestBadge, StatusBadge, classificationOf } from "./proposal-parts";
 
 type Filter = "all" | ProposalStatus;
 
@@ -73,13 +73,13 @@ export function ProposalsView({ config, onOpen }: { readonly config: ProjectConf
                     <StatusBadge status={proposal.status} />
                   </Table.Cell>
                   <Table.Cell>
-                    <ClassBadge value={classificationOf(proposal, config).class} />
+                    {proposal.needsRuleType ? <RequestBadge /> : <ClassBadge value={classificationOf(proposal, config).class} />}
                   </Table.Cell>
                   <Table.Cell>
                     by {drafted.by}, <time dateTime={drafted.at}>{formatTime(drafted.at)}</time>
                   </Table.Cell>
                   <Table.Cell>
-                    {proposal.examples.pass.length} pass · {proposal.examples.fail.length} fail
+                    {proposal.needsRuleType ? `${proposal.needsRuleType.pass.length} pass · ${proposal.needsRuleType.fail.length} fail, in words` : `${proposal.examples.pass.length} pass · ${proposal.examples.fail.length} fail`}
                   </Table.Cell>
                 </Table.Row>
               );

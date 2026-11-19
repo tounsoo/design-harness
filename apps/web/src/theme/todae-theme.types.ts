@@ -34,6 +34,7 @@ export const THEME_OVERRIDE_TYPES = {
   'harness.size.picker-wide': 'dimension',
   'harness.size.role-card': 'dimension',
   'harness.size.sticky-clearance': 'dimension',
+  'harness.size.views-row': 'dimension',
   'harness.size.wizard-rail': 'dimension',
   'harness.size.wizard-step': 'dimension',
   'harness.size.wizard-wide': 'dimension',

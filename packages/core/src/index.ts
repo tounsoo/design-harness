@@ -32,7 +32,9 @@ export type {
   TextMatch,
 } from "./rules/types";
 export { PAGE_KINDS, ROLE_NAMES } from "./rules/types";
-export type { FailingExample, InventoryOp, PassingExample, Proposal, ProposalContent, ProposalEvent, ProposalStatus, StateNote, StatusChange } from "./proposals/types";
+export type { FailingExample, InventoryOp, PassingExample, Proposal, ProposalContent, ProposalEvent, ProposalStatus, RuleTypeExample, RuleTypeRequest, StateNote, StatusChange } from "./proposals/types";
+export type { RuleTypeIssue } from "./proposals/request";
+export { ruleTypeIssue } from "./proposals/request";
 export { PROPOSAL_STATUSES } from "./proposals/types";
 
 export type { Issue, Result } from "./validate";

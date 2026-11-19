@@ -70,6 +70,7 @@
   --todae-harness-size-picker-wide: var(--_todae-harness-size-picker-wide, 12rem);
   --todae-harness-size-role-card: var(--_todae-harness-size-role-card, 24rem);
   --todae-harness-size-sticky-clearance: var(--_todae-harness-size-sticky-clearance, 10rem);
+  --todae-harness-size-views-row: var(--_todae-harness-size-views-row, 34rem);
   --todae-harness-size-wizard-rail: var(--_todae-harness-size-wizard-rail, 11rem);
   --todae-harness-size-wizard-step: var(--_todae-harness-size-wizard-step, 42rem);
   --todae-harness-size-wizard-wide: var(--_todae-harness-size-wizard-wide, 76rem);

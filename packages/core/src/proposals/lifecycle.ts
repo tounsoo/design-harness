@@ -29,7 +29,8 @@ export type RefusalCode =
   | "breaks-adopted-example"
   | "unchanged"
   | "missing-note"
-  | "incomplete-measurement";
+  | "incomplete-measurement"
+  | "needs-rule-type";
 
 /**
  * Why a step was refused, precisely enough to fix: which example, and what
@@ -64,8 +65,34 @@ function replace(config: ProjectConfig, proposal: Proposal): ProjectConfig {
 
 /** A proposal's content: what a revision replaces and keeps as the previous version. */
 export function contentOf(proposal: ProposalContent): ProposalContent {
-  const { title, reason, states, inventory, rules, examples } = proposal;
-  return { title, reason, states, inventory, rules, examples };
+  const { title, reason, states, inventory, rules, examples, needsRuleType } = proposal;
+  return { title, reason, states, inventory, rules, examples, ...(needsRuleType !== undefined ? { needsRuleType } : {}) };
+}
+
+/** Why a request for a new rule type goes no further than open, in the words every refusal of one uses. */
+function requestRefusal<T>(proposal: Proposal, step: string): Result<T, Refusal> {
+  return refuse(
+    "needs-rule-type",
+    `proposal "${proposal.id}" needs a new rule type, which core's rule vocabulary does not have: it cannot be ${step}, and can never become a check without a code change to core. File it as a request, then decline it or send it back.`,
+  );
+}
+
+/**
+ * What a request for a new rule type may not carry: it changes nothing, so
+ * there is no inventory change, rule or example prototype for adoption to
+ * prove. Its examples are the request's own, in words.
+ */
+function requestIssue(proposal: ProposalContent): string | null {
+  if (!proposal.needsRuleType) return null;
+  const carried = [
+    proposal.inventory.length > 0 ? "inventory changes" : null,
+    proposal.rules.add.length > 0 || proposal.rules.remove.length > 0 ? "rules" : null,
+    proposal.examples.pass.length > 0 || proposal.examples.fail.length > 0 ? "example prototypes" : null,
+  ].filter((item): item is string => item !== null);
+  const blank = (["checks", "whyNot"] as const).find((field) => proposal.needsRuleType?.[field].trim() === "");
+  if (blank) return `needsRuleType.${blank} is blank; a request says what the rule should check and why the vocabulary cannot say it`;
+  if (carried.length === 0) return null;
+  return `a request for a new rule type changes nothing, so it carries no ${carried.join(", ")}; draft those as a proposal of their own, and give the request's examples in words under needsRuleType`;
 }
 
 /** Validates a whole proposal: its shape, unique example names, and every example a valid prototype. */
@@ -75,6 +102,8 @@ function checkedProposal(proposal: Proposal): Result<Proposal, Refusal> {
   const names = [...proposal.examples.pass, ...proposal.examples.fail].map((example) => example.name);
   const repeated = names.find((name, index) => names.indexOf(name) !== index);
   if (repeated !== undefined) return refuse("invalid-proposal", `two examples are named "${repeated}"; each example needs its own name`, { example: repeated });
+  const request = requestIssue(proposal);
+  if (request !== null) return refuse("invalid-proposal", request);
   for (const example of [...proposal.examples.pass, ...proposal.examples.fail]) {
     const issues = prototypeIssues(example.prototype, `example "${example.name}"`);
     if (issues.length > 0) return refuse("invalid-proposal", issues.map((issue) => `${issue.path}: ${issue.message}`).join("\n"), { example: example.name });
@@ -102,7 +131,9 @@ export function revise(config: ProjectConfig, id: string, draft: ProposalDraft, 
   if (!proposal) return refuse("not-found", `there is no proposal "${id}"`);
   if (proposal.status !== "open") return refuse("wrong-status", `proposal "${id}" is ${proposal.status}; only an open proposal can be revised`);
   if (draft.id !== id) return refuse("invalid-proposal", `the revision names proposal "${draft.id}", not "${id}"; a revision keeps its proposal's id`);
-  const checked = checkedProposal({ ...proposal, ...contentOf(draft), events: [...(proposal.events ?? []), { kind: "revised", ...stamp, previous: contentOf(proposal) }] });
+  // The draft's content replaces the proposal's whole, a request for a new rule type included: a revision may drop one or add one.
+  const { needsRuleType: _replaced, ...kept } = proposal;
+  const checked = checkedProposal({ ...kept, ...contentOf(draft), events: [...(proposal.events ?? []), { kind: "revised", ...stamp, previous: contentOf(proposal) }] });
   if (!checked.ok) return checked;
   // Both sides as the schema writes them, so key order in the draft cannot make an unchanged revision look new.
   if (JSON.stringify(contentOf(checked.value)) === JSON.stringify(contentOf(proposal))) return refuse("unchanged", `the revision of "${id}" says exactly what it said before`);
@@ -187,7 +218,10 @@ function move(config: ProjectConfig, id: string, to: ProposalStatus, stamp: Stam
   return { ok: true, value: replace(config, stamped(proposal, to, stamp)) };
 }
 
+/** Approves an open proposal. A request for a new rule type is refused: approval is the step before adoption, which it can never reach. */
 export function approve(config: ProjectConfig, id: string, stamp: Stamp): Result<ProjectConfig, Refusal> {
+  const proposal = config.proposals.find((item) => item.id === id);
+  if (proposal?.needsRuleType) return requestRefusal(proposal, "approved");
   return move(config, id, "approved", stamp);
 }
 
@@ -328,6 +362,7 @@ export function tryExamples(config: ProjectConfig, id: string): Result<{ readonl
   const proposal = config.proposals.find((item) => item.id === id);
   if (!proposal) return refuse("not-found", `there is no proposal "${id}"`);
   if (proposal.status !== "open" && proposal.status !== "approved") return refuse("wrong-status", `proposal "${id}" is ${proposal.status}; only an open or approved proposal's examples are tried this way, and an adopted one's are re-run with rerunExamples`);
+  if (proposal.needsRuleType) return requestRefusal(proposal, "tried as a check");
   const candidate = candidateFor(config, proposal);
   if (!candidate.ok) return candidate;
   return { ok: true, value: { config: candidate.value, results: judgeExamples(candidate.value, proposal) } };
@@ -347,6 +382,8 @@ export function tryExamples(config: ProjectConfig, id: string): Result<{ readonl
 export function adopt(config: ProjectConfig, id: string, stamp: Stamp, existing: readonly ExistingPrototype[] = []): Result<Adoption, Refusal> {
   const proposal = config.proposals.find((item) => item.id === id);
   if (!proposal) return refuse("not-found", `there is no proposal "${id}"`);
+  // Before anything else: no state of a request for a new rule type, however it got there, is adoptable.
+  if (proposal.needsRuleType) return requestRefusal(proposal, "adopted");
   if (proposal.status !== "approved") {
     return refuse("wrong-status", `proposal "${id}" is ${proposal.status}; ${proposal.status === "open" ? "it must be approved before it is adopted" : "only an approved proposal can be adopted"}`);
   }

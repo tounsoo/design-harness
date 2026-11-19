@@ -161,6 +161,14 @@
           "unit": "rem"
         }
       },
+      "views-row": {
+        "$description": "The least width of a card that shows every view of a page side by side.",
+        "$type": "dimension",
+        "$value": {
+          "value": 34,
+          "unit": "rem"
+        }
+      },
       "label": {
         "$type": "dimension",
         "$value": {

@@ -4,7 +4,8 @@ import { nook } from "../../../../packages/core/examples/nook/project";
 import { legalSnapshots } from "../../../../packages/core/examples/nook/snapshots";
 import { seedLegal, seedSpec } from "../../test/nook";
 import { frameSpecs, type FrameKey, type FrameState } from "./session";
-import { describeOutline, planOutline, sourceTag, tagOf } from "./tags";
+import { describeOutline } from "../app/words";
+import { planOutline, sourceTag, tagOf } from "./tags";
 
 /** Every frame of a prototype measured, each having drawn the tags `drawn` gives it. */
 function measuredStates(frames: ReturnType<typeof frameSpecs>, drawn: (page: string) => readonly string[]): Record<FrameKey, FrameState> {
@@ -36,7 +37,7 @@ describe("matching a finding to the tags frames drew", () => {
     expect(plan?.frames.map((frame) => frame.key)).toEqual(frames.filter((frame) => frame.scenario.page === "booking").map((frame) => frame.key));
     for (const frame of plan?.frames ?? []) expect(frame.tags).toEqual(tags);
     expect(plan?.missing).toEqual([]);
-    expect(describeOutline(plan ?? { frames: [], missing: [], unmeasured: [] }, frames)).toBe("Outlined in 6 frames (lantern-open, lantern-booked, lantern-held).");
+    expect(describeOutline(plan ?? { frames: [], missing: [], unmeasured: [] }, frames)).toBe("Outlined in 6 frames: Booking, room open (Lantern open); Booking, booked (Lantern booked); Booking, held (Lantern held).");
   });
 
   it("outlines an element inside a spec layout instance by its scoped key, and says where it is not drawn", () => {
@@ -55,7 +56,7 @@ describe("matching a finding to the tags frames drew", () => {
     const plan = planOutline(finding, frames, states);
     expect(plan?.frames.map((frame) => frame.key)).toEqual(["lantern-open@desktop", "lantern-open@phone", "lantern-held@desktop", "lantern-held@phone"]);
     expect(plan?.missing).toEqual(["lantern-booked"]);
-    expect(describeOutline(plan ?? { frames: [], missing: [], unmeasured: [] }, frames)).toBe("Outlined in 4 frames (lantern-open, lantern-held). Not drawn in scenario lantern-booked.");
+    expect(describeOutline(plan ?? { frames: [], missing: [], unmeasured: [] }, frames)).toBe("Outlined in 4 frames: Booking, room open (Lantern open); Booking, held (Lantern held). Not drawn in Booking, booked (Lantern booked).");
   });
 
   it("outlines an element read from the source in any page's frames, and says when no page draws it", () => {

@@ -6,6 +6,7 @@ import { checkPrototype } from "../src/engine/check";
 import type { CheckReport } from "../src/engine/report";
 import { confirmRoles, draftRoles, type LibraryDescription, type RoleConfirmation } from "../src/library/roles";
 import { parseProjectConfig } from "../src/parse";
+import { specToTsx } from "../src/export/tsx";
 import { specCatalog } from "../src/spec/catalog";
 import { loadCases, loadPrototype, type IllegalCase } from "./fixtures";
 
@@ -16,6 +17,8 @@ import { loadCases, loadPrototype, type IllegalCase } from "./fixtures";
  * passes every rule the engine runs without a renderer (the end-to-end test
  * measures the rendered ones in Chromium), each illegal one fails for its
  * named rule alone, and each refused one is refused by the catalog alone.
+ * Tally has no TSX prototype of its own: its legal spec, exported as TSX,
+ * is the base its illegal TSX cases replace files of.
  */
 const EXAMPLE = join(import.meta.dirname, "..", "examples", "tally");
 const SPEC = join(EXAMPLE, "prototypes", "spec");
@@ -118,4 +121,22 @@ describe("a library's root part", () => {
     expect(issues({ component: "ThemeProvider" })).toEqual(['$.library.root.component is "ThemeProvider", which @mantine/core 9.7.4 has no part of']);
     expect(issues({ component: "MantineProvider", schemeProp: "withCssVariables" })).toEqual(['$.library.root.schemeProp "withCssVariables" of MantineProvider does not take "light" and "dark"']);
   });
+});
+
+describe("the Tally prototype as TSX", () => {
+  const exported = specToTsx(legal, tally);
+  if (!exported.ok) throw new Error(exported.error);
+  const tsx = exported.value.prototype;
+  const cases = loadCases(tsx, join(EXAMPLE, "prototypes", "illegal"));
+
+  it("passes as the export writes it: the export sets no excluded prop", () => {
+    expect(checkPrototype({ config: tally, prototype: tsx }).findings).toEqual([]);
+  });
+
+  it("has cases, each replacing a file the export writes", () => {
+    expect(cases.length).toBeGreaterThan(0);
+    for (const item of cases) for (const [path, text] of Object.entries(item.prototype.files)) if (text !== tsx.files[path]) expect(Object.keys(tsx.files), `${item.name} replaces ${path}`).toContain(path);
+  });
+
+  for (const item of cases) it(`${item.name}: ${item.what}`, () => expectCase(item));
 });

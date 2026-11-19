@@ -1,4 +1,4 @@
-import type { ProjectConfig, Prototype } from "@design-harness/core";
+import type { CheckReport, ProjectConfig, Prototype } from "@design-harness/core";
 import type { Session, SessionState } from "../runtime/session";
 import type { FrameProblem, Measured } from "./tools";
 
@@ -46,4 +46,13 @@ export function frameProblems(state: SessionState): FrameProblem[] {
     const value = state.frameStates[frame.key];
     return value?.state === "failed" ? [{ frame: frame.key, stage: value.stage, message: value.message }] : [];
   });
+}
+
+/** Core's report for the app's current source if every frame has measured it already, or null: what the checks said when a turn starts, without waiting. */
+export function latestMeasured(session: Session, latest: () => { readonly config: ProjectConfig; readonly prototype: Prototype }): CheckReport | null {
+  const want = latest();
+  const current = session.current();
+  const state = session.getState();
+  if (!current || current.prototype !== want.prototype || current.config !== want.config || state.revision !== current.revision || !state.measured) return null;
+  return state.report;
 }
