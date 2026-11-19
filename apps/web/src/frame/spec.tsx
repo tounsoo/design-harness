@@ -37,7 +37,7 @@ function partOf(library: Readonly<Record<string, unknown>>, type: string): Compo
  * it to the frame, which then reports the page as failing to render rather
  * than measuring a page with the part missing.
  */
-class PartBoundary extends Component<{ readonly type: string; readonly onError: (error: Error) => void; readonly children: ReactNode }, { failed: boolean }> {
+class PartBoundary extends Component<{ readonly type: string; readonly onError: (error: Error) => void; readonly children?: ReactNode }, { failed: boolean }> {
   override state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
