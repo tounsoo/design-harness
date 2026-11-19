@@ -170,9 +170,9 @@ export function registryEntry(request, description, draft, { id, issue }) {
     `    about: ${JSON.stringify(about)},`,
     "    setup: {",
     "      react: FRAME_REACT,",
-    `      stylesheets: ${JSON.stringify(request.stylesheets)},`,
+    `      stylesheets: [${request.stylesheets.map((path) => JSON.stringify(path)).join(", ")}],`,
     "    },",
-    `    notes: ${JSON.stringify(notes)},`,
+    `    notes: [${notes.map((note) => JSON.stringify(note)).join(", ")}],`,
     `    describe: async () => (await import(${JSON.stringify(`../../../../packages/core/libraries/${file}`)})).default as unknown as LibraryDescription,`,
     "  },",
   ].join("\n");
@@ -379,7 +379,7 @@ async function core() {
     'export { BUILT_IN_RULES } from "./src/builtins";',
     'export { parseLibraryDescription } from "./src/parse";',
   ].join("\n");
-  const result = await build({ stdin: { contents, resolveDir: join(REPO, "packages", "core"), loader: "ts" }, bundle: true, format: "esm", platform: "neutral", target: "es2022", write: false, logLevel: "silent" });
+  const result = await build({ stdin: { contents, resolveDir: join(REPO, "packages", "core"), loader: "ts" }, bundle: true, format: "esm", platform: "neutral", mainFields: ["module", "main"], target: "es2022", write: false, logLevel: "silent" });
   return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0]?.text ?? "").toString("base64")}`);
 }
 

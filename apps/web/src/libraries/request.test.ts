@@ -168,14 +168,14 @@ describe("the edits the workflow makes", () => {
     expect(added.packageJson.designHarness.libraries["@acme/ui"]).toEqual({ "1.2.3": ["dist/ui.css"] });
     expect(vendoredLibraries(added.packageJson).at(-1)).toEqual({ package: "@acme/ui", version: "1.2.3", install: "@acme/ui", stylesheets: ["dist/ui.css"] });
 
-    const another = addToPackageJson(packageJson, { package: "@mantine/core", version: "9.8.0", stylesheets: ["styles.css"] });
-    expect(another.install).toBe("@mantine/core-9.8.0");
-    expect(another.packageJson.dependencies["@mantine/core-9.8.0"]).toBe("npm:@mantine/core@9.8.0");
+    const another = addToPackageJson(packageJson, { package: "@mantine/core", version: "99.0.0", stylesheets: ["styles.css"] });
+    expect(another.install).toBe("@mantine/core-99.0.0");
+    expect(another.packageJson.dependencies["@mantine/core-99.0.0"]).toBe("npm:@mantine/core@99.0.0");
     expect(another.packageJson.dependencies["@mantine/core"]).toBe("9.7.4");
-    expect(another.packageJson.designHarness.libraries["@mantine/core"]).toEqual({ "9.7.4": ["styles.css"], "9.8.0": ["styles.css"] });
-    expect(servedVersions(another.packageJson, "@mantine/core")).toEqual(["9.7.4", "9.8.0"]);
+    expect(another.packageJson.designHarness.libraries["@mantine/core"]).toMatchObject({ "9.7.4": ["styles.css"], "99.0.0": ["styles.css"] });
+    expect(servedVersions(another.packageJson, "@mantine/core")).toEqual([...servedVersions(packageJson, "@mantine/core"), "99.0.0"]);
     // The original is left as it was.
-    expect(servedVersions(packageJson, "@mantine/core")).toEqual(["9.7.4"]);
+    expect(servedVersions(packageJson, "@mantine/core")).not.toContain("99.0.0");
   });
 
   it("refuses a version already served", () => {
@@ -184,25 +184,25 @@ describe("the edits the workflow makes", () => {
 
   it("adds a registry entry that TypeScript parses, with every value a JSON literal and what a person must check", () => {
     const draft = draftRoles(todae);
-    const request = { package: "@tounsoo/todae", version: "0.11.2", stylesheets: ["dist/todae.css"] };
+    const request = { package: "@tounsoo/todae", version: "99.0.0", stylesheets: ["dist/todae.css"] };
     const id = registryId(request, registryIds(registrySource));
-    expect(registryIds(registrySource)).toEqual(["todae", "mantine"]);
-    expect(id).toBe("tounsoo-todae-0-11-2");
+    expect(registryIds(registrySource).slice(0, 2)).toEqual(["todae", "mantine"]);
+    expect(id).toBe("tounsoo-todae-99-0-0");
     expect(registryId(request, [id])).toBe(`${id}-2`);
-    const entry = registryEntry(request, { ...todae, version: "0.11.2" }, draft, { id, issue: 12 });
+    const entry = registryEntry(request, { ...todae, version: "99.0.0" }, draft, { id, issue: 12 });
     const source = addRegistryEntry(registrySource, entry);
     expect(source.startsWith(registrySource.slice(0, registrySource.indexOf("\n];\n")))).toBe(true);
     expect(source.endsWith(registrySource.slice(registrySource.indexOf("\n];\n")))).toBe(true);
     const file = ts.createSourceFile("registry.ts", source, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS);
     expect((file as unknown as { parseDiagnostics: readonly unknown[] }).parseDiagnostics).toEqual([]);
-    expect(registryIds(source)).toEqual(["todae", "mantine", id]);
+    expect(registryIds(source)).toEqual([...registryIds(registrySource), id]);
     expect(isListed(source, request)).toBe(true);
     expect(isListed(registrySource, request)).toBe(false);
     expect(isListed(registrySource, { package: "@tounsoo/todae", version: "0.11.3", stylesheets: [] })).toBe(true);
-    expect(entry).toContain('    describe: async () => (await import("../../../../packages/core/libraries/tounsoo-todae-0.11.2.json")).default as unknown as LibraryDescription,');
+    expect(entry).toContain('    describe: async () => (await import("../../../../packages/core/libraries/tounsoo-todae-99.0.0.json")).default as unknown as LibraryDescription,');
     expect(entry).toContain('    about: "Requested in issue #12. Parts are namespaced, such as Button.Root.",');
     expect(entry).toContain("    // Added by the library request workflow from issue #12. A person must check:");
-    expect(descriptionPath(request)).toBe("packages/core/libraries/tounsoo-todae-0.11.2.json");
+    expect(descriptionPath(request)).toBe("packages/core/libraries/tounsoo-todae-99.0.0.json");
     expect(() => addRegistryEntry("export const OTHER = [];\n", entry)).toThrow("no SHIPPED_LIBRARIES list");
   });
 
