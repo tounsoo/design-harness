@@ -88,8 +88,9 @@ export function proposeVariants(host: AgentHost, input: { page: string; variants
     texts.push(checked.ok ? checked.value : "");
   });
   if (problems.length > 0) return refused("propose_variants: none kept", `None of the variants was kept, since core refused part of them:\n${problems.join("\n")}`);
-  // An id a pick names is never given again, so a pick's record keeps naming the variant it took.
-  const ids = nextVariantIds([...state.variants.map((variant) => variant.id), ...state.picks.flatMap((pick) => Object.values(pick.slots))], input.variants.length);
+  // An id a pick names is never given again, so a pick's record keeps naming the variant it took; nor one a pinned note names, so a note on a dismissed variant never lands on another.
+  const noted = host.pins?.().pins.flatMap((pin) => pin.anchor.variant ?? []) ?? [];
+  const ids = nextVariantIds([...state.variants.map((variant) => variant.id), ...state.picks.flatMap((pick) => Object.values(pick.slots)), ...noted], input.variants.length);
   const added: Variant[] = input.variants.map((variant, index) => ({ id: ids[index] as string, page: input.page, note: variant.note, spec: texts[index] as string, ...(input.like !== undefined ? { like: input.like } : {}) }));
   host.saveVariants([...state.variants, ...added]);
   const lines = added.map((variant) => `- ${variantLabel(variant.id)} (id "${variant.id}"): ${variant.note}. Core ${variantVerdict(config, prototype, variant)}.`);

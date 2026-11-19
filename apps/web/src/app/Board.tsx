@@ -1,4 +1,4 @@
-import { Badge, Button, Field, Loader, Popover, Stack, Text, ToggleGroup, Toolbar, VisuallyHidden, useHotkey, usePopover } from "@tounsoo/todae";
+import { Badge, Button, Field, Loader, Popover, Stack, Text, ToggleGroup, Toolbar, VisuallyHidden, usePopover } from "@tounsoo/todae";
 import { ArrowLeft, Grid3x3, ListPlus, Maximize2, MessageSquarePlus, PanelBottomDashed, Pointer, ZoomIn, ZoomOut } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type Ref } from "react";
 import { flowFacts, viewFacts, type Finding, type ProjectConfig, type RenderedSnapshot } from "@design-harness/core";
@@ -12,8 +12,7 @@ import { CoverageGrid } from "../visual/CoverageGrid";
 import { LENSES, lensDrawing, placeLens, type LensId } from "../visual/lens";
 import { LensLayer, LensWords } from "../visual/LensLayer";
 import { anchorAt, anchorOn, elementChoices } from "../pins/anchor";
-import type { PinState } from "../pins/model";
-import { PinContext, PinLayer, useMeasure, type PinActions, type PinBoard, type PinDraft } from "../pins/PinLayer";
+import { PinContext, PinLayer, useMeasure, usePinBoard, type BoardPins } from "../pins/PinLayer";
 import { SHORTCUTS, ariaKeys } from "./shortcuts";
 import { artboardLabel, frameName, scenarioLabel, screenTitle, viewLabel } from "./words";
 
@@ -29,20 +28,7 @@ export type BoardHandle = {
   readonly showPin: (number: number) => void;
 };
 
-/** The open prototype's pinned notes, and "Pin a note" mode, which the workspace owns. */
-export type BoardPins = {
-  readonly state: PinState;
-  readonly pinning: boolean;
-  readonly onPinning: (next: boolean) => void;
-  readonly actions: PinActions;
-  /** The open prototype's id: another prototype's notes are other notes. */
-  readonly prototype: string;
-  /** The open prototype's revision, and what its element tags are (`pins/anchor.ts`). */
-  readonly revision: string;
-  readonly kind: "source" | "key";
-  /** Says whether Escape is the board's now: pin mode is on, or a note's card is open. */
-  readonly onHold?: (held: boolean) => void;
-};
+export type { BoardPins };
 
 /**
  * The canvas: the prototype's frames as artboards on a calm board, one row
@@ -135,67 +121,15 @@ export function Board({
     setSaid(`Showing ${frameName(spec.scenario, spec.view.name)}.`);
     bringIntoView(key, true);
   };
-  // Pinned notes: which card is open, and the note being written. A pin is the app's own drawing over an artboard, and moves nothing.
-  const [openPin, setOpenPin] = useState<number | null>(null);
-  const [draft, setDraftState] = useState<PinDraft | null>(null);
-  const [focusPin, setFocusPin] = useState<number | null>(null);
+  // Pinned notes: which card is open, the note being written, and Escape. A pin is the app's own drawing over an artboard, and moves nothing.
+  const root = useRef<HTMLDivElement>(null);
+  const { context: pinBoard, setOpen: setOpenPin, dropDraft } = usePinBoard(pins, root, useContext(FramesShown));
   const pinning = pins?.pinning ?? false;
-  /** The note being written was just pinned: focus goes to its pin, not back to the list's button. */
-  const pinned = useRef(false);
-  const setDraft = useCallback((next: PinDraft | null) => {
-    setDraftState((before) => {
-      // A note started from a frame's list and put down gives focus back to that list's button, without a scroll.
-      if (next === null && before?.list && !pinned.current) requestAnimationFrame(() => cardOf(before.frame)?.querySelector<HTMLElement>(".frame-pin")?.focus({ preventScroll: true }));
-      pinned.current = false;
-      return next;
-    });
-  }, []);
-  const pinActions = pins?.actions;
-  const actions = useMemo(
-    (): PinActions | null =>
-      pinActions
-        ? {
-            ...pinActions,
-            create: (anchor, note) => {
-              const number = pinActions.create(anchor, note);
-              if (number !== null) {
-                pinned.current = true;
-                setFocusPin(number);
-              }
-              return number;
-            },
-          }
-        : null,
-    [pinActions],
-  );
-  const focusedPin = useCallback(() => setFocusPin(null), []);
-  const pinBoard = useMemo(
-    (): PinBoard | null => (pins && actions ? { state: pins.state, pinning: pins.pinning, actions, revision: pins.revision, kind: pins.kind, open: openPin, setOpen: setOpenPin, draft, setDraft, focus: focusPin, focused: focusedPin } : null),
-    [pins, actions, openPin, draft, setDraft, focusPin, focusedPin],
-  );
-  // Another prototype: no card of the last one stays open, and no note half written for it.
-  const pinsOf = pins?.prototype;
-  useEffect(() => {
-    setOpenPin(null);
-    setDraftState(null);
-    setFocusPin(null);
-  }, [pinsOf]);
-  // Leaving pin mode puts down a note not yet pinned.
-  useEffect(() => {
-    if (!pinning) setDraftState(null);
-  }, [pinning]);
-  const hold = pinning || openPin !== null || draft !== null;
-  const onHold = pins?.onHold;
-  useEffect(() => {
-    onHold?.(hold);
-    return () => onHold?.(false);
-  }, [hold, onHold]);
-  // Escape leaves pin mode, once no card is open: a card takes its own Escape first.
-  useHotkey(SHORTCUTS.leave.keys, () => pins?.onPinning(false), { enabled: pinning && openPin === null && draft === null });
 
   const showPin = (number: number) => {
     const pin = pins?.state.pins.find((item) => item.number === number);
-    if (!pin) return;
+    // A note on a variant is shown in the Variants view, where its frame is.
+    if (!pin || pin.anchor.variant !== undefined) return;
     const key = frameKey(pin.anchor.scenario, pin.anchor.view);
     const spec = state.frames.find((frame) => frame.key === key);
     if (!spec) {
@@ -205,7 +139,7 @@ export function Board({
     const name = frameName(spec.scenario, spec.view.name);
     const rect = pin.anchor.element?.label?.rect ?? pin.anchor.element?.source?.rect;
     opened.current = null;
-    setDraftState(null);
+    dropDraft();
     if (cameraMove(rect, scale) === "open") {
       setFocused(key);
       setSaid(`Opened ${name} at full size to show note ${number}.`);
@@ -352,7 +286,7 @@ export function Board({
 
   return (
     <PinContext value={pinBoard}>
-    <div className="board" data-focused={focused ? "" : undefined} data-floating={floating ? "" : undefined} data-engine={session.engineWhere()} data-pinning={pinning ? "" : undefined}>
+    <div className="board" ref={root} data-focused={focused ? "" : undefined} data-floating={floating ? "" : undefined} data-engine={session.engineWhere()} data-pinning={pinning ? "" : undefined}>
       <Toolbar.Root aria-label="Canvas" className="board-toolbar">
         {floating && <div className="board-toolbar-start">{floating.start}</div>}
         {focusedSpec ? (
@@ -529,10 +463,11 @@ export function FrameCard({ session, spec, revision, frameState, scale, focused,
   // Pinned notes, where the board carries them: drawn over the artboard from what the frame measured, live or parked.
   const pinBoard = useContext(PinContext);
   const measure = useMeasure(spec, frameState);
-  const words = frameName(spec.scenario, spec.view.name);
+  // Where the same frame is drawn for several sources, as in the Variants view, a note's frame is named with its source.
+  const words = `${label && pinBoard ? `${label}: ` : ""}${frameName(spec.scenario, spec.view.name)}`;
   const pinFromList = () => {
     if (!pinBoard || !measure) return;
-    const frame = { scenario: spec.scenario.id, view: spec.view.name };
+    const frame = { scenario: spec.scenario.id, view: spec.view.name, ...(pinBoard.variant !== undefined ? { variant: pinBoard.variant } : {}) };
     const first = elementChoices(measure)[0];
     const anchor = (first ? anchorOn(measure, frame, first.index, pinBoard.revision, pinBoard.kind) : null) ?? anchorAt(measure, frame, { x: width / 2, y: height / 2 }, pinBoard.revision, pinBoard.kind);
     pinBoard.setOpen(null);
@@ -544,6 +479,7 @@ export function FrameCard({ session, spec, revision, frameState, scale, focused,
       style={{ width: width * scale }}
       tabIndex={-1}
       data-frame-key={spec.key}
+      data-variant={pinBoard?.variant}
       data-state={frameState.state}
       data-selected={selected ? "" : undefined}
       data-pointed={pointed ? "" : undefined}

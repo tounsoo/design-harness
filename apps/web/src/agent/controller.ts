@@ -8,9 +8,9 @@ import { createClient, requestBody, type AgentMode, type MessagesApi } from "./r
 import { specCatalogPrompt } from "./spec-prompt";
 import { reportRules, type LoopEvent } from "./patterns";
 import { describePins } from "../pins/describe";
-import { openPins } from "../pins/model";
+import { openPins, unaddressPin } from "../pins/model";
 import type { SpecStreamPreview } from "./spec-stream";
-import { checksTitle, describeMeasured, runTool, type AgentHost, type ToolOutcome } from "./tools";
+import { checksTitle, describeMeasured, runTool, type AddressedNote, type AgentHost, type ToolOutcome } from "./tools";
 
 /**
  * One prototype's conversation with the agent. A turn is one message from
@@ -58,6 +58,8 @@ export type Turn = {
   /** The prototype as it was before the turn's first change; null when the turn changed nothing. */
   readonly before: Prototype | null;
   readonly undone: boolean;
+  /** The person's notes the turn marked addressed (`address_note`), which undoing the turn opens again; absent when it addressed none. */
+  readonly addressed?: readonly AddressedNote[];
   /** The rules failing when the turn started, when every frame had measured the prototype then; absent otherwise. */
   readonly failingAtStart?: readonly string[];
 };
@@ -217,7 +219,7 @@ export class AgentController {
     };
     // The person's open pinned notes ride with every message of theirs, as findings beside core's (pins/describe.ts).
     const pins = this.options.host.pins?.();
-    const notes = pins ? describePins(pins) : null;
+    const notes = pins ? describePins(pins, new Set(this.options.host.variants().variants.map((variant) => variant.id))) : null;
     const open = pins ? openPins(pins).length : 0;
     this.history.appendUser(message, [...this.pending, ...(notes ? [notes] : [])]);
     this.pending = [];
@@ -238,18 +240,52 @@ export class AgentController {
     this.abort?.abort();
   }
 
-  /** The turn whose changes can be undone now: the latest turn that changed the prototype and is not undone yet. */
-  undoable(): Turn | undefined {
-    if (this.state.running) return undefined;
-    return [...this.state.turns].reverse().find((turn) => turn.before !== null && !turn.undone);
+  /** The notes a turn addressed that undoing it would open again: those nothing has happened to since. */
+  private standing(turn: Turn): AddressedNote[] {
+    const pins = this.options.host.pins?.();
+    if (!pins || !turn.addressed) return [];
+    return turn.addressed.filter((item) => unaddressPin(pins, item.note, item.event, "") !== pins);
   }
 
-  /** Puts the prototype back as it was before a turn, as one step, and tells the agent next time. */
+  /**
+   * The turn whose changes can be undone now: the latest turn, not undone
+   * yet, that changed the prototype or marked a note addressed that still
+   * stands as it left it.
+   */
+  undoable(): Turn | undefined {
+    if (this.state.running) return undefined;
+    return [...this.state.turns].reverse().find((turn) => !turn.undone && (turn.before !== null || this.standing(turn).length > 0));
+  }
+
+  /**
+   * Takes back what a turn did, as one step, and tells the agent next time:
+   * the prototype as it was before the turn, and every note the turn marked
+   * addressed open again, its reply dropped. A note the person has closed,
+   * reopened or rewritten since is theirs and stays as they left it. The API
+   * history is not touched: it is append-only, and the agent reads what was
+   * undone in its next message.
+   */
   async undo(id: string): Promise<void> {
     const turn = this.undoable();
-    if (!turn || turn.id !== id || !turn.before) return;
-    this.options.host.apply(turn.before);
-    this.pending.push(`The person undid your changes from their message "${short(turn.text)}": the prototype is back to what it was before that message. Read the files again before you change them.`);
+    if (!turn || turn.id !== id) return;
+    const host = this.options.host;
+    if (turn.before) host.apply(turn.before);
+    const before = host.pins?.();
+    const reopened: number[] = [];
+    if (before && host.savePins) {
+      let pins = before;
+      for (const item of turn.addressed ?? []) {
+        const next = unaddressPin(pins, item.note, item.event, host.now());
+        if (next !== pins) reopened.push(item.note);
+        pins = next;
+      }
+      if (pins !== before) host.savePins(pins);
+    }
+    const told = [
+      ...(turn.before ? ["the prototype is back to what it was before that message. Read the files again before you change them."] : []),
+      ...(reopened.length > 0 ? [`${reopened.length === 1 ? `note ${reopened[0]} is` : `notes ${reopened.join(", ")} are`} open again, and your ${reopened.length === 1 ? "reply to it was" : "replies to them were"} withdrawn.`] : []),
+    ];
+    this.pending.push(`The person undid your changes from their message "${short(turn.text)}": ${told.join(" Also, ")}`);
     this.patchTurn(id, () => ({ undone: true }));
     await this.save();
   }
@@ -430,6 +466,8 @@ export class AgentController {
         if (this.turn(id)?.before === null) this.patchTurn(id, () => ({ before }));
       }
       if (outcome.measured) checkedSinceChange = true;
+      const addressed = outcome.addressed;
+      if (addressed) this.patchTurn(id, (turn) => ({ addressed: [...(turn.addressed ?? []), addressed] }));
       results.push({ type: "tool_result", tool_use_id: call.id, content: outcome.content, ...(outcome.isError ? { is_error: true } : {}) });
       const now = this.toolIndex(id, call.id);
       const current = now >= 0 ? this.turn(id)?.items[now] : undefined;

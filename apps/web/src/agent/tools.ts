@@ -44,7 +44,10 @@ export interface AgentHost {
   saveVariants(variants: readonly Variant[]): void;
   /** The notes the person pinned on the open prototype's frames (`pins/model.ts`); absent where the app keeps none. */
   pins?(): PinState;
-  /** Keeps the pins after the agent marked one addressed. Nothing else of the agent's reaches them: `address_note` is the one tool that calls it. */
+  /**
+   * Keeps the pins after the agent marked one addressed, or after the person undid the turn that did (`AgentController.undo`).
+   * Nothing else of the agent's reaches them: `address_note` is the one tool that calls it.
+   */
   savePins?(next: PinState): void;
 }
 
@@ -249,7 +252,12 @@ export type ToolOutcome = {
   readonly proposal?: ProposalCard;
   /** Variants the call kept or revised, for the chat's card that opens the comparison. */
   readonly variants?: { readonly page: string; readonly ids: readonly string[] };
+  /** The note the call marked addressed, and where in its history that entry is: what undoing the turn takes back. */
+  readonly addressed?: AddressedNote;
 };
+
+/** A note a turn marked addressed: its number, and the place of the `addressed` entry in its history. */
+export type AddressedNote = { readonly note: number; readonly event: number };
 
 /** What the chat shows for a drafted or revised proposal: a card that links to its review page. */
 export type ProposalCard = {
@@ -334,7 +342,7 @@ function addressNote(host: AgentHost, number: number, reply: string): ToolOutcom
   if (!addressed.ok) return refused(`Note ${number} not marked addressed`, `${addressed.error} Nothing changed. The open notes are: ${openPins(pins).map((pin) => pin.number).join(", ") || "none"}.`);
   host.savePins(addressed.value);
   const left = openPins(addressed.value).map((pin) => pin.number);
-  return { content: `Marked note ${number} as addressed, with your reply. The person will close it or reopen it. ${left.length > 0 ? `Still open: ${left.map((item) => `note ${item}`).join(", ")}.` : "No note is open now."}`, isError: false, changed: false, title: `Addressed note ${number}` };
+  return { content: `Marked note ${number} as addressed, with your reply. The person will close it or reopen it. ${left.length > 0 ? `Still open: ${left.map((item) => `note ${item}`).join(", ")}.` : "No note is open now."}`, isError: false, changed: false, title: `Addressed note ${number}`, addressed: { note: number, event: (addressed.value.pins.find((pin) => pin.number === number)?.history.length ?? 1) - 1 } };
 }
 
 function manifestOf(prototype: Prototype): Omit<Prototype, "files"> {

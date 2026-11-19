@@ -4627,6 +4627,395 @@ test("keyboard-only pinning: the shortcut, a frame's list of elements, the note,
   await context.close();
 });
 
+/** The marker that takes the pointer at a pin's middle: the one drawn on top of its spot. */
+async function topAt(page, number) {
+  return marker(page, number).evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest('[data-testid="pin"]')?.getAttribute("data-pin") ?? null;
+  });
+}
+
+test("two notes on one spot: a count lists them, each opens by pointer and by keyboard, every marker stays on its element, and the board never scrolls", async ({ browser, base }) => {
+  const { page, errors, context } = await openApp(browser, base);
+  // What takes the first Escape after the second note, read if it goes unanswered: where focus was, and whether something else handled the key first. Set up here, so it adds no step before the key.
+  await page.evaluate(() => {
+    window.__escape = null;
+    window.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || window.__escape || !window.__watchEscape) return;
+      const target = event.target && "tagName" in event.target ? event.target : null;
+      window.__escape = { prevented: event.defaultPrevented, target: target ? `${target.tagName.toLowerCase()}${target.id ? `#${target.id}` : ""}[${target.getAttribute("data-testid") ?? ""}|${target.getAttribute("data-pin") ?? ""}|${target.className}]` : String(event.target), open: [...document.querySelectorAll(":popover-open")].map((element) => element.getAttribute("data-testid") ?? element.className) };
+    });
+  });
+  await measured(page, 1);
+  await liveFrame(page, "lantern-open at desktop");
+  const scroll = await boardScroll(page);
+  await pinOn(page, "lantern-open", "desktop", "button", "Book room", "First on the button");
+  assert.equal(await cardOfFrame(page, "lantern-open", "desktop").getByTestId("pin-spot").count(), 0, "a note alone on its spot has no count");
+  // A second note on the same element, from the frame's list: its middle, where the first one is.
+  await cardOfFrame(page, "lantern-open", "desktop").getByTestId("pin-from-list").click();
+  const card = page.locator('[data-testid="pin-card"]:popover-open');
+  await card.getByTestId("pin-element").waitFor();
+  await card.getByTestId("pin-element").selectOption({ label: 'button "Book room"' });
+  await eventually(page, () => card.getByTestId("pin-on").textContent(), (value) => /^On button "Book room" · /.test(value), "the note is on the button");
+  await card.getByTestId("pin-text").fill("Second on the button");
+  await card.getByTestId("pin-save").click();
+  await marker(page, 2).waitFor({ state: "attached" });
+  await page.evaluate(() => {
+    window.__watchEscape = true;
+  });
+  await becomesFocused(page, marker(page, 2), "focus goes to the new pin");
+  assert.deepEqual(await boardScroll(page), scroll, "pinning a second note on the spot does not scroll the board");
+
+  // The spot's count: one, beside the marker on top, saying how many and which.
+  const spot = cardOfFrame(page, "lantern-open", "desktop").getByTestId("pin-spot");
+  await spot.waitFor();
+  assert.equal(await spot.count(), 1);
+  assert.equal((await spot.textContent()).trim(), "2");
+  assert.match(await spot.getAttribute("aria-label"), /^2 notes on this spot of Booking, room open — desktop \(Lantern open\): notes 1 and 2\. Pick one$/);
+  // The count covers neither marker.
+  const [one, two] = [await markerAt(page, 1), await markerAt(page, 2)];
+  assert.ok(Math.hypot(one.x - two.x, one.y - two.y) < 4, `the two notes share a spot: ${JSON.stringify([one, two])}`);
+  const boxes = await Promise.all([spot.boundingBox(), marker(page, 1).boundingBox(), marker(page, 2).boundingBox()]);
+  const apart = (a, b) => a.x >= b.x + b.width || b.x >= a.x + a.width || a.y >= b.y + b.height || b.y >= a.y + a.height;
+  assert.ok(apart(boxes[0], boxes[1]) && apart(boxes[0], boxes[2]), `the count sits beside the markers, not on them: ${JSON.stringify(boxes)}`);
+  assert.ok(boxes[0].height >= 24 && boxes[0].width >= 24, `the count is a target of at least 24 px: ${JSON.stringify(boxes[0])}`);
+  // The upper marker takes the pointer over the lower one, which is why the count is there.
+  await page.keyboard.press("Escape");
+  await eventually(page, () => pinMode(page).getAttribute("aria-pressed"), (value) => value === "false", `Escape leaves pin mode (the key: ${JSON.stringify(await page.evaluate(() => window.__escape))})`);
+  await marker(page, 2).evaluate((element) => element.blur());
+  assert.equal(await topAt(page, 1), "2", "the note pinned last lies on top");
+  // Each marker's point is still on the button: sharing a spot moved neither.
+  for (const number of [1, 2]) {
+    const placed = await pinIsOn(page, number, "lantern-open", "desktop", "button", "Book room");
+    assert.ok(placed.on, `note ${number}'s point is on the button: ${JSON.stringify(placed)}`);
+  }
+  assert.deepEqual(await boardScroll(page), scroll);
+  await shot(page, "pin-spot-light");
+  await shotDark(page, "pin-spot-dark");
+
+  // By pointer: the count lists both; picking the one underneath opens its card and brings its marker to the top.
+  await spot.click();
+  // The list is in the page only as a popover: it is open when it is on the top layer.
+  const items = page.locator('[data-testid="pin-spot-list"]:popover-open [data-testid="pin-spot-item"]');
+  await eventually(page, () => items.count(), (count) => count === 2, "the list holds both notes");
+  assert.deepEqual(await items.evaluateAll((elements) => elements.map((element) => [element.getAttribute("data-pin"), element.querySelector(".pin-spot-note").textContent, element.querySelector(".pin-spot-status").textContent])), [["1", "First on the button", "Note 1 · Open"], ["2", "Second on the button", "Note 2 · Open"]]);
+  await shot(page, "pin-spot-list-light");
+  await shotDark(page, "pin-spot-list-dark");
+  await items.first().click();
+  await eventually(page, () => card.getByTestId("pin-note").textContent().catch(() => ""), (value) => value === "First on the button", "picking note 1 opens its card");
+  assert.equal(await card.count(), 1, "one card is open");
+  assert.equal(await eventually(page, () => topAt(page, 1), (value) => value === "1", "the open note's marker is on top"), "1");
+  await eventually(page, () => items.count(), (count) => count === 0, "the list closed");
+  assert.deepEqual(await boardScroll(page), scroll, "opening the list and picking from it does not scroll the board");
+  // The person closes it from its card: it keeps its own shape under the other, and the count still reaches it.
+  await card.getByTestId("pin-close").click();
+  await eventually(page, () => marker(page, 1).getAttribute("data-status"), (value) => value === "closed", "note 1 is closed");
+  assert.equal((await spot.textContent()).trim(), "2", "a closed note is still counted on its spot");
+
+  // By keyboard: the count is a menu button; the arrow keys reach each note and Enter opens it.
+  await spot.focus();
+  await page.keyboard.press("Enter");
+  await eventually(page, () => items.count(), (count) => count === 2, "Enter opens the list");
+  assert.equal(await items.first().locator(".pin-spot-status").textContent(), "Note 1 · Closed");
+  const active = () => page.evaluate(() => document.activeElement?.getAttribute("data-pin") ?? null);
+  for (let step = 0; step < 4 && (await active()) !== "2"; step += 1) await page.keyboard.press("ArrowDown");
+  assert.equal(await active(), "2", "the arrow keys reach note 2 in the list");
+  await page.keyboard.press("Enter");
+  await eventually(page, () => card.getByTestId("pin-note").textContent().catch(() => ""), (value) => value === "Second on the button", "Enter opens note 2");
+  // The list fades out over a few frames, and is the layer Escape reaches until it has.
+  await eventually(page, () => items.count(), (count) => count === 0, "the list closed");
+  await page.keyboard.press("Escape");
+  await eventually(page, () => card.count(), (count) => count === 0, "Escape closes the card");
+  await becomesFocused(page, marker(page, 2), "and focus is on the note's own marker");
+  assert.deepEqual(await boardScroll(page), scroll, "picking with the keyboard does not scroll the board");
+
+  // Escape closes the list first, then leaves pin mode; a note pinned elsewhere joins no spot.
+  await pinOn(page, "lantern-open", "desktop", "button", "Hold room", "On another button");
+  assert.equal(await cardOfFrame(page, "lantern-open", "desktop").getByTestId("pin-spot").count(), 1, "a note somewhere else is no part of the spot");
+  assert.deepEqual(await boardScroll(page), scroll, "a third note does not scroll the board");
+  assert.equal((await spot.textContent()).trim(), "2");
+  await spot.click();
+  await eventually(page, () => items.count(), (count) => count === 2, "the list opens in pin mode");
+  await page.keyboard.press("Escape");
+  await eventually(page, () => items.count(), (count) => count === 0, "Escape closes the list");
+  assert.equal(await pinMode(page).getAttribute("aria-pressed"), "true", "and pin mode stays");
+  await page.waitForTimeout(400);
+  await page.keyboard.press("Escape");
+  await eventually(page, () => pinMode(page).getAttribute("aria-pressed"), (value) => value === "false", "a second Escape leaves pin mode");
+  assert.deepEqual(await boardScroll(page), scroll, "nothing about a spot scrolls the board");
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("after a reload, and after an export and import, a pin still tells its element renamed where it stands from a neighbour moved into its place", async ({ browser, base }) => {
+  const { page, errors, context } = await openApp(browser, base);
+  await measured(page, 1);
+  await pinOn(page, "lantern-open", "desktop", "button", "Hold room", "Is a hold needed at all?");
+  await page.keyboard.press("Escape");
+  // What tells the two apart is kept with the pin: a short print of each element the frame drew elsewhere.
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export", exact: true }).click()]);
+  const path = await download.path();
+  const source = JSON.parse(readFileSync(path, "utf8")).prototypes.find((item) => item.id === "booking").pins.pins[0].anchor.element.source;
+  assert.equal(source.kind, "source");
+  assert.ok(Array.isArray(source.elsewhere) && source.elsewhere.length > 0 && source.elsewhere.length <= 256 && source.elsewhere.every((print) => /^[0-9a-f]{8}$/.test(print)), `the pin keeps prints of what was drawn elsewhere: ${JSON.stringify(source.elsewhere)}`);
+  assert.deepEqual(Object.keys(source).sort(), ["elsewhere", "kind", "nth", "rect", "tag", "within"]);
+  const removeSlot = (text) => text.replace(/\s*<Slot name="alternate">[\s\S]*?<\/Slot>/, "");
+  const lostRow = async (message) => {
+    await page.getByRole("tab", { name: /Checks/ }).click();
+    await eventually(page, () => noteRow(page, 1).getAttribute("data-lost"), (value) => value === "", message);
+    assert.match(await noteRow(page, 1).locator(".note-where").textContent(), /^On button "Hold room" · /, "it still names its own element, not the neighbour");
+  };
+
+  // After a reload nothing is in memory. Hold room is removed and Book room is now written in its place: the pin is gone, not moved onto Book room.
+  await page.reload();
+  await measured(page, 1);
+  await editFile(page, "pages/booking.tsx", removeSlot);
+  await measured(page, 2);
+  await lostRow("after a reload, the pin on the removed button is moved or gone");
+  await liveFrame(page, "lantern-open at desktop");
+  assert.equal(await marker(page, 1).getAttribute("data-lost"), "");
+
+  // After an import, the same: first a rename where it stands keeps the pin on its element, under its new name.
+  await page.locator('[data-testid="import-file"]').setInputFiles(path);
+  await measured(page, 1);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  await eventually(page, () => noteRow(page, 1).getAttribute("data-lost"), (value) => value === null, "the import brought the pin back on its element");
+  await editFile(page, "pages/booking.tsx", (text) => text.replace(HOLD_SECONDARY, '<Button.Root variant="secondary">Hold for 10 minutes</Button.Root>'));
+  await measured(page, 2);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  await eventually(page, () => noteRow(page, 1).locator(".note-where").textContent(), (value) => /^On button "Hold for 10 minutes" · /.test(value), "renamed where it stands, the pin stays on it after an import");
+  assert.equal(await noteRow(page, 1).getAttribute("data-lost"), null);
+  // And a neighbour moved into its place, straight after another import, is told apart again.
+  await page.locator('[data-testid="import-file"]').setInputFiles(path);
+  await measured(page, 1);
+  await editFile(page, "pages/booking.tsx", removeSlot);
+  await measured(page, 2);
+  await lostRow("after an import, the pin on the removed button is moved or gone");
+  assert.equal(await page.getByTestId("notes-summary").textContent(), "1 open", "and it was never dropped");
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("undoing the agent's turn opens the note it addressed again and drops its reply, with the prototype back; a note the person closed stays closed", async ({ browser, base, api }) => {
+  const { page, errors, context } = await openApp(browser, base);
+  await measured(page, 1);
+  await showAllRules(page);
+  const before = await page.locator('[data-testid="report-json"]').textContent();
+  await pinOn(page, "lantern-open", "desktop", "button", "Hold room", "Say how long the hold lasts");
+  await pinOn(page, "lantern-open", "desktop", "heading", "Lantern", "A warmer name");
+  await page.keyboard.press("Escape");
+  api.script([
+    toolReply("rename", "edit_file", { path: "pages/booking.tsx", old_text: HOLD_SECONDARY, new_text: '<Button.Root variant="secondary">Hold for 10 minutes</Button.Root>' }),
+    toolReply("one", "address_note", { note: 1, reply: "The button now reads Hold for 10 minutes." }),
+    toolReply("two", "address_note", { note: 2, reply: "The name is the room's own." }),
+    textReply("Both notes are answered."),
+    (body) => {
+      const said = body.messages.at(-1).content.map((block) => block.text);
+      assert.equal(said[0], 'The person undid your changes from their message "Please address my notes": the prototype is back to what it was before that message. Read the files again before you change them. Also, note 1 is open again, and your reply to it was withdrawn.');
+      assert.match(said[1], /^Your notes from the person: 1 open note pinned on the canvas\./);
+      assert.match(said[1], /\n- note 1: "Say how long the hold lasts" \[pages\/booking\.tsx:34:\d+, scenario lantern-open, view desktop\]\n {2}on: button "Hold room"\n/);
+      assert.equal(said[2], "Thanks");
+      return textReply("Understood.");
+    },
+  ]);
+  await enterKey(page);
+  await ask(page, "Please address my notes");
+  assert.equal(await turnEnded(page), "done");
+  await measured(page, 2);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  await eventually(page, () => Promise.all([noteRow(page, 1).getAttribute("data-status"), noteRow(page, 2).getAttribute("data-status")]), (value) => value.join() === "addressed,addressed", "the agent addressed both notes");
+  await eventually(page, () => noteRow(page, 1).locator(".note-where").textContent(), (value) => /^On button "Hold for 10 minutes" · /.test(value), "note 1 follows its renamed button");
+  // The person closes note 2: that is theirs, and undoing the agent's turn will not touch it.
+  await noteRow(page, 2).getByTestId("note-close").click();
+  await eventually(page, () => noteRow(page, 2).getAttribute("data-status"), (value) => value === "closed", "the person closed note 2");
+
+  // One undo: the prototype is back, and the note the turn addressed is open again, without the reply.
+  await page.getByRole("button", { name: "Undo this turn" }).click();
+  await page.locator(".chat-reply").last().getByText("Undone").waitFor();
+  await measured(page, 3);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  await eventually(page, () => noteRow(page, 1).getAttribute("data-status"), (value) => value === "open", "undo opened note 1 again");
+  assert.equal(await noteRow(page, 1).getByTestId("note-status").textContent(), "Open");
+  assert.equal(await noteRow(page, 1).getByTestId("note-reply").count(), 0, "its reply is dropped from the note");
+  assert.equal(await noteRow(page, 1).getByTestId("note-text").textContent(), "Say how long the hold lasts");
+  assert.match(await noteRow(page, 1).getByTestId("pin-history").locator("summary").textContent(), /History: 3 entries/);
+  await noteRow(page, 1).getByTestId("pin-history").locator("summary").click();
+  assert.match(await noteRow(page, 1).getByTestId("pin-history").textContent(), /The agent replied: The button now reads Hold for 10 minutes\..*You undid the agent's turn: the note is open again, without that reply/s);
+  await eventually(page, () => noteRow(page, 1).locator(".note-where").textContent(), (value) => /^On button "Hold room" · /.test(value), "and it is back on Hold room");
+  assert.equal(await page.getByTestId("notes-summary").textContent(), "1 open · 1 closed");
+  assert.equal(await noteRow(page, 2).getAttribute("data-status"), "closed", "the note the person closed stays closed");
+  assert.equal(await noteRow(page, 2).getByTestId("note-reply").textContent(), "The agent repliedThe name is the room's own.", "with the reply it was closed on");
+  assert.match(await noteRow(page, 2).getByTestId("pin-history").locator("summary").textContent(), /History: 3 entries/);
+  assert.equal(await (await liveFrame(page, "lantern-open at desktop")).getByRole("button", { name: "Hold room" }).count(), 1);
+  assert.equal(await marker(page, 1).getAttribute("data-status"), "open");
+  await showAllRules(page);
+  assert.equal(await page.locator('[data-testid="report-json"]').textContent(), before, "core's report is the same bytes as before the turn");
+  assert.equal(await page.getByRole("button", { name: "Undo this turn" }).count(), 0, "a turn is undone once");
+
+  // The agent is told with the next message, and gets the note again since it is open again.
+  await ask(page, "Thanks");
+  assert.equal(await turnEnded(page), "done");
+  assert.equal(api.left(), 0);
+  // And it is kept.
+  await page.reload();
+  await measured(page, 1);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  assert.deepEqual([await noteRow(page, 1).getAttribute("data-status"), await noteRow(page, 2).getAttribute("data-status")], ["open", "closed"]);
+  assert.equal(await noteRow(page, 1).getByTestId("note-reply").count(), 0);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+const variantCard = (page, id) => page.locator(`.variant-card[data-variant="${id}"]`);
+const variantFrame = (page, id, scenario, view) => variantCard(page, id).locator(`.frame-card[data-frame-key="${scenario}@${view}"]`);
+
+/** Pins a note on an element of one source's frame in the Variants view, by a click on its artboard, as `pinOn` does on the board. */
+async function pinOnVariant(page, id, label, scenario, view, role, name, note) {
+  const title = `${label}: ${scenario} at ${view}`;
+  const frame = await liveFrame(page, title);
+  const target = await frame.getByRole(role, { name, exact: true }).first().evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return { x: box.left + window.scrollX + box.width / 2, y: box.top + window.scrollY + box.height / 2 };
+  });
+  const capture = variantFrame(page, id, scenario, view).getByTestId("pin-capture");
+  const box = await capture.boundingBox();
+  const scale = box.width / Number(await page.locator(`iframe[title="${title}"]`).first().getAttribute("width"));
+  await capture.click({ position: { x: target.x * scale, y: target.y * scale } });
+  await page.getByTestId("pin-text").fill(note);
+  await page.getByTestId("pin-save").click();
+  await page.getByTestId("pin-text").waitFor({ state: "detached" });
+}
+
+test("a note pinned on a variant: on the variant's own element, listed with its variant, sent to the agent, kept through a revision, a reload and a dismissal, with no report or standing changed", async ({ browser, base, api }) => {
+  const { page, errors } = await openSpec(browser, base);
+  const before = await report(page);
+  await offerVariants(page, api);
+  await page.getByRole("button", { name: "Compare variants" }).click();
+  for (const [id, state] of [["current", "pass"], ["a", "pass"], ["b", "pass"], ["c", "fail"]]) await standing(page, id, state);
+  const standings = () => page.locator(".variant-card[data-variant]").evaluateAll((cards) => cards.map((card) => [card.dataset.variant, card.dataset.standing, card.querySelector('[data-testid="variant-report"]')?.textContent ?? ""]));
+  const stood = await standings();
+  const boardAt = await boardScroll(page);
+
+  // Pin mode has its own toggle here, and the shortcut works as on the board.
+  const toggle = page.getByTestId("variants-pin-mode");
+  assert.equal(await toggle.getAttribute("aria-pressed"), "false");
+  await page.keyboard.press("Control+Alt+N");
+  await page.getByTestId("variants-pin-hint").waitFor();
+  assert.equal(await toggle.getAttribute("aria-pressed"), "true");
+  assert.equal(await page.locator('main[aria-label="Variants"]').count(), 1, "pin mode stays on the Variants view");
+  await shot(page, "pin-variants-mode-light");
+  await shotDark(page, "pin-variants-mode-dark");
+  await pinOnVariant(page, "a", "Variant A", "lantern-open", "desktop", "button", "Book room", "Too quiet in this one");
+  const onA = variantCard(page, "a").locator('[data-testid="pin"][data-pin="1"]');
+  await becomesFocused(page, onA, "focus goes to the new pin, on the variant's frame");
+  assert.equal(await page.locator('[data-testid="pin"][data-pin="1"]').count(), 1, "the note is on Variant A alone: not on Current, another variant, or the board");
+  // Its point is on the button as Variant A draws it.
+  const placed = await (async () => {
+    const frame = await liveFrame(page, "Variant A: lantern-open at desktop");
+    const box = await frame.getByRole("button", { name: "Book room", exact: true }).first().evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+    });
+    const viewport = await variantFrame(page, "a", "lantern-open", "desktop").locator(".frame-viewport").boundingBox();
+    const scale = viewport.width / 1280;
+    const at = await onA.evaluate((element) => {
+      const layer = element.closest(".pin-layer").getBoundingClientRect();
+      const mark = element.getBoundingClientRect();
+      return { x: mark.left - layer.left, y: mark.bottom - layer.top };
+    });
+    return { on: at.x >= box.x * scale - 1 && at.x <= (box.x + box.width) * scale + 1 && at.y >= box.y * scale - 1 && at.y <= (box.y + box.height) * scale + 1, at, box, scale };
+  })();
+  assert.ok(placed.on, `the pin's point is on Variant A's button: ${JSON.stringify(placed)}`);
+  await onA.click();
+  const card = page.locator('[data-testid="pin-card"]:popover-open');
+  await card.getByTestId("pin-note").waitFor();
+  assert.match(await card.getByTestId("pin-on").textContent(), /^On button "Book room" · Variant A: Booking, room open — desktop \(Lantern open\)$/);
+  await shot(page, "pin-variant-light");
+  await shotDark(page, "pin-variant-dark");
+  await page.keyboard.press("Escape");
+
+  // A note on Current is a note on the prototype: the board shows it too.
+  await pinOnVariant(page, "current", "Current", "lantern-open", "desktop", "button", "Hold room", "On the page as it is");
+  assert.equal(await variantCard(page, "current").locator('[data-testid="pin"][data-pin="2"]').count(), 1);
+  assert.equal(await page.locator('.board [data-testid="pin"][data-pin="2"]').count(), 1, "the board draws the same note");
+  assert.equal(await page.locator('.board [data-testid="pin"][data-pin="1"]').count(), 0, "and never the variant's");
+  // The combination being picked takes no notes: it is nowhere until it is applied.
+  await pickRadio(page, "body", "Variant A").click();
+  const combination = page.getByTestId("variant-combination");
+  await combination.locator('.frame-card[data-frame-key="lantern-open@desktop"]').waitFor();
+  assert.equal(await combination.getByTestId("pin-capture").count(), 0, "no surface to pin on over the combination");
+  assert.equal(await combination.getByTestId("pin-from-list").count(), 0);
+  assert.ok((await variantCard(page, "a").getByTestId("pin-from-list").count()) > 0, "while every variant's frame offers its list");
+  await pickRadio(page, "body", "Current").click();
+  await page.keyboard.press("Escape");
+  await eventually(page, () => toggle.getAttribute("aria-pressed"), (value) => value === "false", "Escape leaves pin mode");
+
+  // Your notes names the variant; no report, standing or pick changed, and nothing scrolled the board.
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  assert.match(await noteRow(page, 1).locator(".note-where").textContent(), /^On button "Book room" · Variant A · Booking, room open — desktop \(Lantern open\)$/);
+  assert.equal(await noteRow(page, 1).getAttribute("data-variant"), "a");
+  assert.equal(await noteRow(page, 2).getAttribute("data-variant"), null);
+  assert.deepEqual(await report(page), before, "the prototype's report is unchanged");
+  assert.deepEqual(await standings(), stood, "and so is every variant's standing and report");
+  assert.equal(await pickRadio(page, "body", "Variant C").isDisabled(), true);
+  assert.deepEqual(await boardScroll(page), boardAt, "pinning in the Variants view never scrolls the board");
+  assert.equal(await page.locator(".checks").getAttribute("data-revision"), "2", "a note starts no revision");
+
+  // The agent reads which variant the note is on, revises that variant, and answers the note.
+  const revised = copy(BOOKING_SPEC);
+  revised.elements.question.props.label = "For how many hours?";
+  api.script([
+    (body) => {
+      const notes = body.messages.at(-1).content[0].text;
+      assert.match(notes, /^Your notes from the person: 2 open notes pinned on the canvas\./);
+      assert.match(notes, /\n- note 1: "Too quiet in this one" \[variant "a", spec element "book", scenario lantern-open, view desktop\]\n {2}on: button "Book room"\n/);
+      assert.match(notes, /\n- note 2: "On the page as it is" \[spec element "hold", scenario lantern-open, view desktop\]\n/);
+      assert.match(notes, /\nA note whose place starts with variant "…" was pinned on that variant in the Variants view, not on the prototype: change that variant with revise_variant/);
+      return toolReply("revise", "revise_variant", { id: "a", spec: revised, note: "Asks for how many hours" });
+    },
+    toolReply("answer", "address_note", { note: 1, reply: "Variant A asks for hours now." }),
+    textReply("Variant A is revised."),
+  ]);
+  await ask(page, "Please look at my note on variant A");
+  assert.equal(await turnEnded(page), "done");
+  assert.equal(api.left(), 0);
+  await standing(page, "a", "pass");
+  assert.equal((await (await liveFrame(page, "Variant A: lantern-open at desktop")).locator("label").first().textContent()).trim(), "For how many hours?");
+  await eventually(page, () => onA.getAttribute("data-status"), (value) => value === "addressed", "the note on the revised variant is addressed");
+  assert.equal(await onA.getAttribute("data-lost"), null, "and still on its element, found by its key");
+  assert.equal(await noteRow(page, 1).getByTestId("note-reply").textContent(), "The agent repliedVariant A asks for hours now.");
+  assert.deepEqual(await report(page), before);
+
+  // Show me, from the canvas: the Variants view comes up on the note's variant, and its card opens.
+  await page.getByRole("tab", { name: "Canvas" }).click();
+  await page.locator('main[aria-label="Canvas"]').waitFor();
+  await noteRow(page, 1).getByTestId("note-show").click();
+  await page.locator('main[aria-label="Variants"]').waitFor();
+  await eventually(page, () => card.getByTestId("pin-note").textContent().catch(() => ""), (value) => value === "Too quiet in this one", "Show me opens the note's card in the Variants view");
+  assert.deepEqual(await boardScroll(page), boardAt, "and the board is not scrolled for it");
+  await page.keyboard.press("Escape");
+
+  // A reload keeps it on its variant.
+  await page.reload();
+  await measured(page, 1);
+  await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
+  await measured(page, 2);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  assert.match(await noteRow(page, 1).locator(".note-where").textContent(), /^On button "Book room" · Variant A · /);
+  assert.equal(await noteRow(page, 1).getAttribute("data-status"), "addressed");
+  // Dismissing the variant drops no note: it says the variant is gone, and no new variant will take its id.
+  await page.getByRole("tab", { name: "Variants" }).click();
+  await standing(page, "a", "pass");
+  await variantCard(page, "a").getByRole("button", { name: "Dismiss", exact: true }).click();
+  await variantCard(page, "a").getByRole("button", { name: "Dismiss Variant A" }).click();
+  await variantCard(page, "a").waitFor({ state: "detached" });
+  await eventually(page, () => noteRow(page, 1).getAttribute("data-lost"), (value) => value === "", "the note on the dismissed variant says so");
+  assert.equal(await noteRow(page, 1).getByTestId("note-lost").textContent(), "Moved or gone: Variant A is no longer among the variants. The note is kept.");
+  assert.equal(await noteRow(page, 1).getByTestId("note-show").isDisabled(), true);
+  assert.equal(await page.getByTestId("notes-summary").textContent(), "1 open · 1 answered by the agent", "no note was dropped");
+  assert.deepEqual(errors, []);
+});
+
 // ---- runner ----------------------------------------------------------------
 
 const server = await preview({ root, configFile: join(root, "vite.config.ts"), logLevel: "silent", preview: { port: 0, host: "127.0.0.1" } });

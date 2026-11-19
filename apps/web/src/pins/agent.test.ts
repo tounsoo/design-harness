@@ -7,7 +7,8 @@ import { DEFAULT_SETTINGS } from "../agent/models";
 import { createClient, SPEC_SYSTEM_PROMPT, SYSTEM_PROMPT } from "../agent/request";
 import { SPEC_TOOL_DEFINITIONS, TOOL_DEFINITIONS, runTool, type AgentHost } from "../agent/tools";
 import { NOTES_LEAD, describePin, describePins, pinWhere } from "./describe";
-import { NO_PINS, addPin, closePin, type PinAnchor, type PinState } from "./model";
+import { seedSpec } from "../../test/nook";
+import { NO_PINS, addPin, closePin, editPin, reopenPin, type PinAnchor, type PinState } from "./model";
 
 const AT = "2026-11-19T10:00:00.000Z";
 const ON_BUTTON: PinAnchor = {
@@ -116,6 +117,141 @@ describe("pins in the agent's turn", () => {
       await controller.send("Hello");
       expect(controller.getState().turns[0]?.items.some((item) => item.kind === "notice")).toBe(false);
     }
+  });
+});
+
+describe("undoing a turn that addressed a note", () => {
+  const RENAME = { path: "pages/rooms.tsx", old_text: '<Text.Root as="h1">Rooms</Text.Root>', new_text: '<Text.Root as="h1">Spaces</Text.Root>' };
+  const agent = (host: AgentHost, replies: unknown[]) => {
+    const fake = scriptedFetch(replies as never);
+    const stored: ChatRecord[] = [];
+    const controller = new AgentController({ host, store: { load: async () => null, save: async (record) => void stored.push(record) }, key: () => KEY, settings: () => DEFAULT_SETTINGS, client: (key) => createClient(key, { fetch: fake.fetch, maxRetries: 0 }) });
+    return { controller, fake, stored };
+  };
+  /** A turn that edits a file, then marks notes 1 and 2 addressed. */
+  const editAndAddress = [tool("edit", "edit_file", RENAME), tool("one", "address_note", { note: 1, reply: "Renamed the page." }), tool("two", "address_note", { note: 2, reply: "Moved it up." }), done("Done.")];
+
+  it("puts the prototype back and opens the notes again, their replies dropped, as one step, and tells the agent", async () => {
+    const { host, parts, pins: now } = hostWith(pins());
+    const start = parts.prototype();
+    const history: number[] = [];
+    const { controller, fake, stored } = agent(host, [
+      ...editAndAddress,
+      (body: Body) => {
+        const said = texts(body);
+        // The agent is told with the next message, and gets the notes again since they are open again.
+        expect(said[0]).toBe('The person undid your changes from their message "Please look at my notes": the prototype is back to what it was before that message. Read the files again before you change them. Also, notes 1, 2 are open again, and your replies to them were withdrawn.');
+        expect(said[1]).toContain("2 open notes pinned");
+        expect(said[2]).toBe("Try again");
+        history.push(body.messages.length);
+        return done("ok");
+      },
+    ]);
+    await controller.send("Please look at my notes");
+    const turn = controller.getState().turns[0];
+    expect(turn?.addressed).toEqual([{ note: 1, event: 1 }, { note: 2, event: 1 }]);
+    expect(now().pins.map((pin) => pin.status)).toEqual(["addressed", "addressed", "closed"]);
+    expect(controller.undoable()?.id).toBe(turn?.id);
+    const sent = controller.messages().length;
+    await controller.undo(turn?.id ?? "");
+    expect(parts.prototype()).toBe(start);
+    expect(now().pins.map((pin) => [pin.number, pin.status, pin.reply])).toEqual([[1, "open", undefined], [2, "open", undefined], [3, "closed", undefined]]);
+    expect(now().pins[0]?.history.map((event) => event.kind)).toEqual(["created", "addressed", "undone"]);
+    expect(controller.getState().turns[0]?.undone).toBe(true);
+    expect(controller.undoable()).toBeUndefined();
+    // The API history is append-only: undoing removes nothing from it.
+    expect(controller.messages().length).toBe(sent);
+    expect(stored.at(-1)?.turns[0]).toMatchObject({ undone: true, addressed: [{ note: 1, event: 1 }, { note: 2, event: 1 }] });
+    await controller.send("Try again");
+    expect(fake.left()).toBe(0);
+    expect(history[0]).toBeGreaterThan(sent);
+  });
+
+  it("does not undo what the person did to a note since: closed, reopened or rewritten, it stays as they left it", async () => {
+    const { host, parts, saved, pins: now } = hostWith(pins());
+    const start = parts.prototype();
+    const { controller } = agent(host, [...editAndAddress, (body: Body) => (expect(texts(body)[0]).toBe('The person undid your changes from their message "Please look at my notes": the prototype is back to what it was before that message. Read the files again before you change them.'), done("ok"))]);
+    await controller.send("Please look at my notes");
+    // The person closes note 1 and rewrites note 2, which opens it again.
+    const closed = closePin(now(), 1, AT);
+    if (!closed.ok) throw new Error(closed.error);
+    const edited = editPin(closed.value, 2, "Still too far down", AT);
+    if (!edited.ok) throw new Error(edited.error);
+    host.savePins?.(edited.value);
+    const kept = JSON.stringify(now());
+    const saves = saved.length;
+    await controller.undo(controller.getState().turns[0]?.id ?? "");
+    expect(parts.prototype()).toBe(start);
+    expect(JSON.stringify(now())).toBe(kept);
+    expect(saved).toHaveLength(saves);
+    expect(now().pins.map((pin) => [pin.status, pin.reply])).toEqual([["closed", "Renamed the page."], ["open", "Moved it up."], ["closed", undefined]]);
+    await controller.send("Go on");
+  });
+
+  it("undoes a turn that only answered a note, while that answer still stands", async () => {
+    const { host, parts, pins: now } = hostWith(pins());
+    const { controller, fake } = agent(host, [tool("one", "address_note", { note: 1, reply: "It already is." }), done("Answered."), (body: Body) => (expect(texts(body)[0]).toBe('The person undid your changes from their message "Is this right?": note 1 is open again, and your reply to it was withdrawn.'), done("ok"))]);
+    await controller.send("Is this right?");
+    const turn = controller.getState().turns[0];
+    expect(turn?.before).toBeNull();
+    expect(controller.undoable()?.id).toBe(turn?.id);
+    await controller.undo(turn?.id ?? "");
+    expect(parts.applied).toHaveLength(0);
+    expect(now().pins[0]).toMatchObject({ status: "open" });
+    expect(now().pins[0]?.reply).toBeUndefined();
+    await controller.send("Again");
+    expect(fake.left()).toBe(0);
+  });
+
+  it("offers no undo for a turn that only answered a note the person has since reopened, and none for an address_note that was refused", async () => {
+    const { host, pins: now } = hostWith(pins());
+    const { controller } = agent(host, [tool("one", "address_note", { note: 1, reply: "Done." }), tool("closed", "address_note", { note: 3, reply: "Done too." }), done("Answered.")]);
+    await controller.send("Is this right?");
+    expect(controller.getState().turns[0]?.addressed).toEqual([{ note: 1, event: 1 }]);
+    const reopened = reopenPin(now(), 1, AT);
+    if (!reopened.ok) throw new Error(reopened.error);
+    host.savePins?.(reopened.value);
+    expect(controller.undoable()).toBeUndefined();
+    await controller.undo(controller.getState().turns[0]?.id ?? "");
+    expect(controller.getState().turns[0]?.undone).toBe(false);
+    expect(now().pins[0]?.history.map((event) => event.kind)).toEqual(["created", "addressed", "reopened"]);
+  });
+});
+
+describe("a note on a variant, as the agent reads it", () => {
+  const ON_VARIANT: PinAnchor = { ...ON_KEY, variant: "b" };
+  const withVariant = () => {
+    const added = addPin(pins(), ON_VARIANT, "Wider on a phone", AT);
+    if (!added.ok) throw new Error(added.error);
+    return added.value;
+  };
+
+  it("names the variant first in its place, and says which tool changes a variant", () => {
+    const text = describePins(withVariant(), new Set(["a", "b"])) ?? "";
+    expect(text).toContain('- note 4: "Wider on a phone" [variant "b", spec element "details/summary", scenario lantern-open, view phone]');
+    expect(text.split("\n").at(-1)).toBe('A note whose place starts with variant "…" was pinned on that variant in the Variants view, not on the prototype: change that variant with revise_variant, never the prototype\'s page, then call address_note.');
+    // With no note on a variant, nothing about variants is said: the words are as they always were.
+    expect(describePins(pins())).not.toContain("revise_variant");
+    expect(describePins(pins(), new Set())).toBe(describePins(pins()));
+  });
+
+  it("says so when the variant is no longer kept", () => {
+    const text = describePins(withVariant(), new Set(["a"])) ?? "";
+    expect(text).toContain('on: the part "details/summary" of variant "b", which is no longer kept (dismissed since the note was pinned)');
+  });
+
+  it("never gives a new variant the id a note names, so a note on a dismissed variant lands on no other", async () => {
+    const parts = fakeHost(seedSpec());
+    const host: AgentHost = { ...parts.host, pins: () => withVariant(), savePins: () => undefined };
+    const page = JSON.parse(seedSpec().files["pages/booking.json"] as string) as { elements: Record<string, { props: Record<string, unknown> }> };
+    const variant = (label: string) => {
+      const spec = structuredClone(page);
+      (spec.elements.question as { props: Record<string, unknown> }).props.label = label;
+      return { note: label, spec };
+    };
+    const outcome = await runTool({ id: "t", name: "propose_variants", input: { page: "booking", variants: [variant("For how long?"), variant("Until when?")] } }, host, new AbortController().signal);
+    expect(outcome.isError).toBe(false);
+    expect(parts.variants().variants.map((item) => item.id)).toEqual(["a", "c"]);
   });
 });
 
