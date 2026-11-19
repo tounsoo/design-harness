@@ -2,7 +2,7 @@ import { describe, expect, it, vi, type Mock } from "vitest";
 import type { RenderedSnapshot } from "@design-harness/core";
 import { nook } from "../../../../packages/core/examples/nook/project";
 import { legalSnapshots } from "../../../../packages/core/examples/nook/snapshots";
-import { seedLegal } from "../../test/nook";
+import { seedSpec } from "../../test/nook";
 import { FrameBudget } from "./live-frames";
 import type { PackageSource } from "./package-source";
 import { PROTOCOL } from "./protocol";
@@ -80,7 +80,7 @@ function board(options: { readonly slots?: number; readonly budget?: number } = 
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 const snapshotOf = (scenario: string, view: string): RenderedSnapshot | undefined => legalSnapshots().find((item) => item.scenario === scenario && item.view === view);
-const legal = seedLegal();
+const legal = seedSpec();
 const ON_SCREEN = new Set([frameKey("lantern-held", "desktop"), frameKey("lantern-held", "phone")]);
 
 describe("a session measured lazily", () => {
@@ -139,7 +139,7 @@ describe("a session measured lazily", () => {
     const report = session.getState().report;
     const states = session.getState().frameStates;
     const key = frameKey("lantern-open", "desktop");
-    session.outline(key, ["pages/booking.tsx:40:9"]);
+    session.outline(key, ["book"]);
     draw((item) => item === key);
     const frame = mounted.get(key);
     expect(frame).toBeDefined();
@@ -151,7 +151,7 @@ describe("a session measured lazily", () => {
     expect(session.getState().frameStates).toBe(states);
     expect(session.reshownCount()).toEqual({ count: 1, same: 1 });
     // Drawn again, it outlines the finding that was selected while it was parked.
-    expect(frame?.window.postMessage.mock.calls.at(-1)?.[0]).toEqual({ protocol: PROTOCOL, type: "highlight", channel: frame?.channel, generation: 1, tags: ["pages/booking.tsx:40:9"] });
+    expect(frame?.window.postMessage.mock.calls.at(-1)?.[0]).toEqual({ protocol: PROTOCOL, type: "highlight", channel: frame?.channel, generation: 1, tags: ["book"] });
     // Away from the screen again, it is parked.
     draw(() => false);
     expect(mounted.size).toBe(0);

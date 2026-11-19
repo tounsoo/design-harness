@@ -1,1 +1,0 @@
-{ "what": "An event handler that reads event.target, a path from an event to the DOM", "expect": [{ "rule": "no-ambient-globals", "message": "reads .target, which leads from an event to a DOM node or the frame's window" }] }

@@ -1,1 +1,0 @@
-{ "what": "A helper that builds a button with createElement", "expect": [{ "rule": "extract", "message": "createElement builds an element without JSX" }] }

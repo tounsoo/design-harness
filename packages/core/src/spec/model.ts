@@ -1,5 +1,5 @@
 import type { ProjectConfig } from "../config/types";
-import type { ElementNode, ExtractionProblem, PageModel, PropValue, PrototypeModel, SourceLocation } from "../extract/model";
+import type { ElementNode, ExtractionProblem, PageModel, PropValue, PrototypeModel, SourceLocation } from "../prototype/model";
 import type { Prototype, Scenario } from "../prototype/types";
 import type { Literal } from "../rules/types";
 import { LAYOUT_TYPE, PAGE_TYPE, SCENARIO_STATE, TEXT_PROP } from "./catalog";
@@ -347,7 +347,7 @@ export function specModel(prototype: Prototype, config: ProjectConfig): Prototyp
     seen.add(key);
     problems.push({ message: problem.message, ...(problem.at ? { at: problem.at } : {}) });
   }
-  return { pages, source, loads: [], ambient: [], problems };
+  return { pages, source, problems };
 }
 
 /** Every problem with a spec prototype's files, with where each is: what the extract rule reports for it, and what the agent's spec tools refuse. */

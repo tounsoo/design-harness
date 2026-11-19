@@ -2,14 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import type { RenderedSnapshot } from "@design-harness/core";
 import { nook } from "../../../../packages/core/examples/nook/project";
 import { legalSnapshots } from "../../../../packages/core/examples/nook/snapshots";
-import { seedLegal, seedSpec } from "../../test/nook";
+import { seedSpec } from "../../test/nook";
 import type { PackageSource } from "./package-source";
 import { PROTOCOL, type RenderRequest } from "./protocol";
 import { FrameBudget } from "./live-frames";
 import { RenderSlots } from "./render-slots";
 import { Session, frameKey } from "./session";
 
-const legal = seedLegal();
+const legal = seedSpec();
 
 function fakeSource(fail = false): PackageSource {
   return {
@@ -68,8 +68,8 @@ describe("a session", () => {
     for (const [key, frame] of frames) {
       send(key, { type: "ready" });
       const request = frame.window.postMessage.mock.calls[0]?.[0] as RenderRequest;
-      expect(request).toMatchObject({ type: "render", generation: 1, page: { export: expect.any(String) } });
-      expect(Object.keys(request.modules)).toEqual(expect.arrayContaining(["react", "@tounsoo/todae", "@design-harness/page", "@prototype/pages/booking.tsx"]));
+      expect(request).toMatchObject({ type: "render", generation: 1, page: { spec: expect.any(Object) } });
+      expect(Object.keys(request.modules)).toEqual(expect.arrayContaining(["react", "@tounsoo/todae", "@design-harness/page", "@design-harness/spec"]));
     }
     for (const spec of session.getState().frames) send(spec.key, { type: "snapshot", generation: 1, snapshot: snapshotOf(spec.scenario.id, spec.view.name), tags: [] });
     await flush();
@@ -256,7 +256,6 @@ describe("a session of a spec prototype", () => {
     // Each page's spec comes back from the engine with core's first check.
     expect(session.getState().frames.every((frame) => frame.page === undefined && frame.blocked === undefined)).toBe(true);
     await flush();
-    expect(session.getState().compileProblems).toEqual([]);
     const held = session.getState().frames.find((frame) => frame.key === frameKey("lantern-held", "phone"));
     expect(held?.page && "spec" in held.page ? held.page.spec.spec.state.scenario : null).toEqual({ id: "lantern-held", state: "held" });
     expect(held?.page && "spec" in held.page ? held.page.spec.library : null).toBe("@tounsoo/todae");
@@ -294,38 +293,53 @@ describe("a session of a spec prototype", () => {
     session.restore();
     const back = frames.get(frameKey("rooms-list", "desktop"))?.window.postMessage.mock.calls.at(-1)?.[0] as typeof rooms;
     expect(back.spec.spec.elements.heading?.props.text).toBe("Rooms");
-    // A TSX prototype has no in-place redraw.
+    // A new revision has not rendered yet: there is nothing to draw in.
     session.update(nook, legal);
     expect(session.redraw(nook, draft)).toBe(false);
   });
 
-  it("tags a TSX revision's elements where core found them, keeps each frame's drawn tags, and outlines by tag", async () => {
+  it("asks frames for tags, keeps each frame's drawn tags, the spec's keys, and outlines by tag", async () => {
     const { session, frames, mount, send } = harness();
     session.update(nook, legal);
+    await flush();
     mount();
     await flush();
     for (const key of frames.keys()) send(key, { type: "ready" });
     const key = frameKey("lantern-open", "desktop");
     const request = frames.get(key)?.window.postMessage.mock.calls[0]?.[0] as RenderRequest;
     expect(request.tags).toBe(true);
-    const booking = request.modules["@prototype/pages/booking.tsx"];
-    expect(booking && "code" in booking ? booking.code : "").toMatch(/'data-dh-source': "pages\/booking\.tsx:\d+:\d+"/);
-    send(key, { type: "snapshot", generation: 1, snapshot: snapshotOf("lantern-open", "desktop"), tags: ["pages/booking.tsx:40:9", "pages/booking.tsx:20:9", "pages/booking.tsx:20:9"] });
-    expect(session.getState().frameStates[key]).toMatchObject({ state: "measured", tags: ["pages/booking.tsx:20:9", "pages/booking.tsx:40:9"] });
-    session.outline(key, ["pages/booking.tsx:40:9"]);
-    expect(frames.get(key)?.window.postMessage.mock.calls.at(-1)?.[0]).toEqual({ protocol: PROTOCOL, type: "highlight", channel: frames.get(key)?.channel, generation: 1, tags: ["pages/booking.tsx:40:9"] });
+    send(key, { type: "snapshot", generation: 1, snapshot: snapshotOf("lantern-open", "desktop"), tags: ["book", "hold", "hold"] });
+    expect(session.getState().frameStates[key]).toMatchObject({ state: "measured", tags: ["book", "hold"] });
+    session.outline(key, ["book"]);
+    expect(frames.get(key)?.window.postMessage.mock.calls.at(-1)?.[0]).toEqual({ protocol: PROTOCOL, type: "highlight", channel: frames.get(key)?.channel, generation: 1, tags: ["book"] });
     session.dispose();
   });
 
-  it("with tags off, sends untagged modules and asks frames for no tags", async () => {
+  it("with tags off, asks frames for no tags", async () => {
     const { session, frames, mount, send } = harness(fakeSource(), { tags: false });
     session.update(nook, legal);
+    await flush();
     mount();
     await flush();
     for (const key of frames.keys()) send(key, { type: "ready" });
     const request = frames.get(frameKey("lantern-open", "desktop"))?.window.postMessage.mock.calls[0]?.[0] as RenderRequest;
     expect(request.tags).toBe(false);
-    for (const source of Object.values(request.modules)) expect("code" in source ? source.code : "").not.toContain("data-dh-source");
+    session.dispose();
+  });
+
+  it("clears to nothing for a prototype nothing renders or checks, and drops the engine's late answer for what it cleared", async () => {
+    const { session } = harness();
+    session.update(nook, legal);
+    expect(session.getState().frames.length).toBeGreaterThan(0);
+    session.clear();
+    expect(session.current()).toBeNull();
+    expect(session.getState()).toMatchObject({ revision: 2, frames: [], frameStates: {}, report: null, measured: false });
+    await flush();
+    expect(session.getState()).toMatchObject({ revision: 2, frames: [], report: null });
+    session.update(nook, legal);
+    expect(session.getState().revision).toBe(3);
+    await flush();
+    expect(session.getState().report?.status).toBe("incomplete");
     session.dispose();
   });
 });

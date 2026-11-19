@@ -1,1 +1,0 @@
-{ "what": "A timer that could change the page after it was measured", "expect": [{ "rule": "no-ambient-globals", "message": "uses setTimeout, which is a browser global" }] }

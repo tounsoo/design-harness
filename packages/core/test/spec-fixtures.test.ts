@@ -7,9 +7,9 @@ import type { CheckReport } from "../src/engine/report";
 import { EXAMPLES, loadCases, loadPrototype, type IllegalCase } from "./fixtures";
 
 /**
- * The Nook prototype as json-render specs: the legal one passes every rule,
- * each illegal one fails for its named rule alone, as its TSX counterpart
- * does, and each refused one is refused by the catalog's validation, which
+ * The Nook prototype as json-render specs, the engine's regression fixtures:
+ * the legal one passes every rule, each illegal one fails for its named rule
+ * alone, and each refused one is refused by the catalog's validation, which
  * the always-on extract rule reports, and nothing else.
  */
 const SPEC = join(EXAMPLES, "spec");
@@ -49,7 +49,7 @@ const illegal = loadCases(legal, join(SPEC, "illegal"));
 const refused = loadCases(legal, join(SPEC, "refused"));
 
 describe("each illegal Nook spec fails for its one named reason", () => {
-  it("has at least 8 cases ported from the TSX fixtures", () => expect(illegal.length).toBeGreaterThanOrEqual(8));
+  it("has cases", () => expect(illegal.length).toBeGreaterThanOrEqual(25));
   for (const item of illegal) it(`${item.name}: ${item.what}`, () => expectCase(item));
 });
 

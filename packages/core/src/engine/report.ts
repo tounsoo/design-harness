@@ -1,4 +1,4 @@
-import type { LayoutUse } from "../extract/model";
+import type { LayoutUse } from "../prototype/model";
 import type { RuleType } from "../rules/types";
 import type { Evidence } from "./evidence";
 
@@ -7,8 +7,8 @@ import type { Evidence } from "./evidence";
  * where it is written (`file`, `line`, `column`, and `via` inside a spec
  * layout instance), the page it is on, and on a spec element its key in the
  * expanded page, which carries the layout instance's scope
- * (`details/summary`). A TSX element is found by where it is written.
- * Without `page` the element was read from the source and no page renders it.
+ * (`details/summary`). Without `page` the element was read from a spec file
+ * as written and no page draws it.
  */
 export type FindingTarget = {
   readonly file: string;
@@ -21,7 +21,7 @@ export type FindingTarget = {
 
 /**
  * A finding. `violation`: the prototype breaks the rule. `unverifiable`: the
- * rule depends on something the extractor cannot read statically, so it
+ * rule depends on something core cannot read statically, so it
  * cannot say the prototype passes. Both fail the rule.
  *
  * Field names follow agent-design-loop's report (`message`, `file`, `line`,
@@ -67,7 +67,7 @@ export type Finding = {
 /** `not-run`: the rule needs input the check was not given, such as rendered snapshots. */
 export type RuleStatus = "pass" | "fail" | "not-run";
 
-/** The pseudo-rule that reports what the extractor could not read. It is always in force. */
+/** The pseudo-rule that reports what core could not read, and what the spec catalog refused. It is always in force. */
 export const EXTRACT_RULE = "extract";
 
 export type RuleReport = {
@@ -113,7 +113,7 @@ function compareFindings(a: Finding, b: Finding): number {
   );
 }
 
-/** Sorted, with exact duplicates dropped: the same JSX reached twice on one page reports once. */
+/** Sorted, with exact duplicates dropped: the same element reached twice on one page reports once. */
 export function sortFindings(findings: readonly Finding[]): Finding[] {
   const seen = new Set<string>();
   const out: Finding[] = [];

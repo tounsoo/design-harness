@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { flowFacts, type Proposal, type RuleSpec } from "@design-harness/core";
 import { nook } from "../../../../packages/core/examples/nook/project";
 import { tally } from "../../../../packages/core/examples/tally/project";
-import { seedLegal } from "../../test/nook";
+import { seedSpec } from "../../test/nook";
 import { RULE_GROUPS, budgetMeter, capDirection, capMeter, capReaders, capsRead, changeCount, changeLine, groupRules, pageTypeWords, projectTimeline, proofPair, proposalPreview, proposalTrack, previewLabel, ruleBound, ruleGlyph, ruleGroup, ruleLines, ruleSource, slotRows, sortProposals } from "./project-model";
 
 const proposal = (change: Partial<Proposal>): Proposal => ({ id: "p", title: "A change", reason: "Because.", states: [], inventory: [], rules: { add: [], remove: [] }, examples: { pass: [], fail: [] }, status: "open", history: [{ status: "open", at: "2026-11-01T10:00:00.000Z", by: "agent" }], ...change });
@@ -17,14 +17,14 @@ describe("rule groups", () => {
     }
   });
 
-  it("counts Nook's 32 rules by group, in the groups' order", () => {
+  it("counts Nook's 29 rules by group, in the groups' order", () => {
     expect(groupRules(nook.rules).map((item) => [item.group.id, item.rules.length])).toEqual([
       ["count", 10],
       ["where", 4],
       ["rendered", 6],
       ["inventory", 5],
       ["flow", 2],
-      ["code", 5],
+      ["code", 2],
     ]);
     expect(RULE_GROUPS.map((group) => group.id)).toEqual(["count", "where", "rendered", "inventory", "flow", "code"]);
   });
@@ -41,9 +41,8 @@ describe("rule groups", () => {
     expect(ruleGlyph(toastRule)).toBeNull();
     expect(ruleBound(toastRule, nook)).toBe("at most 1");
     expect(ruleGlyph({ type: "count", id: "some", select: { role: "primary-action" }, scope: "pages", min: 1 })).toBeNull();
-    expect(ruleGroup({ type: "isolation", id: "no-ambient-globals" })).toBe("code");
-    expect(ruleGlyph({ type: "isolation", id: "no-ambient-globals" })).toBeNull();
-    expect(ruleGlyph({ type: "membership", id: "imports", of: "imports" })).toBeNull();
+    expect(ruleGroup({ type: "reachable", id: "reached", select: { role: "action" } })).toBe("code");
+    expect(ruleGlyph({ type: "reachable", id: "reached", select: { role: "action" } })).toBeNull();
     expect(ruleGlyph({ type: "membership", id: "parts", of: "components" })).toBeNull();
     expect(ruleGlyph({ type: "rendered", id: "c", check: "contrast" })).toBe("contrast");
     expect(ruleGlyph({ type: "flow", id: "f", check: "step-budget" })).toBeNull();
@@ -93,7 +92,7 @@ describe("page types, caps and budgets", () => {
   });
 
   it("says a budget in words, with today's longest route from core's flow facts for the open prototype, and nothing of today without one", () => {
-    const facts = flowFacts(nook, seedLegal());
+    const facts = flowFacts(nook, seedSpec());
     const [book, hold] = nook.inputs.tasks;
     if (!book || !hold) throw new Error("no tasks");
     const booked = budgetMeter(book, facts.tasks.find((item) => item.task === book.id), "Booking");
@@ -154,7 +153,7 @@ describe("a proposal on its card and its track", () => {
   });
 
   it("pairs a rule with its first failing example and the first passing one, and with none when no example names it", () => {
-    const examples = { pass: [{ name: "one-toast", prototype: seedLegal() }, { name: "no-toast", prototype: seedLegal() }], fail: [{ name: "other", prototype: seedLegal(), flaggedBy: { rule: "another-rule" } }, { name: "two-toasts", prototype: seedLegal(), flaggedBy: { rule: "one-toast-per-page" } }] };
+    const examples = { pass: [{ name: "one-toast", prototype: seedSpec() }, { name: "no-toast", prototype: seedSpec() }], fail: [{ name: "other", prototype: seedSpec(), flaggedBy: { rule: "another-rule" } }, { name: "two-toasts", prototype: seedSpec(), flaggedBy: { rule: "one-toast-per-page" } }] };
     expect(proofPair({ examples }, "one-toast-per-page")).toEqual({ pass: "one-toast", fail: "two-toasts" });
     expect(proofPair({ examples }, "unproved")).toEqual({ pass: "one-toast" });
     expect(proofPair({ examples: { pass: [], fail: [] } }, "x")).toEqual({});

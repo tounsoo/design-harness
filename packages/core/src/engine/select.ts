@@ -1,4 +1,4 @@
-import type { ElementNode, PropValue } from "../extract/model";
+import type { ElementNode, PropValue } from "../prototype/model";
 import type { Literal, RoleName, Selector } from "../rules/types";
 import { textOf, type CheckContext } from "./context";
 
@@ -42,7 +42,7 @@ export type PropState = { readonly kind: "values"; readonly values: readonly Lit
 
 export function propState(node: ElementNode, name: string): PropState {
   const prop: PropValue | undefined = node.props[name];
-  if (!prop) return node.openProps ? { kind: "unknown", why: node.openProps } : { kind: "missing" };
+  if (!prop) return { kind: "missing" };
   switch (prop.kind) {
     case "literal":
       return { kind: "values", values: [prop.value] };
@@ -87,7 +87,7 @@ export function matches(node: ElementNode, ancestors: readonly ElementNode[], se
   const { component, role, props, hasProp, text, page, layout, inside, notInside, anyOf } = selector;
   if (component !== undefined) {
     const names = typeof component === "string" ? [component] : component;
-    checks.push(() => (node.kind === "unresolved" ? unresolved(node) : (node.kind === "library" || node.kind === "intrinsic") && names.includes(node.name) ? TRUE : FALSE));
+    checks.push(() => (node.kind === "unresolved" ? unresolved(node) : node.kind === "library" && names.includes(node.name) ? TRUE : FALSE));
   }
   if (role !== undefined) checks.push(() => hasRole(node, role, ctx));
   if (props !== undefined) {
@@ -98,8 +98,7 @@ export function matches(node: ElementNode, ancestors: readonly ElementNode[], se
   if (hasProp !== undefined) {
     checks.push(() => {
       if (node.kind === "unresolved") return unresolved(node);
-      if (hasProp in node.props) return TRUE;
-      return node.openProps ? unknown(node.openProps) : FALSE;
+      return hasProp in node.props ? TRUE : FALSE;
     });
   }
   if (text !== undefined) {

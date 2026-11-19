@@ -99,9 +99,8 @@ describe.each(LIBRARIES)("a project built on %s from the draft as it is", (_name
     expect(report.rules.filter((rule) => rule.status !== "pass").map((rule) => [rule.rule, rule.status])).toEqual(
       project.config.rules.filter((rule) => rule.type === "rendered").map((rule) => [rule.id, "not-run"]).sort((a, b) => (String(a[0]) < String(b[0]) ? -1 : 1)),
     );
-    // The style-props rule is in force with the confirmed exclusions, and the starter sets none of them.
-    expect(project.config.rules.find((rule) => rule.id === "no-inline-styles")?.type).toBe("style-props");
-    expect(report.rules.find((rule) => rule.rule === "no-inline-styles")?.status).toBe("pass");
+    // The confirmed exclusions are in the config, so the catalog refuses them in a spec, and the starter sets none of them.
+    expect(project.config.library.excludedProps?.length).toBeGreaterThan(0);
     for (const file of Object.values(prototype.files)) for (const prop of project.config.library.excludedProps ?? []) expect(file).not.toContain(`"${prop}":`);
     // One scenario per flow state, the start and each task done, and the starter layout registered.
     expect(prototype.scenarios.map((scenario) => scenario.state)).toEqual(project.config.inventories.flowStates);

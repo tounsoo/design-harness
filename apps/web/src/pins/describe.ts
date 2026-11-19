@@ -11,7 +11,7 @@ import type { Pin, PinAnchor, PinState } from "./model";
 /** A pin's place as core's findings give theirs: where it is written, then the scenario and the view; for a note on a variant, the variant first. */
 export function pinPlace(anchor: PinAnchor): string {
   const source = anchor.element?.source;
-  return [anchor.variant !== undefined ? `variant "${anchor.variant}"` : null, source ? (source.kind === "key" ? `spec element "${source.tag}"` : source.tag) : null, `scenario ${anchor.scenario}`, `view ${anchor.view}`].filter(Boolean).join(", ");
+  return [anchor.variant !== undefined ? `variant "${anchor.variant}"` : null, source ? `spec element "${source.tag}"` : null, `scenario ${anchor.scenario}`, `view ${anchor.view}`].filter(Boolean).join(", ");
 }
 
 /** The element a pin is on, in a few words; null for a pin on bare page. */
@@ -19,7 +19,7 @@ export function pinElementWords(anchor: PinAnchor): string | null {
   const label = anchor.element?.label;
   if (label) return elementWords(label);
   const source = anchor.element?.source;
-  return source ? (source.kind === "key" ? `the part "${source.tag}"` : `the part written at ${source.tag}`) : null;
+  return source ? `the part "${source.tag}"` : null;
 }
 
 const third = (value: number, of: number, words: readonly [string, string, string]) => (value < of / 3 ? words[0] : value < (2 * of) / 3 ? words[1] : words[2]);
