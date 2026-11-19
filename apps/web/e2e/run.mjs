@@ -529,11 +529,17 @@ test("frames load React and the library by URL from a CDN-shaped origin", async 
 // ---- a project on another library: Tally on Mantine ----------------------------
 
 const TALLY_SCENARIOS = ["expenses-list", "lunch-open", "lunch-submitted", "lunch-saved"];
-/** Two 1-letter Mantine buttons in their compact size, side by side: each is under 24 CSS px tall and too close to the other for the spacing exception. */
+/**
+ * Two 1-letter Mantine buttons in their compact size, joined in a
+ * Button.Group: each is 22 CSS px tall, and with no gap between them their
+ * centres are closer than 24 px whatever font draws the letters, so neither
+ * meets the spacing exception (side by side with the slot's gap, a wider
+ * fallback font pushed them past it on CI).
+ */
 const TALLY_UNDERSIZED = (text) =>
   text
-    .replace('"alternate": ["save"', '"alternate": ["save", "a", "b"')
-    .replace('    "submit": {', '    "a": { "type": "Button", "props": { "variant": "subtle", "size": "compact-xs", "text": "A" }, "children": [] },\n    "b": { "type": "Button", "props": { "variant": "subtle", "size": "compact-xs", "text": "B" }, "children": [] },\n    "submit": {');
+    .replace('"alternate": ["save"', '"alternate": ["save", "pair"')
+    .replace('    "submit": {', '    "pair": { "type": "Button.Group", "props": {}, "children": ["a", "b"] },\n    "a": { "type": "Button", "props": { "variant": "subtle", "size": "compact-xs", "text": "A" }, "children": [] },\n    "b": { "type": "Button", "props": { "variant": "subtle", "size": "compact-xs", "text": "B" }, "children": [] },\n    "submit": {');
 /** A Mantine button in yellow on white, which is under 4.5:1 in the light view and the dark one. */
 const TALLY_FAINT = (text) =>
   text.replace('"alternate": ["save"', '"alternate": ["save", "faint"').replace('    "submit": {', '    "faint": { "type": "Button", "props": { "variant": "white", "color": "yellow", "text": "Faint helper text" }, "children": [] },\n    "submit": {');
@@ -3144,8 +3150,12 @@ test("a target-size card shows its figure with the neighbour", async ({ browser,
   assert.equal(await figure.getAttribute("data-evidence"), "box-with-neighbour");
   // Core's evidence for the finding shown: the control, the minimum, and the neighbour its circle meets.
   const found = (await report(page)).findings.find((finding) => finding.rule === "target-size");
-  const other = { A: "B", B: "A" }[found.evidence.name];
-  assert.deepEqual([found.evidence.kind, found.evidence.min, found.evidence.neighbour.name, found.evidence.neighbour.meets], ["box-with-neighbour", 24, other, "in-circle"]);
+  // Which neighbour a joined button's circle meets first depends on the letters' widths in the machine's font, so it is read from core: B's is A, or A's is A's other neighbour.
+  const other = found.evidence.neighbour.name;
+  assert.ok(["A", "B"].includes(found.evidence.name), `the finding is on one of the joined buttons: ${found.evidence.name}`);
+  assert.ok(other !== found.evidence.name && ["A", "B", "Save draft"].includes(other), `its neighbour is the button beside it: ${other}`);
+  assert.deepEqual([found.evidence.kind, found.evidence.min], ["box-with-neighbour", 24]);
+  assert.ok(["in-circle", "circles-meet"].includes(found.evidence.neighbour.meets));
   // The figure draws that neighbour, hatched where the circle reaches it, and says the scale and what the marks mean.
   await figure.getByTestId("figure-neighbour").waitFor({ state: "attached" });
   assert.equal(await figure.getByTestId("figure-neighbour").locator("rect").count(), 2, "the neighbour's box, and the hatched part of it");
@@ -3281,8 +3291,8 @@ test("the tap-target lens draws failing and passing boxes on every artboard, wit
     const [scenario, view] = key.split("@");
     const here = found.filter((finding) => finding.scenario === scenario && finding.view === view);
     const names = here.map((finding) => finding.evidence.name);
-    // A, at the row's start, meets the spacing exception; B, its circle reaching A, does not.
-    assert.deepEqual(names, ["B"], `core finds B in ${key}`);
+    // B, joined to A with no gap, never meets the spacing exception; whether A does depends on how far it sits from Save draft, which is the font's business, so the lens is held to core's list.
+    assert.ok(names.includes("B") && names.every((name) => name === "A" || name === "B"), `core finds B, and only the joined buttons, in ${key}: ${JSON.stringify(names)}`);
     const board = card(page, key);
     // Failing: a solid box, a hatched circle and a size label each. Passing: a quiet dashed box.
     assert.equal(await board.locator('[data-testid="lens-box"][data-tone="fail"]').count(), names.length);
@@ -3301,7 +3311,8 @@ test("the tap-target lens draws failing and passing boxes on every artboard, wit
     const styles = await board.evaluate((element) => ({ fail: window.getComputedStyle(element.querySelector('[data-testid="lens-box"][data-tone="fail"]')).strokeDasharray, quiet: window.getComputedStyle(element.querySelector('[data-testid="lens-box"][data-tone="quiet"]')).strokeDasharray }));
     assert.equal(styles.fail, "none", "a failing box is solid");
     assert.notEqual(styles.quiet, "none", "a passing box is dashed");
-    assert.equal(await board.getByTestId("lens-words").textContent(), "1 of 6 controls is under 24 px and too close to another. 1 is under 24 px but clear of the rest.");
+    // Both joined buttons are under 24 px: the words say how many of them core finds too close, and that the other is clear.
+    assert.equal(await board.getByTestId("lens-words").textContent(), names.length === 2 ? "2 of 6 controls are under 24 px and too close to another." : "1 of 6 controls is under 24 px and too close to another. 1 is under 24 px but clear of the rest.");
     assert.equal(await board.getByTestId("lens-layer").getAttribute("aria-hidden"), "true");
     // Tally's phone view is dark.
     assert.equal(await board.getByTestId("lens-layer").getAttribute("data-scheme"), view === "phone" ? "dark" : "light");
