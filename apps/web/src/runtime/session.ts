@@ -532,10 +532,10 @@ export class Session {
     this.finishIfDone();
   }
 
-  /** A frame has answered for its measurement: it stays live while it is near the screen, and is parked otherwise. */
+  /** A frame has answered for its measurement: measured, it stays live while it is near the screen; otherwise, or failed (its failure shows over its viewport), it is parked. */
   private afterMeasure(key: FrameKey): void {
     const hold = this.holds.get(key);
-    if (hold && this.isVisible(key) && this.lives.has(key)) {
+    if (hold && this.isVisible(key) && this.lives.has(key) && this.state.frameStates[key]?.state === "measured") {
       this.budget.keep(hold, () => this.parkedBy(key, hold));
       this.markDrawn(key);
       this.replay(key);

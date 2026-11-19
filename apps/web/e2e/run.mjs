@@ -2101,6 +2101,9 @@ test("a scripted agent offers three variants: side by side in measured frames, e
     assert.deepEqual(await frames.evaluateAll((cards) => cards.filter((card) => !card.hasAttribute("data-hidden")).map((card) => card.dataset.frameKey)), VIEWS.map((view) => `lantern-open@${view}`));
     assert.equal(await page.locator(`.variant-card[data-variant="${id}"] .frame-card[data-state="measured"]`).count(), FRAMES);
   }
+  // Four sources at 16 frames each, and the board's 16 under the view: measured, but no more than 24 live documents at once.
+  const live = await page.locator("iframe").count();
+  assert.ok(live <= 24, `at most 24 live frames, not one per frame: ${live}`);
   // Every view of a source side by side, as the board lays a scenario out.
   const [desktop, phone] = await Promise.all(VIEWS.map((view) => page.locator(`.variant-card[data-variant="a"] .frame-card[data-frame-key="lantern-open@${view}"]`).boundingBox()));
   assert.ok(desktop.x + desktop.width <= phone.x && Math.abs(desktop.y - phone.y) < 2, `the phone view sits beside the desktop view: ${JSON.stringify([desktop, phone])}`);
@@ -2430,6 +2433,76 @@ async function recording(browser, base, tags) {
   const by = (generation) => Object.fromEntries(messages.filter((item) => item.generation === generation).map((item) => [`${item.snapshot.scenario}@${item.snapshot.view}`, item]));
   return { tsx: by(1), spec: by(2) };
 }
+
+/**
+ * Every snapshot message the app receives from its frames, and core's
+ * report, for Nook's board in a window of `height`: the board scrolled to
+ * its last artboard and back, so frames parked out of sight are drawn again.
+ */
+async function lazyRecording(browser, base, height) {
+  const context = await browser.newContext({ viewport: { width: 1600, height } });
+  await context.addInitScript(() => {
+    if (window.top !== window) return;
+    window.__frameMessages = [];
+    window.addEventListener("message", (event) => {
+      if (event.data && event.data.type === "snapshot") window.__frameMessages.push(JSON.parse(JSON.stringify(event.data)));
+    });
+  });
+  const page = await context.newPage();
+  await page.goto(base);
+  await measured(page, 1);
+  const live = await page.locator("iframe").count();
+  const parked = await page.locator('[data-testid="frame-parked"]').count();
+  const states = await page.locator(".frame-card").evaluateAll((cards) => cards.map((card) => card.dataset.state));
+  const value = await page.locator('[data-testid="report-json"]').textContent();
+  await liveFrame(page, "lantern-held at phone-dark");
+  await liveFrame(page, "rooms-list at desktop");
+  const messages = await page.evaluate(() => window.__frameMessages);
+  await context.close();
+  return { live, parked, states, report: value, messages };
+}
+
+test("lazy measuring changes nothing a rule measures: on screen, off screen or drawn again, every frame measures the same, and the report is the same at any window height", async ({ browser, base }) => {
+  const tall = await lazyRecording(browser, base, 1000);
+  const short = await lazyRecording(browser, base, 420);
+  for (const run of [tall, short]) {
+    assert.deepEqual(run.states, Array.from({ length: FRAMES }, () => "measured"), "every frame is measured, the ones out of sight included");
+    assert.ok(run.live <= 24, `at most 24 live frames: ${run.live}`);
+  }
+  assert.ok(short.live < FRAMES && short.parked > 0, `a short window parks the frames out of sight once measured: ${short.live} live, ${short.parked} parked`);
+  assert.equal(short.report, tall.report, "the same report, byte for byte, whichever frames were on screen");
+  const byKey = new Map();
+  for (const message of [...tall.messages, ...short.messages].filter((item) => item.generation === 1)) {
+    const key = `${message.snapshot.scenario}@${message.snapshot.view}`;
+    byKey.set(key, [...(byKey.get(key) ?? []), message.snapshot]);
+  }
+  assert.equal(byKey.size, FRAMES);
+  for (const [key, snapshots] of byKey) for (const snapshot of snapshots.slice(1)) assert.deepEqual(snapshot, snapshots[0], `${key}: every render measures the same`);
+  assert.ok([...byKey.values()].some((snapshots) => snapshots.length > 2), "a frame parked out of sight was drawn again, and measured the same");
+});
+
+test("core's checks run in a module worker and give the same report, byte for byte, as on the main thread, for Nook and Tally", async ({ browser, base }) => {
+  const reports = {};
+  for (const where of ["worker", "main"]) {
+    const address = where === "main" ? `${base}?checks=main` : base;
+    const { context, page } = await openApp(browser, address);
+    await measured(page, 1);
+    assert.equal(await page.locator(".board").getAttribute("data-engine"), where);
+    const tsx = await page.locator('[data-testid="report-json"]').textContent();
+    await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
+    await measured(page, 2);
+    const spec = await page.locator('[data-testid="report-json"]').textContent();
+    await context.close();
+    const tally = await openTally(browser, address);
+    assert.equal(await tally.page.locator(".board").getAttribute("data-engine"), where);
+    reports[where] = { tsx, spec, tally: await tally.page.locator('[data-testid="report-json"]').textContent() };
+    await tally.context.close();
+  }
+  for (const seed of ["tsx", "spec", "tally"]) {
+    assert.ok(JSON.parse(reports.worker[seed]).rules.length > 0, `${seed}: a report`);
+    assert.equal(reports.worker[seed], reports.main[seed], `${seed}: the worker's report is the main thread's`);
+  }
+});
 
 test("element tags change nothing a rule measures: Nook's snapshots are identical with and without them, TSX and spec", async ({ browser, base }) => {
   const tagged = await recording(browser, base, true);
