@@ -2471,6 +2471,8 @@ test("the shell follows the window: every action in the header and both panels a
   const toggle = page.getByRole("button", { name: /^Canvas only/ });
   await toggle.click();
   await page.locator(".shell[data-canvas-only]").waitFor();
+  const [tabletBar, tabletBoard] = [await page.getByRole("toolbar", { name: "Canvas" }).boundingBox(), await page.locator(".board-area").boundingBox()];
+  assert.ok(tabletBar.x >= 0 && tabletBar.x + tabletBar.width <= 768 && tabletBar.y + tabletBar.height <= tabletBoard.y + 0.5, `the canvas-only bar sits above the board on a tablet: ${JSON.stringify([tabletBar, tabletBoard])}`);
   await page.keyboard.press("Escape");
   await page.locator(".shell:not([data-canvas-only])").waitFor();
   await becomesFocused(page, toggle, "focus goes back to the toggle");

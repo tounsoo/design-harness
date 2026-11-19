@@ -55,12 +55,12 @@
   /* A canvas too narrow for its toolbar's one row: the lenses wrap under the summary instead of running off the edge. */
   .board-toolbar .board-lens-end { flex-wrap: wrap; min-width: 0; }
   .shell[data-width="phone"] .board-toolbar .board-lens-end { margin-inline-start: 0; }
-  /* Canvas only on a phone: the bar takes more than one row, so it sits above the board as a bar, not over it. */
-  .shell[data-width="phone"] .board[data-floating] .board-toolbar { position: static; translate: none; max-inline-size: none; padding: var(--todae-space-2) var(--todae-space-4); border: 0; border-block-end: var(--todae-border-width) solid var(--todae-color-border-subtle); border-radius: 0; box-shadow: none; white-space: normal; }
-  .shell[data-width="phone"] .board[data-floating] .board-toolbar-end { flex: 1; justify-content: space-between; }
-  .shell[data-width="phone"] .board[data-floating] .board-area { padding-block-start: var(--todae-harness-canvas-padding); }
-  /* The pin mode's hint would lie over a toolbar of several rows, so on a phone it sits at the foot of the board. */
-  .shell[data-width="phone"] .board .board-pinning { inset-block-start: auto; inset-block-end: var(--todae-space-4); }
+  /* Canvas only on a phone or a tablet: the bar takes more than one row, so it sits above the board as a bar, not over it. */
+  .shell:is([data-width="phone"], [data-width="tablet"]) .board[data-floating] .board-toolbar { position: static; translate: none; max-inline-size: none; padding: var(--todae-space-2) var(--todae-space-4); border: 0; border-block-end: var(--todae-border-width) solid var(--todae-color-border-subtle); border-radius: 0; box-shadow: none; white-space: normal; }
+  .shell:is([data-width="phone"], [data-width="tablet"]) .board[data-floating] .board-toolbar-end { flex: 1; justify-content: space-between; }
+  .shell:is([data-width="phone"], [data-width="tablet"]) .board[data-floating] .board-area { padding-block-start: var(--todae-harness-canvas-padding); }
+  /* The pin mode's hint would lie over a toolbar of several rows, so on a phone or a tablet it sits at the foot of the board. */
+  .shell:is([data-width="phone"], [data-width="tablet"]) .board .board-pinning { inset-block-start: auto; inset-block-end: var(--todae-space-4); }
 
   /* A panel's head: its title or tabs, and a close button at the end. */
   .panel-head { display: flex; align-items: center; gap: var(--todae-space-2); min-block-size: var(--todae-harness-panel-header-height); padding-inline: var(--todae-harness-panel-padding) var(--todae-space-2); border-block-end: var(--todae-border-width) solid var(--todae-color-border-subtle); box-sizing: border-box; }
