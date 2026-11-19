@@ -5,7 +5,9 @@ import { prototypeSchema } from "./prototype/schema";
 import type { Prototype } from "./prototype/types";
 import { snapshotSchema } from "./rendered/schema";
 import type { RenderedSnapshot } from "./rendered/types";
-import { arr, run, type Issue, type Result } from "./validate";
+import { partDescription, partName } from "./config/parts";
+import type { LibraryDescription } from "./library/roles";
+import { arr, obj, record, run, str, type Issue, type Result } from "./validate";
 
 /** Validates a project config from JSON: its shape, then every reference inside it. */
 export function parseProjectConfig(json: unknown): Result<ProjectConfig> {
@@ -21,6 +23,20 @@ export function parsePrototype(json: unknown): Result<Prototype> {
   if (!shaped.ok) return shaped;
   const issues = prototypeIssues(shaped.value);
   return issues.length > 0 ? { ok: false, error: issues } : shaped;
+}
+
+const libraryDescription = obj(
+  {
+    package: str({ pattern: /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/, patternName: 'an npm package name such as "@tounsoo/todae"' }),
+    version: str({ pattern: /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, patternName: 'an exact version such as "1.2.3", not a range' }),
+    parts: record(partDescription, partName),
+  },
+  { styleProps: obj({ names: arr(str()), sets: arr(str()) }) },
+);
+
+/** Validates a library description from JSON, the file `scripts/describe-library.mjs` writes: its package, exact version, parts and style props. */
+export function parseLibraryDescription(json: unknown): Result<LibraryDescription> {
+  return run(libraryDescription, json);
 }
 
 export function parseSnapshots(json: unknown): Result<readonly RenderedSnapshot[]> {
