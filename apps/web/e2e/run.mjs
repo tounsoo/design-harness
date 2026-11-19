@@ -2051,6 +2051,9 @@ test("a scripted agent offers three variants: side by side in measured frames, e
     assert.deepEqual(await frames.evaluateAll((cards) => cards.filter((card) => !card.hasAttribute("data-hidden")).map((card) => card.dataset.frameKey)), ["lantern-open@desktop", "lantern-open@phone"]);
     assert.equal(await page.locator(`.variant-card[data-variant="${id}"] .frame-card[data-state="measured"]`).count(), 8);
   }
+  // Every view of a source side by side, as the board lays a scenario out.
+  const [desktop, phone] = await Promise.all(VIEWS.map((view) => page.locator(`.variant-card[data-variant="a"] .frame-card[data-frame-key="lantern-open@${view}"]`).boundingBox()));
+  assert.ok(desktop.x + desktop.width <= phone.x && Math.abs(desktop.y - phone.y) < 2, `the phone view sits beside the desktop view: ${JSON.stringify([desktop, phone])}`);
   const askFrame = page.frameLocator('iframe[title="Variant A: lantern-open at desktop"]');
   assert.equal((await askFrame.locator("label").first().textContent()).trim(), "For how long?");
   assert.equal((await page.frameLocator('iframe[title="Current: lantern-open at desktop"]').locator("label").first().textContent()).trim(), "How long?");
