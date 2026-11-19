@@ -1,5 +1,5 @@
 import type { ContainmentRule, PropValuesRule, RequiresRule } from "../../rules/types";
-import { bound, boundLabel, descendants, locate, named, pagesFor, where, type CheckContext } from "../context";
+import { bound, boundLabel, descendants, locate, named, pagesFor, pointAt, where, type CheckContext } from "../context";
 import { article, describe } from "../describe";
 import type { Finding } from "../report";
 import { insideOf, matches, nearestMatching, propState } from "../select";
@@ -14,7 +14,7 @@ export function evaluateContainment(rule: ContainmentRule, ctx: CheckContext): O
     for (const { node, ancestors } of descendants(page.root)) {
       const selected = matches(node, ancestors, rule.select, env);
       if (selected.v === false) continue;
-      const base = { rule: rule.id, page: page.id, ...locate(node.at) };
+      const base = { rule: rule.id, page: page.id, ...locate(node.at), ...pointAt(ctx, [node], page.id) };
       const subject = `${named(node)} at ${where(node.at)}`;
       if (rule.must === "nest-at-most") {
         const max = bound(rule.depth, ctx);
@@ -63,7 +63,7 @@ export function evaluateRequires(rule: RequiresRule, ctx: CheckContext): Outcome
       if (selected.v === false) continue;
       const satisfied = matches(node, ancestors, rule.must, env);
       if (satisfied.v === true) continue;
-      const base = { rule: rule.id, page: page.id, ...locate(node.at) };
+      const base = { rule: rule.id, page: page.id, ...locate(node.at), ...pointAt(ctx, [node], page.id) };
       if (selected.v === true && satisfied.v === false) {
         findings.push({ ...base, kind: "violation", message: `${named(node)} at ${where(node.at)} is ${article(what)}, so it must be ${article(must)}, and it is not.` });
       } else {
@@ -84,7 +84,7 @@ export function evaluatePropValues(rule: PropValuesRule, ctx: CheckContext): Out
     for (const { node, ancestors } of descendants(page.root)) {
       const selected = matches(node, ancestors, rule.select, env);
       if (selected.v === false) continue;
-      const base = { rule: rule.id, page: page.id, ...locate(node.at) };
+      const base = { rule: rule.id, page: page.id, ...locate(node.at), ...pointAt(ctx, [node], page.id) };
       const subject = `${named(node)} at ${where(node.at)}`;
       const state = propState(node, rule.prop);
       if (state.kind === "missing") {

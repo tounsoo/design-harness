@@ -42,7 +42,7 @@ export type { AmbientUse, ElementKind, ElementNode, ExtractionProblem, LayoutUse
 export { PAGE_KIT, extractPrototype } from "./extract";
 export { isScript, resolvePath } from "./extract/modules";
 
-export type { CheckReport, CheckStatus, Finding, RuleReport, RuleStatus } from "./engine/report";
+export type { CheckReport, CheckStatus, Finding, FindingTarget, RuleReport, RuleStatus } from "./engine/report";
 export { EXTRACT_RULE } from "./engine/report";
 export type { CheckInput } from "./engine/check";
 export { checkPrototype } from "./engine/check";

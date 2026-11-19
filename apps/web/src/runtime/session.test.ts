@@ -19,7 +19,7 @@ function fakeSource(fail = false): PackageSource {
 }
 
 /** A window that records listeners, and iframes whose posted messages are recorded. */
-function harness(source = fakeSource()) {
+function harness(source = fakeSource(), options: { readonly tags?: boolean } = {}) {
   let listener: ((event: MessageEvent) => void) | null = null;
   const win = {
     addEventListener: (_type: string, fn: (event: MessageEvent) => void) => {
@@ -30,7 +30,7 @@ function harness(source = fakeSource()) {
     },
   } as unknown as Window;
   let next = 0;
-  const session = new Session({ source, kit: "/* kit */", boot: "/* boot */", parentOrigin: "https://app.example", window: win, channel: () => `ch-${(next += 1)}`, timeoutMs: 1000 });
+  const session = new Session({ source, kit: "/* kit */", boot: "/* boot */", parentOrigin: "https://app.example", window: win, channel: () => `ch-${(next += 1)}`, timeoutMs: 1000, ...options });
   const frames = new Map<string, { channel: string; generation: number; window: { postMessage: ReturnType<typeof vi.fn> } }>();
   const mount = () => {
     for (const spec of session.getState().frames) {
@@ -65,7 +65,7 @@ describe("a session", () => {
       expect(request).toMatchObject({ type: "render", generation: 1, page: { export: expect.any(String) } });
       expect(Object.keys(request.modules)).toEqual(expect.arrayContaining(["react", "@tounsoo/todae", "@design-harness/page", "@prototype/pages/booking.tsx"]));
     }
-    for (const spec of session.getState().frames) send(spec.key, { type: "snapshot", generation: 1, snapshot: snapshotOf(spec.scenario.id, spec.view.name) });
+    for (const spec of session.getState().frames) send(spec.key, { type: "snapshot", generation: 1, snapshot: snapshotOf(spec.scenario.id, spec.view.name), tags: [] });
     const state = session.getState();
     expect(state.measured).toBe(true);
     expect(state.report?.status).toBe("pass");
@@ -84,7 +84,7 @@ describe("a session", () => {
     session.update(nook, { ...legal });
     mount();
     await flush();
-    const stale = { type: "snapshot", generation: 1, snapshot: snapshotOf("rooms-list", "desktop") };
+    const stale = { type: "snapshot", generation: 1, snapshot: snapshotOf("rooms-list", "desktop"), tags: [] };
     send(key, stale, old?.window);
     send(key, stale);
     send(key, { type: "ready" });
@@ -104,7 +104,7 @@ describe("a session", () => {
     send(key, { type: "error", generation: 1, stage: "render", message: "early" });
     expect(session.getState().frameStates[key]).toEqual({ state: "waiting" });
     send(key, { type: "ready" });
-    send(key, { type: "snapshot", generation: 1, snapshot: snapshotOf("rooms-list", "desktop") });
+    send(key, { type: "snapshot", generation: 1, snapshot: snapshotOf("rooms-list", "desktop"), tags: [] });
     send(key, { type: "error", generation: 1, stage: "render", message: "late" });
     expect(session.getState().frameStates[key]).toMatchObject({ state: "measured" });
     expect(frames.size).toBe(8);
@@ -191,7 +191,7 @@ describe("a session of a spec prototype", () => {
     mount();
     await flush();
     for (const key of frames.keys()) send(key, { type: "ready" });
-    for (const frame of session.getState().frames) send(frame.key, { type: "snapshot", generation: 1, snapshot: snapshotOf(frame.scenario.id, frame.view.name) });
+    for (const frame of session.getState().frames) send(frame.key, { type: "snapshot", generation: 1, snapshot: snapshotOf(frame.scenario.id, frame.view.name), tags: [] });
     const report = session.getState().report;
     expect(session.redraw(nook, draft)).toBe(true);
     expect(session.getState().revision).toBe(1);
@@ -205,5 +205,35 @@ describe("a session of a spec prototype", () => {
     // A TSX prototype has no in-place redraw.
     session.update(nook, legal);
     expect(session.redraw(nook, draft)).toBe(false);
+  });
+
+  it("tags a TSX revision's elements where core found them, keeps each frame's drawn tags, and outlines by tag", async () => {
+    const { session, frames, mount, send } = harness();
+    session.update(nook, legal);
+    mount();
+    await flush();
+    for (const key of frames.keys()) send(key, { type: "ready" });
+    const key = frameKey("lantern-open", "desktop");
+    const request = frames.get(key)?.window.postMessage.mock.calls[0]?.[0] as RenderRequest;
+    expect(request.tags).toBe(true);
+    const booking = request.modules["@prototype/pages/booking.tsx"];
+    expect(booking && "code" in booking ? booking.code : "").toMatch(/'data-dh-source': "pages\/booking\.tsx:\d+:\d+"/);
+    send(key, { type: "snapshot", generation: 1, snapshot: snapshotOf("lantern-open", "desktop"), tags: ["pages/booking.tsx:40:9", "pages/booking.tsx:20:9", "pages/booking.tsx:20:9"] });
+    expect(session.getState().frameStates[key]).toMatchObject({ state: "measured", tags: ["pages/booking.tsx:20:9", "pages/booking.tsx:40:9"] });
+    session.outline(key, ["pages/booking.tsx:40:9"]);
+    expect(frames.get(key)?.window.postMessage.mock.calls.at(-1)?.[0]).toEqual({ protocol: PROTOCOL, type: "highlight", channel: frames.get(key)?.channel, generation: 1, tags: ["pages/booking.tsx:40:9"] });
+    session.dispose();
+  });
+
+  it("with tags off, sends untagged modules and asks frames for no tags", async () => {
+    const { session, frames, mount, send } = harness(fakeSource(), { tags: false });
+    session.update(nook, legal);
+    mount();
+    await flush();
+    for (const key of frames.keys()) send(key, { type: "ready" });
+    const request = frames.get(frameKey("lantern-open", "desktop"))?.window.postMessage.mock.calls[0]?.[0] as RenderRequest;
+    expect(request.tags).toBe(false);
+    for (const source of Object.values(request.modules)) expect("code" in source ? source.code : "").not.toContain("data-dh-source");
+    session.dispose();
   });
 });

@@ -204,7 +204,7 @@ export class SpecModeler {
     }
     const text = this.propValue(this.resolve(element.props[TEXT_PROP], scope, elementAt(element, "props", TEXT_PROP)));
     const children = this.childrenOf(element, { ...scope, conditional });
-    return [this.make("library", element.type, at, origin, props, text, children, scope, conditional)];
+    return [this.make("library", element.type, at, origin, props, text, children, scope, conditional, { key })];
   }
 
   private make(kind: ElementNode["kind"], name: string, at: SourceLocation, origin: string, props: Readonly<Record<string, PropValue>>, text: PropValue, children: readonly ElementNode[], scope: Pick<Scope, "repeated">, conditional: boolean, extra: Partial<ElementNode> = {}): ElementNode {
@@ -242,7 +242,7 @@ export class SpecModeler {
 
   private layoutNode(element: ExpandedElement, at: SourceLocation, origin: string, scope: Scope): ElementNode {
     const id = element.layout ?? "";
-    const base = { kind: "component" as const, name: id, at, origin, props: { id: { kind: "literal" as const, value: id } }, conditional: scope.conditional, repeated: scope.repeated, layout: id };
+    const base = { kind: "component" as const, name: id, at, origin, props: { id: { kind: "literal" as const, value: id } }, conditional: scope.conditional, repeated: scope.repeated, layout: id, key: element.key };
     if (element.recursive) {
       return { ...base, kind: "unresolved", text: "", textDynamic: true, reason: `layout "${id}" draws itself, so how deep it goes cannot be known`, children: [] };
     }
@@ -273,10 +273,10 @@ export class SpecModeler {
     const slots = Object.keys(root.slots ?? {}).sort((a, b) => rank(a) - rank(b) || compare(a, b));
     const children: ElementNode[] = slots.map((slot) => {
       const nodes = (root.slots?.[slot] ?? []).flatMap((key) => this.node(key, scope));
-      return this.make("kit", "Slot", this.at(doc, "elements", doc.root, "slots", slot), `${doc.file}#${doc.root}/slots/${slot}`, { name: { kind: "literal", value: slot } }, { kind: "literal", value: null }, nodes, scope, false);
+      return this.make("kit", "Slot", this.at(doc, "elements", doc.root, "slots", slot), `${doc.file}#${doc.root}/slots/${slot}`, { name: { kind: "literal", value: slot } }, { kind: "literal", value: null }, nodes, scope, false, { key: `${expanded.root}/slots/${slot}` });
     });
     children.push(...root.children.flatMap((key) => this.node(key, scope)));
-    const node = this.make("component", PAGE_TYPE, this.at(doc, "elements", doc.root), `${doc.file}#${doc.root}`, {}, { kind: "literal", value: null }, children, scope, false, { page: expanded.id });
+    const node = this.make("component", PAGE_TYPE, this.at(doc, "elements", doc.root), `${doc.file}#${doc.root}`, {}, { kind: "literal", value: null }, children, scope, false, { page: expanded.id, key: expanded.root });
     return { id: expanded.id, pageType, root: node };
   }
 

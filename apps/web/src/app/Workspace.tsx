@@ -10,6 +10,7 @@ import type { AgentSettings } from "../agent/models";
 import { loadSettings, saveSettings } from "../agent/settings";
 import type { AgentHost } from "../agent/tools";
 import { frameKey, type SessionState } from "../runtime/session";
+import { planOutline } from "../runtime/tags";
 import type { Store } from "../store/db";
 import type { LoadNote } from "../store/migrate";
 import { exportFileName, exportProject, importProject, type Imported, type PrototypeRecord } from "../store/project-file";
@@ -280,27 +281,34 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     setCenter("proposals");
   }, []);
 
+  /** Opens a finding's file at its line, and for one inside a spec layout instance, the layout's element with its uses. */
+  const showCode = useCallback((finding: Finding, open: boolean) => {
+    if (finding.file === undefined) return;
+    const instance = finding.via && finding.via.length > 0 && finding.line !== undefined ? { instance: { at: { file: finding.file, line: finding.line, column: finding.column ?? 1 }, via: finding.via } } : {};
+    setCode({ file: finding.file, ...(finding.line !== undefined ? { line: finding.line } : {}), ...(finding.column !== undefined ? { column: finding.column } : {}), ...instance });
+    if (open) {
+      setSide("code");
+      toggle("side", true);
+    }
+  }, [toggle]);
+
   const select = useCallback(
     (finding: Finding | null) => {
       setSelected(finding);
-      for (const frame of session.getState().frames) session.highlight(frame.key, null);
+      const state = session.getState();
+      for (const frame of state.frames) session.highlight(frame.key, null);
       if (!finding) return;
-      if (finding.scenario !== undefined && finding.view !== undefined) {
-        const key = frameKey(finding.scenario, finding.view);
-        session.highlight(key, finding.element ?? null);
-        setCenter("canvas");
-        document.querySelector(`[data-frame-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
-      }
-      if (finding.file !== undefined) {
-        const instance = finding.via && finding.via.length > 0 && finding.line !== undefined ? { instance: { at: { file: finding.file, line: finding.line, column: finding.column ?? 1 }, via: finding.via } } : {};
-        setCode({ file: finding.file, ...(finding.line !== undefined ? { line: finding.line } : {}), ...(finding.column !== undefined ? { column: finding.column } : {}), ...instance });
-        if (finding.scenario === undefined) {
-          setSide("code");
-          toggle("side", true);
-        }
-      }
+      // A finding about elements is outlined in every frame that drew them; a rendered one, at its index in its frame.
+      const plan = planOutline(finding, state.frames, state.frameStates);
+      const first = plan ? plan.frames[0]?.key : finding.scenario !== undefined && finding.view !== undefined ? frameKey(finding.scenario, finding.view) : undefined;
+      if (plan) for (const frame of plan.frames) session.outline(frame.key, frame.tags);
+      else if (first !== undefined) session.highlight(first, finding.element ?? null);
+      if (plan || first !== undefined) setCenter("canvas");
+      if (first !== undefined) document.querySelector(`[data-frame-key="${CSS.escape(first)}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      // The code stays one click away ("Show in code"); a finding nothing on the canvas can show opens there at once.
+      showCode(finding, !plan && finding.scenario === undefined);
     },
-    [session, toggle],
+    [session, showCode],
   );
 
   /** Opens a prototype on the board, pointing at a finding when one is given. */
@@ -708,7 +716,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
                     </Button.Root>
                   </div>
                   <Tabs.Panel value="checks" keepMounted className="app-side-panel">
-                    <ChecksPanel state={state} measuredCount={measuredCount} selected={selected} onSelect={select} onFix={fix} {...(key.present ? { onAsk: ask } : {})} proposable={proposable} config={config} />
+                    <ChecksPanel state={state} measuredCount={measuredCount} selected={selected} onSelect={select} onShowCode={(finding) => showCode(finding, true)} onFix={fix} {...(key.present ? { onAsk: ask } : {})} proposable={proposable} config={config} />
                   </Tabs.Panel>
                   <Tabs.Panel value="code" keepMounted className="app-side-panel">
                     {current && <CodePanel prototype={current.prototype} target={code} onTarget={setCode} onEdit={edit} problems={state.compileProblems} />}
