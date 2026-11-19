@@ -90,6 +90,8 @@
   .board-row-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--todae-space-1) var(--todae-space-3); margin-block-end: var(--todae-space-3); }
   .board-row-title { margin: 0; --todae-text-h2-font-size: var(--todae-font-size-3); }
   .board-frames { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--todae-harness-canvas-frame-gap); }
+  /* A scenario's dark views sit on their own line under its light ones. */
+  .board-frames + .board-frames { margin-block-start: var(--todae-harness-canvas-frame-gap); }
   .board[data-focused] .board-row:not(:has(.frame-card[data-focused])) { position: absolute; visibility: hidden; pointer-events: none; inset-inline-start: 0; inset-block-start: 0; }
   .board[data-focused] .board-row-head { display: none; }
 
@@ -297,4 +299,159 @@
   .variant-elsewhere, .variant-details { font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); color: var(--todae-color-fg-muted); }
   .variants-table td { vertical-align: middle; }
   .variants-pick[data-undone] { color: var(--todae-color-fg-muted); }
+  /*
+   * ---- Visual checks: evidence figures, lenses, the coverage grid and the flow map. ----
+   * Todae has no annotation parts (a hatch, a dimension line, a callout, a graph), so these are SVG and plain CSS on
+   * its tokens. A figure in a card is drawn in the app's theme. A lens is drawn over an artboard, which is the
+   * prototype's page in its view's own scheme, so its ink comes from the harness's annotation tokens for a light
+   * page or a dark one, never from the app's appearance. A failure is never colour alone: it is hatched or solid
+   * where passing things are dashed, it carries a mark, and it is said in words beside the picture.
+   */
+  .evidence, .flow, .coverage, .count-bar, .task-maps { --vis-ink: var(--todae-color-fg-default); --vis-muted: var(--todae-color-fg-muted); --vis-fail: var(--todae-color-status-critical-fg); --vis-line: var(--todae-color-border-default); --vis-surface: var(--todae-color-bg-surface); --vis-halo: var(--todae-color-bg-subtle); }
+  .lens-layer[data-scheme="light"] { --vis-ink: var(--todae-harness-annotation-on-light-ink); --vis-fail: var(--todae-harness-annotation-on-light-fail); --vis-halo: var(--todae-harness-annotation-on-light-halo); }
+  .lens-layer[data-scheme="dark"] { --vis-ink: var(--todae-harness-annotation-on-dark-ink); --vis-fail: var(--todae-harness-annotation-on-dark-fail); --vis-halo: var(--todae-harness-annotation-on-dark-halo); }
+
+  .evidence { margin: 0; display: grid; gap: var(--todae-space-2); min-width: 0; }
+  .evidence-figure { display: grid; gap: var(--todae-space-2); padding: var(--todae-space-3); border: var(--todae-border-width) solid var(--todae-color-border-subtle); border-radius: var(--todae-radius-md); background: var(--todae-color-bg-subtle); min-width: 0; }
+  .evidence-caption { min-width: 0; }
+  .evidence-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--todae-space-1) var(--todae-space-3); color: var(--todae-color-fg-muted); font-size: var(--todae-font-size-1); }
+  .evidence-legend li { display: inline-flex; align-items: center; gap: var(--todae-space-1); }
+  .legend-mark { display: inline-block; inline-size: var(--todae-harness-figure-swatch); block-size: var(--todae-harness-figure-mark); flex: none; }
+  .legend-dash { block-size: 0; border-block-start: var(--todae-harness-annotation-stroke) dashed var(--vis-ink); }
+  .legend-hatch, .pip[data-pip="over"] { background: repeating-linear-gradient(135deg, var(--vis-fail) 0 var(--todae-harness-annotation-hatch-line), transparent var(--todae-harness-annotation-hatch-line) calc(var(--todae-harness-annotation-hatch-gap) * 0.7)); outline: var(--todae-harness-annotation-stroke) solid var(--vis-fail); outline-offset: calc(-1 * var(--todae-harness-annotation-stroke)); }
+
+  .vis-svg { display: block; inline-size: 100%; block-size: auto; overflow: visible; }
+  .vis-hatch line { stroke: var(--vis-fail); stroke-width: var(--todae-harness-annotation-hatch-line); }
+  .vis-box { fill: var(--vis-surface); stroke: var(--vis-line); stroke-width: var(--todae-harness-annotation-stroke); }
+  .vis-subject { fill: var(--vis-surface); stroke: var(--vis-ink); stroke-width: var(--todae-harness-annotation-stroke-strong); }
+  .vis-subject-fail { fill: none; stroke: var(--vis-fail); }
+  .vis-guide { fill: none; stroke: var(--vis-ink); stroke-width: var(--todae-harness-annotation-stroke); stroke-dasharray: var(--todae-harness-annotation-dash); }
+  .vis-fail-area { stroke: none; }
+  .vis-fail-edge { stroke: var(--vis-fail); stroke-width: var(--todae-harness-annotation-stroke); }
+  .vis-dimension line { stroke: var(--vis-muted); stroke-width: var(--todae-border-width); }
+  .vis-ghost, .vis-page { fill: none; stroke: var(--vis-muted); stroke-width: var(--todae-border-width); stroke-dasharray: var(--todae-harness-annotation-dash); }
+  .vis-line-strong { stroke: var(--vis-ink); stroke-width: var(--todae-harness-annotation-stroke-strong); }
+  .vis-text { font-family: var(--todae-text-font-family); font-size: var(--todae-harness-annotation-label-size); fill: var(--vis-ink); font-variant-numeric: tabular-nums; }
+  .vis-text-muted { fill: var(--vis-muted); }
+  .vis-text-strong { font-weight: var(--todae-font-weight-medium); }
+  .vis-text-fail { fill: var(--vis-fail); font-weight: var(--todae-font-weight-bold); }
+  .vis-text-halo { paint-order: stroke; stroke: var(--vis-halo); stroke-width: var(--todae-harness-annotation-label-padding); stroke-linejoin: round; }
+  .vis-verdict { display: inline-flex; align-items: center; gap: var(--todae-space-1); color: var(--todae-color-status-critical-fg); font-weight: var(--todae-font-weight-bold); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .vis-verdict[data-ok] { color: var(--todae-color-status-success-fg); }
+  .vis-verdict-icon, .coverage-icon, .lens-words-icon { display: inline-grid; place-items: center; flex: none; }
+  .vis-verdict-icon svg, .coverage-icon svg, .lens-words-icon svg { inline-size: 1em; block-size: 1em; }
+
+  /* Contrast: the text in its measured colours, a row per scheme, and where each ratio falls against AA. */
+  .contrast { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--todae-space-2); }
+  .contrast-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--todae-space-1) var(--todae-space-2); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  .contrast-sample { padding: var(--todae-space-1) var(--todae-space-2); border: var(--todae-border-width) solid var(--todae-color-border-default); border-radius: var(--todae-radius-sm); font-size: var(--todae-font-size-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .contrast-pair { grid-column: 2 / -1; display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--todae-space-1); color: var(--todae-color-fg-muted); font-family: var(--todae-font-family-mono); }
+  .contrast-swatch { display: inline-block; inline-size: var(--todae-harness-figure-mark); block-size: var(--todae-harness-figure-mark); border: var(--todae-border-width) solid var(--todae-color-border-default); border-radius: var(--todae-radius-sm); }
+  .contrast-scale { position: relative; block-size: calc(var(--todae-harness-figure-swatch) * 3); margin-inline: var(--todae-space-4); font-size: var(--todae-harness-annotation-label-size); }
+  .contrast-track, .contrast-pass { position: absolute; inset-block-start: calc(var(--todae-harness-figure-swatch) * 1.5); block-size: var(--todae-harness-figure-track); border-radius: var(--todae-radius-full); }
+  .contrast-track { inset-inline: 0; background: var(--vis-line); }
+  .contrast-pass { inset-inline-end: 0; background: var(--vis-ink); border-start-start-radius: 0; border-end-start-radius: 0; }
+  .contrast-tick { position: absolute; inset-block-start: calc(var(--todae-harness-figure-swatch) * 1.1); block-size: calc(var(--todae-harness-figure-swatch) * 1.2); border-inline-start: var(--todae-harness-annotation-stroke-strong) solid var(--vis-ink); }
+  .contrast-tick span { position: absolute; inset-block-start: 100%; inset-inline-start: 0; translate: -50% 0; white-space: nowrap; font-weight: var(--todae-font-weight-medium); }
+  /* A failing ratio is a diamond on the scale, solid in the light scheme and hollow in the dark, so two schemes are told apart by shape. */
+  .contrast-mark { position: absolute; inset-block-start: calc(var(--todae-harness-figure-swatch) * 1.5 + var(--todae-harness-figure-track) / 2); translate: -50% -50%; display: grid; }
+  .contrast-mark i { display: block; inline-size: var(--todae-harness-figure-mark); block-size: var(--todae-harness-figure-mark); background: var(--vis-fail); rotate: 45deg; border: var(--todae-harness-annotation-stroke-strong) solid var(--vis-fail); box-sizing: border-box; outline: var(--todae-harness-annotation-stroke) solid var(--vis-halo); }
+  .contrast-mark[data-scheme="dark"] i { background: var(--vis-halo); }
+  .contrast-mark-key { position: static; translate: none; margin-inline: calc(var(--todae-space-1) / 2); scale: 0.8; }
+
+  /* Headings: the outline, indented by level, with a skipped level as an empty dashed row. */
+  .outline { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--todae-space-1); font-size: var(--todae-font-size-1); }
+  .outline-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: var(--todae-space-2); margin-inline-start: calc((var(--level) - 1) * var(--todae-harness-figure-indent)); padding: var(--todae-space-1) var(--todae-space-2); border: var(--todae-border-width) solid var(--vis-line); border-radius: var(--todae-radius-sm); background: var(--vis-surface); }
+  .outline-level { font-family: var(--todae-font-family-mono); font-weight: var(--todae-font-weight-bold); color: var(--vis-muted); }
+  .outline-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .outline-gap { border-style: dashed; background: none; color: var(--vis-muted); font-style: italic; }
+  .outline-row[data-flagged] { border: var(--todae-harness-annotation-stroke-strong) solid var(--vis-fail); }
+  .outline-row[data-hidden] .outline-text, .outline-note, .outline-more { color: var(--vis-muted); }
+  .outline-more { padding-inline-start: var(--todae-space-2); }
+
+  /* A count against its cap: pips and a limit line. */
+  .count-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--todae-space-2) var(--todae-space-3); font-size: var(--todae-font-size-1); }
+  .pips { display: inline-flex; align-items: center; gap: var(--todae-space-1); }
+  .pip { display: block; inline-size: var(--todae-harness-figure-pip); block-size: var(--todae-harness-figure-mark); border-radius: var(--todae-radius-sm); background: var(--vis-ink); }
+  .pip[data-pip="missing"] { background: none; outline: var(--todae-harness-annotation-stroke) dashed var(--vis-muted); outline-offset: calc(-1 * var(--todae-harness-annotation-stroke)); }
+  .pip-limit { display: block; inline-size: 0; block-size: calc(var(--todae-harness-figure-mark) * 2); border-inline-start: var(--todae-harness-annotation-stroke-strong) dashed var(--vis-ink); margin-inline: calc(var(--todae-space-1) / 2); }
+  .pips-more { color: var(--vis-muted); }
+  .count-words { font-variant-numeric: tabular-nums; }
+  .count-bar:has(.pip[data-pip="over"]) .count-words { color: var(--vis-fail); font-weight: var(--todae-font-weight-bold); }
+
+  /* The flow map: the longest route as a spine of numbered steps, the other transitions dashed. */
+  .flow { display: grid; gap: var(--todae-space-2); min-width: 0; }
+  .flow-scroll { overflow-x: auto; }
+  .flow-node { fill: var(--vis-surface); stroke: var(--vis-ink); stroke-width: var(--todae-harness-annotation-stroke); }
+  g:not([data-drawn]) > .flow-node { stroke-dasharray: var(--todae-harness-annotation-dash); }
+  g[data-role="success"] > .flow-node { fill: var(--vis-ink); }
+  g[data-role="success"] > text { fill: var(--vis-surface); }
+  .flow-node-text { font-weight: var(--todae-font-weight-medium); }
+  .flow-node-sub { fill: var(--vis-muted); font-size: calc(var(--todae-harness-annotation-label-size) - 1px); }
+  .flow-edge { fill: none; stroke: var(--vis-ink); stroke-width: var(--todae-harness-annotation-stroke); }
+  .flow-edge-other { stroke: var(--vis-muted); stroke-dasharray: var(--todae-harness-annotation-dash); }
+  .flow-arrow path { fill: var(--vis-ink); }
+  .flow-arrow-quiet path { fill: var(--vis-muted); }
+  .flow-number { fill: var(--vis-ink); }
+  .flow-number-over { fill: var(--vis-surface); stroke: var(--vis-fail); stroke-width: var(--todae-harness-annotation-stroke-strong); }
+  .flow-number-text { fill: var(--vis-surface); font-weight: var(--todae-font-weight-bold); }
+  .flow-number-text-over { fill: var(--vis-fail); paint-order: stroke; stroke: var(--vis-surface); stroke-width: var(--todae-harness-annotation-label-padding); }
+  .flow-limit { stroke: var(--vis-ink); stroke-width: var(--todae-harness-annotation-stroke-strong); stroke-dasharray: var(--todae-harness-annotation-dash); }
+  .flow-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--todae-space-1); font-size: var(--todae-font-size-1); }
+  /* A state that goes to its artboard is a Button; in this list it takes the list's text size, through Button's own variable. */
+  .flow-state { --todae-button-font-size: var(--todae-font-size-1); }
+  .flow-step { display: flex; flex-wrap: wrap; align-items: center; gap: var(--todae-space-1); }
+  .flow-step-number { display: inline-grid; place-items: center; inline-size: var(--todae-space-5); block-size: var(--todae-space-5); border-radius: var(--todae-radius-full); background: var(--vis-ink); color: var(--vis-surface); font-weight: var(--todae-font-weight-bold); font-size: var(--todae-harness-annotation-label-size); flex: none; }
+  .flow-step[data-over] .flow-step-number { border-radius: var(--todae-radius-sm); background: var(--vis-surface); color: var(--vis-fail); outline: var(--todae-harness-annotation-stroke-strong) solid var(--vis-fail); outline-offset: calc(-1 * var(--todae-harness-annotation-stroke-strong)); }
+  .flow-step-event { font-family: var(--todae-font-family-mono); }
+  .flow-step-over { color: var(--vis-fail); font-weight: var(--todae-font-weight-bold); }
+  .flow-state-name { font-weight: var(--todae-font-weight-medium); }
+  .flow-note { margin: 0; color: var(--todae-color-fg-muted); font-size: var(--todae-font-size-1); }
+  .task-maps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--todae-space-4); }
+  .task-map { display: grid; gap: var(--todae-space-2); min-width: 0; }
+  .task-map-title, .project-flow-title { margin: 0; }
+  .rule-flow { margin-block-start: var(--todae-space-2); }
+  .project-flow { display: grid; gap: var(--todae-space-3); padding: var(--todae-space-4); border: var(--todae-border-width) solid var(--todae-color-border-subtle); border-radius: var(--todae-radius-lg); background: var(--todae-color-bg-surface); }
+  .project-flow .task-maps { grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--todae-harness-size-column)), 1fr)); align-items: start; }
+
+  /* The coverage grid: states against views, each cell a button to its artboard. */
+  .board-coverage { max-inline-size: min(var(--todae-harness-measure-note), calc(100vw - var(--todae-space-8))); }
+  .coverage { overflow-x: auto; }
+  .coverage-caption { text-align: start; font-weight: var(--todae-font-weight-medium); padding-block-end: var(--todae-space-2); }
+  .coverage-table th, .coverage-table td { vertical-align: middle; white-space: nowrap; }
+  .coverage-sub { display: block; font-weight: var(--todae-font-weight-regular); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  .coverage-cell { display: inline-flex; align-items: center; gap: var(--todae-space-1); font-size: var(--todae-font-size-1); }
+  .coverage-cell[data-kind="passes"] .coverage-icon { color: var(--todae-color-status-success-fg); }
+  .coverage-cell[data-kind="to-fix"], .coverage-cell[data-kind="failed"] { font-weight: var(--todae-font-weight-bold); outline: var(--todae-harness-annotation-stroke-strong) solid var(--todae-color-status-critical-border); outline-offset: calc(-1 * var(--todae-harness-annotation-stroke-strong)); }
+  .coverage-cell[data-kind="to-fix"] .coverage-icon, .coverage-cell[data-kind="failed"] .coverage-icon { color: var(--todae-color-status-critical-fg); }
+  .coverage-cell[data-kind="never-drawn"] { padding: var(--todae-space-1) var(--todae-space-2); border: var(--todae-harness-annotation-stroke) dashed var(--todae-color-border-default); border-radius: var(--todae-radius-md); color: var(--todae-color-fg-muted); }
+
+  /* A lens over an artboard: drawn by the app at the artboard's size on screen, never inside the frame. */
+  .board-lens-end { margin-inline-start: auto; display: inline-flex; }
+  .board-lens-end + .board-zoom { margin-inline-start: 0; }
+  .board[data-floating] .board-lens-end { margin-inline-start: 0; }
+  .frame-stage { position: relative; }
+  .frame-card:focus { outline: none; }
+  .frame-card:focus-visible .frame-viewport, .frame-card[data-pointed] .frame-viewport { box-shadow: 0 0 0 var(--todae-focus-ring-width) var(--todae-focus-ring), var(--todae-harness-shadow-raised); }
+  .lens-layer { position: absolute; inset-block-start: 0; inset-inline-start: 0; z-index: 1; overflow: visible; pointer-events: none; }
+  .lens-halo { fill: none; stroke: var(--vis-halo); stroke-width: calc(var(--todae-harness-annotation-stroke) * 2); opacity: 0.6; }
+  .lens-box { fill: none; stroke: var(--vis-ink); stroke-width: var(--todae-border-width); stroke-dasharray: var(--todae-harness-annotation-dash); }
+  .lens-box[data-tone="fail"] { stroke: var(--vis-fail); stroke-width: var(--todae-harness-annotation-stroke-strong); stroke-dasharray: none; }
+  .lens-circle { stroke: var(--vis-fail); stroke-width: var(--todae-harness-annotation-stroke); }
+  .lens-line { stroke: var(--vis-ink); stroke-width: var(--todae-harness-annotation-stroke); stroke-dasharray: var(--todae-harness-annotation-dash); }
+  .lens-line[data-tone="fail"] { stroke: var(--vis-fail); stroke-width: var(--todae-harness-annotation-stroke-strong); stroke-dasharray: none; }
+  .lens-strip { stroke: var(--vis-fail); stroke-width: var(--todae-harness-annotation-stroke); }
+  /* The ghost: what was measured below the first view, as boxes on the page's own colour, never its pixels. */
+  .lens-ghost-area { fill: var(--vis-halo); fill-opacity: 0.6; stroke: var(--vis-ink); stroke-width: var(--todae-border-width); stroke-dasharray: var(--todae-harness-annotation-dash); }
+  .lens-ghost { fill: var(--vis-ink); fill-opacity: 0.14; stroke: none; }
+  .lens-ghost[data-tone="control"] { fill: none; stroke: var(--vis-ink); stroke-width: var(--todae-harness-annotation-stroke); stroke-dasharray: var(--todae-harness-annotation-dash); }
+  .lens-ghost[data-tone="fail"] { fill-opacity: 1; stroke: var(--vis-fail); stroke-width: var(--todae-harness-annotation-stroke-strong); }
+  .lens-label rect { fill: var(--vis-ink); }
+  .lens-label text { fill: var(--vis-halo); font-family: var(--todae-text-font-family); font-size: var(--todae-harness-annotation-label-size); font-weight: var(--todae-font-weight-medium); font-variant-numeric: tabular-nums; }
+  .lens-label[data-tone="fail"] rect { fill: var(--vis-fail); }
+  .lens-words { display: flex; align-items: flex-start; gap: var(--todae-space-1); margin: 0; font-size: var(--todae-font-size-1); line-height: var(--todae-font-leading-tight); color: var(--todae-color-fg-default); }
+  .lens-words-icon { margin-block-start: calc(var(--todae-space-1) / 4); color: var(--todae-color-fg-muted); }
+  .lens-words[data-tone="ok"] .lens-words-icon { color: var(--todae-color-status-success-fg); }
+  .lens-words[data-tone="fail"] { font-weight: var(--todae-font-weight-medium); }
+  .lens-words[data-tone="fail"] .lens-words-icon { color: var(--todae-color-status-critical-fg); }
 }

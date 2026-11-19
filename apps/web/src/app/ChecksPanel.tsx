@@ -1,8 +1,13 @@
 import { Badge, Button, Card, Code, DataList, Disclosure, Loader, Stack, Text } from "@tounsoo/todae";
 import { CircleAlert, CircleCheck, CodeXml, Crosshair, Sparkles, TriangleAlert } from "lucide-react";
-import { describeRule, type Finding, type ProjectConfig, type RuleReport } from "@design-harness/core";
+import { useContext, useMemo } from "react";
+import { describeRule, type Finding, type FlowFacts, type ProjectConfig, type RenderedSnapshot, type RuleReport, type View } from "@design-harness/core";
 import type { SessionState } from "../runtime/session";
+import { frameKey } from "../runtime/session";
 import { describeOutline, planOutline } from "../runtime/tags";
+import { EvidenceFigure } from "../visual/figures";
+import { FlowMap } from "../visual/FlowMap";
+import { VisualContext } from "../visual/parts";
 import { findingPlace, ruleLead, scenarioLabel, viewLabel } from "./words";
 
 type Props = {
@@ -20,20 +25,27 @@ type Props = {
   readonly onAsk?: (finding: Finding) => void;
   /** Whether a finding is about something outside the inventories, which a proposal could add. */
   readonly proposable?: (finding: Finding) => boolean;
+  /** Core's facts about the flow: each task's routes, and which scenarios show each state. */
+  readonly flow?: FlowFacts | null;
+  /** Goes to the artboard of a flow state, from a flow map. */
+  readonly onGoToState?: (state: string) => void;
 };
 
 /**
  * Core's report for a designer. It leads with a summary in plain words and
  * the things to fix, each with the rule's lead, core's message word for word
- * beside it, "Show me" (its elements outlined in every frame that draws
- * them, with a line saying where, or its line in the code), "Show in code"
- * and "Ask the agent to fix". Every rule in force, in core's order with its
+ * beside it as the caption of its evidence figure (`visual/figures.tsx`:
+ * what the rule measured, drawn from core's evidence), "Show me" (its
+ * elements outlined in every frame that draws them, with a line saying
+ * where, or its line in the code), "Show in code" and "Ask the agent to
+ * fix". Every rule in force, in core's order with its
  * id, type and findings, and core's report as JSON, sit one step away under
  * Details. The panel decides nothing and hides nothing: it only orders what
  * core said.
  */
-export function ChecksPanel({ state, measuredCount, selected, onSelect, onShowCode, onFix, onAsk, proposable, config }: Props) {
+export function ChecksPanel({ state, measuredCount, selected, onSelect, onShowCode, onFix, onAsk, proposable, config, flow, onGoToState }: Props) {
   const report = state.report;
+  const visual = useMemo(() => ({ scenarios: flow ? Object.fromEntries(flow.states.map((item) => [item.state, item.scenarios])) : undefined, onOpenState: onGoToState }), [flow, onGoToState]);
   if (!report) {
     return (
       <Stack.Root direction="row" align="center" gap="condensed" className="checks-waiting">
@@ -61,6 +73,7 @@ export function ChecksPanel({ state, measuredCount, selected, onSelect, onShowCo
   const outline = outlineOf(selected, state);
   const progress = state.measured ? `${report.rules.length} rules checked, on ${measuredCount} of ${frames} frames.` : `Measuring the frames: ${countAnswered(state)} of ${frames} answered. Rules about the rendered page wait for every frame.`;
   return (
+    <VisualContext value={visual}>
     <div className="checks" data-revision={state.revision} data-measured={state.measured ? "" : undefined}>
       <div className="checks-summary" data-tone={tone} data-testid="checks-summary">
         <span className="checks-summary-icon" aria-hidden="true">
@@ -79,7 +92,7 @@ export function ChecksPanel({ state, measuredCount, selected, onSelect, onShowCo
       {failing.length > 0 && (
         <ol className="fixes" aria-label="Things to fix">
           {[...toFix, ...unknown].map((rule) => (
-            <FixItem key={rule.rule} rule={rule} config={config} selected={selected} onSelect={onSelect} outline={outline} {...(onShowCode ? { onShowCode } : {})} {...(onFix ? { onFix } : {})} {...(onAsk && proposable ? { onAsk, proposable } : {})} />
+            <FixItem key={rule.rule} rule={rule} config={config} state={state} selected={selected} onSelect={onSelect} outline={outline} {...(onShowCode ? { onShowCode } : {})} {...(onFix ? { onFix } : {})} {...(onAsk && proposable ? { onAsk, proposable } : {})} />
           ))}
         </ol>
       )}
@@ -100,7 +113,7 @@ export function ChecksPanel({ state, measuredCount, selected, onSelect, onShowCo
           </Stack.Root>
           <ol className="checks-rules" aria-label="Rules in force">
             {report.rules.map((rule) => (
-              <RuleItem key={rule.rule} rule={rule} selected={selected} onSelect={onSelect} {...(onShowCode ? { onShowCode } : {})} outline={outline} {...(onAsk && proposable ? { onAsk, proposable } : {})} words={wordsFor(rule, config)} />
+              <RuleItem key={rule.rule} rule={rule} selected={selected} onSelect={onSelect} {...(onShowCode ? { onShowCode } : {})} outline={outline} {...(onAsk && proposable ? { onAsk, proposable } : {})} words={wordsFor(rule, config)} flow={stepBudget(rule, config) ? flow : null} />
             ))}
           </ol>
           <Disclosure.Root className="checks-json">
@@ -112,7 +125,23 @@ export function ChecksPanel({ state, measuredCount, selected, onSelect, onShowCo
         </Stack.Root>
       </Disclosure.Root>
     </div>
+    </VisualContext>
   );
+}
+
+/** True for a rule that measures each task's routes against its step budget: the flow map sits with it. */
+function stepBudget(rule: RuleReport, config: ProjectConfig | undefined): boolean {
+  const spec = config?.rules.find((item) => item.id === rule.rule);
+  return spec?.type === "flow" && spec.check === "step-budget";
+}
+
+/** The measured snapshot a finding points into, and its view, when its frame has one. */
+function measuredFor(finding: Finding, state: SessionState): { readonly snapshot?: RenderedSnapshot; readonly view?: View } {
+  if (finding.scenario === undefined || finding.view === undefined) return {};
+  const key = frameKey(finding.scenario, finding.view);
+  const frame = state.frameStates[key];
+  const view = state.frames.find((item) => item.key === key)?.view;
+  return { ...(frame?.state === "measured" ? { snapshot: frame.snapshot } : {}), ...(view ? { view } : {}) };
 }
 
 /** Every finding of a failing rule says the rule cannot tell: the prototype is not shown to break it, but it cannot pass. */
@@ -133,6 +162,7 @@ function locatable(finding: Finding): boolean {
 function FixItem({
   rule,
   config,
+  state,
   selected,
   onSelect,
   outline,
@@ -143,6 +173,7 @@ function FixItem({
 }: {
   readonly rule: RuleReport;
   readonly config: ProjectConfig | undefined;
+  readonly state: SessionState;
   /** Where the selected finding is outlined, in words. */
   readonly outline: string | null;
   readonly onShowCode?: (finding: Finding) => void;
@@ -167,9 +198,12 @@ function FixItem({
           <Text.Root as="h3" id={headingId} className="fix-lead" data-testid="fix-lead">
             {unknown ? `Could not be checked: ${lowerFirst(ruleLead(rule, config))}` : ruleLead(rule, config)}
           </Text.Root>
-          <Text.Root as="p" className="fix-message" data-testid="fix-message">
-            {shown.message}
-          </Text.Root>
+          {/* What the rule measured, drawn from core's evidence, with core's message word for word as its caption. */}
+          <EvidenceFigure finding={shown} findings={rule.findings} {...measuredFor(shown, state)}>
+            <Text.Root as="p" className="fix-message" data-testid="fix-message">
+              {shown.message}
+            </Text.Root>
+          </EvidenceFigure>
           {places.length > 1 ? (
             <ul className="fix-places" aria-label={`Found in ${places.length} places`}>
               {groups.map(([group, items]) => (
@@ -319,9 +353,12 @@ function RuleItem({
   onAsk,
   proposable,
   words,
+  flow,
 }: {
   readonly rule: RuleReport;
   readonly words?: string | undefined;
+  /** Core's flow facts, on the rule that measures routes against the step budget. */
+  readonly flow?: FlowFacts | null | undefined;
   readonly selected: Finding | null;
   readonly onSelect: (finding: Finding | null) => void;
   readonly onShowCode?: (finding: Finding) => void;
@@ -352,11 +389,13 @@ function RuleItem({
         <div className="rule-plain">
           {head}
           <RuleText rule={rule} words={words} />
+          {flow && <FlowMaps flow={flow} />}
         </div>
       ) : (
         <Disclosure.Root open={rule.status === "fail" ? true : undefined} className="rule-disclosure">
           <Disclosure.Summary>{head}</Disclosure.Summary>
           <RuleText rule={rule} words={words} />
+          {flow && <FlowMaps flow={flow} />}
           <ul className="findings" aria-label={`Findings of ${rule.rule}`}>
             {rule.findings.map((finding, index) => (
               <li key={index}>
@@ -382,6 +421,35 @@ function RuleItem({
         </Disclosure.Root>
       )}
     </li>
+  );
+}
+
+/** Each task's routes as a map, under the rule that measures them: there when it passes too. */
+function FlowMaps({ flow }: { readonly flow: FlowFacts }) {
+  return (
+    <Disclosure.Root className="rule-flow" data-testid="rule-flow">
+      <Disclosure.Summary>{`Flow map: ${flow.tasks.length} ${flow.tasks.length === 1 ? "task" : "tasks"}`}</Disclosure.Summary>
+      <TaskMaps flow={flow} />
+    </Disclosure.Root>
+  );
+}
+
+/** One flow map per task, each named by the task and its budget. */
+export function TaskMaps({ flow, onGoToState }: { readonly flow: FlowFacts; readonly onGoToState?: ((state: string) => void) | undefined }) {
+  const scenarios = Object.fromEntries(flow.states.map((item) => [item.state, item.scenarios]));
+  const context = useContext(VisualContext);
+  const go = onGoToState ?? context.onOpenState;
+  return (
+    <ul className="task-maps">
+      {flow.tasks.map((task) => (
+        <li key={task.task} className="task-map">
+          <Text.Root as="p" weight="medium" className="task-map-title">
+            {task.description ?? task.task}: at most {task.budget} {task.budget === 1 ? "step" : "steps"}
+          </Text.Root>
+          <FlowMap task={{ id: task.task, start: task.start, success: task.success, budget: task.budget, transitions: task.transitions, longest: task.longest, status: task.status, routes: task.routes }} scenarios={scenarios} onOpenState={go} />
+        </li>
+      ))}
+    </ul>
   );
 }
 

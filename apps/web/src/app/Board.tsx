@@ -1,37 +1,65 @@
-import { Badge, Button, Field, Loader, Stack, Text, Toolbar } from "@tounsoo/todae";
-import { ArrowLeft, Maximize2, ZoomIn, ZoomOut } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Finding } from "@design-harness/core";
+import { Badge, Button, Field, Loader, Popover, Stack, Text, ToggleGroup, Toolbar, VisuallyHidden, usePopover } from "@tounsoo/todae";
+import { ArrowLeft, Grid3x3, Maximize2, PanelBottomDashed, Pointer, ZoomIn, ZoomOut } from "lucide-react";
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
+import { flowFacts, viewFacts, type Finding, type ProjectConfig } from "@design-harness/core";
 import { FRAME_SANDBOX } from "../runtime/frame-document";
 import { frameKey, type FrameSpec, type FrameState, type Session, type SessionState } from "../runtime/session";
 import { planOutline } from "../runtime/tags";
+import { cameraMove } from "../visual/camera";
+import { coverage } from "../visual/coverage";
+import { CoverageGrid } from "../visual/CoverageGrid";
+import { LENSES, lensDrawing, placeLens, type LensId } from "../visual/lens";
+import { LensLayer, LensWords } from "../visual/LensLayer";
 import { artboardLabel, scenarioLabel, screenTitle, viewLabel } from "./words";
 
 /** Fit, or a fixed scale. The zoom buttons step through the fixed ones. */
 const ZOOMS = ["0.25", "0.5", "0.75", "1"] as const;
 type Zoom = "fit" | (typeof ZOOMS)[number];
 
+/** What the rest of the app may ask of the board. */
+export type BoardHandle = {
+  /** Scrolls to an artboard, back on the board if another was open at full size, and moves focus to it. */
+  readonly goTo: (key: string) => void;
+};
+
 /**
  * The canvas: the prototype's frames as artboards on a calm board, one row
- * per scenario and one artboard per view, each a live render scaled to fit.
- * A frame opens at full size in place, without being moved in the DOM, since
- * moving an iframe reloads it. In canvas-only mode the toolbar floats over
- * the board with what that mode keeps: `floating` holds its parts.
+ * per scenario and one artboard per view, light views on one line and dark
+ * views on the next, each a live render scaled to fit. A frame opens at
+ * full size in place, without being moved in the DOM, since moving an
+ * iframe reloads it. In canvas-only mode the toolbar floats over the board
+ * with what that mode keeps: `floating` holds its parts.
+ *
+ * Selecting a finding moves the camera (`visual/camera.ts`): the board
+ * scrolls to its artboard, and opens it at full size when the element would
+ * be too small to see at the board's zoom. A lens (`visual/lens.ts`) draws
+ * one family of rules over every artboard at once, from core's facts.
  */
 export function Board({
   session,
   state,
   selected,
   floating,
+  config,
+  ref,
 }: {
   readonly session: Session;
   readonly state: SessionState;
   readonly selected: Finding | null;
+  /** The project's config, which the lenses and the coverage grid read core's facts with. */
+  readonly config?: ProjectConfig | undefined;
+  readonly ref?: Ref<BoardHandle>;
   /** Canvas only: the floating bar's start (the prototype's name) and end (status and the way back). */
   readonly floating?: { readonly start: ReactNode; readonly end: ReactNode } | undefined;
 }) {
   const [zoom, setZoom] = useState<Zoom>("fit");
   const [focused, setFocused] = useState<string | null>(null);
+  const [lens, setLens] = useState<LensId | null>(null);
+  /** What the camera last did, for a screen reader. */
+  const [said, setSaid] = useState("");
+  /** The artboard the camera opened by itself, so it can close it again when the finding is put down. */
+  const opened = useRef<string | null>(null);
+  const [pointed, setPointed] = useState<string | null>(null);
   const area = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1000);
   useEffect(() => {
@@ -48,11 +76,13 @@ export function Board({
     for (const frame of state.frames) rows.set(frame.scenario.id, [...(rows.get(frame.scenario.id) ?? []), frame]);
     return [...rows.values()];
   }, [state.frames]);
+  // A scenario's views in lines by colour scheme, so its light and dark renders sit one above the other.
+  const lines = useMemo(() => scenarios.map(linesOf), [scenarios]);
 
-  // Fit: every view of a scenario side by side across the board's width.
-  const rowWidth = Math.max(1, ...scenarios.map((row) => row.reduce((sum, frame) => sum + frame.view.width, 0)));
-  // The board's padding, the gaps between artboards, and a little slack so rounding never wraps a row.
-  const gaps = 40 * Math.max(0, (scenarios[0]?.length ?? 1) - 1) + 80 + 8;
+  // Fit: every view of one line side by side across the board's width.
+  const rowWidth = Math.max(1, ...lines.flat().map((line) => line.reduce((sum, frame) => sum + frame.view.width, 0)));
+  // The board's padding, the gaps between artboards, and a little slack so rounding never wraps a line.
+  const gaps = 40 * Math.max(0, Math.max(1, ...lines.flat().map((line) => line.length)) - 1) + 80 + 8;
   const fit = Math.min(1, Math.max(0.12, (width - gaps) / rowWidth));
   const scale = zoom === "fit" ? fit : Number(zoom);
   const selectedKey = selected?.scenario !== undefined && selected.view !== undefined ? frameKey(selected.scenario, selected.view) : null;
@@ -60,6 +90,98 @@ export function Board({
   const outlined = useMemo(() => new Set(selected ? (planOutline(selected, state.frames, state.frameStates)?.frames.map((frame) => frame.key) ?? []) : []), [selected, state.frames, state.frameStates]);
   const focusedSpec = state.frames.find((frame) => frame.key === focused);
   const views = state.frames.length / Math.max(1, scenarios.length);
+
+  const cardOf = (key: string) => [...(area.current?.querySelectorAll<HTMLElement>(".frame-card") ?? [])].find((card) => card.dataset.frameKey === key);
+  const bringIntoView = (key: string, focus: boolean) => {
+    // After the board has laid out again, when an artboard was opened or closed on the way.
+    requestAnimationFrame(() => {
+      const card = cardOf(key);
+      if (!card) return;
+      card.scrollIntoView({ block: "center", inline: "center" });
+      if (focus) card.focus({ preventScroll: true });
+    });
+  };
+  const goTo = (key: string) => {
+    const spec = state.frames.find((frame) => frame.key === key);
+    if (!spec) return;
+    opened.current = null;
+    setFocused(null);
+    setPointed(key);
+    setSaid(`Showing ${artboardLabel(spec.scenario, spec.view.name)} (${scenarioLabel(spec.scenario.id)}).`);
+    bringIntoView(key, true);
+  };
+  useImperativeHandle(ref, () => ({ goTo }));
+  useEffect(() => {
+    if (pointed === null) return;
+    const timer = setTimeout(() => setPointed(null), 2400);
+    return () => clearTimeout(timer);
+  }, [pointed]);
+
+  // "Show me" moves the camera: to the finding's artboard, opened at full size when its element would be too small to see.
+  const selectedId = selected ? JSON.stringify(selected) : null;
+  const target = selectedKey ?? [...outlined][0] ?? null;
+  const targetState = target ? state.frameStates[target] : undefined;
+  const targetRect = selected?.element !== undefined && targetState?.state === "measured" ? targetState.snapshot.elements[selected.element]?.rect : undefined;
+  const rectId = targetRect ? `${targetRect.width}x${targetRect.height}` : "";
+  useEffect(() => {
+    if (selectedId === null || target === null) {
+      // The finding was put down: an artboard the camera opened goes back to the board.
+      if (opened.current !== null) {
+        const key = opened.current;
+        opened.current = null;
+        setFocused((now) => (now === key ? null : now));
+        bringIntoView(key, false);
+      }
+      return;
+    }
+    const spec = state.frames.find((frame) => frame.key === target);
+    if (!spec) return;
+    const name = `${artboardLabel(spec.scenario, spec.view.name)} (${scenarioLabel(spec.scenario.id)})`;
+    if (cameraMove(targetRect, scale) === "open") {
+      opened.current = target;
+      setFocused(target);
+      setSaid(`Opened ${name} at full size: what the finding points at is too small to see at ${Math.round(scale * 100)}%.`);
+      // Once it is laid out at full size, the board scrolls so the element itself is in the middle of what shows.
+      const rect = targetRect;
+      const within = session.scrollOf(target);
+      requestAnimationFrame(() => {
+        const board = area.current;
+        const viewport = cardOf(target)?.querySelector(".frame-viewport");
+        if (!board || !viewport || !rect) return;
+        const from = board.getBoundingClientRect();
+        const at = viewport.getBoundingClientRect();
+        board.scrollTo({ left: board.scrollLeft + at.left - from.left + rect.x + rect.width / 2 - within.x - board.clientWidth / 2, top: board.scrollTop + at.top - from.top + rect.y + rect.height / 2 - within.y - board.clientHeight / 2 });
+      });
+    } else {
+      if (focused !== null && focused !== target) {
+        opened.current = null;
+        setFocused(null);
+      }
+      setSaid(`Showing ${name}.`);
+      bringIntoView(target, false);
+    }
+    // Only a new finding, or its frame being measured, moves the camera: zooming or scrolling afterwards is the person's own.
+  }, [selectedId, target, rectId]);
+
+  const grid = useMemo(() => {
+    const current = session.current();
+    return config && current ? coverage(flowFacts(config, current.prototype), state.frames, state.frameStates, state.report, state.measured) : null;
+    // The session's prototype changes only with its revision.
+  }, [config, session, state.revision, state.frames, state.frameStates, state.report, state.measured]);
+  const [gridOpen, setGridOpen] = useState(false);
+  const popover = usePopover({ open: gridOpen, onOpenChange: (next) => setGridOpen(next) });
+
+  const summary = `${scenarios.length} ${scenarios.length === 1 ? "scenario" : "scenarios"} · ${views} ${views === 1 ? "view" : "views"}`;
+  const lensControl = (
+    <ToggleGroup.Root aria-label="Lens" value={lens} onValueChange={(value) => setLens((value as LensId | null) ?? null)} className="board-lens" data-testid="lens-control">
+      {LENSES.map((item) => (
+        <ToggleGroup.Item key={item.id} value={item.id} variant="ghost" data-lens={item.id} {...(floating ? { "aria-label": item.label } : {})} title={item.hint}>
+          <Button.Icon>{item.id === "targets" ? <Pointer /> : <PanelBottomDashed />}</Button.Icon>
+          {!floating && item.label}
+        </ToggleGroup.Item>
+      ))}
+    </ToggleGroup.Root>
+  );
 
   const step = (direction: 1 | -1) => {
     const next = direction > 0 ? ZOOMS.find((value) => Number(value) > scale + 0.001) : [...ZOOMS].reverse().find((value) => Number(value) < scale - 0.001);
@@ -107,21 +229,49 @@ export function Board({
               {artboardLabel(focusedSpec.scenario, focusedSpec.view.name)}, full size
             </Text.Root>
           </Stack.Root>
+        ) : null}
+        {focusedSpec ? (
+          <span className="board-lens-end">{lensControl}</span>
         ) : (
           <>
-            {!floating && (
-              <Text.Root as="span" tone="muted" className="board-summary">
-                {scenarios.length} {scenarios.length === 1 ? "scenario" : "scenarios"} · {views} {views === 1 ? "view" : "views"}
-              </Text.Root>
-            )}
+            {!floating &&
+              (grid ? (
+                <>
+                  <Button.Root variant="ghost" className="board-summary" data-testid="board-summary" tooltip={false} {...popover.getTriggerProps()}>
+                    <Button.Icon>
+                      <Grid3x3 />
+                    </Button.Icon>
+                    {summary}
+                  </Button.Root>
+                  <Popover.Root {...popover.getPopoverProps()} role="dialog" aria-label="Coverage: every state, every view" className="board-coverage">
+                    {gridOpen && (
+                      <CoverageGrid
+                        coverage={grid}
+                        onGo={(key) => {
+                          setGridOpen(false);
+                          goTo(key);
+                        }}
+                      />
+                    )}
+                  </Popover.Root>
+                </>
+              ) : (
+                <Text.Root as="span" tone="muted" className="board-summary">
+                  {summary}
+                </Text.Root>
+              ))}
+            <span className="board-lens-end">{lensControl}</span>
             {zoomControls}
           </>
         )}
         {floating && <div className="board-toolbar-end">{floating.end}</div>}
       </Toolbar.Root>
+      <VisuallyHidden.Root role="status" aria-live="polite" data-testid="board-said">
+        {said}
+      </VisuallyHidden.Root>
       <div className="board-area" ref={area}>
         {state.packages.state === "failed" && <p className="board-error">{state.packages.message}</p>}
-        {scenarios.map((row) => {
+        {scenarios.map((row, rowIndex) => {
           const first = row[0];
           if (!first) return null;
           const title = screenTitle(first.scenario);
@@ -136,28 +286,43 @@ export function Board({
                   {example}
                 </Text.Root>
               </div>
-              <div className="board-frames">
-                {row.map((spec) => (
-                  <FrameCard
-                    key={spec.key}
-                    session={session}
-                    spec={spec}
-                    revision={state.revision}
-                    frameState={state.frameStates[spec.key] ?? { state: "waiting" }}
-                    scale={focused === spec.key ? 1 : scale}
-                    focused={focused === spec.key}
-                    hidden={focused !== null && focused !== spec.key}
-                    selected={selectedKey === spec.key || outlined.has(spec.key)}
-                    onOpen={() => setFocused(spec.key)}
-                  />
-                ))}
-              </div>
+              {(lines[rowIndex] ?? [row]).map((line) => (
+                <div key={line[0]?.view.scheme ?? "light"} className="board-frames" data-scheme={line[0]?.view.scheme}>
+                  {line.map((spec) => (
+                    <FrameCard
+                      key={spec.key}
+                      session={session}
+                      spec={spec}
+                      revision={state.revision}
+                      frameState={state.frameStates[spec.key] ?? { state: "waiting" }}
+                      scale={focused === spec.key ? 1 : scale}
+                      focused={focused === spec.key}
+                      hidden={focused !== null && focused !== spec.key}
+                      selected={selectedKey === spec.key || outlined.has(spec.key)}
+                      pointed={pointed === spec.key}
+                      lens={lens}
+                      config={config}
+                      onOpen={() => {
+                        opened.current = null;
+                        setFocused(spec.key);
+                      }}
+                    />
+                  ))}
+                </div>
+              ))}
             </section>
           );
         })}
       </div>
     </div>
   );
+}
+
+/** A scenario's frames in lines, one per colour scheme, in the order the schemes first appear. */
+function linesOf(row: readonly FrameSpec[]): FrameSpec[][] {
+  const lines = new Map<string, FrameSpec[]>();
+  for (const frame of row) lines.set(frame.view.scheme, [...(lines.get(frame.view.scheme) ?? []), frame]);
+  return [...lines.values()];
 }
 
 function statusOf(frameState: FrameState): { tone: "neutral" | "success" | "critical" | "info"; text: string } | null {
@@ -185,6 +350,11 @@ export type CardProps = {
   readonly onOpen?: () => void;
   /** Names the frame when the same scenario is shown more than once, as a proposal's examples are: "two-toasts: lantern-open at desktop". */
   readonly label?: string;
+  /** The coverage grid or the flow map just went to this artboard. */
+  readonly pointed?: boolean;
+  /** The lens drawn over the artboard once it is measured, and the config its facts are read with. */
+  readonly lens?: LensId | null;
+  readonly config?: ProjectConfig | undefined;
 };
 
 /**
@@ -192,7 +362,7 @@ export type CardProps = {
  * view and size above it, quiet unless it is still measuring or failed. The
  * review page shows examples with it too.
  */
-export function FrameCard({ session, spec, revision, frameState, scale, focused, hidden, selected, onOpen, label }: CardProps) {
+export function FrameCard({ session, spec, revision, frameState, scale, focused, hidden, selected, onOpen, label, pointed, lens, config }: CardProps) {
   const name = `${label ? `${label}: ` : ""}${spec.scenario.id} at ${spec.view.name}`;
   // A fresh document, on a fresh channel, for every revision.
   const doc = useMemo(() => (spec.blocked ? null : session.documentFor(spec.key)), [session, spec.key, spec.blocked, revision]);
@@ -207,8 +377,24 @@ export function FrameCard({ session, spec, revision, frameState, scale, focused,
   );
   const status = statusOf(frameState);
   const { width, height } = spec.view;
+  // The lens is drawn only over a measured frame, from core's facts for its snapshot: while a revision measures there is nothing true to draw.
+  const snapshot = frameState.state === "measured" ? frameState.snapshot : null;
+  const drawing = useMemo(() => (lens && config && snapshot ? lensDrawing(lens, viewFacts(config, spec.view, snapshot), snapshot, spec.view) : null), [lens, config, snapshot, spec.view]);
+  const placed = useMemo(() => (drawing ? placeLens(drawing, spec.view, scale) : null), [drawing, spec.view, scale]);
   return (
-    <figure className="frame-card" style={{ width: width * scale }} data-frame-key={spec.key} data-state={frameState.state} data-selected={selected ? "" : undefined} data-focused={focused ? "" : undefined} data-hidden={hidden ? "" : undefined} aria-hidden={hidden || undefined}>
+    <figure
+      className="frame-card"
+      style={{ width: width * scale }}
+      tabIndex={-1}
+      data-frame-key={spec.key}
+      data-state={frameState.state}
+      data-selected={selected ? "" : undefined}
+      data-pointed={pointed ? "" : undefined}
+      data-focused={focused ? "" : undefined}
+      data-hidden={hidden ? "" : undefined}
+      data-lens={drawing ? lens : undefined}
+      aria-hidden={hidden || undefined}
+    >
       <figcaption className="frame-head">
         <Text.Root as="span" weight="medium" className="frame-view">
           {label ? `${label} · ` : ""}
@@ -232,33 +418,37 @@ export function FrameCard({ session, spec, revision, frameState, scale, focused,
           </Button.Root>
         )}
       </figcaption>
-      <div className="frame-viewport" style={{ width: width * scale, height: height * scale, background: spec.view.scheme === "dark" ? "#121212" : "#ffffff" }}>
-        {doc && (
-          <iframe
-            key={doc.channel}
-            ref={attach}
-            title={name}
-            sandbox={FRAME_SANDBOX}
-            referrerPolicy="no-referrer"
-            srcDoc={doc.html}
-            width={width}
-            height={height}
-            className="frame-iframe"
-            style={{ transform: `scale(${scale})`, colorScheme: spec.view.scheme }}
-            tabIndex={hidden ? -1 : undefined}
-          />
-        )}
-        {frameState.state === "failed" && (
-          <div className="frame-failure" role="status">
-            <Text.Root as="p" weight="medium">
-              {frameState.stage === "setup" ? "Not rendered" : frameState.stage === "timeout" ? "No answer" : `The page failed to ${frameState.stage}`}
-            </Text.Root>
-            <Text.Root as="p" className="pre">
-              {frameState.message}
-            </Text.Root>
-          </div>
-        )}
+      <div className="frame-stage" style={{ paddingBlockEnd: placed ? placed.below : 0 }}>
+        <div className="frame-viewport" style={{ width: width * scale, height: height * scale, background: spec.view.scheme === "dark" ? "#121212" : "#ffffff" }}>
+          {doc && (
+            <iframe
+              key={doc.channel}
+              ref={attach}
+              title={name}
+              sandbox={FRAME_SANDBOX}
+              referrerPolicy="no-referrer"
+              srcDoc={doc.html}
+              width={width}
+              height={height}
+              className="frame-iframe"
+              style={{ transform: `scale(${scale})`, colorScheme: spec.view.scheme }}
+              tabIndex={hidden ? -1 : undefined}
+            />
+          )}
+          {frameState.state === "failed" && (
+            <div className="frame-failure" role="status">
+              <Text.Root as="p" weight="medium">
+                {frameState.stage === "setup" ? "Not rendered" : frameState.stage === "timeout" ? "No answer" : `The page failed to ${frameState.stage}`}
+              </Text.Root>
+              <Text.Root as="p" className="pre">
+                {frameState.message}
+              </Text.Root>
+            </div>
+          )}
+        </div>
+        {placed && !hidden && <LensLayer session={session} frame={spec.key} placed={placed} scale={scale} scheme={spec.view.scheme} />}
       </div>
+      {drawing && !hidden && <LensWords drawing={drawing} />}
     </figure>
   );
 }

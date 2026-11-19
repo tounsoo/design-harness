@@ -1,7 +1,7 @@
 import { Alert, Badge, Button, Field, Kbd, Link, Splitter, Stack, Tabs, Text, Toolbar, VisuallyHidden, useAnnouncer, useHotkey } from "@tounsoo/todae";
 import { CircleCheck, CodeXml, Download, Expand, FileCode2, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Shapes, Shrink, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { NO_VARIANTS, variantLabel, type Finding, type LayoutUse, type PickRecord, type ProjectConfig, type Prototype, type Variant, type VariantState } from "@design-harness/core";
+import { NO_VARIANTS, flowFacts, variantLabel, type Finding, type LayoutUse, type PickRecord, type ProjectConfig, type Prototype, type Variant, type VariantState } from "@design-harness/core";
 import { AgentController, type ChatRecord, type ChatStore } from "../agent/controller";
 import { SpecStreamPreview } from "../agent/spec-stream";
 import type { KeyVault } from "../agent/key-vault";
@@ -14,7 +14,7 @@ import { planOutline } from "../runtime/tags";
 import type { Store } from "../store/db";
 import type { LoadNote } from "../store/migrate";
 import { exportFileName, exportProject, importProject, type Imported, type PrototypeRecord } from "../store/project-file";
-import { Board } from "./Board";
+import { Board, type BoardHandle } from "./Board";
 import { ChatPanel } from "./ChatPanel";
 import { ChecksPanel } from "./ChecksPanel";
 import { CodePanel, MANIFEST_FILE } from "./CodePanel";
@@ -291,6 +291,24 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
       toggle("side", true);
     }
   }, [toggle]);
+
+  const board = useRef<BoardHandle>(null);
+  /** Core's facts about the flow of the revision the board shows, for the flow map and its way to an artboard. */
+  const flow = useMemo(() => {
+    const now = session.current();
+    return now ? flowFacts(now.config, now.prototype) : null;
+    // The session's config and prototype change only with its revision.
+  }, [session, state.revision]);
+  const goToState = useCallback(
+    (flowState: string) => {
+      const frame = session.getState().frames.find((item) => item.scenario.state === flowState);
+      if (!frame) return;
+      setCenter("canvas");
+      // After the canvas is the view on top again.
+      requestAnimationFrame(() => board.current?.goTo(frame.key));
+    },
+    [session],
+  );
 
   const select = useCallback(
     (finding: Finding | null) => {
@@ -620,9 +638,11 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
                     </Alert.Root>
                   )}
                   <Board
+                    ref={board}
                     session={session}
                     state={state}
                     selected={selected}
+                    config={session.current()?.config}
                     floating={
                       canvasOnly
                         ? {
@@ -657,7 +677,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
                 )}
                 {center === "project" && (
                   <div className="app-main-pane app-main-scroll">
-                    <ProjectView config={config} onOpenProposal={openProposal} prototype={current} />
+                    <ProjectView config={config} onOpenProposal={openProposal} prototype={current} onGoToState={goToState} />
                   </div>
                 )}
                 {center === "proposals" && (
@@ -716,7 +736,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
                     </Button.Root>
                   </div>
                   <Tabs.Panel value="checks" keepMounted className="app-side-panel">
-                    <ChecksPanel state={state} measuredCount={measuredCount} selected={selected} onSelect={select} onShowCode={(finding) => showCode(finding, true)} onFix={fix} {...(key.present ? { onAsk: ask } : {})} proposable={proposable} config={config} />
+                    <ChecksPanel state={state} measuredCount={measuredCount} selected={selected} onSelect={select} onShowCode={(finding) => showCode(finding, true)} onFix={fix} {...(key.present ? { onAsk: ask } : {})} proposable={proposable} config={config} flow={flow} onGoToState={goToState} />
                   </Tabs.Panel>
                   <Tabs.Panel value="code" keepMounted className="app-side-panel">
                     {current && <CodePanel prototype={current.prototype} target={code} onTarget={setCode} onEdit={edit} problems={state.compileProblems} />}
