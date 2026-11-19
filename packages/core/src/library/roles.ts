@@ -12,6 +12,8 @@ import type { Issue, Result } from "../validate";
  * applied by itself: `confirmRoles` turns a person's confirmation (which
  * guesses they accept, and each correction with why) into the `roles` a
  * config carries, and refuses a confirmation that leaves a role undecided.
+ * It also proposes excluding the library's style props from specs
+ * (`library.excludedProps`), which the confirmation decides too.
  * `missingRoleEffects` says, for a role the library has no part for, what
  * each rule that selects it will do.
  *
@@ -24,7 +26,12 @@ export type LibraryDescription = {
   readonly package: string;
   readonly version: string;
   readonly parts: Readonly<Record<string, PartDescription>>;
+  /** The style props the describer recognised: `style`, `className`, `sx` and `css` by name, and every prop of a library's own style-prop sets (`sets`, such as MantineStyleProps). */
+  readonly styleProps?: { readonly names: readonly string[]; readonly sets: readonly string[] };
 };
+
+/** The props the drafter proposes the config exclude (`library.excludedProps`), with its evidence. */
+export type ExclusionGuess = { readonly props: readonly string[]; readonly confidence: Confidence; readonly evidence: readonly string[] };
 
 export type Confidence = "high" | "medium" | "low";
 
@@ -45,6 +52,8 @@ export type RoleDraft = {
   /** In `ROLE_NAMES` order. */
   readonly guesses: readonly RoleGuess[];
   readonly missing: readonly MissingRole[];
+  /** Style props to exclude from specs, or null when the description names none. */
+  readonly excludedProps: ExclusionGuess | null;
 };
 
 /**
@@ -56,6 +65,12 @@ export type RoleDraft = {
 export type RoleConfirmation = {
   readonly accept: readonly RoleName[];
   readonly corrections?: Readonly<Partial<Record<RoleName, { readonly mapping: RoleMapping; readonly why: string }>>>;
+  /**
+   * The style props to exclude: `"accept"` takes the draft's list, or a list
+   * of names and `*` patterns of the person's own with why. Required when the
+   * draft proposes some; an empty list with why keeps them all settable.
+   */
+  readonly excludedProps?: "accept" | { readonly props: readonly string[]; readonly why: string };
 };
 
 /** How each role ended up: as drafted, or corrected, with the draft it replaced and why. */
@@ -63,7 +78,19 @@ export type ConfirmedRole =
   | { readonly role: RoleName; readonly decision: "accepted"; readonly mapping: RoleMapping; readonly confidence: Confidence }
   | { readonly role: RoleName; readonly decision: "corrected"; readonly mapping: RoleMapping; readonly drafted: RoleMapping | null; readonly why: string };
 
-export type ConfirmedRoles = { readonly roles: Readonly<Record<RoleName, RoleMapping>>; readonly record: readonly ConfirmedRole[] };
+/** How the excluded props were decided. */
+export type ConfirmedExclusion =
+  | { readonly decision: "accepted"; readonly props: readonly string[] }
+  | { readonly decision: "corrected"; readonly props: readonly string[]; readonly drafted: readonly string[]; readonly why: string }
+  | { readonly decision: "none"; readonly props: readonly [] };
+
+export type ConfirmedRoles = {
+  readonly roles: Readonly<Record<RoleName, RoleMapping>>;
+  /** What the config carries as `library.excludedProps`. */
+  readonly excludedProps: readonly string[];
+  readonly record: readonly ConfirmedRole[];
+  readonly exclusion: ConfirmedExclusion;
+};
 
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const RANK: Record<Confidence, number> = { high: 0, medium: 1, low: 2 };
@@ -266,7 +293,24 @@ export function draftRoles(description: LibraryDescription): RoleDraft {
     version: description.version,
     guesses: guesses.sort((a, b) => order(a.role) - order(b.role)),
     missing: missing.sort((a, b) => order(a.role) - order(b.role)),
+    excludedProps: draftExclusion(description),
   };
+}
+
+/** Style props by name: they style any element directly. */
+const NAMED_STYLE_PROPS = ["className", "css", "style", "sx"];
+
+function draftExclusion(description: LibraryDescription): ExclusionGuess | null {
+  const style = description.styleProps;
+  if (!style || style.names.length === 0) return null;
+  const props = [...new Set(style.names)].sort(compare);
+  const named = props.filter((name) => NAMED_STYLE_PROPS.includes(name));
+  const fromSets = props.filter((name) => !NAMED_STYLE_PROPS.includes(name));
+  const evidence: string[] = [];
+  if (named.length > 0) evidence.push(`${quote(named)} style any element directly, by name`);
+  if (fromSets.length > 0) evidence.push(`${fromSets.length} props come from ${description.package}'s own style-prop set${style.sets.length > 1 ? "s" : ""} ${style.sets.join(", ")}: ${quote(fromSets)}`);
+  evidence.push("a spec that sets them would style a part around the library's variants and tokens, so the catalog leaves them out and a spec that sets one is refused");
+  return { props, confidence: "high", evidence };
 }
 
 const same = (a: RoleMapping, b: RoleMapping) => JSON.stringify(normal(a)) === JSON.stringify(normal(b));
@@ -331,8 +375,23 @@ export function confirmRoles(description: LibraryDescription, confirmation: Role
     roles[role] = mapping;
     record.push({ role, decision: "corrected", mapping, drafted: guess?.mapping ?? null, why });
   }
+  const drafted = draft.excludedProps?.props ?? [];
+  let exclusion: ConfirmedExclusion = { decision: "none", props: [] };
+  const decided = confirmation.excludedProps;
+  if (decided === undefined) {
+    if (draft.excludedProps) issues.push({ path: "$.excludedProps", message: `the excluded props are not confirmed: accept the draft (${drafted.length} style props, ${quote(drafted.slice(0, 6))}${drafted.length > 6 ? ", ..." : ""}) or give a list with why` });
+  } else if (decided === "accept") {
+    if (!draft.excludedProps) issues.push({ path: "$.excludedProps", message: "the excluded props are accepted, but the draft proposes none: give a list with why instead" });
+    else exclusion = { decision: "accepted", props: drafted };
+  } else {
+    if (decided.why.trim() === "") issues.push({ path: "$.excludedProps.why", message: "the excluded props give no reason" });
+    const props = [...new Set(decided.props)].sort(compare);
+    for (const prop of props) if (!/^[A-Za-z_$*][\w$*-]*$/.test(prop)) issues.push({ path: "$.excludedProps.props", message: `${JSON.stringify(prop)} is not a prop name or a pattern with *` });
+    if (JSON.stringify(props) === JSON.stringify(drafted)) issues.push({ path: "$.excludedProps", message: "the excluded props are the draft's: accept them instead" });
+    exclusion = { decision: "corrected", props, drafted, why: decided.why };
+  }
   if (issues.length > 0) return { ok: false, error: issues };
-  return { ok: true, value: { roles: roles as Record<RoleName, RoleMapping>, record } };
+  return { ok: true, value: { roles: roles as Record<RoleName, RoleMapping>, excludedProps: exclusion.props, record, exclusion } };
 }
 
 function describeMapping(mapping: RoleMapping): string {

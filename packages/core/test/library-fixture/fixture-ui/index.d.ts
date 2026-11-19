@@ -54,8 +54,14 @@ export declare function Amount(props: { value?: string; onValueChange?: (values:
 /** Children as a function: no content. */
 export declare function Measure(props: { children: (width: number) => ReactNode }): ReactNode;
 
-/** A polymorphic component, generic in its element: read as a tag would instantiate it. */
-export declare const Box: <C extends ElementType = "div">(props: { component?: C; padding?: "xs" | "md" } & Omit<ComponentPropsWithoutRef<C>, "padding">) => ReactNode;
+/** A library's own set of style props: every prop of it is a style prop. */
+export interface FixtureStyleProps {
+  m?: "xs" | "md";
+  c?: string;
+}
+
+/** A polymorphic component, generic in its element: read as a tag would instantiate it. It takes the style props, and sx by name. */
+export declare const Box: <C extends ElementType = "div">(props: { component?: C; padding?: "xs" | "md"; sx?: object } & FixtureStyleProps & Omit<ComponentPropsWithoutRef<C>, "padding" | "m" | "c">) => ReactNode;
 
 /** A context is callable in React 19's types, but not a part. */
 export declare const ThemeContext: Context<string>;

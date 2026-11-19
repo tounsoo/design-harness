@@ -54,6 +54,8 @@ describe("the Tally project on Mantine", () => {
     const confirmed = confirmRoles(full, confirmation);
     if (!confirmed.ok) throw new Error(JSON.stringify(confirmed.error));
     expect(confirmed.value.roles).toEqual(tally.library.roles);
+    expect(confirmed.value.excludedProps).toEqual(tally.library.excludedProps);
+    expect(confirmed.value.exclusion.decision).toBe("accepted");
     expect(confirmed.value.record.filter((entry) => entry.decision === "corrected").map((entry) => entry.role)).toEqual(["question"]);
     // The draft is the same from the project's cut of the description: the roles depend only on the parts they name.
     const mappings = (description: LibraryDescription) => draftRoles(description).guesses.map((guess) => [guess.role, guess.mapping]);
@@ -65,6 +67,9 @@ describe("the Tally project on Mantine", () => {
     expect(catalog?.components.Button?.props.variant).toEqual({ type: "enum", values: ["default", "filled", "gradient", "light", "outline", "subtle", "transparent", "white"], required: false });
     expect(catalog?.components.Button?.roles).toEqual(["action", "primary-action", "secondary-action"]);
     expect(catalog?.components.Button?.unknownProps).toContain("gradient");
+    // Mantine's style props are excluded: no part's catalog entry offers one.
+    for (const component of Object.values(catalog?.components ?? {})) for (const prop of tally.library.excludedProps ?? []) expect(component.props[prop]).toBeUndefined();
+    expect(catalog?.components.Button?.excludedProps).toEqual(expect.arrayContaining(["bg", "c", "fz", "m", "p", "w"]));
     expect(catalog?.components["Accordion.Item"]?.roles).toEqual(["disclosure"]);
     expect(catalog?.components.NumberInput?.props.label).toEqual({ type: "string", required: false });
     // The root is not inventoried, so a spec cannot draw it: the frame wraps every page in it.

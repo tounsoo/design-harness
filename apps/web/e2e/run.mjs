@@ -1383,7 +1383,7 @@ test("what the catalog refuses is reported by extract and never reaches the fram
     value.findings.map((item) => item.message),
     [
       'pages/booking.json: element "free" is a Badge.Root, which is not in the catalog. The catalog has the parts of the inventoried components (Alert, Button, Card, Disclosure, EmptyState, Field, Label, Stack, Text), Page and Layout.',
-      'pages/booking.json: element "book" sets "style", which a Button.Root does not take. It takes "aria-label", "defaultPressed", "id", "pressed", "text", "tooltip", "variant".',
+      `pages/booking.json: element "book" sets "style", a style prop the project excludes ("style" in library.excludedProps): a Button.Root's styling must come from the library's own variants and tokens, not from props that style it directly.`,
     ],
   );
   const frame = page.frameLocator('iframe[title="lantern-open at desktop"]');

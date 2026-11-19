@@ -57,10 +57,25 @@ describe("describing a library from its declarations", () => {
 
   it("reads a polymorphic component as a tag instantiates it, with its default element", () => {
     expect(fixture.parts.Box).toEqual({
-      props: { "aria-label": { type: "string", required: false }, component: { type: "enum", values: ["div"], required: false }, id: { type: "string", required: false }, padding: { type: "enum", values: ["md", "xs"], required: false } },
+      props: {
+        "aria-label": { type: "string", required: false },
+        c: { type: "string", required: false },
+        component: { type: "enum", values: ["div"], required: false },
+        id: { type: "string", required: false },
+        m: { type: "enum", values: ["md", "xs"], required: false },
+        padding: { type: "enum", values: ["md", "xs"], required: false },
+        sx: { type: "unknown", required: false },
+      },
       content: "children",
       events: ["press"],
     });
+  });
+
+  it("marks style props: by name, and every prop of a library's own style-prop set", () => {
+    expect(fixture.styleProps).toEqual({ names: ["c", "className", "m", "style", "sx"], sets: ["FixtureStyleProps"] });
+    expect(todae.styleProps).toEqual({ names: ["className", "style"], sets: [] });
+    expect(mantine.styleProps?.sets).toEqual(["MantineStyleProps"]);
+    expect(mantine.styleProps?.names).toEqual(expect.arrayContaining(["bg", "c", "className", "fz", "m", "p", "style", "w"]));
   });
 
   it("is deterministic: the same package gives byte-identical text", () => {
@@ -94,6 +109,15 @@ describe("drafting roles", () => {
       ["question", "high"],
     ]);
     expect(draft.guesses[1]?.evidence.join(" ")).toContain("whenMissing is true");
+    expect(draft.excludedProps?.props).toEqual(nook.library.excludedProps);
+  });
+
+  it("proposes excluding a library's style props, with evidence", () => {
+    const draft = draftRoles(mantine);
+    expect(draft.excludedProps?.props).toEqual(mantine.styleProps?.names);
+    expect(draft.excludedProps?.confidence).toBe("high");
+    expect(draft.excludedProps?.evidence.join(" ")).toContain("MantineStyleProps");
+    expect(draftRoles({ ...mantine, styleProps: undefined as never }).excludedProps).toBeNull();
   });
 
   it("drafts Mantine's roles from names, props and enum values, each with evidence", () => {
@@ -136,21 +160,32 @@ describe("confirming roles", () => {
   const accept: RoleConfirmation["accept"] = ["action", "primary-action", "secondary-action", "disclosure", "disclosure-summary", "question"];
 
   it("applies nothing on its own: a role neither accepted nor corrected is refused", () => {
-    const confirmed = confirmRoles(todae, { accept: accept.filter((role) => role !== "question") });
+    const confirmed = confirmRoles(todae, { accept: accept.filter((role) => role !== "question"), excludedProps: "accept" });
     expect(confirmed.ok).toBe(false);
     expect(confirmed.ok ? [] : confirmed.error.map((issue) => issue.message)).toEqual(['role "question" is not confirmed: accept the draft (Field.Root) or correct it']);
   });
 
-  it("turns an accepted draft into the roles a valid config carries", () => {
-    const confirmed = confirmRoles(todae, { accept });
+  it("refuses leaving the excluded style props undecided, and records how they were decided", () => {
+    const undecided = confirmRoles(todae, { accept });
+    expect(undecided.ok ? [] : undecided.error.map((issue) => issue.message)).toEqual(['the excluded props are not confirmed: accept the draft (2 style props, "className", "style") or give a list with why']);
+    const narrower = confirmRoles(mantine, { accept: ["action", "primary-action", "secondary-action", "disclosure", "disclosure-summary", "question"], excludedProps: { props: ["style", "className", "bg"], why: "Only these." } });
+    expect(narrower.ok && narrower.value.exclusion).toEqual({ decision: "corrected", props: ["bg", "className", "style"], drafted: mantine.styleProps?.names, why: "Only these." });
+    const noReason = confirmRoles(mantine, { accept: ["action", "primary-action", "secondary-action", "disclosure", "disclosure-summary", "question"], excludedProps: { props: [], why: " " } });
+    expect(noReason.ok ? [] : noReason.error.map((issue) => issue.message)).toEqual(["the excluded props give no reason"]);
+  });
+
+  it("turns an accepted draft into the roles and excluded props a valid config carries", () => {
+    const confirmed = confirmRoles(todae, { accept, excludedProps: "accept" });
     if (!confirmed.ok) throw new Error(JSON.stringify(confirmed.error));
     expect(confirmed.value.roles).toEqual(nook.library.roles);
+    expect(confirmed.value.excludedProps).toEqual(nook.library.excludedProps);
     expect(parseProjectConfig(JSON.parse(JSON.stringify({ ...nook, library: { ...nook.library, roles: confirmed.value.roles } }))).ok).toBe(true);
   });
 
   it("records each correction with the draft it replaced and why, and refuses one without a reason, a part the library lacks, or a value its enum lacks", () => {
     const corrected = confirmRoles(mantine, {
       accept: accept.filter((role) => role !== "secondary-action"),
+      excludedProps: "accept",
       corrections: { "secondary-action": { mapping: { components: ["Button"], prop: { name: "variant", values: ["default", "outline"], whenMissing: false } }, why: "Both quiet styles are secondary here." } },
     });
     if (!corrected.ok) throw new Error(JSON.stringify(corrected.error));
@@ -163,6 +198,7 @@ describe("confirming roles", () => {
     });
     const refused = confirmRoles(mantine, {
       accept: accept.filter((role) => role !== "secondary-action" && role !== "question"),
+      excludedProps: "accept",
       corrections: {
         "secondary-action": { mapping: { components: ["Button"], prop: { name: "variant", values: ["secondary"], whenMissing: false } }, why: "" },
         question: { mapping: { components: ["Field.Root"] }, why: "Mantine has a field." },
@@ -177,9 +213,9 @@ describe("confirming roles", () => {
 
   it("refuses accepting a role the draft could not find; the library having none is a correction saying so", () => {
     const fixture = describeLibrary(FIXTURE);
-    const refused = confirmRoles(fixture, { accept });
+    const refused = confirmRoles(fixture, { accept, excludedProps: "accept" });
     expect(refused.ok ? [] : refused.error.map((issue) => issue.message)).toEqual(['role "question" is accepted, but the draft has no guess for it: correct it instead']);
-    const none = confirmRoles(fixture, { accept: accept.filter((role) => role !== "question"), corrections: { question: { mapping: { components: [] }, why: "This library has no form controls." } } });
+    const none = confirmRoles(fixture, { accept: accept.filter((role) => role !== "question"), excludedProps: "accept", corrections: { question: { mapping: { components: [] }, why: "This library has no form controls." } } });
     expect(none.ok && none.value.roles.question).toEqual({ components: [] });
   });
 });

@@ -9,7 +9,8 @@ import type { RuleSpec } from "../../src/rules/types";
  * Todae. Its library parts are the ones it inventories, written by
  * `describe-library.mjs @mantine/core 9.7.4 --only ...` (Mantine's whole
  * description, `libraries/mantine-core-9.7.4.json`, is 3 MB), and its roles
- * are core's draft confirmed in `roles.json`, one correction recorded there.
+ * are core's draft confirmed in `roles.json`, one correction recorded there,
+ * with the draft's excluded style props.
  * Every page renders inside MantineProvider, which takes the view's scheme.
  * Plain data, so `JSON.stringify(tally)` is the config a web app would store.
  */
@@ -35,6 +36,8 @@ export const tally: ProjectConfig = {
     react: "19.3.1",
     stylesheets: ["styles.css"],
     root: { component: "MantineProvider", schemeProp: "forceColorScheme" },
+    // Mantine's style props (bg, c, m, p, w, fz, style, className and the rest), as the describer found them and roles.json accepts: styling comes from Mantine's variants and tokens.
+    excludedProps: mantine.styleProps.names,
     roles: {
       action: { components: ["Button"] },
       "primary-action": { components: ["Button"], prop: { name: "variant", values: ["filled"], whenMissing: true } },

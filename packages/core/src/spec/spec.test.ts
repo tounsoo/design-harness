@@ -242,7 +242,7 @@ describe("spec validation against the catalog", () => {
     );
     expect(issues.map((issue) => `${issue.at.line}:${issue.at.column} ${issue.message}`)).toEqual([
       expect.stringMatching(/^\d+:\d+ pages\/home\.json: element "badge" is a Badge\.Root, which is not in the catalog\./),
-      expect.stringMatching(/element "book" sets "style", which a Button\.Root does not take\./),
+      expect.stringMatching(/element "book" sets "style", a style prop the project excludes \("style" in library\.excludedProps\): a Button\.Root.s styling must come from the library.s own variants and tokens/),
       expect.stringMatching(/element "book" sets variant to "danger"; a Button\.Root's variant is one of "ghost", "primary", "secondary"\./),
     ]);
   });

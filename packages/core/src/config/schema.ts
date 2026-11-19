@@ -21,7 +21,7 @@ const configShape = obj({
   schemaVersion: oneOf([CONFIG_SCHEMA_VERSION]),
   id: slug,
   name: str(),
-  library: obj({ package: str({ pattern: PACKAGE_NAME, patternName: 'an npm package name such as "@tounsoo/todae"' }), version: exactVersion, react: exactVersion, roles }, { stylesheets: arr(packagePath), schemeAttribute: str({ pattern: /^[a-z][a-z0-9-]*$/, patternName: 'a lowercase attribute name such as "data-appearance"' }), root: libraryRoot, parts: record(partDescription, partName) }),
+  library: obj({ package: str({ pattern: PACKAGE_NAME, patternName: 'an npm package name such as "@tounsoo/todae"' }), version: exactVersion, react: exactVersion, roles }, { stylesheets: arr(packagePath), schemeAttribute: str({ pattern: /^[a-z][a-z0-9-]*$/, patternName: 'a lowercase attribute name such as "data-appearance"' }), root: libraryRoot, excludedProps: arr(str({ pattern: /^[A-Za-z_$*][\w$*-]*$/, patternName: 'a prop name, or a pattern with * such as "data-*"' })), parts: record(partDescription, partName) }),
   inventories: obj({ components: arr(str({ pattern: /^[A-Z][\w$]*$/, patternName: "a capitalised export name such as \"Button\"" })), layouts: arr(slug), pageTypes: arr(pageType), flowStates: arr(slug) }),
   inputs: obj({ tasks: arr(task), ranking: arr(rankedAction), disclosedSections: arr(str()), caps: record(cap, capName) }),
   views: arr(obj({ name: slug, width: int({ min: 1 }), height: int({ min: 1 }), scheme: oneOf(["light", "dark"]) })),

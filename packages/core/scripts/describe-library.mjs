@@ -41,6 +41,12 @@
 // `aria-label`; so are refs, `key`, `className`, `style`, `render` and
 // `dangerouslySetInnerHTML`.
 //
+// Style props: `style`, `className`, `sx` and `css` by name, and every prop a
+// part takes from a library's own set of style props (an interface or type
+// named like MantineStyleProps or SystemProps), are listed in `styleProps`
+// with the sets they came from, so the role drafter can propose excluding
+// them: they style a part directly, around the library's variants and tokens.
+//
 // A spec cannot hold JSX, so a part whose children must be raw HTML elements
 // needs a word the types do not say. OVERRIDES holds those, and nothing else.
 import { execFileSync } from "node:child_process";
@@ -59,6 +65,10 @@ export const OVERRIDES = {
 };
 
 const SKIP = new Set(["children", "ref", "className", "style", "key", "render", "dangerouslySetInnerHTML"]);
+/** Props that style an element directly, by name, in any library: a spec styling a part this way bypasses its variants and tokens. */
+const STYLE_PROP_NAMES = new Set(["className", "css", "style", "sx"]);
+/** A props type that is a library's set of style props (Mantine's MantineStyleProps, a system's SystemProps). */
+const STYLE_PROP_SET = /(?:Style|System)Props$/;
 const INHERITED = new Set(["id", "aria-label"]);
 const compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -90,8 +100,8 @@ export function describeLibrary(pkgDir) {
   // A generic component (a polymorphic `<C = "button">(props: Props<C>)`) has no props type until a tag
   // instantiates it, so the second pass reads such parts from a tag written for each, as TypeScript would check it.
   const first = readParts(pkgDir, pkg, entry, null);
-  if (first.generic.length === 0) return { package: pkg.name, version: pkg.version, parts: first.parts };
-  return { package: pkg.name, version: pkg.version, parts: readParts(pkgDir, pkg, entry, first.generic).parts };
+  const read = first.generic.length === 0 ? first : readParts(pkgDir, pkg, entry, first.generic);
+  return { package: pkg.name, version: pkg.version, parts: read.parts, ...(read.styleProps ? { styleProps: read.styleProps } : {}) };
 }
 
 const OPTIONS = { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, jsx: ts.JsxEmit.ReactJSX, skipLibCheck: true, strict: true, noEmit: true, types: [] };
@@ -127,6 +137,18 @@ function readParts(pkgDir, pkg, entry, generic) {
   const moduleSymbol = checker.getSymbolAtLocation(source);
   if (!moduleSymbol) throw new Error(`${entry} is not a module`);
   const libraryRoot = `${pkgDir}/`;
+  /** Style props seen on any part, and where each set was declared. */
+  const styleNames = new Set();
+  const styleSets = new Set();
+  /** The name of the interface or type alias a property is declared in, when it has one. */
+  const ownerOf = (symbol) => {
+    for (const declaration of symbol.declarations ?? []) {
+      let node = declaration.parent;
+      while (node && !ts.isInterfaceDeclaration(node) && !ts.isTypeAliasDeclaration(node) && !ts.isSourceFile(node)) node = node.parent;
+      if (node && (ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node))) return node.name.text;
+    }
+    return null;
+  };
   const fromLibrary = (symbol) => (symbol.declarations ?? []).some((declaration) => declaration.getSourceFile().fileName.startsWith(libraryRoot));
   const resolveAlias = (symbol) => (symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol);
 
@@ -185,6 +207,7 @@ function readParts(pkgDir, pkg, entry, generic) {
         continue;
       }
       if (key === "onClick") pressable = true;
+      if (STYLE_PROP_NAMES.has(key)) styleNames.add(key);
       if (SKIP.has(key)) continue;
       if (!fromLibrary(property) && !INHERITED.has(key)) continue;
       if (isFunction(type)) {
@@ -196,6 +219,11 @@ function readParts(pkgDir, pkg, entry, generic) {
         // A required function a spec cannot give: the part cannot be rendered from a spec.
         if (required) needs.push(key);
         continue;
+      }
+      const owner = fromLibrary(property) ? ownerOf(property) : null;
+      if (owner && STYLE_PROP_SET.test(owner)) {
+        styleNames.add(key);
+        styleSets.add(owner);
       }
       const schema = schemaOf(type);
       if (schema.type === "unknown" && required) needs.push(key);
@@ -255,10 +283,11 @@ function readParts(pkgDir, pkg, entry, generic) {
     }
   }
   const sorted = Object.fromEntries(Object.entries(parts).sort(([a], [b]) => compare(a, b)));
-  return { parts: sorted, generic: [...new Set(genericParts)].sort(compare) };
+  const styleProps = styleNames.size > 0 ? { styleProps: { names: [...styleNames].sort(compare), sets: [...styleSets].sort(compare) } } : {};
+  return { parts: sorted, generic: [...new Set(genericParts)].sort(compare), ...styleProps };
 }
 
-/** The description with only the parts of these exports (`Button` keeps `Button` and `Button.Group`). */
+/** The description with only the parts of these exports (`Button` keeps `Button` and `Button.Group`); its style props are kept whole. */
 export function onlyParts(description, exports) {
   const keep = new Set(exports);
   return { ...description, parts: Object.fromEntries(Object.entries(description.parts).filter(([part]) => keep.has(part.split(".")[0]))) };

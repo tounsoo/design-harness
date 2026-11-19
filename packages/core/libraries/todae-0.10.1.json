@@ -4947,5 +4947,12 @@
     "press"
    ]
   }
+ },
+ "styleProps": {
+  "names": [
+   "className",
+   "style"
+  ],
+  "sets": []
  }
 }

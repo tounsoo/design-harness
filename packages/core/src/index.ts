@@ -85,5 +85,5 @@ export { specToTsx } from "./export/tsx";
 export type { ProjectExport, ProjectExportInput } from "./export/project";
 export { EXPORT_PROTOTYPE_DIR, EXPORT_TOOLING, exportReactProject } from "./export/project";
 
-export type { Confidence, ConfirmedRole, ConfirmedRoles, LibraryDescription, MissingRole, MissingRoleEffect, RoleConfirmation, RoleDraft, RoleGuess } from "./library/roles";
+export type { Confidence, ConfirmedExclusion, ConfirmedRole, ConfirmedRoles, ExclusionGuess, LibraryDescription, MissingRole, MissingRoleEffect, RoleConfirmation, RoleDraft, RoleGuess } from "./library/roles";
 export { confirmRoles, draftRoles, missingRoleEffects } from "./library/roles";

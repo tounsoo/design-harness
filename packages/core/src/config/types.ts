@@ -75,6 +75,14 @@ export type ComponentLibrary = {
   readonly schemeAttribute?: string;
   /** The part every page renders inside, when the library needs one. */
   readonly root?: LibraryRoot;
+  /**
+   * Props a spec may never set on any part, by name or by a pattern where `*`
+   * stands for any characters: the library's style props (`style`,
+   * `className`, Mantine's `bg`, `c`, `m`, `p`, ...), which style a part around
+   * its own variants and tokens. The catalog leaves them out as it leaves out
+   * `unknown` props, and a spec that sets one is refused.
+   */
+  readonly excludedProps?: readonly string[];
   readonly roles: Readonly<Record<RoleName, RoleMapping>>;
   /**
    * Every part of the library, described for spec prototypes (`Button.Root`

@@ -30,6 +30,8 @@ export const nook: ProjectConfig = {
     react: "19.3.1",
     stylesheets: ["dist/todae.css"],
     schemeAttribute: "data-appearance",
+    // Todae's style props, as core's role draft proposes them: a part is styled by its variants and Todae's tokens.
+    excludedProps: ["className", "style"],
     roles: {
       action: { components: ["Button.Root"] },
       "primary-action": { components: ["Button.Root"], prop: { name: "variant", values: ["primary"], whenMissing: true } },

@@ -1,11 +1,23 @@
 {
   "library": "@mantine/core 9.7.4",
-  "note": "The confirmation of core's draftRoles on Mantine 9.7.4, as a person gave it: which guesses are accepted, and each correction with why. confirmRoles turns it into the roles project.ts carries; test/tally.test.ts holds the two together.",
-  "accept": ["action", "primary-action", "secondary-action", "disclosure", "disclosure-summary"],
+  "note": "The confirmation of core's draftRoles on Mantine 9.7.4, as a person gave it: which guesses are accepted, each correction with why, and the style props to exclude from specs. confirmRoles turns it into the roles project.ts carries; test/tally.test.ts holds the two together.",
+  "accept": [
+    "action",
+    "primary-action",
+    "secondary-action",
+    "disclosure",
+    "disclosure-summary"
+  ],
   "corrections": {
     "question": {
-      "mapping": { "components": ["NumberInput", "TextInput"] },
+      "mapping": {
+        "components": [
+          "NumberInput",
+          "TextInput"
+        ]
+      },
       "why": "The draft maps TextInput alone, the only one of Mantine's inputs named like a field. Tally asks for an amount, and Mantine's NumberInput is a labelled control that takes one answer as TextInput is, so it is a question too: without it, an amount field would not count toward MAX_VISIBLE_QUESTIONS. Mantine's other inputs stay unmapped until the project inventories them, since a mapped part must be inventoried."
     }
-  }
+  },
+  "excludedProps": "accept"
 }
