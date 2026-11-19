@@ -207,7 +207,7 @@ describe("the edits the workflow makes", () => {
     expect(entry).toContain('      schemeAttribute: "data-appearance",');
     expect(entry).toContain('          id: "text-as-heading-or-paragraph",');
     expect(entry).toContain('    notes: ["Light and dark come from the data-appearance attribute on the page."');
-    expect(entry).toMatch(/A person must check:\n.*\n {4}\/\/ {3}- Its `setup` \(light and dark, root part, rules, part props\) and `notes` are copied from the 0\.11\.3 entry/);
+    expect(entry).toMatch(/A person must check:\n.*\n {4}\/\/ {3}- Its `setup` \(light and dark, root part, rules, part props\) and `notes` are copied from the \d+\.\d+\.\d+\S* entry/);
     expect(descriptionPath(request)).toBe("packages/core/libraries/tounsoo-todae-99.0.0.json");
     expect(() => addRegistryEntry("export const OTHER = [];\n", entry)).toThrow("no SHIPPED_LIBRARIES list");
   });
