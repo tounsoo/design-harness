@@ -1,20 +1,33 @@
-import { checkPrototype, extractPrototype, specModel, type CheckReport, type ComponentLibrary, type PageType, type ProjectConfig, type Prototype, type PrototypeModel, type RenderedSnapshot, type Scenario, type View } from "@design-harness/core";
+import { type CheckReport, type ComponentLibrary, type PageType, type ProjectConfig, type Prototype, type RenderedSnapshot, type Scenario, type View } from "@design-harness/core";
+import { mainThreadEngine, type CheckEngine, type Prepared } from "./check-engine";
 import { frameDocument } from "./frame-document";
+import { FRAME_BUDGET, type FrameBudget } from "./live-frames";
 import { resolvePackages, type PackageSource, type RuntimePackages } from "./package-source";
-import { RENDER_SLOTS, type RenderSlots } from "./render-slots";
-import { PROTOCOL, readFrameMessage, type FrameMessage, type FrameStage, type ModuleSource, type PageRef, type RenderRequest, type RootRef } from "./protocol";
+import { PRIORITY, RENDER_SLOTS, type RenderSlots } from "./render-slots";
+import { PROTOCOL, readFrameMessage, type FrameMessage, type FrameStage, type ModuleSource, type PageRef, type RenderRequest, type RootRef, type SpecPart, type SpecPayload } from "./protocol";
 import { SPEC_RENDERER, specParts, specPayload } from "./spec-payload";
-import { tagSites } from "./tags";
-import { compilePrototype, moduleSpecifier, type CompileProblem } from "./transform";
+import { moduleSpecifier, type CompileProblem } from "./transform";
 
 /**
  * One prototype's check loop. Each change to the config or the prototype is
- * a new revision: the source is compiled, core checks it at once without
- * snapshots (rendered rules report not-run), every frame gets a fresh
- * document for the revision, and once every frame has answered, core checks
- * it again with their snapshots. A message is only ever counted toward the
- * revision it was rendered for, so a slow frame from an earlier revision can
- * never put its snapshot into a later report.
+ * a new revision: core checks it at once without snapshots (rendered rules
+ * report not-run) in the check engine (`check-engine.ts`, a module worker in
+ * the app), which also compiles a TSX prototype or resolves a spec
+ * prototype's pages; every frame gets a fresh document for the revision, and
+ * once every frame has answered, core checks it again with their snapshots.
+ * A message is only ever counted toward the revision it was rendered for,
+ * so a slow frame from an earlier revision can never put its snapshot into
+ * a later report.
+ *
+ * Frames are measured lazily but completely. A frame drawn somewhere
+ * (`present`) waits for a render slot, the ones near the screen first, then
+ * goes live (its viewport mounts an iframe), renders, is measured, and is
+ * parked again unless it is near the screen: its snapshot is kept and its
+ * document goes. Every frame drawn anywhere is measured, on screen or off,
+ * so the report is complete; it is "measured" only once every frame has
+ * answered. A measured frame that comes near the screen is drawn again in a
+ * fresh document, while the live-frame budget (`live-frames.ts`) has room;
+ * that render is a picture, never measured again into the report.
  *
  * Nothing here decides pass or fail: the report is core's, unchanged.
  */
@@ -71,7 +84,7 @@ export type SessionOptions = {
   readonly boot: string;
   readonly parentOrigin: string;
   readonly window: Pick<Window, "addEventListener" | "removeEventListener">;
-  /** How long a frame may take to answer once asked to render. */
+  /** How long a frame may take to answer once asked to render, and to load once given its turn. */
   readonly timeoutMs?: number;
   readonly settleMs?: number;
   /** A random channel id; injectable for tests. */
@@ -86,6 +99,10 @@ export type SessionOptions = {
   readonly tags?: boolean;
   /** How many frames render at once (`render-slots.ts`); the app's shared slots unless a test gives its own. */
   readonly slots?: RenderSlots;
+  /** How many frames are live at once (`live-frames.ts`); the app's shared budget unless a test gives its own. */
+  readonly budget?: FrameBudget;
+  /** Where core's engine runs (`check-engine.ts`); the main thread unless the app gives its worker. */
+  readonly engine?: CheckEngine;
 };
 
 /** Element tags are on unless the app was opened with `frame-tags=off`. */
@@ -95,10 +112,24 @@ function tagsByDefault(): boolean {
 }
 
 /** An iframe in the DOM for one frame. `ready` is set once its boot script says it listens: a message sent before then is lost. */
-type Attached = { readonly frame: HTMLIFrameElement; readonly generation: number; readonly channel: string; ready: boolean; timer?: ReturnType<typeof setTimeout> };
+type Attached = { readonly frame: HTMLIFrameElement; readonly generation: number; readonly channel: string; ready: boolean };
+
+/**
+ * A frame's turn at a render slot: to be measured, or to be drawn again
+ * near the screen after it was parked. `channel` is the document it was
+ * asked on, once it was asked.
+ */
+type Turn = { readonly token: symbol; readonly purpose: "measure" | "show"; granted: boolean; channel: string | null; timer?: ReturnType<typeof setTimeout> };
+
+/** One place a frame is drawn (`FrameViewport`): whether it is near the screen, and the way to say it has gone. */
+export type FramePresence = { readonly visible: (visible: boolean) => void; readonly leave: () => void };
+
+/** How often a frame drawn again near the screen measured what it measured the first time: for the app's own checks of itself. */
+export type Reshown = { readonly count: number; readonly same: number };
 
 const PAGE_KIT = "@design-harness/page";
 const TOP = { x: 0, y: 0 } as const;
+let sessions = 0;
 
 export class Session {
   private state: SessionState = { revision: 0, frames: [], frameStates: {}, packages: { state: "loading" }, compileProblems: [], report: null, measured: false };
@@ -106,10 +137,12 @@ export class Session {
   private readonly attached = new Map<FrameKey, Attached>();
   private config: ProjectConfig | null = null;
   private prototype: Prototype | null = null;
-  /** Core's model of the current revision, extracted once for its checks and its tags. */
-  private model: PrototypeModel | null = null;
   private readonly tags: boolean;
   private modules: Readonly<Record<string, ModuleSource>> = {};
+  /** The current revision's modules (TSX) or pages (spec) have come back from the engine. */
+  private prepared = false;
+  /** The revision whose last check has been asked for, so it is asked once. */
+  private finishing = 0;
   private packages: { key: string; value: Promise<RuntimePackages> } | null = null;
   private resolved: RuntimePackages | null = null;
   private readonly channels = new Map<string, FrameKey>();
@@ -118,21 +151,44 @@ export class Session {
   private readonly scrollListeners = new Set<() => void>();
   /** The render slot each frame of the current revision waits for or holds. */
   private readonly slots: RenderSlots;
-  private readonly rendering = new Map<FrameKey, symbol>();
-  /** A draft was drawn into the current revision's frames by `redraw`. */
-  private redrawn = false;
+  private readonly turns = new Map<FrameKey, Turn>();
+  /** How many frames are live at once, and each frame's hold on that budget while it is live or waits to be. */
+  private readonly budget: FrameBudget;
+  private readonly holds = new Map<FrameKey, symbol>();
+  /**
+   * The frames whose viewport should hold a live iframe, each with the
+   * number of its going live: a frame parked and shown again gets a fresh
+   * document, on a fresh channel, since a document renders once.
+   */
+  private readonly lives = new Map<FrameKey, number>();
+  private epoch = 0;
+  /** The live frames whose document has drawn its page and answered, so what shows is the page. */
+  private readonly drawn = new Set<FrameKey>();
+  private readonly liveListeners = new Set<() => void>();
+  /** Where each frame is drawn: its viewports, and whether each is near the screen. */
+  private readonly viewers = new Map<symbol, { readonly key: FrameKey; visible: boolean }>();
+  /** What each frame was last asked to outline, so a frame drawn again outlines it too. */
+  private readonly marks = new Map<FrameKey, { readonly element: number | null } | { readonly tags: readonly string[] }>();
+  /** A draft drawn into the current revision's frames by `redraw`, which a frame drawn again draws too. */
+  private draft: { readonly config: ProjectConfig; readonly prototype: Prototype } | null = null;
+  private reshown = { count: 0, same: 0 };
+  private readonly engine: CheckEngine;
+  /** This session's name to the engine, which keeps its last model. */
+  private readonly id = `session-${(sessions += 1)}`;
 
   constructor(private readonly options: SessionOptions) {
     this.tags = options.tags ?? tagsByDefault();
     this.slots = options.slots ?? RENDER_SLOTS;
+    this.budget = options.budget ?? FRAME_BUDGET;
+    this.engine = options.engine ?? mainThreadEngine();
     options.window.addEventListener("message", this.onMessage);
   }
 
   dispose(): void {
     this.options.window.removeEventListener("message", this.onMessage);
-    for (const attached of this.attached.values()) clearTimeout(attached.timer);
+    this.endAll();
     this.attached.clear();
-    this.freeSlots();
+    this.engine.forget(this.id);
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -141,6 +197,11 @@ export class Session {
   };
 
   getState = (): SessionState => this.state;
+
+  /** Where core's engine runs for this session: the module worker, or the main thread when a worker could not start. */
+  engineWhere(): "worker" | "main" {
+    return this.engine.where();
+  }
 
   private set(patch: Partial<SessionState>): void {
     this.state = { ...this.state, ...patch };
@@ -155,32 +216,104 @@ export class Session {
     return () => this.scrollListeners.delete(listener);
   };
 
+  private tellScroll(): void {
+    for (const listener of this.scrollListeners) listener();
+  }
+
+  /**
+   * Whether a frame's viewport should hold a live iframe now, as the number
+   * of its going live (a new number is a new document), or null while it is
+   * parked: not yet given its turn, or measured and away from the screen.
+   */
+  liveOf = (key: FrameKey): number | null => this.lives.get(key) ?? null;
+
+  subscribeLive = (listener: () => void): (() => void) => {
+    this.liveListeners.add(listener);
+    return () => this.liveListeners.delete(listener);
+  };
+
+  /** Whether a live frame's document has drawn its page and answered (its snapshot, or its error). */
+  drawnOf = (key: FrameKey): boolean => this.drawn.has(key);
+
+  /** How many of this session's frames are live now. */
+  liveCount(): number {
+    return this.lives.size;
+  }
+
+  /** How many frames were drawn again after being parked, and how many of those measured exactly what they measured first. */
+  reshownCount(): Reshown {
+    return { ...this.reshown };
+  }
+
+  private tellLive(): void {
+    for (const listener of this.liveListeners) listener();
+  }
+
+  /**
+   * Says a frame is drawn somewhere (`FrameViewport`), so the session gives
+   * it a turn to be measured, near the screen first, and keeps it live while
+   * it is near the screen and the budget has room.
+   */
+  present(key: FrameKey): FramePresence {
+    const token = Symbol(key);
+    this.viewers.set(token, { key, visible: false });
+    this.schedule(key);
+    return {
+      visible: (visible) => {
+        const viewer = this.viewers.get(token);
+        if (!viewer || viewer.visible === visible) return;
+        viewer.visible = visible;
+        this.schedule(key);
+      },
+      leave: () => {
+        if (!this.viewers.delete(token)) return;
+        this.schedule(key);
+      },
+    };
+  }
+
+  private isPresent(key: FrameKey): boolean {
+    for (const viewer of this.viewers.values()) if (viewer.key === key) return true;
+    return false;
+  }
+
+  private isVisible(key: FrameKey): boolean {
+    for (const viewer of this.viewers.values()) if (viewer.key === key && viewer.visible) return true;
+    return false;
+  }
+
   /** The config and prototype of the current revision, or null before the first. */
   current(): { readonly config: ProjectConfig; readonly prototype: Prototype; readonly revision: number } | null {
     return this.config && this.prototype ? { config: this.config, prototype: this.prototype, revision: this.state.revision } : null;
   }
 
-  /** Starts a new revision for this config and prototype. */
+  /**
+   * Starts a new revision for this config and prototype. Core checks it at
+   * once without snapshots, in the engine, which also gives back what the
+   * frames need (a TSX prototype's modules, a spec prototype's pages); the
+   * report is null until it answers.
+   */
   update(config: ProjectConfig, prototype: Prototype): void {
     this.config = config;
     this.prototype = prototype;
     const revision = this.state.revision + 1;
     const spec = prototype.format === "spec";
-    const model = spec ? specModel(prototype, config) : extractPrototype(prototype, config.library.package);
-    this.model = model;
-    // A spec prototype has no code to compile: its frames load the spec renderer and get each page's spec as data.
-    // A TSX prototype's elements are tagged where core found them, after core has read the source.
-    const compiled = spec ? { modules: {}, problems: [] } : compilePrototype(prototype.files, this.tags ? tagSites(model) : undefined);
-    this.modules = spec ? { [SPEC_RENDERER]: { code: this.options.spec ?? "throw new Error('this app has no spec renderer');" } } : Object.fromEntries(Object.entries(compiled.modules).map(([specifier, code]) => [specifier, { code }]));
-    const frames = frameSpecs(config, prototype);
+    // A spec prototype has no code to compile: its frames load the spec renderer and get each page's spec as data, once the engine has resolved it.
+    this.modules = spec ? { [SPEC_RENDERER]: { code: this.options.spec ?? "throw new Error('this app has no spec renderer');" } } : {};
+    this.prepared = false;
+    const frames = frameSpecs(config, prototype, spec ? null : undefined);
     const frameStates: Record<FrameKey, FrameState> = {};
     for (const frame of frames) frameStates[frame.key] = frame.blocked ? { state: "failed", stage: "setup", message: frame.blocked } : { state: "waiting" };
-    for (const attached of this.attached.values()) clearTimeout(attached.timer);
-    // No frame of the last revision renders any more: its slots go to this one's.
-    this.freeSlots();
-    this.redrawn = false;
-    this.scrolls.clear();
-    this.set({ revision, frames, frameStates, compileProblems: compiled.problems, report: checkPrototype({ config, prototype, model }), measured: false });
+    // No frame of the last revision renders or stays live any more: its slots and holds go to this one's.
+    this.endAll();
+    this.marks.clear();
+    this.draft = null;
+    this.set({ revision, frames, frameStates, compileProblems: [], report: null, measured: false });
+
+    this.engine.run({ kind: "prepare", session: this.id, revision, config, prototype, tags: this.tags }).then(
+      (prepared) => this.onPrepared(revision, prepared),
+      (error: unknown) => console.error("design-harness: core's check failed", error),
+    );
 
     const libraryKey = JSON.stringify([config.library.package, config.library.version, config.library.react, config.library.stylesheets ?? [], spec]);
     if (this.packages?.key !== libraryKey) {
@@ -193,7 +326,7 @@ export class Session {
           if (this.packages?.value !== value) return;
           this.resolved = packages;
           this.set({ packages: { state: "ready", source: this.options.source.name } });
-          for (const [key, attached] of this.attached) if (attached.generation === this.state.revision) this.sendIfReady(key);
+          this.scheduleAll();
         },
         (error: unknown) => {
           if (this.packages?.value !== value) return;
@@ -205,12 +338,33 @@ export class Session {
     } else if (this.state.packages.state === "failed") {
       this.failAll(this.state.packages.message);
     }
+    this.scheduleAll();
+    this.finishIfDone();
+  }
+
+  private onPrepared(revision: number, prepared: Prepared): void {
+    if (revision !== this.state.revision || !this.config || !this.prototype) return;
+    this.prepared = true;
+    const patch: { -readonly [K in keyof SessionState]?: SessionState[K] } = { compileProblems: prepared.problems };
+    // The last check may already be in: it is the revision's report from then on.
+    if (!this.state.measured) patch.report = prepared.report;
+    if (this.prototype.format === "spec") {
+      const frames = frameSpecs(this.config, this.prototype, prepared.payloads ?? {});
+      const frameStates: Record<FrameKey, FrameState> = { ...this.state.frameStates };
+      for (const frame of frames) if (frame.blocked && frameStates[frame.key]?.state === "waiting") frameStates[frame.key] = { state: "failed", stage: "setup", message: frame.blocked };
+      patch.frames = frames;
+      patch.frameStates = frameStates;
+    } else {
+      this.modules = Object.fromEntries(Object.entries(prepared.modules).map(([specifier, code]) => [specifier, { code }]));
+    }
+    this.set(patch);
+    this.scheduleAll();
     this.finishIfDone();
   }
 
   /** The `srcdoc` for a frame at the current revision, with a fresh channel. */
   documentFor(key: FrameKey): { generation: number; channel: string; html: string } | null {
-    const spec = this.state.frames.find((frame) => frame.key === key);
+    const spec = this.frameOf(key);
     if (!spec || !this.config) return null;
     const channel = this.options.channel?.() ?? crypto.randomUUID();
     this.channels.set(channel, key);
@@ -232,27 +386,36 @@ export class Session {
     if (frame === null) {
       // A late detach of an older iframe must not drop the one that replaced it.
       if (previous?.channel !== channel) return;
-      clearTimeout(previous.timer);
-      this.freeSlot(key);
+      this.lost(key, channel);
       this.attached.delete(key);
       this.channels.delete(channel);
+      this.schedule(key);
       return;
     }
-    if (previous) {
-      clearTimeout(previous.timer);
-      if (previous.channel !== channel) this.freeSlot(key);
-      if (previous.channel !== channel) this.channels.delete(previous.channel);
+    if (previous && previous.channel !== channel) {
+      this.lost(key, previous.channel);
+      this.channels.delete(previous.channel);
     }
     this.attached.set(key, { frame, generation, channel, ready: false });
+  }
+
+  /** A frame's document left while it was asked to render: a measurement starts again from waiting, a redraw just ends. */
+  private lost(key: FrameKey, channel: string): void {
+    this.drawn.delete(key);
+    const turn = this.turns.get(key);
+    if (!turn || turn.channel !== channel) return;
+    this.endTurn(key);
+    if (turn.purpose === "measure" && this.state.frameStates[key]?.state === "rendering") this.setFrame(key, { state: "waiting" });
   }
 
   /**
    * Draws a spec prototype's draft in the frames of the current revision, in
    * place: each frame that rendered a spec page gets the draft's spec for
    * its scenario, with no new document and no measurement, so a streaming
-   * patch does not take every frame back to blank. The revision, its report
-   * and its snapshots stay those of the prototype it was made for. Returns
-   * false, drawing nothing, when the current revision is not a spec
+   * patch does not take every frame back to blank. A frame parked away from
+   * the screen draws the draft when it is drawn again. The revision, its
+   * report and its snapshots stay those of the prototype it was made for.
+   * Returns false, drawing nothing, when the current revision is not a spec
    * prototype whose frames have all rendered: the caller then starts a
    * revision for the draft instead.
    */
@@ -260,21 +423,24 @@ export class Session {
     if (this.prototype?.format !== "spec" || draft.format !== "spec") return false;
     const rendered = this.state.frames.filter((frame) => this.state.frameStates[frame.key]?.state === "measured");
     if (rendered.length === 0 || rendered.length !== this.state.frames.length) return false;
+    this.draft = { config, prototype: draft };
     const parts = specParts(config);
-    for (const frame of rendered) {
-      const attached = this.attached.get(frame.key);
-      const payload = specPayload(config, draft, frame.scenario, parts);
-      if (!attached || attached.generation !== this.state.revision || !payload) continue;
-      attached.frame.contentWindow?.postMessage({ protocol: PROTOCOL, type: "redraw", channel: attached.channel, generation: attached.generation, spec: payload }, "*");
-    }
-    this.redrawn = true;
+    for (const frame of rendered) this.drawDraft(frame, parts);
     return true;
+  }
+
+  private drawDraft(frame: FrameSpec, parts: Readonly<Record<string, SpecPart>>): void {
+    const attached = this.attached.get(frame.key);
+    if (!this.draft || !attached || attached.generation !== this.state.revision) return;
+    const payload = specPayload(this.draft.config, this.draft.prototype, frame.scenario, parts);
+    if (!payload) return;
+    attached.frame.contentWindow?.postMessage({ protocol: PROTOCOL, type: "redraw", channel: attached.channel, generation: attached.generation, spec: payload }, "*");
   }
 
   /** Puts back what the current revision rendered, after `redraw` drew a draft that was not applied. */
   restore(): void {
-    if (!this.redrawn) return;
-    this.redrawn = false;
+    if (!this.draft) return;
+    this.draft = null;
     for (const frame of this.state.frames) {
       const attached = this.attached.get(frame.key);
       if (!attached || attached.generation !== this.state.revision || !frame.page || !("spec" in frame.page)) continue;
@@ -282,20 +448,35 @@ export class Session {
     }
   }
 
-  /** Outlines element `index` of a frame's last snapshot, or clears it with null. */
+  /** Outlines element `index` of a frame's last snapshot, or clears it with null. A parked frame outlines it when it is drawn again. */
   highlight(key: FrameKey, index: number | null): void {
+    if (index === null) this.marks.delete(key);
+    else this.marks.set(key, { element: index });
     this.post(key, { element: index });
   }
 
   /** Outlines every element a frame drew under one of `tags` (`tags.ts`): a finding's elements. */
   outline(key: FrameKey, tags: readonly string[]): void {
-    if (tags.length > 0) this.post(key, { tags });
+    if (tags.length === 0) return;
+    this.marks.set(key, { tags });
+    this.post(key, { tags });
   }
 
   private post(key: FrameKey, what: { readonly element: number | null } | { readonly tags: readonly string[] }): void {
     const attached = this.attached.get(key);
     if (!attached || attached.generation !== this.state.revision) return;
     attached.frame.contentWindow?.postMessage({ protocol: PROTOCOL, type: "highlight", channel: attached.channel, generation: attached.generation, ...what }, "*");
+  }
+
+  /** What a frame drawn again shows on top of its page: the draft being streamed, or else its outline. */
+  private replay(key: FrameKey): void {
+    const frame = this.frameOf(key);
+    if (this.draft && frame) {
+      this.drawDraft(frame, specParts(this.draft.config));
+      return;
+    }
+    const mark = this.marks.get(key);
+    if (mark) this.post(key, mark);
   }
 
   private readonly onMessage = (event: MessageEvent): void => {
@@ -306,7 +487,7 @@ export class Session {
     const attached = this.attached.get(key);
     // Only the iframe this channel was issued to may speak on it.
     if (!attached || attached.channel !== channel || event.source !== attached.frame.contentWindow) return;
-    const spec = this.state.frames.find((frame) => frame.key === key);
+    const spec = this.frameOf(key);
     if (!spec) return;
     const message = readFrameMessage(event.data, channel, { scenario: spec.scenario.id, view: spec.view.name });
     if (!message) return;
@@ -317,7 +498,7 @@ export class Session {
     if (attached.generation !== this.state.revision) return;
     if (message.type === "ready") {
       attached.ready = true;
-      this.sendIfReady(key);
+      this.schedule(key);
       return;
     }
     if (message.type === "scroll") {
@@ -326,51 +507,237 @@ export class Session {
       const previous = this.scrolls.get(key) ?? TOP;
       if (previous.x === message.x && previous.y === message.y) return;
       this.scrolls.set(key, { x: message.x, y: message.y });
-      for (const listener of this.scrollListeners) listener();
+      this.tellScroll();
       return;
     }
-    // A frame answers once, for the generation it was rendered at; anything else is stale or a second word.
-    if (message.generation !== attached.generation || this.state.frameStates[key]?.state !== "rendering") return;
-    clearTimeout(attached.timer);
-    this.freeSlot(key);
+    // A frame answers once, for the generation and document it was asked on; anything else is stale or a second word.
+    const turn = this.turns.get(key);
+    if (message.generation !== attached.generation || !turn || turn.channel !== attached.channel) return;
+    if (turn.purpose === "show") {
+      // A picture of a frame already measured: its snapshot is never used, only compared with the one measured first.
+      this.endTurn(key);
+      this.markDrawn(key);
+      const first = this.state.frameStates[key];
+      if (message.type === "snapshot" && first?.state === "measured") {
+        this.reshown = { count: this.reshown.count + 1, same: this.reshown.same + (sameSnapshot(first.snapshot, message.snapshot) ? 1 : 0) };
+      }
+      this.replay(key);
+      return;
+    }
+    if (this.state.frameStates[key]?.state !== "rendering") return;
+    this.endTurn(key);
     if (message.type === "snapshot") this.setFrame(key, { state: "measured", snapshot: message.snapshot, tags: message.tags });
     else this.setFrame(key, { state: "failed", stage: message.stage, message: message.message });
+    this.afterMeasure(key);
     this.finishIfDone();
   }
 
-  private freeSlot(key: FrameKey): void {
-    const token = this.rendering.get(key);
-    if (token === undefined) return;
-    this.rendering.delete(key);
-    this.slots.release(token);
+  /** A frame has answered for its measurement: it stays live while it is near the screen, and is parked otherwise. */
+  private afterMeasure(key: FrameKey): void {
+    const hold = this.holds.get(key);
+    if (hold && this.isVisible(key) && this.lives.has(key)) {
+      this.budget.keep(hold, () => this.parkedBy(key, hold));
+      this.markDrawn(key);
+      this.replay(key);
+      return;
+    }
+    this.park(key);
   }
 
-  private freeSlots(): void {
-    for (const key of [...this.rendering.keys()]) this.freeSlot(key);
+  /** The frames to look at again after something that frees a slot or a hold. */
+  private scheduleAll(): void {
+    // Near the screen first: a slot that is free now goes to a frame someone is looking at.
+    const keys = this.state.frames.map((frame) => frame.key);
+    for (const key of [...keys.filter((key) => this.isVisible(key)), ...keys.filter((key) => !this.isVisible(key))]) this.schedule(key);
   }
 
-  /** Asks a frame to render once it listens, the packages are resolved and a render slot is free. */
-  private sendIfReady(key: FrameKey): void {
-    const attached = this.attached.get(key);
-    const spec = this.state.frames.find((frame) => frame.key === key);
-    if (!attached?.ready || !spec || !this.resolved || !spec.page || !spec.pageType || this.state.frameStates[key]?.state !== "waiting" || this.rendering.has(key)) return;
-    const { channel, generation } = attached;
-    const token = Symbol(key);
-    this.rendering.set(key, token);
-    this.slots.request(token, () => {
-      // By the time a slot is free, the frame may be gone or a newer revision may have started.
-      const now = this.attached.get(key);
-      const live = this.rendering.get(key) === token && now?.channel === channel && generation === this.state.revision && this.state.frameStates[key]?.state === "waiting";
-      if (!live || !now) {
-        if (this.rendering.get(key) === token) this.rendering.delete(key);
-        return false;
+  /**
+   * Decides what one frame of the current revision needs now. A frame
+   * waiting to be measured asks for a render slot, on screen first, once
+   * it is drawn somewhere (or its iframe is already in the DOM and
+   * listening) and what it renders is ready. A measured frame near the
+   * screen asks to be live again; one away from it is parked.
+   */
+  private schedule(key: FrameKey): void {
+    const frame = this.frameOf(key);
+    const state = this.state.frameStates[key];
+    if (!frame || !state) return;
+    const visible = this.isVisible(key);
+    const present = this.isPresent(key);
+    const turn = this.turns.get(key);
+    if (state.state === "waiting") {
+      const attached = this.attached.get(key);
+      const listening = attached?.ready === true && attached.generation === this.state.revision;
+      if (!(present || listening) || !this.canRender(frame)) {
+        if (turn && turn.channel === null) {
+          this.endTurn(key);
+          this.park(key);
+        }
+        return;
       }
-      this.send(key, now, spec);
-      return true;
-    });
+      if (!turn) this.askTurn(key, "measure", visible ? PRIORITY.onScreen : PRIORITY.offScreen);
+      else if (!turn.granted) this.slots.reprioritize(turn.token, visible ? PRIORITY.onScreen : PRIORITY.offScreen);
+      else this.sendIfReady(key);
+      return;
+    }
+    if (state.state === "rendering") return;
+    if (state.state === "measured" && present && visible) {
+      if (!this.lives.has(key) && !this.holds.has(key)) this.askShow(key);
+      else if (turn?.granted) this.sendIfReady(key);
+      return;
+    }
+    if (this.lives.has(key) || this.holds.has(key)) this.park(key);
   }
 
-  private send(key: FrameKey, attached: Attached, spec: FrameSpec): void {
+  private canRender(frame: FrameSpec): boolean {
+    return this.resolved !== null && this.prepared && frame.page !== undefined && frame.pageType !== undefined;
+  }
+
+  private askTurn(key: FrameKey, purpose: Turn["purpose"], priority: number): void {
+    const turn: Turn = { token: Symbol(key), purpose, granted: false, channel: null };
+    const revision = this.state.revision;
+    this.turns.set(key, turn);
+    this.slots.request(
+      turn.token,
+      () => {
+        // By the time a slot is free, the frame may be gone, answered, or a newer revision may have started.
+        const now = this.state.frameStates[key]?.state;
+        if (this.turns.get(key) !== turn || revision !== this.state.revision || now !== (purpose === "measure" ? "waiting" : "measured")) {
+          if (this.turns.get(key) === turn) this.turns.delete(key);
+          return false;
+        }
+        turn.granted = true;
+        if (purpose === "measure") this.budget.measure(this.holdOf(key));
+        this.goLive(key);
+        // A frame given its turn must load and say it listens in time, or it fails rather than holding its slot for ever.
+        turn.timer = setTimeout(() => this.timedOut(key, turn), this.options.timeoutMs ?? 20000);
+        this.sendIfReady(key);
+        return true;
+      },
+      priority,
+    );
+  }
+
+  private askShow(key: FrameKey): void {
+    const hold = this.holdOf(key);
+    const revision = this.state.revision;
+    this.budget.show(
+      hold,
+      () => {
+        if (this.holds.get(key) !== hold || revision !== this.state.revision || this.state.frameStates[key]?.state !== "measured" || !this.isVisible(key)) {
+          this.budget.release(hold);
+          if (this.holds.get(key) === hold) this.holds.delete(key);
+          return;
+        }
+        this.askTurn(key, "show", PRIORITY.onScreen);
+      },
+      () => this.parkedBy(key, hold),
+    );
+  }
+
+  /** The budget took a shown frame's hold back for a frame that must be measured: it is parked, and asks again while it is near the screen. */
+  private parkedBy(key: FrameKey, hold: symbol): void {
+    if (this.holds.get(key) !== hold) return;
+    this.holds.delete(key);
+    this.park(key);
+    queueMicrotask(() => this.schedule(key));
+  }
+
+  private holdOf(key: FrameKey): symbol {
+    let hold = this.holds.get(key);
+    if (!hold) {
+      hold = Symbol(key);
+      this.holds.set(key, hold);
+    }
+    return hold;
+  }
+
+  private markDrawn(key: FrameKey): void {
+    if (!this.lives.has(key) || this.drawn.has(key)) return;
+    this.drawn.add(key);
+    this.tellLive();
+  }
+
+  private goLive(key: FrameKey): void {
+    if (this.lives.has(key)) return;
+    this.lives.set(key, (this.epoch += 1));
+    this.tellLive();
+  }
+
+  /** Takes a frame out of the DOM, keeping its snapshot: its show turn and its hold end, and it is at the top when it is drawn again. */
+  private park(key: FrameKey): void {
+    const turn = this.turns.get(key);
+    if (turn?.purpose === "show") this.endTurn(key);
+    const hold = this.holds.get(key);
+    if (hold) {
+      this.holds.delete(key);
+      this.budget.release(hold);
+    }
+    this.drawn.delete(key);
+    if (this.lives.delete(key)) this.tellLive();
+    if (this.scrolls.delete(key)) this.tellScroll();
+  }
+
+  /** Asks a frame to render once it listens, packages and pages are ready, and its turn at a slot has come. */
+  private sendIfReady(key: FrameKey): void {
+    const turn = this.turns.get(key);
+    const attached = this.attached.get(key);
+    const frame = this.frameOf(key);
+    if (!turn?.granted || turn.channel !== null || !attached?.ready || attached.generation !== this.state.revision || !frame || !this.canRender(frame)) return;
+    if (turn.purpose === "measure" && this.state.frameStates[key]?.state !== "waiting") return;
+    turn.channel = attached.channel;
+    clearTimeout(turn.timer);
+    turn.timer = setTimeout(() => this.timedOut(key, turn), this.options.timeoutMs ?? 20000);
+    this.send(key, attached, frame, turn.purpose === "measure");
+  }
+
+  private timedOut(key: FrameKey, turn: Turn): void {
+    if (this.turns.get(key) !== turn) return;
+    this.endTurn(key);
+    if (turn.purpose === "show") return;
+    const seconds = Math.round((this.options.timeoutMs ?? 20000) / 1000);
+    const state = this.state.frameStates[key]?.state;
+    if (turn.channel === null && state === "waiting") this.setFrame(key, { state: "failed", stage: "timeout", message: `The frame did not load within ${seconds} s.` });
+    else if (state === "rendering") this.setFrame(key, { state: "failed", stage: "timeout", message: `The frame did not answer within ${seconds} s.` });
+    else return;
+    this.park(key);
+    this.scheduleAll();
+    this.finishIfDone();
+  }
+
+  /** Ends a frame's turn: its timer stops and its slot, held or asked for, is given back. */
+  private endTurn(key: FrameKey): void {
+    const turn = this.turns.get(key);
+    if (!turn) return;
+    clearTimeout(turn.timer);
+    this.turns.delete(key);
+    this.slots.release(turn.token);
+  }
+
+  /** Ends every turn and hold, and parks every frame: a new revision or the session's end. */
+  private endAll(): void {
+    // Each map is emptied before anything is given back, so a slot or hold freed here cannot start one of these frames again.
+    const turns = [...this.turns.values()];
+    this.turns.clear();
+    for (const turn of turns) {
+      clearTimeout(turn.timer);
+      this.slots.release(turn.token);
+    }
+    const holds = [...this.holds.values()];
+    this.holds.clear();
+    for (const hold of holds) this.budget.release(hold);
+    this.drawn.clear();
+    if (this.lives.size > 0) {
+      this.lives.clear();
+      this.tellLive();
+    }
+    if (this.scrolls.size > 0) {
+      this.scrolls.clear();
+      this.tellScroll();
+    }
+  }
+
+  private send(key: FrameKey, attached: Attached, spec: FrameSpec, measure: boolean): void {
     const packages = this.resolved;
     if (!packages || !spec.page || !spec.pageType) return;
     const request: RenderRequest = {
@@ -388,14 +755,12 @@ export class Session {
       tags: this.tags,
       ...(this.config?.library.root ? { root: rootRef(this.config.library, spec.view.scheme) as RootRef } : {}),
     };
-    this.setFrame(key, { state: "rendering" });
-    attached.timer = setTimeout(() => {
-      if (attached.generation !== this.state.revision || this.state.frameStates[key]?.state !== "rendering") return;
-      this.freeSlot(key);
-      this.setFrame(key, { state: "failed", stage: "timeout", message: `The frame did not answer within ${Math.round((this.options.timeoutMs ?? 20000) / 1000)} s.` });
-      this.finishIfDone();
-    }, this.options.timeoutMs ?? 20000);
+    if (measure) this.setFrame(key, { state: "rendering" });
     attached.frame.contentWindow?.postMessage(request, "*");
+  }
+
+  private frameOf(key: FrameKey): FrameSpec | undefined {
+    return this.state.frames.find((frame) => frame.key === key);
   }
 
   private setFrame(key: FrameKey, value: FrameState): void {
@@ -405,30 +770,48 @@ export class Session {
   private failAll(message: string): void {
     const frameStates: Record<FrameKey, FrameState> = { ...this.state.frameStates };
     for (const frame of this.state.frames) if (frameStates[frame.key]?.state !== "failed") frameStates[frame.key] = { state: "failed", stage: "setup", message };
-    this.freeSlots();
+    this.endAll();
     this.set({ frameStates });
     this.finishIfDone();
   }
 
   /** Once every frame of the revision has answered, core checks the prototype with the snapshots it has. */
   private finishIfDone(): void {
-    const { frames, frameStates, measured } = this.state;
-    if (measured || !this.config || !this.prototype) return;
+    const { frames, frameStates, measured, revision } = this.state;
+    if (measured || this.finishing === revision || !this.config || !this.prototype) return;
     const states = frames.map((frame) => frameStates[frame.key]);
     if (states.some((state) => state === undefined || state.state === "waiting" || state.state === "rendering")) return;
     const snapshots = states.flatMap((state) => (state?.state === "measured" ? [state.snapshot] : []));
-    this.set({ report: checkPrototype({ config: this.config, prototype: this.prototype, snapshots, ...(this.model ? { model: this.model } : {}) }), measured: true });
+    this.finishing = revision;
+    this.engine.run({ kind: "measure", session: this.id, revision, config: this.config, prototype: this.prototype, snapshots }).then(
+      (report) => {
+        if (revision === this.state.revision) this.set({ report, measured: true });
+      },
+      (error: unknown) => console.error("design-harness: core's check failed", error),
+    );
   }
 }
 
-/** One frame per scenario and view, in the prototype's scenario order and the config's view order. */
-export function frameSpecs(config: ProjectConfig, prototype: Prototype): FrameSpec[] {
+/** Whether a frame drawn again measured exactly what it measured first. */
+function sameSnapshot(a: RenderedSnapshot, b: RenderedSnapshot): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * One frame per scenario and view, in the prototype's scenario order and the
+ * config's view order. A spec prototype's pages are core's resolved specs:
+ * given in `payloads` by scenario id (as the engine returns them), worked
+ * out here when it is undefined, or not known yet when it is null, which
+ * leaves such a frame without its page and not blocked until they are.
+ */
+export function frameSpecs(config: ProjectConfig, prototype: Prototype, payloads?: Readonly<Record<string, SpecPayload | null>> | null): FrameSpec[] {
   const pageTypes = new Map(config.inventories.pageTypes.map((type) => [type.id, type]));
-  const parts = prototype.format === "spec" ? specParts(config) : {};
+  const parts = prototype.format === "spec" && payloads === undefined ? specParts(config) : {};
   return prototype.scenarios.flatMap((scenario) => {
     const page = prototype.pages.find((item) => item.id === scenario.page);
     const pageType = page ? pageTypes.get(page.pageType) : undefined;
-    const payload = page && prototype.format === "spec" ? specPayload(config, prototype, scenario, parts) : null;
+    const pending = prototype.format === "spec" && payloads === null;
+    const payload = page && prototype.format === "spec" && !pending ? (payloads ? (payloads[scenario.id] ?? null) : specPayload(config, prototype, scenario, parts)) : null;
     const ref: PageRef | undefined = !page ? undefined : prototype.format === "spec" ? (payload ? { spec: payload } : undefined) : { module: moduleSpecifier(page.component.file), export: page.component.export };
     const blocked = !page
       ? `Scenario "${scenario.id}" names page "${scenario.page}", which is not in the prototype's manifest.`
@@ -436,7 +819,7 @@ export function frameSpecs(config: ProjectConfig, prototype: Prototype): FrameSp
         ? `Page "${page.id}" is a "${page.pageType}" page, which is not a page type in the project's inventory, so the shell has no slots to lay out.`
         : prototype.files[page.component.file] === undefined
           ? `Page "${page.id}" names ${page.component.file}, which is not a file in the prototype.`
-          : !ref
+          : !ref && !pending
             ? `Page "${page.id}"'s spec, ${page.component.file}, could not be read; the checks say why.`
             : undefined;
     return config.views.map((view): FrameSpec => ({

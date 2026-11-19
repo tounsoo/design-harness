@@ -110,6 +110,7 @@
   .frame-viewport { position: relative; overflow: hidden; border-radius: var(--todae-harness-artboard-radius); box-shadow: 0 0 0 var(--todae-border-width) var(--todae-color-border-subtle), var(--todae-harness-shadow-raised); }
   .frame-card[data-selected] .frame-viewport { box-shadow: 0 0 0 var(--todae-focus-ring-width) var(--todae-harness-artboard-selected), var(--todae-harness-shadow-raised); }
   .frame-iframe { display: block; border: 0; transform-origin: 0 0; background: transparent; }
+  .frame-parked { display: block; color: var(--todae-color-fg-muted); }
   .frame-failure { position: absolute; inset: 0; padding: var(--todae-space-3); overflow: auto; background: var(--todae-color-status-critical-bg); color: var(--todae-color-status-critical-fg); }
   .frame-failure p { margin: 0 0 var(--todae-space-2); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
 

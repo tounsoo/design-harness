@@ -5,6 +5,7 @@ import { legalSnapshots } from "../../../../packages/core/examples/nook/snapshot
 import { seedLegal, seedSpec } from "../../test/nook";
 import type { PackageSource } from "./package-source";
 import { PROTOCOL, type RenderRequest } from "./protocol";
+import { FrameBudget } from "./live-frames";
 import { RenderSlots } from "./render-slots";
 import { Session, frameKey } from "./session";
 
@@ -32,7 +33,7 @@ function harness(source = fakeSource(), options: { readonly tags?: boolean; read
   } as unknown as Window;
   let next = 0;
   // Slots of its own, so the frames of one test never wait on those of another.
-  const session = new Session({ source, kit: "/* kit */", boot: "/* boot */", parentOrigin: "https://app.example", window: win, channel: () => `ch-${(next += 1)}`, timeoutMs: 1000, slots: new RenderSlots(12), ...options });
+  const session = new Session({ source, kit: "/* kit */", boot: "/* boot */", parentOrigin: "https://app.example", window: win, channel: () => `ch-${(next += 1)}`, timeoutMs: 1000, slots: new RenderSlots(12), budget: new FrameBudget(24), ...options });
   const frames = new Map<string, { channel: string; generation: number; window: { postMessage: ReturnType<typeof vi.fn> } }>();
   const mount = () => {
     for (const spec of session.getState().frames) {
@@ -57,6 +58,9 @@ describe("a session", () => {
   it("checks the source at once, renders every frame for the revision, and checks again with every snapshot", async () => {
     const { session, frames, mount, send } = harness();
     session.update(nook, legal);
+    // Core's first check comes back from the engine a tick later.
+    expect(session.getState().report).toBeNull();
+    await flush();
     expect(session.getState().report?.status).toBe("incomplete");
     expect(session.getState().measured).toBe(false);
     mount();
@@ -68,6 +72,7 @@ describe("a session", () => {
       expect(Object.keys(request.modules)).toEqual(expect.arrayContaining(["react", "@tounsoo/todae", "@design-harness/page", "@prototype/pages/booking.tsx"]));
     }
     for (const spec of session.getState().frames) send(spec.key, { type: "snapshot", generation: 1, snapshot: snapshotOf(spec.scenario.id, spec.view.name), tags: [] });
+    await flush();
     const state = session.getState();
     expect(state.measured).toBe(true);
     expect(state.report?.status).toBe("pass");
@@ -160,6 +165,7 @@ describe("a session", () => {
     expect(asked()).toEqual(order.slice(0, 5));
     // Every frame answers in the end, and the report has them all.
     for (let round = 0; round < order.length; round += 1) for (const spec of session.getState().frames) send(spec.key, { type: "snapshot", generation: 1, snapshot: snapshotOf(spec.scenario.id, spec.view.name), tags: [] });
+    await flush();
     expect(session.getState().measured).toBe(true);
     expect(Object.values(session.getState().frameStates).filter((state) => state.state === "measured")).toHaveLength(order.length - 1);
     // A new revision does not wait for the last one's frames: three of its own render at once, twice over.
@@ -226,6 +232,9 @@ describe("a session of a spec prototype", () => {
     const source: PackageSource = { name: "fake", origins: [], module: (specifier) => (asked.push(specifier), Promise.resolve({ code: `/* ${specifier} */` })), stylesheet: () => Promise.resolve({ css: "" }) };
     const session = new Session({ source, kit: "/* kit */", spec: "/* spec renderer */", boot: "/* boot */", parentOrigin: "https://app.example", window: win, channel: () => `ch-${(next += 1)}`, timeoutMs: 1000 });
     session.update(nook, seedSpec());
+    // Each page's spec comes back from the engine with core's first check.
+    expect(session.getState().frames.every((frame) => frame.page === undefined && frame.blocked === undefined)).toBe(true);
+    await flush();
     expect(session.getState().compileProblems).toEqual([]);
     const held = session.getState().frames.find((frame) => frame.key === frameKey("lantern-held", "phone"));
     expect(held?.page && "spec" in held.page ? held.page.spec.spec.state.scenario : null).toEqual({ id: "lantern-held", state: "held" });
