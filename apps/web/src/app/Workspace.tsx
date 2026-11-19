@@ -1,5 +1,5 @@
 import { Alert, Badge, Button, Field, Kbd, Link, Splitter, Stack, Tabs, Text, Toolbar, VisuallyHidden, useAnnouncer, useHotkey } from "@tounsoo/todae";
-import { CircleCheck, CodeXml, Download, Expand, FileCode2, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Shapes, Shrink, Upload, X } from "lucide-react";
+import { CircleCheck, CodeXml, Download, Expand, FileCode2, FolderPlus, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Shapes, Shrink, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { NO_VARIANTS, variantLabel, type Finding, type LayoutUse, type PickRecord, type ProjectConfig, type Prototype, type Variant, type VariantState } from "@design-harness/core";
 import { AgentController, type ChatRecord, type ChatStore } from "../agent/controller";
@@ -24,6 +24,7 @@ import { ProjectView } from "./ProjectView";
 import { ProposalPage } from "./ProposalPage";
 import { ProposalsView } from "./ProposalsView";
 import { PANEL_SIZES, usePanels } from "./panels";
+import type { ProjectEntry } from "./projects";
 import { createSession } from "./runtime";
 import { SHORTCUTS, ariaKeys } from "./shortcuts";
 import { codeZip } from "../export/code-zip";
@@ -41,6 +42,11 @@ type Props = {
   /** What the app changed or found about stored data on load. */
   readonly notes?: readonly LoadNote[];
   readonly onImported: (imported: Imported) => Promise<void>;
+  /** Every project in the store, for the switcher. */
+  readonly projects: readonly ProjectEntry[];
+  readonly onOpenProject: (id: string) => void;
+  /** Opens the New project wizard. */
+  readonly onNewProject: () => void;
 };
 
 /**
@@ -60,7 +66,7 @@ function chatStore(store: Store, projectId: string, prototypeId: string): ChatSt
   };
 }
 
-export function Workspace({ store, vault, config: initialConfig, prototypes: initial, problems, notes: loadNotes = [], onImported }: Props) {
+export function Workspace({ store, vault, config: initialConfig, prototypes: initial, problems, notes: loadNotes = [], onImported, projects, onOpenProject, onNewProject }: Props) {
   const session = useMemo(() => createSession(), []);
   useEffect(() => () => session.dispose(), [session]);
   const state = useSyncExternalStore(session.subscribe, session.getState);
@@ -469,9 +475,21 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
           <span className="shell-mark" aria-hidden="true">
             <Shapes />
           </span>
-          <Text.Root as="span" weight="bold" className="shell-project">
-            {config.name}
-          </Text.Root>
+          {projects.length > 1 ? (
+            <Field.Root aria-label="Project" className="shell-project-picker">
+              <Field.Select value={config.id} onValueChange={(id) => id !== config.id && onOpenProject(id)}>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </Field.Select>
+            </Field.Root>
+          ) : (
+            <Text.Root as="span" weight="bold" className="shell-project">
+              {config.name}
+            </Text.Root>
+          )}
           <span className="shell-slash" aria-hidden="true">
             /
           </span>
@@ -535,6 +553,12 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
         </Tabs.Root>
         <Toolbar.Root aria-label="Prototype actions" className="shell-actions">
           <NewPrototype config={config} onCreate={createPrototype} />
+          <Button.Root variant="ghost" onClick={onNewProject}>
+            <Button.Icon>
+              <FolderPlus />
+            </Button.Icon>
+            New project
+          </Button.Root>
           <Toolbar.Separator />
           {/* The project file out and in, and the prototype as a runnable React project: icons, named in their tooltips. */}
           <Button.Root variant="ghost" onClick={download} aria-label="Export">

@@ -2410,6 +2410,280 @@ test("code export writes no element tags, for a TSX prototype or a spec", async 
   }
 });
 
+// ---- a new project, from the wizard ---------------------------------------------
+
+/** Waits until every role card's preview frame has answered. */
+async function rolePreviewsDrawn(page) {
+  await page.waitForFunction(() => {
+    const previews = [...document.querySelectorAll('[data-testid="role-preview"]')];
+    return previews.length === 6 && previews.every((element) => ["measured", "failed", "none"].includes(element.dataset.state ?? ""));
+  }, null, { timeout: 90000 });
+}
+
+const roleCard = (page, role) => page.locator(`[data-role="${role}"]`);
+const roleFrame = (page, title) => page.frameLocator(`iframe[title="${title} preview"]`);
+
+/** Opens the wizard from the board, names the product and picks a shipped library, up to the roles step with its previews drawn. */
+async function wizardToRoles(page, name, library) {
+  await page.getByRole("button", { name: "New project" }).click();
+  await page.getByLabel("Product name").fill(name);
+  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("radio", { name: new RegExp(`^${library}`) }).check();
+  await page.getByTestId("library-facts").waitFor();
+  await page.getByRole("button", { name: "Next" }).click();
+  await page.locator(".role-grid").waitFor({ timeout: 60000 });
+  await rolePreviewsDrawn(page);
+}
+
+/** From the review step: waits for the starter's measured verdict, creates the project and waits for its board. */
+async function createFromReview(page) {
+  await page.waitForSelector('[data-testid="starter-verdict"]:not([data-state="measuring"])', { timeout: 90000 });
+  assert.equal(await page.getByTestId("starter-verdict").getAttribute("data-state"), "pass", `the starter page passes every rule, measured, before it is created: ${await page.getByTestId("starter-verdict").textContent()}`);
+  await page.getByTestId("create-project").click();
+  await measured(page, 1);
+}
+
+/** Exports the open project and returns the file's text. */
+async function exportedText(page) {
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export", exact: true }).click()]);
+  return { name: download.suggestedFilename(), text: readFileSync(await download.path(), "utf8") };
+}
+
+/** The new project's board passes every rule; a reload comes back to it with the same report; its export imports into a fresh browser as the same file. */
+async function passesReloadsAndRoundTrips(page, browser, base, { id, rules }) {
+  const first = await report(page);
+  assert.equal(first.status, "pass", `the new project's board passes every rule: ${JSON.stringify(first.rules.filter((rule) => rule.status !== "pass").map((rule) => [rule.rule, rule.status, rule.findings.slice(0, 2).map((finding) => finding.message)]))}`);
+  assert.equal(first.rules.length, rules + 1, "every rule in force ran, and the extract rule");
+  assert.ok(first.rules.every((rule) => rule.status === "pass"), "none is left not run: every frame was measured");
+  await page.reload();
+  await measured(page, 1);
+  assert.equal(await page.getByRole("combobox", { name: "Project" }).inputValue(), id, "a reload comes back to the project that was open");
+  assert.deepEqual(await report(page), first, "the same report after a reload");
+  const exported = await exportedText(page);
+  assert.equal(exported.name, `${id}.design-harness.json`);
+  const file = join(mkdtempSync(join(tmpdir(), "design-harness-wizard-")), exported.name);
+  writeFileSync(file, exported.text);
+  const other = await openApp(browser, base);
+  await measured(other.page, 1);
+  await other.page.locator('[data-testid="import-file"]').setInputFiles(file);
+  await eventually(other.page, () => other.page.getByRole("combobox", { name: "Project" }).inputValue().catch(() => ""), (value) => value === id, "the imported project opens");
+  await measured(other.page, 1);
+  assert.deepEqual(await report(other.page), first, "the imported project gives the same report");
+  assert.equal((await exportedText(other.page)).text, exported.text, "its export is the file that was imported, byte for byte");
+  assert.deepEqual(other.errors, []);
+  await other.context.close();
+  return JSON.parse(exported.text);
+}
+
+test("new project on Todae: named, roles confirmed by eye with a correction and its reason, a starter that passes every rule, kept on reload, and round-tripped", async ({ browser, base }) => {
+  const { page, context, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  await page.getByRole("button", { name: "New project" }).click();
+  // Step 1: the name, and the id core gives it.
+  await page.getByRole("button", { name: "Next" }).click();
+  assert.match((await page.getByRole("alert").first().textContent()) ?? "", /needs a name/, "core refuses a project with no name, on the name step");
+  await page.getByLabel("Product name").fill("Ledger");
+  assert.match((await page.getByTestId("project-id").textContent()) ?? "", /ledger/);
+  await page.getByRole("button", { name: "Next" }).click();
+  // Step 2: a library must be picked.
+  await page.getByRole("button", { name: "Next" }).click();
+  assert.match((await page.getByTestId("library-problem").textContent()) ?? "", /Pick a library first/);
+  await page.getByRole("radio", { name: /^Todae/ }).check();
+  assert.match((await page.getByTestId("library-facts").textContent()) ?? "", /@tounsoo\/todae.*0\.11\.3/s);
+  await page.getByRole("button", { name: "Next" }).click();
+  // Step 3: each role is drawn live, with Todae's own styles, in a frame sandboxed as the board's are.
+  await page.locator(".role-grid").waitFor();
+  await rolePreviewsDrawn(page);
+  assert.deepEqual(await page.locator('[data-testid="role-preview"] iframe').evaluateAll((frames) => [...new Set(frames.map((frame) => frame.getAttribute("sandbox")))]), ["allow-scripts"], "every preview frame is sandboxed without allow-same-origin");
+  assert.deepEqual(await roleFrame(page, "Primary action").getByRole("button").allTextContents(), ["variant: primary", "no variant"], "the primary action is drawn once with its value and once with no prop");
+  assert.ok((await roleFrame(page, "Primary action").locator('link[rel="stylesheet"], style').count()) > 0, "the frame carries the library's stylesheet");
+  assert.equal(await roleFrame(page, "Disclosure").locator("details > summary").textContent(), "Section name");
+  assert.equal(await roleFrame(page, "Question").getByLabel("Your answer").count(), 1, "the question is a labelled field");
+  assert.match((await roleCard(page, "primary-action").textContent()) ?? "", /Medium confidence.*whenMissing is true/s, "the card shows core's confidence and evidence");
+  assert.equal(await roleCard(page, "primary-action").getByTestId("role-mapping").textContent(), 'Button.Root with variant "primary" (or no variant)');
+  // Nothing is used until it is accepted or changed.
+  await page.getByRole("button", { name: "Next" }).click();
+  assert.match((await page.getByTestId("roles-problem").textContent()) ?? "", /6 roles need a decision/);
+  assert.match((await roleCard(page, "question").getByRole("alert").textContent()) ?? "", /role "question" is not confirmed/, "core's refusal is on the card it names");
+  await page.getByTestId("accept-all").click();
+  assert.equal(await page.getByTestId("roles-left").textContent(), "Every drafted role is decided.");
+  // A correction: a switch asks a question too. It needs a reason, in core's words, and the preview follows the pick.
+  const question = roleCard(page, "question");
+  await question.getByText("Pick another part").click();
+  await question.getByRole("checkbox", { name: "Switch.Root", exact: true }).check();
+  assert.equal(await question.getByTestId("role-status").textContent(), "Changed by you");
+  assert.equal(await question.getByTestId("role-mapping").textContent(), "Field.Root or Switch.Root");
+  await page.getByRole("button", { name: "Next" }).click();
+  assert.match((await question.getByRole("alert").textContent()) ?? "", /the correction of "question" gives no reason/);
+  await question.getByLabel("Why the change").fill("A switch asks a yes or no question too.");
+  await rolePreviewsDrawn(page);
+  await eventually(page, () => roleFrame(page, "Question").getByRole("switch").count(), (count) => count === 1, "the preview draws the switch that was picked");
+  await shot(page, "wizard-roles-todae");
+  await page.getByRole("button", { name: "Next" }).click();
+  // Step 4: the style props core proposes to exclude, to accept or change.
+  assert.match((await page.getByTestId("excluded-props").textContent()) ?? "", /2 style props of @tounsoo\/todae excluded/);
+  await page.getByRole("button", { name: "Next" }).click();
+  assert.match((await page.getByRole("alert").first().textContent()) ?? "", /the excluded props are not confirmed/);
+  await page.getByTestId("exclusion-accept").click();
+  await page.getByRole("button", { name: "Next" }).click();
+  // Step 5: a task with its budget, the ranked actions, the caps.
+  await page.getByLabel("Task 1", { exact: true }).fill("Pay an invoice");
+  await page.getByLabel("Most steps").fill("2");
+  await page.getByLabel("Rank 1, the primary action").fill("");
+  await page.getByRole("button", { name: "Review" }).click();
+  assert.match((await page.getByRole("alert").first().textContent()) ?? "", /the primary action needs its text/, "core refuses rule inputs no rule could read, on their step");
+  await page.getByLabel("Rank 1, the primary action").fill("Pay now");
+  await page.getByLabel("Rank 2, a secondary action").fill("");
+  assert.deepEqual(await page.getByTestId("inventory").locator("span").allTextContents(), ["Alert", "Badge", "Button", "Card", "Disclosure", "EmptyState", "Field", "Label", "Stack", "Switch", "Table", "Text"], "the inventory holds the parts the roles map to, the corrected one included");
+  await page.getByRole("button", { name: "Review" }).click();
+  // Step 6: core's project, and its starter drawn and measured before anything is saved.
+  assert.match((await page.getByTestId("review-summary").textContent()) ?? "", /Ledger.*ledger.*Field\.Root or Switch\.Root \(changed by you\).*Pay an invoice, in 2 steps.*1\. Pay now \(primary\).*without rank-2-secondary/s);
+  assert.equal(await page.getByTestId("review-rules").textContent(), "31", "the built-in rules and Todae's own, less the one that reads a rank the project lacks");
+  await createFromReview(page);
+  // The board: the new project, its starter, every rule passing as drawn.
+  assert.equal(await page.getByRole("combobox", { name: "Project" }).inputValue(), "ledger");
+  assert.deepEqual(await page.getByRole("combobox", { name: "Project" }).locator("option").allTextContents(), ["Ledger", "Nook"]);
+  assert.match((await page.getByTestId("notice").textContent()) ?? "", /Ledger was created.*31 rules in force/s);
+  const start = page.frameLocator('iframe[title="start at desktop"]');
+  assert.equal(await start.getByRole("heading", { level: 1 }).textContent(), "Ledger");
+  assert.deepEqual(await start.getByRole("button").allTextContents(), ["Pay now"]);
+  assert.match((await page.frameLocator('iframe[title="pay-an-invoice-done at phone"]').locator("body").textContent()) ?? "", /Done: Pay an invoice/);
+  await shot(page, "wizard-board-todae");
+  // The Project view keeps how each role was decided, the reason included.
+  await page.getByRole("tab", { name: "Project" }).click();
+  await page.getByText("Technical details").click();
+  assert.equal(await page.getByTestId("confirmed-question").textContent(), "Changed from the draft: A switch asks a yes or no question too.");
+  assert.equal(await page.getByTestId("confirmed-action").textContent(), "As drafted (high confidence)");
+  await page.getByRole("tab", { name: "Canvas" }).click();
+  const file = await passesReloadsAndRoundTrips(page, browser, base, { id: "ledger", rules: 31 });
+  assert.deepEqual(file.project.library.roles.question, { components: ["Field.Root", "Switch.Root"] });
+  assert.equal(file.project.library.confirmed.roles.find((entry) => entry.role === "question").why, "A switch asks a yes or no question too.");
+  assert.deepEqual(file.project.inputs.tasks, [{ id: "pay-an-invoice", description: "Pay an invoice", successState: "pay-an-invoice-done", maxSteps: 2 }]);
+  assert.deepEqual(file.prototypes.map((item) => item.id), ["starter"]);
+  // The projects switch: Nook is still there, as it was.
+  await page.getByRole("combobox", { name: "Project" }).selectOption("nook");
+  await page.locator('iframe[title="rooms-list at desktop"]').waitFor({ state: "attached" });
+  await measured(page, 1);
+  assert.equal((await report(page)).status, "pass");
+  assert.equal(await page.getByRole("combobox", { name: "Prototype" }).locator("option").count(), 2);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("new project on Mantine: every variant drawn to pick from, a role with no part says what leaves, a correction with its reason, and a board that passes every rule", async ({ browser, base }) => {
+  const { page, context, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  await wizardToRoles(page, "Fieldnotes", "Mantine");
+  // Mantine's own parts, with Mantine's own styles, inside its provider.
+  const primary = roleFrame(page, "Primary action");
+  assert.deepEqual(await primary.locator("button.mantine-Button-root").allTextContents(), ["variant: filled", "no variant"]);
+  assert.equal(await roleFrame(page, "Disclosure").locator(".mantine-Accordion-control").textContent(), "Section name");
+  assert.equal(await roleFrame(page, "Question").getByLabel("Your answer").count(), 1);
+  // Every value of the button's variant, drawn to pick from by eye.
+  const primaryCard = roleCard(page, "primary-action");
+  await primaryCard.getByText("Pick other values").click();
+  const all = page.frameLocator('iframe[title="Every variant of Button"]');
+  await eventually(page, () => all.locator("button.mantine-Button-root").allTextContents().catch(() => []), (texts) => texts.length === 8, "every variant of Mantine's Button is drawn");
+  assert.deepEqual(await primaryCard.getByRole("group", { name: "Values for Primary action" }).getByRole("checkbox", { checked: true }).count(), 1);
+  // A role left with no part: what core's missingRoleEffects says leaves the project, before anything is decided.
+  const disclosure = roleCard(page, "disclosure");
+  await disclosure.getByText("Pick another part").click();
+  await disclosure.getByRole("checkbox", { name: "Accordion.Item", exact: true }).uncheck();
+  assert.equal(await disclosure.getByTestId("role-status").textContent(), "No part, by your choice");
+  const effects = (await disclosure.getByTestId("role-effects").textContent()) ?? "";
+  assert.match(effects, /6 rules leave the project/);
+  for (const rule of ["counted-parts-reached", "disclosed-sections", "disclosure-depth", "disclosures-per-page", "primary-outside-disclosure", "visible-questions"]) assert.ok(effects.includes(rule), `the card names ${rule}`);
+  await disclosure.getByRole("button", { name: "Back to the draft" }).click();
+  // The correction Tally made: an amount is a question too.
+  const question = roleCard(page, "question");
+  await question.getByText("Pick another part").click();
+  await question.getByRole("checkbox", { name: "NumberInput", exact: true }).check();
+  await question.getByLabel("Why the change").fill("An amount is a question too: NumberInput takes one answer as TextInput does.");
+  await page.getByTestId("accept-all").click();
+  await rolePreviewsDrawn(page);
+  await eventually(page, () => roleFrame(page, "Question").locator("input").count(), (count) => count === 2, "the preview draws both question parts");
+  await shot(page, "wizard-roles-mantine");
+  await page.getByRole("button", { name: "Next" }).click();
+  assert.match((await page.getByTestId("excluded-props").textContent()) ?? "", /56 style props of @mantine\/core excluded.*MantineStyleProps/s);
+  await page.getByTestId("exclusion-accept").click();
+  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: "Review" }).click();
+  assert.equal(await page.getByTestId("review-rules").textContent(), "32");
+  await createFromReview(page);
+  const start = page.frameLocator('iframe[title="start at desktop"]');
+  assert.equal(await start.locator("h1.mantine-Title-root").textContent(), "Fieldnotes");
+  assert.deepEqual(await start.locator("button.mantine-Button-root").allTextContents(), ["Not now", "Continue"]);
+  assert.equal(await start.locator(":root").getAttribute("data-mantine-color-scheme"), "light");
+  assert.equal(await page.frameLocator('iframe[title="start at phone"]').locator(":root").getAttribute("data-mantine-color-scheme"), "dark");
+  await shot(page, "wizard-board-mantine");
+  const file = await passesReloadsAndRoundTrips(page, browser, base, { id: "fieldnotes", rules: 32 });
+  assert.deepEqual(file.project.library.roles.question, { components: ["TextInput", "NumberInput"] });
+  assert.deepEqual(file.project.library.root, { component: "MantineProvider", schemeProp: "forceColorScheme" });
+  assert.equal(file.project.library.excludedProps.length, 56);
+  assert.ok(file.project.inventories.components.includes("NumberInput"), "the corrected part is inventoried");
+  assert.ok(Object.keys(file.project.library.parts).every((part) => [...file.project.inventories.components, "MantineProvider"].includes(part.split(".")[0])), "the config carries the description of what it inventories, not Mantine's whole 3 MB");
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("a description file: a shipped library's is read, one this deployment does not serve stops at the library step, and a file that is not a description is refused", async ({ browser, base }) => {
+  const { page, context, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  await page.getByRole("button", { name: "New project" }).click();
+  await page.getByLabel("Product name").fill("Imported");
+  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("radio", { name: /^Import a description file/ }).check();
+  const dir = mkdtempSync(join(tmpdir(), "design-harness-description-"));
+  const write = (name, value) => {
+    writeFileSync(join(dir, name), JSON.stringify(value));
+    return join(dir, name);
+  };
+  await page.getByTestId("description-file").setInputFiles(write("notes.json", { hello: 1 }));
+  assert.match((await page.getByTestId("library-problem").textContent()) ?? "", /notes\.json is not a library description/);
+  // A well-formed description of a package the vendor build does not serve: the app says so, and goes no further.
+  await page.getByTestId("description-file").setInputFiles(write("acme.json", { package: "@acme/ui", version: "1.0.0", parts: { Button: { props: {}, content: "children", events: ["press"] } } }));
+  assert.match((await page.getByTestId("library-facts").textContent()) ?? "", /@acme\/ui.*1\.0\.0/s);
+  await page.getByRole("button", { name: "Next" }).click();
+  await eventually(page, () => page.getByTestId("library-problem").textContent().catch(() => ""), (text) => /This deployment cannot render @acme\/ui 1\.0\.0: the local package source has no @acme\/ui/.test(text ?? ""), "the library step says the deployment cannot render it");
+  assert.equal(await page.locator(".role-grid").count(), 0, "the wizard does not go on to roles it could not draw");
+  // The description of a library the deployment ships starts from that library's setup, and goes on.
+  await page.getByTestId("description-file").setInputFiles(join(root, "..", "..", "packages", "core", "libraries", "todae-0.11.3.json"));
+  await eventually(page, () => page.getByTestId("library-facts").textContent().catch(() => ""), (text) => /@tounsoo\/todae.*203/s.test(text ?? ""), "the description of Todae is read");
+  assert.equal(await page.getByLabel("Stylesheets").inputValue(), "dist/todae.css");
+  await page.getByRole("button", { name: "Next" }).click();
+  await page.locator(".role-grid").waitFor({ timeout: 60000 });
+  await rolePreviewsDrawn(page);
+  assert.deepEqual(await roleFrame(page, "Action").getByRole("button").allTextContents(), ["Action"]);
+  // Cancel leaves the store as it was.
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await measured(page, 1);
+  assert.equal(await page.getByRole("combobox", { name: "Project" }).count(), 0, "one project, as before");
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("the Tally example is added from New project, and the projects switch", async ({ browser, base }) => {
+  const { page, context, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  await page.getByRole("button", { name: "New project" }).click();
+  await page.getByTestId("open-tally").click();
+  await measured(page, 1);
+  const projects = page.getByRole("combobox", { name: "Project" });
+  assert.equal(await projects.inputValue(), "tally");
+  assert.equal((await report(page)).status, "pass", "Tally's expense prototype passes every rule on the board");
+  await projects.selectOption("nook");
+  await page.locator('iframe[title="rooms-list at desktop"]').waitFor({ state: "attached" });
+  await measured(page, 1);
+  assert.equal(await projects.inputValue(), "nook");
+  await page.reload();
+  await measured(page, 1);
+  assert.equal(await page.getByRole("combobox", { name: "Project" }).inputValue(), "nook", "the project last open is the one a reload shows");
+  await page.getByRole("button", { name: "New project" }).click();
+  assert.equal(await page.getByTestId("open-tally").textContent(), "Open the Tally example", "a stored Tally is opened, not added again");
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 // ---- runner ----------------------------------------------------------------
 
 const server = await preview({ root, configFile: join(root, "vite.config.ts"), logLevel: "silent", preview: { port: 0, host: "127.0.0.1" } });

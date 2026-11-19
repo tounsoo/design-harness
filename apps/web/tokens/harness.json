@@ -132,7 +132,7 @@
       }
     },
     "size": {
-      "$description": "The few fixed sizes the layout needs: the least width of a picker, a column and a label, the most a name or a log may take, the code editor's least height, and the room a sticky bar keeps clear.",
+      "$description": "The few fixed sizes the layout needs: the least width of a picker, a column and a label, the most a name or a log may take, the code editor's least height, and the room a sticky bar keeps clear, and the New project wizard's rail, its reading column, its wide steps and its role cards.",
       "picker": {
         "$type": "dimension",
         "$value": {
@@ -200,6 +200,41 @@
         "$type": "dimension",
         "$value": {
           "value": 10.5,
+          "unit": "rem"
+        }
+      },
+      "wizard-rail": {
+        "$type": "dimension",
+        "$value": {
+          "value": 11,
+          "unit": "rem"
+        }
+      },
+      "wizard-step": {
+        "$type": "dimension",
+        "$value": {
+          "value": 42,
+          "unit": "rem"
+        }
+      },
+      "wizard-wide": {
+        "$type": "dimension",
+        "$value": {
+          "value": 76,
+          "unit": "rem"
+        }
+      },
+      "role-card": {
+        "$type": "dimension",
+        "$value": {
+          "value": 24,
+          "unit": "rem"
+        }
+      },
+      "option": {
+        "$type": "dimension",
+        "$value": {
+          "value": 11,
           "unit": "rem"
         }
       }
