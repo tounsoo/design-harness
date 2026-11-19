@@ -4360,6 +4360,15 @@ async function topAt(page, number) {
 
 test("two notes on one spot: a count lists them, each opens by pointer and by keyboard, every marker stays on its element, and the board never scrolls", async ({ browser, base }) => {
   const { page, errors, context } = await openApp(browser, base);
+  // What takes the first Escape after the second note, read if it goes unanswered: where focus was, and whether something else handled the key first. Set up here, so it adds no step before the key.
+  await page.evaluate(() => {
+    window.__escape = null;
+    window.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || window.__escape || !window.__watchEscape) return;
+      const target = event.target && "tagName" in event.target ? event.target : null;
+      window.__escape = { prevented: event.defaultPrevented, target: target ? `${target.tagName.toLowerCase()}${target.id ? `#${target.id}` : ""}[${target.getAttribute("data-testid") ?? ""}|${target.getAttribute("data-pin") ?? ""}|${target.className}]` : String(event.target), open: [...document.querySelectorAll(":popover-open")].map((element) => element.getAttribute("data-testid") ?? element.className) };
+    });
+  });
   await measured(page, 1);
   await liveFrame(page, "lantern-open at desktop");
   const scroll = await boardScroll(page);
@@ -4374,6 +4383,9 @@ test("two notes on one spot: a count lists them, each opens by pointer and by ke
   await card.getByTestId("pin-text").fill("Second on the button");
   await card.getByTestId("pin-save").click();
   await marker(page, 2).waitFor({ state: "attached" });
+  await page.evaluate(() => {
+    window.__watchEscape = true;
+  });
   await becomesFocused(page, marker(page, 2), "focus goes to the new pin");
   assert.deepEqual(await boardScroll(page), scroll, "pinning a second note on the spot does not scroll the board");
 
@@ -4391,15 +4403,6 @@ test("two notes on one spot: a count lists them, each opens by pointer and by ke
   assert.ok(apart(boxes[0], boxes[1]) && apart(boxes[0], boxes[2]), `the count sits beside the markers, not on them: ${JSON.stringify(boxes)}`);
   assert.ok(boxes[0].height >= 24 && boxes[0].width >= 24, `the count is a target of at least 24 px: ${JSON.stringify(boxes[0])}`);
   // The upper marker takes the pointer over the lower one, which is why the count is there.
-  // What took this Escape, read when it goes unanswered: where focus was, and whether something else handled the key first.
-  await page.evaluate(() => {
-    window.__escape = null;
-    window.addEventListener("keydown", (event) => {
-      if (event.key !== "Escape" || window.__escape) return;
-      const target = event.target && "tagName" in event.target ? event.target : null;
-      window.__escape = { prevented: event.defaultPrevented, target: target ? `${target.tagName.toLowerCase()}${target.id ? `#${target.id}` : ""}[${target.getAttribute("data-testid") ?? ""}|${target.getAttribute("data-pin") ?? ""}|${target.className}]` : String(event.target), open: [...document.querySelectorAll(":popover-open")].map((element) => element.getAttribute("data-testid") ?? element.className) };
-    });
-  });
   await page.keyboard.press("Escape");
   await eventually(page, () => pinMode(page).getAttribute("aria-pressed"), (value) => value === "false", `Escape leaves pin mode (the key: ${JSON.stringify(await page.evaluate(() => window.__escape))})`);
   await marker(page, 2).evaluate((element) => element.blur());
