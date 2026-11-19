@@ -2805,11 +2805,13 @@ test("the first-view lens draws the fold, a ghost of what lies below it, and the
   await shotDark(page, "visual-lens-first-view-after-dark");
 
   // The frame says where it is scrolled to, and what belongs to the page moves with it: the fold rises by as much.
+  // The frame on screen and live first (bringing it on screen scrolls the board), then where the fold is.
+  const live = await liveFrame(page, "lantern-open at phone");
   const before = (await phone.getByTestId("lens-fold").boundingBox()).y;
   const zoom = board.width / 390;
   const down = Math.min(60, Math.floor(below.evidence.pageHeight - 844));
   assert.ok(down >= 12, `the page scrolls far enough to tell (${down} px)`);
-  await (await liveFrame(page, 'lantern-open at phone')).locator("body").evaluate((_, y) => window.scrollTo(0, y), down);
+  await live.locator("body").evaluate((_, y) => window.scrollTo(0, y), down);
   await eventually(page, async () => before - (await phone.getByTestId("lens-fold").boundingBox()).y, (moved) => Math.abs(moved - down * zoom) <= 1, `the fold line follows the page's scroll (${down} px at ${zoom})`);
   // No report changed for any of it.
   assert.deepEqual(await report(page), all);
