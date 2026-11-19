@@ -1,6 +1,8 @@
 import { Badge, Button, Card, Code, DataList, Disclosure, Stack, Table, Text, ToggleGroup, VisuallyHidden } from "@tounsoo/todae";
+import { Pencil, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ROLE_NAMES, describeRule, flowFacts, rerunExamples, type ConfirmedRole, type ExampleRun, type ProjectConfig, type RoleMapping, type RuleSpec } from "@design-harness/core";
+import { waitingOn, waitingWords } from "../review/rule-change";
 import { formatTime } from "../review/timeline";
 import type { PrototypeRecord } from "../store/project-file";
 import { BudgetFigure, CapMeterView, PageTypeFigure, RuleFigure, SlotLegend } from "../visual/project-figures";
@@ -9,6 +11,8 @@ import { TaskMaps } from "./ChecksPanel";
 import { LayoutsView } from "./LayoutsView";
 import { LibraryVersionSection } from "./LibraryVersion";
 import { Palette } from "./Palette";
+import { MeasureFrames, useProjectExisting, type BoardSession } from "./project-measure";
+import { RuleFlowDialog, type RuleFlow } from "./RuleChange";
 import { StatusBadge } from "./proposal-parts";
 import { exampleLabel, humanize } from "./words";
 
@@ -35,6 +39,10 @@ export function ProjectView({
   prototypes = [],
   onSave,
   libraryTarget,
+  board,
+  agent,
+  onStartProposal,
+  onAskAgent,
 }: {
   readonly config: ProjectConfig;
   readonly onOpenProposal: (id: string) => void;
@@ -49,7 +57,17 @@ export function ProjectView({
   readonly onSave?: ((next: ProjectConfig) => void) | undefined;
   /** A version to compare at once, picked from the canvas's packages notice. */
   readonly libraryTarget?: string | undefined;
+  /** The board's session, whose snapshots are the open prototype's. With it and `onStartProposal`, each rule card offers to remove or change its rule. */
+  readonly board?: BoardSession | undefined;
+  readonly agent?: { readonly ready: boolean; readonly why: string } | undefined;
+  /** Saves the config with a proposal the person started and opens its review page; `ask` is a message put in the chat for them to send. */
+  readonly onStartProposal?: ((next: ProjectConfig, id: string, ask?: string) => void) | undefined;
+  /** Puts a message in the chat for the person to edit and send. */
+  readonly onAskAgent?: ((message: string) => void) | undefined;
 }) {
+  /** The rule a person is removing or changing, from its card. The flow ends in a proposal; nothing here edits a rule. */
+  const [ruleFlow, setRuleFlow] = useState<RuleFlow | null>(null);
+  const editable = board !== undefined && onStartProposal !== undefined;
   // Core's facts about the open prototype's flow: each task's routes against its budget.
   const flow = prototype ? flowFacts(config, prototype.prototype) : null;
   const { library, inventories, inputs } = config;
@@ -112,7 +130,27 @@ export function ProjectView({
         </ul>
       </section>
 
-      <Rules config={config} onOpenProposal={onOpenProposal} />
+      <Rules config={config} onOpenProposal={onOpenProposal} onFlow={editable ? setRuleFlow : undefined} />
+      {editable && ruleFlow && (
+        <RuleFlowHost
+          flow={ruleFlow}
+          config={config}
+          prototypes={prototypes}
+          openPrototypeId={prototype?.id ?? ""}
+          board={board}
+          agent={agent ?? { ready: false, why: "" }}
+          onClose={() => setRuleFlow(null)}
+          onPropose={(next, id, ask) => {
+            setRuleFlow(null);
+            onStartProposal(next, id, ask);
+          }}
+          onAsk={(message) => onAskAgent?.(message)}
+          onOpenProposal={(id) => {
+            setRuleFlow(null);
+            onOpenProposal(id);
+          }}
+        />
+      )}
 
       <section aria-labelledby="project-inputs">
         <SectionHead id="project-inputs" title="Tasks and limits" text={`The numbers the rules read: how many steps each task may take, which action matters most, and the project's caps.${prototype && flow ? ` Under each task is what ${prototype.name}'s longest route takes today.` : ""}`} />
@@ -297,13 +335,17 @@ export function ProjectView({
  * adds is grouped and drawn the day it is adopted. A glyph shows the rule's
  * shape, not this prototype's page; core's words for the rule are beside it.
  */
-function Rules({ config, onOpenProposal }: { readonly config: ProjectConfig; readonly onOpenProposal: (id: string) => void }) {
+function Rules({ config, onOpenProposal, onFlow }: { readonly config: ProjectConfig; readonly onOpenProposal: (id: string) => void; readonly onFlow?: ((flow: RuleFlow) => void) | undefined }) {
   const [filter, setFilter] = useState<"all" | RuleGroupId>("all");
   const groups = useMemo(() => groupRules(config.rules), [config.rules]);
   const shown = groups.filter((item) => filter === "all" || item.group.id === filter);
   return (
     <section aria-labelledby="project-rules" data-testid="project-rules">
-      <SectionHead id="project-rules" title={`Rules in force (${config.rules.length})`} text="Each rule is checked on every change, by code, the same way every time. A rule about how a page looks carries a picture of what it measures, not a page of yours; open a rule for its id, type and data." />
+      <SectionHead
+        id="project-rules"
+        title={`Rules in force (${config.rules.length})`}
+        text={`Each rule is checked on every change, by code, the same way every time. A rule about how a page looks carries a picture of what it measures, not a page of yours; open a rule for its id, type and data.${onFlow ? " To change or remove one, start from its card: that opens a proposal, and the rule stays as it is until you approve and adopt it." : ""}`}
+      />
       <ToggleGroup.Root aria-label="Show rules" value={filter} onValueChange={(value) => setFilter((value ?? "all") as "all" | RuleGroupId)} className="proposals-filter rule-filter">
         <ToggleGroup.Item value="all">{`All (${config.rules.length})`}</ToggleGroup.Item>
         {RULE_GROUPS.map((group) => {
@@ -326,7 +368,7 @@ function Rules({ config, onOpenProposal }: { readonly config: ProjectConfig; rea
           <ul className="rule-cards" aria-label={group.title}>
             {rules.map((rule) => (
               <li key={rule.id}>
-                <RuleCard rule={rule} config={config} onOpenProposal={onOpenProposal} />
+                <RuleCard rule={rule} config={config} onOpenProposal={onOpenProposal} onFlow={onFlow} />
               </li>
             ))}
           </ul>
@@ -336,8 +378,24 @@ function Rules({ config, onOpenProposal }: { readonly config: ProjectConfig; rea
   );
 }
 
-function RuleCard({ rule, config, onOpenProposal }: { readonly rule: RuleSpec; readonly config: ProjectConfig; readonly onOpenProposal: (id: string) => void }) {
+/**
+ * The proposal's own session of frames for a flow: every prototype in the
+ * project is measured while a flow is open, so core reads each as it is
+ * drawn, and not at all while none is.
+ */
+function RuleFlowHost({ prototypes, openPrototypeId, board, ...rest }: Omit<Parameters<typeof RuleFlowDialog>[0], "existing" | "progress"> & { readonly prototypes: readonly PrototypeRecord[]; readonly openPrototypeId: string; readonly board: BoardSession }) {
+  const { existing, frames, progress } = useProjectExisting({ config: rest.config, prototypes, openPrototypeId, board, live: true });
+  return (
+    <>
+      <RuleFlowDialog {...rest} existing={existing} progress={progress} />
+      <MeasureFrames items={frames} />
+    </>
+  );
+}
+
+function RuleCard({ rule, config, onOpenProposal, onFlow }: { readonly rule: RuleSpec; readonly config: ProjectConfig; readonly onOpenProposal: (id: string) => void; readonly onFlow?: ((flow: RuleFlow) => void) | undefined }) {
   const words = describeRule(rule, config);
+  const waiting = onFlow ? waitingOn(config, { rule: rule.id }) : [];
   const source = ruleSource(config, rule.id);
   const caps = capsRead(rule);
   return (
@@ -368,6 +426,33 @@ function RuleCard({ rule, config, onOpenProposal }: { readonly rule: RuleSpec; r
             </Button.Root>
           </div>
         )}
+        {waiting.map((proposal) => (
+          <div key={proposal.id} className="rule-card-source" data-testid="rule-waiting-proposal">
+            <Badge.Root tone="warning">{proposal.status}</Badge.Root>
+            <Text.Root as="p" tone="muted">
+              A proposal waiting for you {waitingWords(proposal, rule.id)}.
+            </Text.Root>
+            <Button.Root variant="ghost" onClick={() => onOpenProposal(proposal.id)}>
+              {`Open ${proposal.title}`}
+            </Button.Root>
+          </div>
+        ))}
+        {onFlow && (
+          <div className="rule-card-actions">
+            <Button.Root variant="ghost" onClick={() => onFlow({ kind: "change", rule: rule.id })} aria-label={`Change this rule… ${rule.id}`}>
+              <Button.Icon>
+                <Pencil />
+              </Button.Icon>
+              Change this rule…
+            </Button.Root>
+            <Button.Root variant="ghost" onClick={() => onFlow({ kind: "remove", rule: rule.id })} aria-label={`Remove this rule… ${rule.id}`}>
+              <Button.Icon>
+                <Trash2 />
+              </Button.Icon>
+              Remove this rule…
+            </Button.Root>
+          </div>
+        )}
         <Disclosure.Root className="rule-card-data">
           <Disclosure.Summary>
             <Code.Root>{rule.id}</Code.Root>
@@ -389,7 +474,7 @@ function History({ config, onOpenProposal, onOpenProposals }: { readonly config:
   const { items, more } = projectTimeline(config);
   return (
     <section aria-labelledby="project-proposals" data-testid="project-history">
-      <SectionHead id="project-proposals" title={`Proposals (${config.proposals.length})`} text="How the project got like this: the newest changes the agent asked for. The Proposals tab is where you review them." />
+      <SectionHead id="project-proposals" title={`Proposals (${config.proposals.length})`} text="How the project got like this: the newest changes proposed, by the agent or by you. The Proposals tab is where you review them." />
       {items.length === 0 ? (
         <Text.Root as="p" tone="muted">
           No proposals yet. A proposal carries an inventory change, the rule that governs it, and examples that must pass and fail; it is adopted only when its rules prove themselves on its examples.

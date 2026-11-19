@@ -27,7 +27,7 @@ export function ProposalsView({ config, onOpen }: { readonly config: ProjectConf
       <Stack.Root gap="condensed">
         <Text.Root as="h1">Proposals</Text.Root>
         <Text.Root as="p" tone="muted">
-          Changes the agent asks to make to the project, such as a new component or layout. Each comes with the rule that would govern it and examples that show it working. Only you can approve, decline or adopt one; once adopted, its rules run on every prototype.
+          Changes to the project: ones the agent asks for, such as a new component or layout, and ones you start from a rule&apos;s card in the Project view, to remove or change that rule. Each comes with examples that show it working. Only you can approve, decline or adopt one; once adopted, it holds for every prototype.
         </Text.Root>
       </Stack.Root>
       <ToggleGroup.Root aria-label="Show proposals" value={filter} onValueChange={(value) => setFilter((value ?? "all") as Filter)} className="proposals-filter">
@@ -44,7 +44,7 @@ export function ProposalsView({ config, onOpen }: { readonly config: ProjectConf
           <EmptyState.Title as="h2">{config.proposals.length === 0 ? "No proposals yet" : `No ${filter} proposals`}</EmptyState.Title>
           <EmptyState.Description>
             {config.proposals.length === 0
-              ? "When a request needs something the inventories lack or a rule forbids, the agent drafts a proposal instead of working around the check. It shows up here for you to review."
+              ? "When a request needs something the inventories lack or a rule forbids, the agent drafts a proposal instead of working around the check. You start one yourself from a rule's card in the Project view, to remove or change that rule. Either shows up here for you to review."
               : "Choose another status to see the others."}
           </EmptyState.Description>
         </EmptyState.Root>

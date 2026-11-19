@@ -1,4 +1,4 @@
-import type { Bound, Cap, ChangeClass, InventoryOp, PageType, ProjectConfig, Proposal, ProposalStatus, RuleSpec, Task, TaskFacts } from "@design-harness/core";
+import { classifyProposal, type BoundChange, type Bound, type Cap, type ChangeClass, type InventoryOp, type PageType, type ProjectConfig, type Proposal, type ProposalStatus, type RuleSpec, type Task, type TaskFacts } from "@design-harness/core";
 import { humanize } from "../app/words";
 
 /**
@@ -240,7 +240,57 @@ export function proposalTrack(proposal: Pick<Proposal, "status" | "history">): r
   ];
 }
 
-/** What a proposal's card leads with: its first inventory change, else its first added rule. */
+/**
+ * One rule in force a proposal removes or changes, as a line to read:
+ * "Removes rule one-toast-per-page", or "Changes rule one-primary-per-page:
+ * at most 1 → at most 2, looser". A proposal changes a rule by removing it
+ * and adding it again under its id; core's classification says which limits
+ * moved and which way, and keeps the rule's words as it was, since an
+ * adopted removal or change leaves no trace of the old rule in the config.
+ */
+export type RuleLine = {
+  readonly kind: "removes" | "changes";
+  readonly rule: string;
+  readonly words: string;
+  /** The limits that moved, when only limits did. */
+  readonly moves: readonly BoundChange[];
+  /** What the change comes to, for a change: every limit stricter, or not. */
+  readonly direction?: "stricter" | "looser" | "the same";
+  /** The rule in core's words as it was when the proposal was classified. */
+  readonly was?: string;
+  /** For a change that is not a move of limits, what it is instead, in a few words. */
+  readonly detail?: string;
+};
+
+const directionWords = (direction: BoundChange["direction"]) => (direction === "unknown" ? "not provably stricter" : direction);
+
+/** A moved limit as it is read: "at most 1 → at most 2, looser". */
+export function moveWords(move: BoundChange): string {
+  return `${move.before} → ${move.after}, ${directionWords(move.direction)}`;
+}
+
+/** The rules in force a proposal removes or changes, in the order it names them. Core's kept classification, or its classification against the project now. */
+export function ruleLines(proposal: Proposal, config: ProjectConfig): readonly RuleLine[] {
+  const classified = proposal.classification ?? classifyProposal(proposal, config);
+  return proposal.rules.remove.map((id): RuleLine => {
+    const entry = classified.changes.find((change) => change.rule === id);
+    const changed = entry ? entry.change.startsWith("change rule") : proposal.rules.add.some((rule) => rule.id === id);
+    const was = entry?.was !== undefined ? { was: entry.was } : {};
+    if (!changed) return { kind: "removes", rule: id, words: `Removes rule ${id}`, moves: [], ...was };
+    const moves = entry?.bounds ?? [];
+    const direction = entry === undefined ? undefined : entry.class === "tightens" ? "stricter" : entry.class === "adds" ? "the same" : "looser";
+    const detail = entry?.class === "adds" ? "only its own sentence; it checks the same thing" : "more than its limits, which is not provably stricter";
+    return { kind: "changes", rule: id, words: `Changes rule ${id}: ${moves.length > 0 ? moves.map(moveWords).join("; ") : detail}`, moves, ...(direction ? { direction } : {}), ...was, ...(moves.length === 0 ? { detail } : {}) };
+  });
+}
+
+/** How many separate changes a proposal makes: a rule removed and added again under its id is one. */
+export function changeCount(proposal: Proposal): number {
+  const changed = proposal.rules.remove.filter((id) => proposal.rules.add.some((rule) => rule.id === id)).length;
+  return proposal.inventory.length + proposal.rules.add.length + proposal.rules.remove.length - changed;
+}
+
+/** What a proposal's card leads with: its first inventory change, else a rule it changes, its first added rule, or a rule it removes. */
 export type ProposalPreview =
   | { readonly kind: "component"; readonly name: string; readonly removed: boolean }
   | { readonly kind: "cap"; readonly name: string; readonly cap: Cap; readonly before?: number; readonly moved: "stricter" | "looser" | "the same" | "new" }
@@ -249,6 +299,7 @@ export type ProposalPreview =
   | { readonly kind: "flow-state"; readonly state: string; readonly removed: boolean }
   | { readonly kind: "words"; readonly label: string; readonly text: string }
   | { readonly kind: "rule"; readonly rule: RuleSpec }
+  | { readonly kind: "rule-line"; readonly line: RuleLine }
   | { readonly kind: "request" }
   | { readonly kind: "none" };
 
@@ -277,13 +328,21 @@ export function previewLabel(proposal: Proposal): string {
   if (proposal.needsRuleType) return "needs a new rule type";
   const first = proposal.inventory[0];
   if (first) return OP_LABEL[first.op];
+  // A rule removed and added again under its id is a changed rule, named like a changed cap.
+  if (proposal.rules.remove.some((id) => proposal.rules.add.some((rule) => rule.id === id))) return "rule";
   return proposal.rules.add.length > 0 ? "+ rule" : proposal.rules.remove.length > 0 ? "− rule" : "no change";
 }
 
 export function proposalPreview(proposal: Proposal, config: ProjectConfig): ProposalPreview {
   if (proposal.needsRuleType) return { kind: "request" };
   const op = proposal.inventory[0];
-  if (!op) return proposal.rules.add[0] ? { kind: "rule", rule: proposal.rules.add[0] } : proposal.rules.remove[0] ? { kind: "words", label: "Removes a rule", text: proposal.rules.remove[0] } : { kind: "none" };
+  if (!op) {
+    const lines = ruleLines(proposal, config);
+    const changed = lines.find((line) => line.kind === "changes");
+    if (changed) return { kind: "rule-line", line: changed };
+    if (proposal.rules.add[0]) return { kind: "rule", rule: proposal.rules.add[0] };
+    return lines[0] ? { kind: "rule-line", line: lines[0] } : { kind: "none" };
+  }
   switch (op.op) {
     case "add-component":
     case "remove-component":
@@ -337,8 +396,9 @@ export function changeLine(proposal: Proposal): string {
     else if (verb === "remove") count("Removes", noun);
     else count("Changes", op.op === "set-max-steps" ? "step budget" : op.op === "set-cap" ? "cap" : op.op === "set-ranking" ? "ranking" : "role");
   }
-  for (const _ of proposal.rules.add) count("Adds", "rule");
-  for (const _ of proposal.rules.remove) count("Removes", "rule");
+  const changed = new Set(proposal.rules.remove.filter((id) => proposal.rules.add.some((rule) => rule.id === id)));
+  for (const rule of proposal.rules.add) if (!changed.has(rule.id)) count("Adds", "rule");
+  for (const id of proposal.rules.remove) count(changed.has(id) ? "Changes" : "Removes", "rule");
   if (counts.size === 0) return "Changes nothing.";
   const verbs = new Map<string, string[]>();
   for (const [key, value] of counts) {
