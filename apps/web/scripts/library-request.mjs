@@ -133,15 +133,45 @@ export function rootCandidates(description) {
 }
 
 /**
+ * The setup and notes of the last registry entry of the same package, when
+ * the registry has one: a new version of a listed library most likely
+ * switches light and dark, wraps pages and needs the same props as the
+ * version before it. The text is copied from the registry itself, with the
+ * stylesheets replaced by the request's. Null for a new package, or an
+ * entry in a shape this does not read.
+ */
+export function inheritedSetup(source, request) {
+  const blocks = [...source.matchAll(/^ {2}\{\n([\s\S]*?)^ {2}\},$/gm)].map((match) => match[1]).filter((block) => block.includes(`    package: ${JSON.stringify(request.package)},\n`));
+  const block = blocks.at(-1);
+  if (!block) return null;
+  const version = /^ {4}version: "([^"]+)",$/m.exec(block)?.[1];
+  const setup = /^ {4}setup: \{\n[\s\S]*?^ {4}\},$/m.exec(block)?.[0];
+  const notes = /^ {4}notes: (?:\[.*\],|\[\n[\s\S]*?^ {4}\],)$/m.exec(block)?.[0];
+  if (!version || !setup || !notes) return null;
+  const lines = setup.split("\n");
+  const sheets = lines.findIndex((line) => line.startsWith("      stylesheets: "));
+  if (sheets >= 0 && !/^ {6}stylesheets: \[.*\],$/.test(lines[sheets])) return null;
+  const replacement = `      stylesheets: [${request.stylesheets.map((path) => JSON.stringify(path)).join(", ")}],`;
+  if (sheets >= 0) lines[sheets] = replacement;
+  else lines.splice(1, 0, replacement);
+  return { version, setup: lines.join("\n"), notes };
+}
+
+/**
  * What a person must check before the library is relied on, read from the
  * description and core's draft: roles drafted below high confidence, roles
  * with no part, a light and dark switch nobody set up, a part that may need
  * to wrap every page, and the library's own rules, of which it has none.
  */
-export function needsChecking(description, draft) {
+export function needsChecking(description, draft, inherited = null) {
   const list = [];
   for (const guess of draft.guesses) if (guess.confidence !== "high") list.push(`The ${guess.role} role was drafted at ${guess.confidence} confidence: check it in New project.`);
   for (const item of draft.missing) list.push(`No part was found for the ${item.role} role.`);
+  if (inherited) {
+    list.push(`Its \`setup\` (light and dark, root part, rules, part props) and \`notes\` are copied from the ${inherited.version} entry: check they still hold for ${description.version}.`);
+    list.push("`about` is the workflow's words: say what the library is.");
+    return list;
+  }
   const roots = rootCandidates(description);
   list.push("Light and dark: the entry sets no scheme attribute and no root part, so every view draws the library's default scheme. Set `schemeAttribute`, or `root` with its `schemeProp`, if it has a switch.");
   if (roots.length > 0) list.push(`It has ${roots.map((part) => `\`${part}\``).join(", ")}, which may need to be the part every page renders inside (\`setup.root\`).`);
@@ -151,14 +181,14 @@ export function needsChecking(description, draft) {
 }
 
 /** One TypeScript entry of `SHIPPED_LIBRARIES` for the request, with a comment of what a person must check. Every value written is a JSON literal. */
-export function registryEntry(request, description, draft, { id, issue }) {
+export function registryEntry(request, description, draft, { id, issue, inherited = null }) {
   const action = draft.guesses.find((guess) => guess.role === "action")?.mapping.components[0];
   const example = [action, ...Object.keys(description.parts)].find((part) => part !== undefined && PART.test(part));
   const namespaced = example?.includes(".");
   const about = `Requested in issue #${issue}.${example ? ` Parts are ${namespaced ? "namespaced" : "plain components"}, such as ${example}.` : ""}`;
   const notes = [`Added by the library request workflow from issue #${issue}.`, "Light and dark are not set up: every view draws the library's default scheme."];
   const file = descriptionPath(request).slice(DESCRIPTIONS.length + 1);
-  const check = needsChecking(description, draft).map((line) => `    //   - ${line.replace(/\*\//g, "* /")}`);
+  const check = needsChecking(description, draft, inherited).map((line) => `    //   - ${line.replace(/\*\//g, "* /")}`);
   return [
     "  {",
     `    // Added by the library request workflow from issue #${issue}. A person must check:`,
@@ -168,11 +198,9 @@ export function registryEntry(request, description, draft, { id, issue }) {
     `    package: ${JSON.stringify(request.package)},`,
     `    version: ${JSON.stringify(request.version)},`,
     `    about: ${JSON.stringify(about)},`,
-    "    setup: {",
-    "      react: FRAME_REACT,",
-    `      stylesheets: [${request.stylesheets.map((path) => JSON.stringify(path)).join(", ")}],`,
-    "    },",
-    `    notes: [${notes.map((note) => JSON.stringify(note)).join(", ")}],`,
+    ...(inherited
+      ? [inherited.setup, inherited.notes]
+      : ["    setup: {", "      react: FRAME_REACT,", `      stylesheets: [${request.stylesheets.map((path) => JSON.stringify(path)).join(", ")}],`, "    },", `    notes: [${notes.map((note) => JSON.stringify(note)).join(", ")}],`]),
     `    describe: async () => (await import(${JSON.stringify(`../../../../packages/core/libraries/${file}`)})).default as unknown as LibraryDescription,`,
     "  },",
   ].join("\n");
@@ -253,7 +281,7 @@ export function stopComment({ reason, output, runUrl }) {
 }
 
 /** What the describer and core's draft say about the library, for the pull request. */
-export function summaryOf(description, draft, effects) {
+export function summaryOf(description, draft, effects, inherited = null) {
   const families = new Set(Object.keys(description.parts).map((part) => part.split(".")[0]));
   return {
     parts: Object.keys(description.parts).length,
@@ -261,7 +289,7 @@ export function summaryOf(description, draft, effects) {
     roles: draft.guesses.map((guess) => ({ role: guess.role, mapping: guess.mapping, confidence: guess.confidence })),
     missing: draft.missing.map((item) => ({ role: item.role, why: item.why, rules: (effects.find((effect) => effect.role === item.role)?.rules ?? []).map((rule) => rule.rule) })),
     excludedProps: draft.excludedProps ? { count: draft.excludedProps.props.length, sets: description.styleProps?.sets ?? [], confidence: draft.excludedProps.confidence } : null,
-    check: needsChecking(description, draft),
+    check: needsChecking(description, draft, inherited),
   };
 }
 
@@ -566,14 +594,14 @@ async function prepare(request, issue) {
   const { packageJson, install } = addToPackageJson(readJson(WEB_PACKAGE), request);
   writeJson(WEB_PACKAGE, packageJson);
   const registry = readFileSync(join(REPO, REGISTRY), "utf8");
-  writeFileSync(join(REPO, REGISTRY), addRegistryEntry(registry, registryEntry(request, description, draft, { id: registryId(request, registryIds(registry)), issue })));
+  writeFileSync(join(REPO, REGISTRY), addRegistryEntry(registry, registryEntry(request, description, draft, { id: registryId(request, registryIds(registry)), issue, inherited: inheritedSetup(registry, request) })));
   await runOrStop("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund"], `npm could not install ${request.package} ${request.version} beside the app's dependencies.`);
   const installed = [join(REPO, "node_modules", ...install.split("/")), join(REPO, "apps", "web", "node_modules", ...install.split("/"))].find((dir) => existsSync(join(dir, "package.json")));
   if (!installed) throw new RequestStop(`npm did not install ${request.package} ${request.version} where the vendor build looks for it.`);
   const missing = request.stylesheets.filter((path) => !existsSync(join(installed, path)));
   if (missing.length > 0) throw new RequestStop(`${request.package} ${request.version} has no ${missing.map((path) => `"${path}"`).join(", ")}. Check the stylesheet paths in the package's files on npmjs.com, and edit the issue.`);
   const effects = lib.missingRoleEffects(lib.BUILT_IN_RULES, draft.missing.map((item) => item.role));
-  return { request, issue, install, before, files, summary: summaryOf(description, draft, effects) };
+  return { request, issue, install, before, files, summary: summaryOf(description, draft, effects, inheritedSetup(registry, request)) };
 }
 
 async function prepareCommand() {
@@ -647,7 +675,7 @@ async function publishCommand() {
     const { packageJson, install } = addToPackageJson(readJson(WEB_PACKAGE), request);
     writeJson(WEB_PACKAGE, packageJson);
     const registry = readFileSync(join(REPO, REGISTRY), "utf8");
-    writeFileSync(join(REPO, REGISTRY), addRegistryEntry(registry, registryEntry(request, description, draft, { id: registryId(request, registryIds(registry)), issue })));
+    writeFileSync(join(REPO, REGISTRY), addRegistryEntry(registry, registryEntry(request, description, draft, { id: registryId(request, registryIds(registry)), issue, inherited: inheritedSetup(registry, request) })));
     const status = await capture("git", ["status", "--porcelain", "--untracked-files=all"]);
     const changed = changedPaths(status.out);
     const allowed = allowedChanges(request);
@@ -665,7 +693,7 @@ async function publishCommand() {
     const repo = repository();
     const base = (await github(`/repos/${repo}`)).json?.default_branch ?? "main";
     const effects = lib.missingRoleEffects(lib.BUILT_IN_RULES, draft.missing.map((item) => item.role));
-    const body = pullRequestBody({ request, issue, install, before: await publishedBefore(request), summary: summaryOf(description, draft, effects), runUrl: runUrl(), files });
+    const body = pullRequestBody({ request, issue, install, before: await publishedBefore(request), summary: summaryOf(description, draft, effects, inheritedSetup(registry, request)), runUrl: runUrl(), files });
     const pull = await github(`/repos/${repo}/pulls`, { method: "POST", body: { title: `Add ${request.package} ${request.version}`, head: branch, base, body, maintainer_can_modify: true } });
     if (pull.status !== 201) throw new Error(`opening the pull request answered ${pull.status}: ${JSON.stringify(pull.json?.message ?? "")}${pull.status === 403 ? '. The repository setting "Allow GitHub Actions to create and approve pull requests" may be off.' : ""}`);
     await github(`/repos/${repo}/issues/${issue}/comments`, { method: "POST", body: { body: `Pull request #${pull.json.number} adds ${request.package} ${request.version}. Every check passed in the workflow (${runUrl()}). Once it is merged and deployed, New project lists the library.` } });

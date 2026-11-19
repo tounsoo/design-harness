@@ -13,6 +13,7 @@ import {
   changedPaths,
   descriptionPath,
   draftProblems,
+  inheritedSetup,
   isListed,
   lockedVersion,
   manifestProblems,
@@ -189,7 +190,7 @@ describe("the edits the workflow makes", () => {
     expect(registryIds(registrySource).slice(0, 2)).toEqual(["todae", "mantine"]);
     expect(id).toBe("tounsoo-todae-99-0-0");
     expect(registryId(request, [id])).toBe(`${id}-2`);
-    const entry = registryEntry(request, { ...todae, version: "99.0.0" }, draft, { id, issue: 12 });
+    const entry = registryEntry(request, { ...todae, version: "99.0.0" }, draft, { id, issue: 12, inherited: inheritedSetup(registrySource, request) });
     const source = addRegistryEntry(registrySource, entry);
     expect(source.startsWith(registrySource.slice(0, registrySource.indexOf("\n];\n")))).toBe(true);
     expect(source.endsWith(registrySource.slice(registrySource.indexOf("\n];\n")))).toBe(true);
@@ -202,8 +203,29 @@ describe("the edits the workflow makes", () => {
     expect(entry).toContain('    describe: async () => (await import("../../../../packages/core/libraries/tounsoo-todae-99.0.0.json")).default as unknown as LibraryDescription,');
     expect(entry).toContain('    about: "Requested in issue #12. Parts are namespaced, such as Button.Root.",');
     expect(entry).toContain("    // Added by the library request workflow from issue #12. A person must check:");
+    // A new version of a listed library starts from that library's setup and notes, its stylesheets the request's.
+    expect(entry).toContain('      schemeAttribute: "data-appearance",');
+    expect(entry).toContain('          id: "text-as-heading-or-paragraph",');
+    expect(entry).toContain('    notes: ["Light and dark come from the data-appearance attribute on the page."');
+    expect(entry).toMatch(/A person must check:\n.*\n {4}\/\/ {3}- Its `setup` \(light and dark, root part, rules, part props\) and `notes` are copied from the 0\.11\.3 entry/);
     expect(descriptionPath(request)).toBe("packages/core/libraries/tounsoo-todae-99.0.0.json");
     expect(() => addRegistryEntry("export const OTHER = [];\n", entry)).toThrow("no SHIPPED_LIBRARIES list");
+  });
+
+  it("copies the setup of the last entry of the same package, and none for a new package", () => {
+    const mantine = inheritedSetup(registrySource, { package: "@mantine/core", version: "99.0.0", stylesheets: ["styles.css", "extra.css"] });
+    expect(mantine?.version).toBe("9.7.4");
+    expect(mantine?.setup).toContain('      root: { component: "MantineProvider", schemeProp: "forceColorScheme" },');
+    expect(mantine?.setup).toContain('      partProps: { Button: { color: "violet" } },');
+    expect(mantine?.setup).toContain('      stylesheets: ["styles.css", "extra.css"],');
+    expect(mantine?.notes).toMatch(/^ {4}notes: \[\n[\s\S]*\n {4}\],$/);
+    expect(inheritedSetup(registrySource, ACME)).toBeNull();
+    // A new package gets safe defaults: the React frames render with, the request's stylesheets, nothing else.
+    const fresh = registryEntry(ACME, { ...todae, package: "@acme/ui", version: "1.2.3" }, draftRoles(todae), { id: "acme-ui-1-2-3", issue: 3 });
+    expect(fresh).toContain('    setup: {\n      react: FRAME_REACT,\n      stylesheets: ["dist/ui.css"],\n    },\n');
+    expect(fresh).toContain("Light and dark: the entry sets no scheme attribute and no root part");
+    const file = ts.createSourceFile("registry.ts", addRegistryEntry(registrySource, fresh), ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS);
+    expect((file as unknown as { parseDiagnostics: readonly unknown[] }).parseDiagnostics).toEqual([]);
   });
 
   it("names what a person must check: confidence below high, light and dark, a root part, the library's own rules", () => {

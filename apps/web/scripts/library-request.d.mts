@@ -19,8 +19,10 @@ export function addToPackageJson(packageJson: PackageJson, request: LibraryReque
 export function descriptionPath(request: LibraryRequest): string;
 export function registryId(request: LibraryRequest, taken: readonly string[]): string;
 export function rootCandidates(description: LibraryDescription): string[];
-export function needsChecking(description: LibraryDescription, draft: RoleDraft): string[];
-export function registryEntry(request: LibraryRequest, description: LibraryDescription, draft: RoleDraft, where: { readonly id: string; readonly issue: number }): string;
+export type InheritedSetup = { readonly version: string; readonly setup: string; readonly notes: string };
+export function inheritedSetup(source: string, request: LibraryRequest): InheritedSetup | null;
+export function needsChecking(description: LibraryDescription, draft: RoleDraft, inherited?: InheritedSetup | null): string[];
+export function registryEntry(request: LibraryRequest, description: LibraryDescription, draft: RoleDraft, where: { readonly id: string; readonly issue: number; readonly inherited?: InheritedSetup | null }): string;
 export function addRegistryEntry(source: string, entry: string): string;
 export function isListed(source: string, request: LibraryRequest): boolean;
 export function registryIds(source: string): string[];
@@ -35,7 +37,7 @@ export type RequestSummary = {
   readonly excludedProps: { readonly count: number; readonly sets: readonly string[]; readonly confidence: string } | null;
   readonly check: readonly string[];
 };
-export function summaryOf(description: LibraryDescription, draft: RoleDraft, effects: readonly { readonly role: RoleName; readonly rules: readonly { readonly rule: string }[] }[]): RequestSummary;
+export function summaryOf(description: LibraryDescription, draft: RoleDraft, effects: readonly { readonly role: RoleName; readonly rules: readonly { readonly rule: string }[] }[], inherited?: InheritedSetup | null): RequestSummary;
 export function pullRequestBody(input: { readonly request: LibraryRequest; readonly issue: number; readonly install: string; readonly before: string; readonly summary: RequestSummary; readonly runUrl: string; readonly files: { readonly description: string } }): string;
 export function lockedVersion(lock: { readonly packages?: Readonly<Record<string, { readonly version?: string }>> }, install: string): string | null;
 export function draftProblems(description: LibraryDescription, setup: { readonly react: string; readonly stylesheets: readonly string[] }, lib: unknown): { draft: RoleDraft | null; problems: string[] };
