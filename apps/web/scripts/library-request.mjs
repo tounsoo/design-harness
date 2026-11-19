@@ -542,7 +542,7 @@ async function duplicateReason(request, { remote }) {
   const pulls = await github(`/repos/${repo}/pulls?state=open&head=${encodeURIComponent(`${owner}:${branch}`)}`);
   if (pulls.status !== 200) throw new Error(`listing pull requests answered ${pulls.status}`);
   if (Array.isArray(pulls.json) && pulls.json.length > 0) return `${request.package} ${request.version} is already requested: pull request #${pulls.json[0].number} adds it.`;
-  const existing = await github(`/repos/${repo}/branches/${encodeURIComponent(branch)}`);
+  const existing = await github(`/repos/${repo}/branches/${branch.split("/").map(encodeURIComponent).join("/")}`);
   if (existing.status === 200) return `The branch ${branch} already exists with no open pull request, from an earlier request. A maintainer deletes it, then edits this issue to run the request again.`;
   return null;
 }

@@ -3457,7 +3457,7 @@ test("a library that is not listed is requested on GitHub: the form is checked h
   // Hostile and loose input, refused in plain words as it is typed.
   await form.getByLabel("Package").fill("foo; rm -rf /");
   await form.getByLabel("Exact version").fill("^1.2.0");
-  await form.getByLabel("Stylesheets").fill("../../etc/passwd.css");
+  await form.getByLabel("CSS files").fill("../../etc/passwd.css");
   assert.match((await form.getByTestId("request-error-package").textContent()) ?? "", /is not a package name this form takes/);
   assert.match((await form.getByTestId("request-error-version").textContent()) ?? "", /is a range, which can mean a different version tomorrow/);
   assert.match((await form.getByTestId("request-error-stylesheets").textContent()) ?? "", /is not a path inside the package/);
@@ -3466,14 +3466,14 @@ test("a library that is not listed is requested on GitHub: the form is checked h
   // A library the deployment already lists is picked above, not requested.
   await form.getByLabel("Package").fill("@tounsoo/todae");
   await form.getByLabel("Exact version").fill("0.11.3");
-  await form.getByLabel("Stylesheets").fill("dist/todae.css");
+  await form.getByLabel("CSS files").fill("dist/todae.css");
   assert.match((await form.getByTestId("request-error-version").textContent()) ?? "", /already in the list above/);
   await shot(page, "wizard-request-errors");
   assert.equal(opened.length, 0, "nothing opens while the request is refused");
   // A good request: Enter in a field sends it (not the step), and GitHub's issue form opens in a new tab, filled in.
   await form.getByLabel("Package").fill("@acme/ui");
   await form.getByLabel("Exact version").fill("2.4.1");
-  await form.getByLabel("Stylesheets").fill("dist/ui.css\ndist/theme.css");
+  await form.getByLabel("CSS files").fill("dist/ui.css\ndist/theme.css");
   const [popup] = await Promise.all([page.waitForEvent("popup"), form.getByLabel("Exact version").press("Enter")]);
   await popup.waitForLoadState();
   const url = new URL(popup.url());

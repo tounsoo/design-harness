@@ -12,7 +12,7 @@ type Props = {
 const FIELDS: readonly { readonly field: RequestField; readonly label: string; readonly hint: string; readonly placeholder: string }[] = [
   { field: "package", label: "Package", hint: "Its name on npm.", placeholder: "@acme/ui" },
   { field: "version", label: "Exact version", hint: "One version, such as 2.4.1: not a range or a tag such as latest.", placeholder: "2.4.1" },
-  { field: "stylesheets", label: "Stylesheets", hint: "Its CSS files, as paths inside the package, one a line. Empty for a library that needs none.", placeholder: "dist/styles.css" },
+  { field: "stylesheets", label: "CSS files", hint: "Its stylesheets, as paths inside the package, one a line. Empty for a library that needs none.", placeholder: "dist/styles.css" },
 ];
 
 const when = (at: string) => {
