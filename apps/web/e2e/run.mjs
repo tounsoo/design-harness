@@ -5452,6 +5452,23 @@ test("two notes on one spot: a count lists them, each opens by pointer and by ke
   // What takes the first Escape after the second note, read if it goes unanswered: where focus was, and whether something else handled the key first. Set up here, so it adds no step before the key.
   await page.evaluate(() => {
     window.__escape = null;
+    // Before any handler: what is open, and a trace of whoever calls preventDefault on this key.
+    window.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key !== "Escape" || window.__escapeBefore || !window.__watchEscape) return;
+        window.__escapeBefore = {
+          open: [...document.querySelectorAll(":popover-open, dialog[open], [role='tooltip'], [role='menu']")].map((element) => `${element.tagName.toLowerCase()}[${element.getAttribute("role") ?? ""}|${element.getAttribute("data-testid") ?? ""}|${String(element.className).slice(0, 60)}]`),
+          active: document.activeElement ? `${document.activeElement.tagName.toLowerCase()}[${document.activeElement.getAttribute("data-testid") ?? ""}|${document.activeElement.getAttribute("data-pin") ?? ""}]` : null,
+        };
+        const prevent = event.preventDefault.bind(event);
+        event.preventDefault = () => {
+          window.__escapeBefore.preventedBy = (new Error().stack ?? "").split("\n").slice(1, 6).map((line) => line.trim().slice(0, 160));
+          prevent();
+        };
+      },
+      true,
+    );
     window.addEventListener("keydown", (event) => {
       if (event.key !== "Escape" || window.__escape || !window.__watchEscape) return;
       const target = event.target && "tagName" in event.target ? event.target : null;
@@ -5493,7 +5510,7 @@ test("two notes on one spot: a count lists them, each opens by pointer and by ke
   assert.ok(boxes[0].height >= 24 && boxes[0].width >= 24, `the count is a target of at least 24 px: ${JSON.stringify(boxes[0])}`);
   // The upper marker takes the pointer over the lower one, which is why the count is there.
   await page.keyboard.press("Escape");
-  await eventually(page, () => pinMode(page).getAttribute("aria-pressed"), (value) => value === "false", `Escape leaves pin mode (the key: ${JSON.stringify(await page.evaluate(() => window.__escape))})`);
+  await eventually(page, () => pinMode(page).getAttribute("aria-pressed"), (value) => value === "false", `Escape leaves pin mode (the key: ${JSON.stringify(await page.evaluate(() => ({ after: window.__escape, before: window.__escapeBefore })))})`);
   await marker(page, 2).evaluate((element) => element.blur());
   assert.equal(await topAt(page, 1), "2", "the note pinned last lies on top");
   // Each marker's point is still on the button: sharing a spot moved neither.
