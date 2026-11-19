@@ -6,9 +6,15 @@
  * prototype. CommonJS packages (React, React DOM) get their named exports
  * listed from the module itself, as a CDN such as esm.sh does.
  *
- * Output: public/vendor/manifest.json, which names each package's version,
- * the file for each module specifier, and the package files (stylesheets)
- * copied as they are.
+ * The component libraries it serves are the ones apps/web/package.json lists
+ * under `designHarness.libraries`, each with the stylesheets (paths inside the
+ * package) a project's config may name. Each is served by name and the exact
+ * version installed, so the app can serve any project whose library is one of
+ * them; any other library loads from the esm.sh source.
+ *
+ * Output: public/vendor/manifest.json, which names, for each package and
+ * version, the file for each module specifier and the package files
+ * (stylesheets) copied as they are.
  */
 import { build } from "esbuild";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -21,9 +27,11 @@ const app = join(here, "..");
 const out = join(app, "public", "vendor");
 const require = createRequire(join(app, "package.json"));
 
-/** The library's stylesheets to copy, by path inside the package. */
-const LIBRARY = "@tounsoo/todae";
-const LIBRARY_FILES = ["dist/todae.css"];
+/** The component libraries to serve, and the stylesheets of each, from the app's package.json. */
+const LIBRARIES = Object.entries(JSON.parse(readFileSync(join(app, "package.json"), "utf8")).designHarness?.libraries ?? {});
+const REACT_EXTERNALS = ["react", "react/jsx-runtime", "react-dom"];
+/** A file name for a package's module or file: its name and version, safe in a URL path. */
+const fileName = (name, version, suffix) => `${name.replace(/^@/, "").replace(/[^\w.-]/g, "-")}@${version}${suffix}`;
 
 /** Each module a frame imports: specifier, file name, and which specifiers stay external. */
 const MODULES = [
@@ -31,7 +39,7 @@ const MODULES = [
   { specifier: "react/jsx-runtime", file: "react-jsx-runtime.js", external: ["react"] },
   { specifier: "react-dom", file: "react-dom.js", external: ["react"] },
   { specifier: "react-dom/client", file: "react-dom-client.js", external: ["react", "react-dom"] },
-  { specifier: LIBRARY, file: "library.js", external: ["react", "react/jsx-runtime", "react-dom"] },
+  ...LIBRARIES.map(([name]) => ({ specifier: name, file: null, external: REACT_EXTERNALS })),
   // A spec prototype's frames draw specs with json-render's React renderer, which bundles its core and zod.
   { specifier: "@json-render/react", file: "json-render-react.js", external: ["react", "react/jsx-runtime", "react-dom"] },
 ];
@@ -95,6 +103,8 @@ mkdirSync(out, { recursive: true });
 const manifest = { packages: {} };
 for (const module of MODULES) {
   const name = packageOf(module.specifier);
+  const version = versionOf(name);
+  const file = module.file ?? fileName(name, version, ".js");
   const entry = isCommonJs(module.specifier) ? cjsEntry(module.specifier) : `export * from ${JSON.stringify(module.specifier)};\n`;
   await build({
     stdin: { contents: entry, resolveDir: app, loader: "js" },
@@ -106,16 +116,19 @@ for (const module of MODULES) {
     legalComments: "none",
     plugins: [externals(module.external)],
     define: { "process.env.NODE_ENV": '"production"' },
-    outfile: join(out, module.file),
-    logLevel: "warning",
+    outfile: join(out, file),
+    logLevel: "error",
   });
-  const entryOf = (manifest.packages[name] ??= { version: versionOf(name), modules: {}, files: {} });
-  entryOf.modules[module.specifier] = module.file;
+  const versions = (manifest.packages[name] ??= { versions: {} }).versions;
+  (versions[version] ??= { modules: {}, files: {} }).modules[module.specifier] = file;
 }
-for (const path of LIBRARY_FILES) {
-  const file = path.split("/").pop();
-  copyFileSync(join(packageJson(LIBRARY).dir, path), join(out, file));
-  manifest.packages[LIBRARY].files[path] = file;
+for (const [name, stylesheets] of LIBRARIES) {
+  const { dir, json } = packageJson(name);
+  for (const path of stylesheets) {
+    const file = fileName(name, json.version, `-${path.replace(/[^\w.-]/g, "-")}`);
+    copyFileSync(join(dir, path), join(out, file));
+    manifest.packages[name].versions[json.version].files[path] = file;
+  }
 }
 writeFileSync(join(out, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-console.log(`vendor: ${Object.entries(manifest.packages).map(([name, entry]) => `${name}@${entry.version}`).join(", ")} -> public/vendor`);
+console.log(`vendor: ${Object.entries(manifest.packages).flatMap(([name, entry]) => Object.keys(entry.versions).map((version) => `${name}@${version}`)).join(", ")} -> public/vendor`);

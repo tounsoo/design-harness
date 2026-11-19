@@ -1,0 +1,9 @@
+{
+  "what": "The amount layout drawn twice, for the amount and a tip, so two questions sit outside the disclosure",
+  "expect": [
+    {
+      "rule": "visible-questions",
+      "message": "Page \"expense\" has 2 questions outside every disclosure, more than 1 (MAX_VISIBLE_QUESTIONS)"
+    }
+  ]
+}

@@ -65,7 +65,7 @@ describe("the spec tools", () => {
     const outcome = await runTool(call("patch_spec", { path: "pages/rooms.json", patches: '{"op":"add","path":"/elements/page/slots/intro/-","value":"free"}\n{"op":"add","path":"/elements/free","value":{"type":"Badge.Root","props":{"text":"Free"},"children":[]}}\n{"op":"add","path":"/elements/heading/props/style","value":{"color":"red"}}' }), parts.host, signal);
     expect(outcome.isError).toBe(true);
     expect(outcome.content).toContain('element "free" is a Badge.Root, which is not in the catalog');
-    expect(outcome.content).toContain('element "heading" sets "style", which a Text.Root does not take');
+    expect(outcome.content).toContain('element "heading" sets "style", a style prop the project excludes');
     expect(parts.applied).toEqual([]);
   });
 

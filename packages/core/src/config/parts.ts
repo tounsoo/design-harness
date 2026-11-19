@@ -35,6 +35,7 @@ const propSchema: Check<PropSchema> = tagged("type", {
   boolean: obj({ type: oneOf(["boolean"]), required: bool }, { bind: str() }),
   enum: obj({ type: oneOf(["enum"]), values: arr(str({ nonEmpty: false }), { min: 1 }), required: bool }, { bind: str() }),
   options: obj({ type: oneOf(["options"]), required: bool }),
+  unknown: obj({ type: oneOf(["unknown"]), required: bool }),
 });
 
 export const partDescription: Check<PartDescription> = obj(

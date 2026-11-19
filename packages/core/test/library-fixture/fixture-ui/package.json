@@ -1,0 +1,7 @@
+{
+  "name": "fixture-ui",
+  "version": "1.2.3",
+  "private": true,
+  "description": "A component library's declarations, and only them, for the describer's tests: every kind of part and prop it reads.",
+  "exports": { ".": { "import": { "types": "./index.d.ts" } } }
+}

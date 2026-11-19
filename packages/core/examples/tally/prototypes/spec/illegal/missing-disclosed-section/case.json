@@ -1,0 +1,9 @@
+{
+  "what": "The receipt rules' summary says Rules, so no disclosure holds the section the inputs name",
+  "expect": [
+    {
+      "rule": "disclosed-sections",
+      "message": "Receipt rules"
+    }
+  ]
+}

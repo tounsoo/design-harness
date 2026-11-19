@@ -1,4 +1,4 @@
-import type { PropSchema } from "../config/types";
+import type { SettablePropSchema as PropSchema } from "../config/types";
 import { SCENARIO_STATE } from "./catalog";
 import { isRecord, type JsonValue } from "./json";
 

@@ -1,4 +1,4 @@
-import { SPEC_ACTIONS, specCatalog, type CatalogComponent, type ProjectConfig, type PropSchema, type SpecCatalog } from "@design-harness/core";
+import { SPEC_ACTIONS, specCatalog, type CatalogComponent, type ProjectConfig, type SettablePropSchema as PropSchema, type SpecCatalog } from "@design-harness/core";
 
 /**
  * The spec mode's catalog instructions, written here from core's catalog.

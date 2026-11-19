@@ -1,0 +1,9 @@
+{
+  "what": "Submit expense given Mantine's bg style prop, which Tally excludes: its colour must come from Mantine's variants and tokens",
+  "expect": [
+    {
+      "rule": "extract",
+      "message": "element \"submit\" sets \"bg\", a style prop the project excludes (\"bg\" in library.excludedProps): a Button's styling must come from the library's own variants and tokens"
+    }
+  ]
+}

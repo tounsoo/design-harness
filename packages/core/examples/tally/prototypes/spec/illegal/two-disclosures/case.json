@@ -1,0 +1,9 @@
+{
+  "what": "A second item, Mileage rules, in the receipt rules' accordion: each item opens on its own, so the page has two disclosures",
+  "expect": [
+    {
+      "rule": "disclosures-per-page",
+      "message": "Page \"expense\" has 2 disclosures, more than 1 (MAX_DISCLOSURES_PER_PAGE)"
+    }
+  ]
+}

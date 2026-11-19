@@ -1,4 +1,4 @@
-import type { PartDescription, ProjectConfig, PropSchema } from "../config/types";
+import type { PartDescription, ProjectConfig, SettablePropSchema } from "../config/types";
 import { ROLE_NAMES, type RoleName } from "../rules/types";
 
 /**
@@ -29,7 +29,11 @@ export type CatalogComponent = {
   readonly kind: "part" | "page" | "layout";
   readonly description: string;
   /** Every prop a spec may set, `text` included where the part takes text. */
-  readonly props: Readonly<Record<string, PropSchema>>;
+  readonly props: Readonly<Record<string, SettablePropSchema>>;
+  /** Props the library declares whose type could not be read as a JSON value: a spec that sets one is refused. */
+  readonly unknownProps?: readonly string[];
+  /** Props the library declares that the config excludes (its style props): a spec that sets one is refused. */
+  readonly excludedProps?: readonly string[];
   /** `default` when it takes child elements; a page's named slots; none for a leaf. */
   readonly slots: readonly string[];
   readonly content: PartDescription["content"];
@@ -40,11 +44,13 @@ export type CatalogComponent = {
 
 export type SpecCatalog = {
   readonly components: Readonly<Record<string, CatalogComponent>>;
+  /** The config's excluded props (`library.excludedProps`): names and `*` patterns no part takes in a spec. */
+  readonly excludedProps: readonly string[];
   /** Inventoried components with no part a spec can render, and why. */
   readonly left: readonly { readonly component: string; readonly why: string }[];
 };
 
-const TEXT: PropSchema = { type: "string", required: false };
+const TEXT: SettablePropSchema = { type: "string", required: false };
 
 function roleWords(part: string, config: ProjectConfig): { roles: RoleName[]; words: string[] } {
   const roles: RoleName[] = [];
@@ -81,7 +87,14 @@ export function specCatalog(config: ProjectConfig): SpecCatalog | null {
         continue;
       }
       const { roles, words } = roleWords(name, config);
-      const props: Record<string, PropSchema> = { ...part.props };
+      const props: Record<string, SettablePropSchema> = {};
+      const unknownProps: string[] = [];
+      const excludedProps: string[] = [];
+      for (const [prop, schema] of Object.entries(part.props)) {
+        if (excludedBy(config.library.excludedProps, prop) !== null) excludedProps.push(prop);
+        else if (schema.type === "unknown") unknownProps.push(prop);
+        else props[prop] = schema;
+      }
       if (part.content === "children") props[TEXT_PROP] = TEXT;
       // A press is what an action does; other parts are not pressed, whatever DOM events they pass on.
       const events = roles.includes("action") && part.events?.includes("press") ? (["press"] as const) : [];
@@ -94,6 +107,8 @@ export function specCatalog(config: ProjectConfig): SpecCatalog | null {
         content: part.content,
         events,
         roles,
+        ...(unknownProps.length > 0 ? { unknownProps: unknownProps.sort() } : {}),
+        ...(excludedProps.length > 0 ? { excludedProps: excludedProps.sort() } : {}),
       };
     }
   }
@@ -118,9 +133,20 @@ export function specCatalog(config: ProjectConfig): SpecCatalog | null {
     events: [],
     roles: [],
   };
-  return { components: sortKeys(components), left };
+  return { components: sortKeys(components), left, excludedProps: [...(config.library.excludedProps ?? [])].sort() };
 }
 
 function sortKeys<T>(record: Readonly<Record<string, T>>): Record<string, T> {
   return Object.fromEntries(Object.entries(record).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+}
+
+/** Whether `prop` is one of the config's excluded props: the first name or `*` pattern it matches, or null. */
+export function excludedBy(patterns: readonly string[] | undefined, prop: string): string | null {
+  for (const pattern of patterns ?? []) {
+    if (pattern === prop) return pattern;
+    if (!pattern.includes("*")) continue;
+    const source = pattern.split("*").map((piece) => piece.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*");
+    if (new RegExp(`^${source}$`).test(prop)) return pattern;
+  }
+  return null;
 }

@@ -48,6 +48,16 @@ describe("the frame's reader of its parent's messages", () => {
     expect(readParentMessage({ ...request, page: { spec: { ...spec, spec: { ...spec.spec, elements: { page: { props: {} } } } } } }, channel)).toBeNull();
   });
 
+  it("accepts the library's root part by its module, export and literal props, and drops one from elsewhere", () => {
+    const withLibrary = { ...request, modules: { ...request.modules, "@mantine/core": { url: "https://esm.sh/@mantine/core@9.7.4" } } };
+    const root = { module: "@mantine/core", component: "MantineProvider", props: { forceColorScheme: "dark" } };
+    expect(readParentMessage({ ...withLibrary, root }, channel)).not.toBeNull();
+    expect(readParentMessage({ ...request, root }, channel)).toBeNull();
+    expect(readParentMessage({ ...withLibrary, root: { ...root, component: "default" } }, channel)).toBeNull();
+    expect(readParentMessage({ ...withLibrary, root: { ...root, props: { theme: { primaryColor: "violet" } } } }, channel)).toBeNull();
+    expect(readParentMessage({ ...withLibrary, root: { ...root, code: "x" } }, channel)).toBeNull();
+  });
+
   it("accepts a redraw of a spec in place, and drops one that carries anything but a spec", () => {
     const spec = { library: "@tounsoo/todae", spec: { root: "page", elements: { page: { type: "Page", props: {}, children: [] } }, state: {} }, parts: { Page: { kind: "page", content: "none", props: [], binds: {}, events: [] } } };
     expect(readParentMessage({ protocol: PROTOCOL, type: "redraw", channel, generation: 3, spec }, channel)).not.toBeNull();

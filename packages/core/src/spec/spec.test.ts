@@ -129,7 +129,7 @@ describe("the catalog generated from the config", () => {
 describe("the library description", () => {
   it("is what describe-library writes from Todae's declarations", () => {
     const root = join(import.meta.dirname, "..", "..", "..", "..");
-    const written = execFileSync("node", [join(root, "packages/core/scripts/describe-library.mjs"), "@tounsoo/todae"], { cwd: root, encoding: "utf8" });
+    const written = execFileSync("node", [join(root, "packages/core/scripts/describe-library.mjs"), "@tounsoo/todae", "0.10.1"], { cwd: root, encoding: "utf8" });
     expect(written).toBe(readFileSync(join(root, "packages/core/libraries/todae-0.10.1.json"), "utf8"));
   }, 30_000);
 });
@@ -242,7 +242,7 @@ describe("spec validation against the catalog", () => {
     );
     expect(issues.map((issue) => `${issue.at.line}:${issue.at.column} ${issue.message}`)).toEqual([
       expect.stringMatching(/^\d+:\d+ pages\/home\.json: element "badge" is a Badge\.Root, which is not in the catalog\./),
-      expect.stringMatching(/element "book" sets "style", which a Button\.Root does not take\./),
+      expect.stringMatching(/element "book" sets "style", a style prop the project excludes \("style" in library\.excludedProps\): a Button\.Root.s styling must come from the library.s own variants and tokens/),
       expect.stringMatching(/element "book" sets variant to "danger"; a Button\.Root's variant is one of "ghost", "primary", "secondary"\./),
     ]);
   });

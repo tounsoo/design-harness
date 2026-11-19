@@ -1,0 +1,10 @@
+{
+  "params": {
+    "label": { "type": "text", "description": "The question. Mantine's label names the field, so a screen reader announces it.", "example": "Amount in euros" },
+    "amount": { "type": "text", "description": "The amount filled in when the page opens.", "example": "48.20" }
+  },
+  "root": "field",
+  "elements": {
+    "field": { "type": "NumberInput", "props": { "label": { "$param": "label" }, "defaultValue": { "$param": "amount" }, "min": 0, "decimalScale": 2 }, "children": [] }
+  }
+}
