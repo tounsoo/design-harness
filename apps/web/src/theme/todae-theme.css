@@ -41,6 +41,19 @@
 :root:not([data-appearance]):not([data-density]),
 [data-appearance],
 [data-density] {
+  --todae-harness-annotation-dash: var(--_todae-harness-annotation-dash, 4px);
+  --todae-harness-annotation-hatch-gap: var(--_todae-harness-annotation-hatch-gap, 6px);
+  --todae-harness-annotation-hatch-line: var(--_todae-harness-annotation-hatch-line, 1.5px);
+  --todae-harness-annotation-label-padding: var(--_todae-harness-annotation-label-padding, 4px);
+  --todae-harness-annotation-label-size: var(--_todae-harness-annotation-label-size, 11px);
+  --todae-harness-annotation-on-dark-fail: var(--_todae-harness-annotation-on-dark-fail, var(--todae-color-red-300));
+  --todae-harness-annotation-on-dark-halo: var(--_todae-harness-annotation-on-dark-halo, var(--todae-color-gray-950));
+  --todae-harness-annotation-on-dark-ink: var(--_todae-harness-annotation-on-dark-ink, var(--todae-color-gray-100));
+  --todae-harness-annotation-on-light-fail: var(--_todae-harness-annotation-on-light-fail, var(--todae-color-red-600));
+  --todae-harness-annotation-on-light-halo: var(--_todae-harness-annotation-on-light-halo, var(--todae-color-gray-0));
+  --todae-harness-annotation-on-light-ink: var(--_todae-harness-annotation-on-light-ink, var(--todae-color-gray-800));
+  --todae-harness-annotation-stroke: var(--_todae-harness-annotation-stroke, 1.5px);
+  --todae-harness-annotation-stroke-strong: var(--_todae-harness-annotation-stroke-strong, 2.5px);
   --todae-harness-artboard-label-gap: var(--_todae-harness-artboard-label-gap, var(--todae-space-2));
   --todae-harness-artboard-radius: var(--_todae-harness-artboard-radius, var(--todae-radius-md));
   --todae-harness-artboard-selected: var(--_todae-harness-artboard-selected, var(--todae-color-status-critical-border));
@@ -50,6 +63,13 @@
   --todae-harness-canvas-row-gap: var(--_todae-harness-canvas-row-gap, var(--todae-space-10));
   --todae-harness-edge-quote: var(--_todae-harness-edge-quote, 2px);
   --todae-harness-edge-status: var(--_todae-harness-edge-status, 3px);
+  --todae-harness-figure-height: var(--_todae-harness-figure-height, 9rem);
+  --todae-harness-figure-indent: var(--_todae-harness-figure-indent, 1.125rem);
+  --todae-harness-figure-mark: var(--_todae-harness-figure-mark, 0.75rem);
+  --todae-harness-figure-node: var(--_todae-harness-figure-node, 5.5rem);
+  --todae-harness-figure-pip: var(--_todae-harness-figure-pip, 1.375rem);
+  --todae-harness-figure-swatch: var(--_todae-harness-figure-swatch, 1rem);
+  --todae-harness-figure-track: var(--_todae-harness-figure-track, 0.375rem);
   --todae-harness-floating-bg: var(--_todae-harness-floating-bg, var(--todae-color-bg-elevated));
   --todae-harness-floating-radius: var(--_todae-harness-floating-radius, var(--todae-radius-lg));
   --todae-harness-measure-note: var(--_todae-harness-measure-note, 40rem);
