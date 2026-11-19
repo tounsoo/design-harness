@@ -1,0 +1,9 @@
+{
+  "what": "The room cards put their list of rooms into the seats line's template, which only puts in text, a number or an enum's value",
+  "expect": [
+    {
+      "rule": "extract",
+      "message": "layouts/room-cards.json: element \"seats\" sets text with a $template that reads parameter \"rooms\", but it is a list of records of { \"id\": text, \"name\": text, \"seats\": number }, and a template puts in text, a number or one of an enum's values."
+    }
+  ]
+}
