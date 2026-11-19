@@ -2,8 +2,8 @@ import { Badge, Button, Card, Code, DataList, Disclosure, Loader, Stack, Text } 
 import { CircleAlert, CircleCheck, CodeXml, Crosshair, Sparkles, TriangleAlert } from "lucide-react";
 import { describeRule, type Finding, type ProjectConfig, type RuleReport } from "@design-harness/core";
 import type { SessionState } from "../runtime/session";
-import { describeOutline, planOutline } from "../runtime/tags";
-import { findingPlace, ruleLead, scenarioLabel, viewLabel } from "./words";
+import { planOutline } from "../runtime/tags";
+import { describeOutline, findingPlace, ruleLead, scenarioLabel, viewLabel } from "./words";
 
 type Props = {
   readonly state: SessionState;

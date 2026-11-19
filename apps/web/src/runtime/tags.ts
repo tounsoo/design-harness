@@ -107,14 +107,3 @@ export function planOutline(finding: Finding, frames: readonly FrameSpec[], stat
   const missing = [...shown].filter(([, any]) => !any).map(([scenario]) => scenario);
   return { frames: out, missing, unmeasured };
 }
-
-/** The outline in words, for the line under a selected finding. */
-export function describeOutline(plan: OutlinePlan, frames: readonly FrameSpec[]): string {
-  const scenarios = [...new Set(plan.frames.map((item) => frames.find((frame) => frame.key === item.key)?.scenario.id ?? ""))].filter(Boolean);
-  const parts: string[] = [];
-  if (scenarios.length > 0) parts.push(`Outlined in ${plan.frames.length} ${plan.frames.length === 1 ? "frame" : "frames"} (${scenarios.join(", ")}).`);
-  if (plan.missing.length > 0) parts.push(`Not drawn in scenario${plan.missing.length === 1 ? "" : "s"} ${plan.missing.join(", ")}.`);
-  if (plan.unmeasured.length > 0) parts.push(`Not measured in ${plan.unmeasured.join(", ")}.`);
-  if (parts.length === 0) parts.push("Not drawn in any scenario.");
-  return parts.join(" ");
-}

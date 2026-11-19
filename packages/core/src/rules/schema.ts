@@ -71,6 +71,7 @@ const ruleVariants = tagged("type", {
   reachable: obj({ ...base, type: oneOf(["reachable"]), select: selector }, extra),
   "page-structure": obj({ ...base, type: oneOf(["page-structure"]) }, extra),
   isolation: obj({ ...base, type: oneOf(["isolation"]) }, extra),
+  "style-props": obj({ ...base, type: oneOf(["style-props"]) }, extra),
   flow: obj({ ...base, type: oneOf(["flow"]), check: oneOf(["state-coverage", "step-budget"]) }, extra),
   rendered,
 });
