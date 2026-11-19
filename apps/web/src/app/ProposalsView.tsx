@@ -1,23 +1,27 @@
-import { Button, Code, EmptyState, Stack, Table, Text, ToggleGroup } from "@tounsoo/todae";
+import { Button, Card, Code, EmptyState, Stack, Text, ToggleGroup } from "@tounsoo/todae";
+import { Check, X } from "lucide-react";
 import { useState } from "react";
-import { PROPOSAL_STATUSES, type ProjectConfig, type ProposalStatus } from "@design-harness/core";
+import { PROPOSAL_STATUSES, type ProjectConfig, type Proposal, type ProposalStatus } from "@design-harness/core";
 import { draftedBy, formatTime } from "../review/timeline";
-import { ClassBadge, RequestBadge, StatusBadge, classificationOf } from "./proposal-parts";
+import { ClassScale } from "../visual/project-figures";
+import { changeLine, sortProposals } from "../visual/project-model";
+import { RequestBadge, StatusBadge, classificationOf } from "./proposal-parts";
+import { ProposalLead } from "./ProposalPreview";
 
 type Filter = "all" | ProposalStatus;
 
 /**
- * Every proposal in the project: its title, status, core's classification,
- * who drafted it and when, filtered by status. Open proposals come first,
- * then approved, adopted and declined, newest first in each.
+ * Every proposal in the project as a card that leads with what it would put
+ * in the project: the part it adds drawn live, a cap before and after, a new
+ * page type's slots. Under the picture: its title, where it stands, core's
+ * classification on the scale, what changes in a line, its examples, and who
+ * drafted it and when. Open proposals come first, then approved, adopted and
+ * declined, newest first in each; the filter picks a status.
  */
 export function ProposalsView({ config, onOpen }: { readonly config: ProjectConfig; readonly onOpen: (id: string) => void }) {
   const [filter, setFilter] = useState<Filter>("all");
   const count = (status: ProposalStatus) => config.proposals.filter((proposal) => proposal.status === status).length;
-  const order = (status: ProposalStatus) => PROPOSAL_STATUSES.indexOf(status);
-  const shown = config.proposals
-    .filter((proposal) => filter === "all" || proposal.status === filter)
-    .sort((a, b) => order(a.status) - order(b.status) || (draftedBy(b).at < draftedBy(a).at ? -1 : draftedBy(b).at > draftedBy(a).at ? 1 : 0));
+  const shown = sortProposals(config.proposals.filter((proposal) => filter === "all" || proposal.status === filter), PROPOSAL_STATUSES);
 
   return (
     <Stack.Root gap="spacious" className="proposals">
@@ -46,47 +50,64 @@ export function ProposalsView({ config, onOpen }: { readonly config: ProjectConf
           </EmptyState.Description>
         </EmptyState.Root>
       ) : (
-        <Table.Root className="proposals-table" aria-label="Proposals">
-          <Table.Head>
-            <Table.Row>
-              <Table.HeaderCell>Proposal</Table.HeaderCell>
-              <Table.HeaderCell>Status</Table.HeaderCell>
-              <Table.HeaderCell>Change</Table.HeaderCell>
-              <Table.HeaderCell>Drafted</Table.HeaderCell>
-              <Table.HeaderCell>Examples</Table.HeaderCell>
-            </Table.Row>
-          </Table.Head>
-          <Table.Body>
-            {shown.map((proposal) => {
-              const drafted = draftedBy(proposal);
-              return (
-                <Table.Row key={proposal.id} data-proposal={proposal.id} data-status={proposal.status}>
-                  <Table.Cell>
-                    <Stack.Root gap="none" align="start">
-                      <Button.Root variant="ghost" onClick={() => onOpen(proposal.id)} className="proposals-title">
-                        {proposal.title}
-                      </Button.Root>
-                      <Code.Root className="proposals-id">{proposal.id}</Code.Root>
-                    </Stack.Root>
-                  </Table.Cell>
-                  <Table.Cell>
-                    <StatusBadge status={proposal.status} />
-                  </Table.Cell>
-                  <Table.Cell>
-                    {proposal.needsRuleType ? <RequestBadge /> : <ClassBadge value={classificationOf(proposal, config).class} />}
-                  </Table.Cell>
-                  <Table.Cell>
-                    by {drafted.by}, <time dateTime={drafted.at}>{formatTime(drafted.at)}</time>
-                  </Table.Cell>
-                  <Table.Cell>
-                    {proposal.needsRuleType ? `${proposal.needsRuleType.pass.length} pass · ${proposal.needsRuleType.fail.length} fail, in words` : `${proposal.examples.pass.length} pass · ${proposal.examples.fail.length} fail`}
-                  </Table.Cell>
-                </Table.Row>
-              );
-            })}
-          </Table.Body>
-        </Table.Root>
+        <ul className="proposal-cards" aria-label="Proposals">
+          {shown.map((proposal) => (
+            <li key={proposal.id} data-proposal={proposal.id} data-status={proposal.status}>
+              <ProposalCard proposal={proposal} config={config} onOpen={() => onOpen(proposal.id)} />
+            </li>
+          ))}
+        </ul>
       )}
     </Stack.Root>
+  );
+}
+
+/** Where a proposal stands, beside its status: what it waits for, or since when it holds. */
+function standing(proposal: Proposal): string {
+  const last = proposal.history.at(-1);
+  switch (proposal.status) {
+    case "open":
+      return "Waiting for you";
+    case "approved":
+      return "Approved: waiting for you to adopt it";
+    case "adopted":
+      return `In force since ${formatTime(last?.at ?? "")}`;
+    case "declined":
+      return last?.note ? `“${last.note}”` : "Declined";
+  }
+}
+
+function ProposalCard({ proposal, config, onOpen }: { readonly proposal: Proposal; readonly config: ProjectConfig; readonly onOpen: () => void }) {
+  const drafted = draftedBy(proposal);
+  const request = proposal.needsRuleType;
+  const waiting = proposal.status === "open" || proposal.status === "approved";
+  return (
+    <Card.Root className="proposal-card" data-waiting={waiting ? "" : undefined}>
+      <ProposalLead proposal={proposal} config={config} />
+      <div className="proposal-card-body">
+        <Button.Root variant="ghost" onClick={onOpen} className="proposals-title">
+          {proposal.title}
+        </Button.Root>
+        <Stack.Root direction="row" align="center" gap="condensed" wrap>
+          <StatusBadge status={proposal.status} />
+          <Text.Root as="span" weight={waiting ? "medium" : "regular"} tone={waiting ? "default" : "muted"} className="proposal-standing" data-testid="proposal-standing">
+            {standing(proposal)}
+          </Text.Root>
+        </Stack.Root>
+        {request ? <RequestBadge /> : <ClassScale value={classificationOf(proposal, config).class} small />}
+        <Text.Root as="p">{changeLine(proposal)}</Text.Root>
+        <Text.Root as="p" className="proposal-examples" data-testid="proposal-examples">
+          <span className="proposal-example" data-expect="pass">
+            <Check aria-hidden="true" /> {request ? request.pass.length : proposal.examples.pass.length} must pass
+          </span>
+          <span className="proposal-example" data-expect="fail">
+            <X aria-hidden="true" /> {request ? request.fail.length : proposal.examples.fail.length} must fail{request ? ", in words" : ""}
+          </span>
+        </Text.Root>
+        <Text.Root as="p" tone="muted">
+          By {drafted.by}, <time dateTime={drafted.at}>{formatTime(drafted.at)}</time> <Code.Root className="proposals-id">{proposal.id}</Code.Root>
+        </Text.Root>
+      </div>
+    </Card.Root>
   );
 }

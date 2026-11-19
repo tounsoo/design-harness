@@ -49,7 +49,8 @@ const TALLY_VIEWS = ["desktop", "phone"];
 
 async function openApp(browser, base, options = {}) {
   // The fake API's certificate is self-signed; only it is reached at api.anthropic.com (see the runner).
-  const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, acceptDownloads: true, ignoreHTTPSErrors: true, ...options });
+  // E2E_SCALE=2 saves screenshots at twice the density; it changes no CSS pixel a test reads.
+  const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: Number(process.env.E2E_SCALE ?? 1), acceptDownloads: true, ignoreHTTPSErrors: true, ...options });
   const page = await context.newPage();
   const errors = [];
   const logs = [];
@@ -458,7 +459,7 @@ test("the board opens a frame at full size and the project view reads the config
     await shot(page, `full-size-${colorScheme}`);
     await page.getByRole("button", { name: "Back to board" }).click();
     await page.getByRole("tab", { name: "Project" }).click();
-    await page.getByRole("heading", { name: "What a prototype can use" }).waitFor();
+    await page.getByRole("heading", { name: "What a prototype can build with" }).waitFor();
     for (const text of ["@tounsoo/todae 0.11.3", "primary-action", "Room details", "TARGET_MIN_PX", "Rules in force (32)", "No proposals yet"]) {
       assert.ok((await page.locator(".project").textContent()).includes(text), `the project view shows ${text}`);
     }
@@ -780,7 +781,7 @@ test("a drafted proposal is saved as open, with core's adoption dry run", async 
   assert.match(await card.textContent(), /Core's adoption dry run passes/);
   await page.getByRole("tab", { name: "Project" }).click();
   await page.getByText("Proposals (1)").waitFor();
-  assert.match(await page.locator(".project li").filter({ hasText: "booking-toast" }).first().textContent(), /^open A toast that confirms a booking booking-toast/);
+  assert.match(await page.locator('.project [data-testid="project-history"] [data-proposal="booking-toast"]').textContent(), /^A toast that confirms a booking.*open.*Waiting for you.*Adds 1 component and 1 rule\./);
   assert.equal((await report(page)).rules.some((rule) => rule.rule === "one-toast-per-page"), false, "an open proposal puts no rule in force");
   await shot(page, "chat-proposal-light");
   await page.reload();
@@ -1039,7 +1040,21 @@ test("a drafted proposal opens to its review page: examples side by side in fram
   assert.equal((await page.locator(".review h1").textContent()).trim(), "A toast that confirms a booking");
   assert.match(await page.getByTestId("proposal-reason").textContent(), /Toast is not in the inventory/);
   assert.match(await page.getByTestId("proposal-states").textContent(), /booked.*the toast says the room is booked/);
-  assert.equal(await page.getByTestId("proposal-class").first().textContent(), "tightens");
+  assert.equal(await page.getByTestId("proposal-class").first().textContent(), "Tightens", "the marker on the class scale");
+  // Where it stands, as a track, and core's class on the scale with each change's reason under it.
+  assert.deepEqual(await page.locator('[data-testid="proposal-track"] li').evaluateAll((items) => items.map((item) => `${item.dataset.step}:${item.dataset.state}`)), ["drafted:done", "open:current", "approved:upcoming", "adopted:upcoming"]);
+  assert.match(await page.locator('[data-testid="proposal-track"] [aria-current="step"]').textContent(), /^Open: waiting for you/);
+  assert.equal(await page.locator('.review [data-testid="class-scale"]').getAttribute("data-class"), "tightens");
+  assert.deepEqual(await page.locator('.review [data-testid="class-scale"] li').evaluateAll((items) => items.map((item) => item.getAttribute("aria-current"))), [null, "true", null]);
+  assert.match(await page.getByTestId("review-class").textContent(), /Toast.*only adds.*one-toast-per-page.*tightens/s);
+  // The palette after: the new part drawn by Todae in a sandboxed frame, marked New.
+  const added = page.locator('[data-testid="palette-after"] .specimen[data-component="Toast"]');
+  assert.equal(await added.getAttribute("data-mark"), "new");
+  assert.match(await added.textContent(), /Toast.*New.*Before: not in the inventory\./s);
+  await added.locator('[data-testid="specimen-stage"][data-state="measured"]').waitFor({ timeout: 60000 });
+  assert.equal(await added.locator("iframe").getAttribute("sandbox"), "allow-scripts");
+  assert.equal(await page.frameLocator('iframe[title="Toast, drawn by @tounsoo/todae"]').getByText("Title", { exact: true }).count(), 1, "Todae draws the toast's title");
+  assert.match(await page.getByTestId("palette-after").textContent(), /Unchanged beside it: Alert, Button, Card/);
   await shot(page, "review-top-light");
   await shotDark(page, "review-top-dark");
   // The inventory diff, before and after.
@@ -1050,8 +1065,8 @@ test("a drafted proposal opens to its review page: examples side by side in fram
   assert.deepEqual(JSON.parse(await page.locator('.rule-words[data-rule="one-toast-per-page"] [data-testid="rule-json"]').textContent()), TOAST_RULE);
 
   await judged(page);
-  const pass = await example(page, "one-toast").boundingBox();
-  const fail = await example(page, "two-toasts").boundingBox();
+  // Both boxes in one read: frames above them are still settling, and the page may move between two.
+  const [pass, fail] = await page.evaluate(() => ["one-toast", "two-toasts"].map((name) => document.querySelector(`.review .example[data-example="${name}"]`).getBoundingClientRect().toJSON()));
   assert.ok(pass.x + pass.width <= fail.x && Math.abs(pass.y - fail.y) < 40, "passing on the left, failing on the right, side by side");
   assert.equal(await example(page, "one-toast").getAttribute("data-expect"), "pass");
   assert.equal(await example(page, "one-toast").getByTestId("example-verdict").textContent(), "passes");
@@ -1075,17 +1090,37 @@ test("a drafted proposal opens to its review page: examples side by side in fram
   const marked = await example(page, "two-toasts").locator('.example-source [data-kind="finding"]').textContent();
   assert.ok(marked.includes("<Toast.Root>Booked</Toast.Root><Toast.Root>Booked</Toast.Root>"), `the marked line holds both toasts: ${marked}`);
   assert.match(await page.getByTestId("review-verdict").textContent(), /^Core's adoption dry run: it would be adopted, classified tightens, and no prototype would newly fail\./);
+  // The rule and its proof in one look: a passing and a failing example under it, each in a frame of its own, with core's verdict and message.
+  const proof = page.locator('[data-rule-proof="one-toast-per-page"]');
+  assert.equal(await proof.locator(".rule-glyph").getAttribute("data-glyph"), "count");
+  assert.deepEqual(await proof.locator(".proof-example").evaluateAll((items) => items.map((item) => [item.dataset.proof, item.dataset.expect])), [["one-toast", "pass"], ["two-toasts", "fail"]]);
+  assert.deepEqual(await proof.getByTestId("proof-verdict").allTextContents(), ["passes", "fails for one-toast-per-page alone"]);
+  assert.equal(await proof.locator('.proof-example[data-proof="two-toasts"]').getByTestId("proof-message").textContent(), finding, "core's message, word for word");
+  const proofFrame = page.frameLocator('iframe[title="two-toasts, as proof: lantern-open at phone"]');
+  await proofFrame.locator("text=Booked").nth(1).waitFor({ timeout: 60000 });
+  assert.equal(await proofFrame.locator("text=Booked").count(), 2, "the proof frame renders the failing example's two toasts");
+  assert.equal(await page.locator('iframe[title="two-toasts, as proof: lantern-open at phone"]').getAttribute("sandbox"), "allow-scripts");
+  // Every prototype in the project is a tile of the impact grid; none newly fails.
+  assert.deepEqual(await page.locator('[data-testid="review-impact"] .impact-grid > li').evaluateAll((items) => items.map((item) => [item.dataset.prototype, item.dataset.impact])), [["booking", "holds"], ["booking-spec", "holds"]]);
+  await proof.evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await page.waitForTimeout(300);
+  await shot(page, "review-proof-light");
+  await shotDark(page, "review-proof-dark");
   await page.locator("#review-examples").evaluate((element) => element.scrollIntoView({ block: "start" }));
   await page.waitForTimeout(300);
   await shot(page, "review-examples-light");
 
   await page.getByRole("button", { name: "← All proposals" }).click();
-  const row = page.locator('.proposals-table tr[data-proposal="booking-toast"]');
-  assert.match(await row.textContent(), /A toast that confirms a booking.*booking-toast.*open.*tightens.*by agent/);
+  const row = page.locator('.proposal-cards [data-proposal="booking-toast"]');
+  assert.match(await row.textContent(), /\+ component.*Toast.*\+1 more change.*A toast that confirms a booking.*open.*Waiting for you.*Tightens.*Adds 1 component and 1 rule\..*1 must pass.*1 must fail.*By agent.*booking-toast/);
+  // The card leads with the part it adds, drawn by Todae itself in a sandboxed frame.
+  assert.equal(await row.getByTestId("proposal-preview").getAttribute("data-preview"), "component");
+  await row.locator('[data-testid="specimen-stage"][data-state="measured"]').waitFor({ timeout: 60000 });
+  assert.equal(await row.getByTestId("class-scale").getAttribute("data-class"), "tightens");
   await page.getByRole("button", { name: "Adopted (0)" }).click();
   await page.getByText("No adopted proposals").waitFor();
   await page.getByRole("button", { name: "Open (1)" }).click();
-  assert.equal(await page.locator(".proposals-table tbody tr").count(), 1);
+  assert.equal(await page.locator(".proposal-cards > li").count(), 1);
   await shot(page, "proposals-list-light");
   assert.deepEqual(errors, []);
 });
@@ -1162,7 +1197,7 @@ test("decline needs a note, and the history records it", async ({ browser, base,
   await page.reload();
   await page.getByRole("tab", { name: /Proposals/ }).click();
   await page.getByRole("button", { name: "Declined (1)" }).click();
-  await page.locator('.proposals-table tr[data-proposal="booking-toast"][data-status="declined"]').waitFor();
+  await page.locator('.proposal-cards [data-proposal="booking-toast"][data-status="declined"]').waitFor();
 });
 
 test("send back reaches the agent, which revises the proposal, and the history shows both versions", async ({ browser, base, api }) => {
@@ -1237,6 +1272,10 @@ test("the impact list names a prototype that would newly fail, and opens it on t
   await impact.locator('[data-prototype="booking-spec"]').waitFor({ timeout: 60000 });
   assert.match(await impact.locator('[data-prototype="booking-spec"]').textContent(), /Booking \(spec\).*would newly fail no-secondary-on-booking.*Page "booking" has 1 secondary action, more than 0: Button.Root "Hold room" at pages\/booking.json/);
   assert.match(await page.getByTestId("review-verdict").textContent(), /2 prototypes would newly fail/);
+  // The grid holds every prototype; the newly failing ones are marked, and show their page in miniature from measured boxes.
+  assert.deepEqual(await impact.locator(".impact-grid > li").evaluateAll((items) => items.map((item) => [item.dataset.prototype, item.dataset.impact])), [["booking", "fails"], ["booking-spec", "fails"]]);
+  assert.equal(await page.getByTestId("impact-some").textContent(), "2 of 2 prototypes would newly fail.");
+  assert.equal(await impact.locator('[data-prototype="booking"] [data-testid="snapshot-thumb"]').count(), 1);
   await page.locator("#review-impact").evaluate((element) => element.scrollIntoView({ block: "start" }));
   await page.waitForTimeout(300);
   await shot(page, "review-impact-light");
@@ -1284,10 +1323,15 @@ test("a proposal that adds a rendered rule adopts on measured snapshots, and giv
   await page.reload();
   await measured(page, 1);
   await page.getByRole("tab", { name: "Project" }).click();
+  // The Project tab's palette draws its own frames as its tiles are scrolled to; a re-run adds none.
+  await page.getByTestId("regression").scrollIntoViewIfNeeded();
+  await page.waitForTimeout(500);
+  const viewportsBefore = await page.locator(".frame-viewport").count();
   await page.getByRole("button", { name: "Re-run every adopted proposal's examples" }).click();
   assert.match(await page.getByTestId("regression-summary").textContent(), /^All 2 examples behave/);
-  // Only the board's frames have viewports (live or parked): re-running rendered no example.
-  assert.equal(await page.locator(".frame-viewport").count(), FRAMES, "re-running reads the stored snapshots: no example is rendered again");
+  // Every frame has a viewport, live or parked; the palette's tiles are named "drawn by". Re-running adds none, and renders no example.
+  assert.equal(await page.locator(".frame-viewport").count(), viewportsBefore, "re-running reads the stored snapshots: no example is rendered again");
+  assert.equal(await page.locator('.frame-viewport:not([data-frame-name*="drawn by"])').count(), FRAMES, "the only other frames are the board's");
   assert.deepEqual(await page.locator('[data-testid="regression"] tbody tr').evaluateAll((rows) => rows.map((row) => [...row.cells].map((cell) => cell.textContent.trim()))), [
     ["harbor-first-view", "as-is", "pass", "behaves", "passes every rule"],
     ["harbor-first-view", "long-intro", "fail", "behaves", 'flagged by "harbor-in-first-view"'],
@@ -1328,11 +1372,11 @@ test("no tool call or chat message can change a proposal's status", async ({ bro
   assert.equal(api.left(), 0);
   assert.equal(await page.getByTestId("open-proposals").textContent(), "1");
   await page.getByRole("tab", { name: /Proposals/ }).click();
-  assert.equal(await page.locator('.proposals-table tr[data-proposal="booking-toast"]').getAttribute("data-status"), "open");
+  assert.equal(await page.locator('.proposal-cards [data-proposal="booking-toast"]').getAttribute("data-status"), "open");
   assert.equal((await report(page)).rules.some((rule) => rule.rule === "one-toast-per-page"), false, "no rule came into force");
   await page.reload();
   await page.getByRole("tab", { name: /Proposals/ }).click();
-  assert.equal(await page.locator('.proposals-table tr[data-proposal="booking-toast"]').getAttribute("data-status"), "open", "nor was a status saved");
+  assert.equal(await page.locator('.proposal-cards [data-proposal="booking-toast"]').getAttribute("data-status"), "open", "nor was a status saved");
 });
 
 test("a finding outside the inventories offers to ask the agent, with a message to edit, only when a key is set", async ({ browser, base, api }) => {
@@ -3225,7 +3269,7 @@ test("the loop notices a rule the agent fixed in two turns: the suggestion appea
   await page.locator('.chat-proposal[data-proposal="hold-room-secondary"]').waitFor();
   assert.equal(await page.getByTestId("loop-suggestion").count(), 0);
   await page.getByRole("tab", { name: /Proposals/ }).click();
-  assert.equal(await page.locator('.proposals-table [data-proposal="hold-room-secondary"]').getAttribute("data-status"), "open");
+  assert.equal(await page.locator('.proposal-cards [data-proposal="hold-room-secondary"]').getAttribute("data-status"), "open");
 });
 
 test("the loop's suggestion never appears after a single fix, nor after turns that fix nothing", async ({ browser, base, api }) => {
@@ -3284,7 +3328,7 @@ test("a request for a new rule type shows plainly as a code change, cannot be ap
   await shot(page, "rule-type-request-light");
   await shotDark(page, "rule-type-request-dark");
   await page.getByRole("button", { name: "← All proposals" }).click();
-  const row = page.locator('.proposals-table [data-proposal="date-before-rooms"]');
+  const row = page.locator('.proposal-cards [data-proposal="date-before-rooms"]');
   assert.equal(await row.getAttribute("data-status"), "open");
   assert.equal(await row.getByTestId("proposal-request").textContent(), "needs a new rule type");
   // Declined once filed, like any proposal, with a note.
@@ -3565,6 +3609,204 @@ test("the Tally example is added from New project, and the projects switch", asy
   assert.equal(await page.getByRole("combobox", { name: "Project" }).inputValue(), "nook", "the project last open is the one a reload shows");
   await page.getByRole("button", { name: "New project" }).click();
   assert.equal(await page.getByTestId("open-tally").textContent(), "Open the Tally example", "a stored Tally is opened, not added again");
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+// ---- the Project and Proposals tabs as pictures --------------------------------
+
+/** A palette tile, and its frame once the library has drawn it. */
+const tile = (page, component) => page.locator(`[data-testid="palette"] .specimen[data-component="${component}"]`);
+async function tileDrawn(page, component) {
+  await tile(page, component).scrollIntoViewIfNeeded();
+  await tile(page, component).locator('[data-testid="specimen-stage"][data-state="measured"]').waitFor({ timeout: 90000 });
+}
+
+test("the Project tab draws the palette live: each component in a sandboxed frame when scrolled to, with its roles and ranked actions", async ({ browser, base }) => {
+  const { page, errors, context } = await openApp(browser, base);
+  await measured(page, 1);
+  const boardFrames = await page.locator("iframe").count();
+  await page.getByRole("tab", { name: "Project" }).click();
+  const palette = page.getByTestId("palette");
+  await palette.waitFor();
+  assert.deepEqual(await palette.locator(".specimen").evaluateAll((items) => items.map((item) => item.dataset.component)), ["Alert", "Button", "Card", "Disclosure", "EmptyState", "Field", "Label", "Stack", "Text"]);
+  // Lazily: a tile far below has no frame until it is scrolled to.
+  assert.equal(await tile(page, "Text").locator('[data-testid="specimen-stage"]').getAttribute("data-state"), "unseen");
+  assert.equal(await tile(page, "Text").locator("iframe").count(), 0);
+  assert.ok((await page.locator("iframe").count()) - boardFrames < 9, "not every tile has a frame yet");
+
+  // Button: Todae itself draws one button per variant, the ranked actions written on their level.
+  await tileDrawn(page, "Button");
+  const frame = page.frameLocator('iframe[title="Button, drawn by @tounsoo/todae"]');
+  assert.deepEqual(await frame.getByRole("button").allTextContents(), ["Book room", "Hold room", "ghost"]);
+  assert.deepEqual(await tile(page, "Button").locator(".specimen-sample").evaluateAll((items) => items.map((item) => [item.dataset.sample, item.querySelector('[data-testid="specimen-rank"]')?.textContent ?? "", [...item.querySelectorAll(".role-tag")].map((tag) => tag.textContent)])), [
+    ["Book room", "Rank 1", ["action", "primary action"]],
+    ["Hold room", "Rank 2", ["action", "secondary action"]],
+    ["ghost", "", ["action"]],
+  ]);
+  assert.match(await tile(page, "Button").textContent(), /variant primary, or none.*variant secondary/s);
+  // The frame is the board's: sandboxed without allow-same-origin, a nonce CSP, and no network of its own.
+  const iframe = tile(page, "Button").locator("iframe");
+  assert.equal(await iframe.getAttribute("sandbox"), "allow-scripts");
+  const srcdoc = await iframe.getAttribute("srcdoc");
+  assert.match(srcdoc, /connect-src 'none'/);
+  assert.match(srcdoc, /script-src [^;]*'nonce-[0-9a-f]+'/);
+  // The primary button is drawn by the library, not by the app: its size is whatever the frame measured.
+  const box = await frame.getByRole("button", { name: "Book room" }).boundingBox();
+  assert.ok(box && box.width > 0 && box.height > 0);
+
+  await tileDrawn(page, "Disclosure");
+  assert.deepEqual(await tile(page, "Disclosure").locator(".role-tag").allTextContents(), ["disclosure", "disclosure summary"]);
+  assert.equal(await page.frameLocator('iframe[title="Disclosure, drawn by @tounsoo/todae"]').locator("details").evaluate((element) => element.open), false, "shown closed, as a page opens it");
+  await tileDrawn(page, "Field");
+  assert.deepEqual(await tile(page, "Field").locator(".role-tag").allTextContents(), ["question"]);
+  // A layout part draws no ink: it holds three of Todae's own badges, and the tile says so.
+  await tileDrawn(page, "Stack");
+  assert.match(await tile(page, "Stack").getByTestId("specimen-stand-in").textContent(), /draws no ink of its own: the three Badge\.Root inside are stand-ins/);
+  assert.equal(await page.frameLocator('iframe[title="Stack, drawn by @tounsoo/todae"]').getByText(/^(One|Two|Three)$/).count(), 3);
+  await tileDrawn(page, "Text");
+  assert.equal(await page.frameLocator('iframe[title="Text, drawn by @tounsoo/todae"]').getByRole("heading", { name: "Heading" }).count(), 1);
+  assert.equal(await page.getByTestId("palette-unplaced").count(), 0, "every role sits on a tile");
+  await page.locator("#project-inventories").evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await page.waitForTimeout(400);
+  await shot(page, "project-palette-light");
+  if (shots) {
+    // In dark the tiles are drawn again, in the app's scheme: wait for the library before the picture.
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.locator('[data-testid="palette"] [data-testid="specimen-stage"]:not([data-state="measured"])').first().waitFor({ state: "attached", timeout: 10000 }).catch(() => undefined);
+    await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="palette"] [data-testid="specimen-stage"]')].every((stage) => stage.dataset.state === "measured"), null, { timeout: 90000 });
+    await page.waitForTimeout(400);
+    await shot(page, "project-palette-dark");
+  }
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("the Project tab draws page types as slot diagrams, caps as meters, budgets against today's routes, and rules as grouped cards", async ({ browser, base }) => {
+  const { page, errors, context } = await openApp(browser, base);
+  await measured(page, 1);
+  await page.getByRole("tab", { name: "Project" }).click();
+  // Page types: slots in the project's order, each as chrome, body or the primary slot, readable as a list.
+  const booking = page.locator('[data-testid="slot-diagram"][data-page-type="booking"]');
+  assert.deepEqual(await booking.locator(".slot").evaluateAll((items) => items.map((item) => [item.dataset.slot, item.dataset.slotKind])), [["title", "chrome"], ["facts", "chrome"], ["body", "body"], ["alternate", "chrome"], ["action", "primary"]]);
+  assert.equal(await booking.getAttribute("aria-label"), "Slots of the booking page type, in the order the project lists them");
+  assert.match(await page.locator('.page-type[data-page-type="booking"]').textContent(), /An action page: it ends in one primary action\..*5 slots, 3 of them chrome\. Primary slot: action\./);
+  assert.match(await page.locator('.page-type[data-page-type="rooms"]').textContent(), /A collection page.*No primary slot\./);
+
+  // Caps: one pip per unit to the limit line, the px cap at its actual size, the direction in words, and the rules that read each.
+  const caps = page.getByTestId("project-caps");
+  assert.deepEqual(await caps.getByTestId("cap-meter").evaluateAll((items) => items.map((item) => item.dataset.cap)), ["MAX_DISCLOSURES_PER_PAGE", "MAX_DISCLOSURE_DEPTH", "MAX_VISIBLE_QUESTIONS", "TARGET_MIN_PX"]);
+  const questions = caps.locator('[data-cap="MAX_VISIBLE_QUESTIONS"]');
+  assert.equal(await questions.locator(".pip").count(), 1, "a cap of 1 is one pip");
+  assert.equal(await questions.getByTestId("figure-limit").count(), 1);
+  assert.match(await questions.textContent(), /Visible questions.*at most 1.*stricter when lower.*One question per page/);
+  assert.match(await caps.textContent(), /MAX_VISIBLE_QUESTIONS Read by the rule visible-questions\./);
+  const size = await caps.getByTestId("cap-size").boundingBox();
+  assert.deepEqual([Math.round(size.width), Math.round(size.height)], [24, 24], "the 24 px cap is drawn at 24 CSS px");
+  assert.match(await caps.locator('[data-cap="TARGET_MIN_PX"]').textContent(), /at least 24 px, shown at its actual size.*stricter when higher/);
+
+  // Budgets: core's flow facts for the open prototype fill the pips, and the line is named for it.
+  const tasks = page.getByTestId("project-tasks");
+  const book = tasks.locator('[data-task="book-room"]');
+  assert.deepEqual(await book.locator(".pip").evaluateAll((items) => items.map((item) => item.dataset.pip)), ["within", "within", "within"]);
+  assert.equal(await book.getByTestId("budget-today").textContent(), "Booking's longest route today: 3 steps, at the limit.");
+  assert.equal(await tasks.locator('[data-task="hold-room"]').getByTestId("budget-today").textContent(), "Booking's longest route today: 2 steps, at the limit.");
+  assert.match(await page.getByTestId("project-ranking").textContent(), /1\. Book room \(primary\).*2\. Hold room \(secondary\).*Always behind a disclosure.*Room details/s);
+  await page.getByTestId("project-tasks").scrollIntoViewIfNeeded();
+  await shot(page, "project-limits-light");
+  await shotDark(page, "project-limits-dark");
+
+  // Rules: every rule is a card in one group, and the filter shows a group alone.
+  const rules = page.getByTestId("project-rules");
+  assert.equal(await rules.locator(".rule-card").count(), 32);
+  assert.deepEqual(await rules.locator(".rule-group").evaluateAll((items) => items.map((item) => [item.dataset.group, item.querySelectorAll(".rule-card").length])), [["count", 10], ["where", 4], ["rendered", 6], ["inventory", 5], ["flow", 2], ["code", 5]]);
+  assert.equal(await rules.locator('.rule-card[data-rule="one-primary-per-page"] .rule-glyph').getAttribute("data-glyph"), "count");
+  assert.match(await rules.locator('.rule-card[data-rule="one-primary-per-page"]').textContent(), /A page holds at most one primary action\..*Each page holds at most 1 primary action\./s);
+  assert.equal(await rules.locator('.rule-card[data-rule="no-ambient-globals"] .rule-glyph').getAttribute("data-glyph"), "code", "a rule about code gets the plain plate, never a picture");
+  assert.equal(await rules.locator('.rule-card[data-rule="target-size"] .rule-glyph').getAttribute("data-glyph"), "target-size");
+  await rules.evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await shot(page, "project-rules-light");
+  await shotDark(page, "project-rules-dark");
+  await rules.getByRole("button", { name: "As rendered (6)" }).click();
+  assert.equal(await rules.locator(".rule-card").count(), 6);
+  assert.deepEqual(await rules.locator(".rule-group").evaluateAll((items) => items.map((item) => item.dataset.group)), ["rendered"]);
+  // The Proposals section is a short timeline; with none, it says so.
+  assert.match(await page.getByTestId("project-history").textContent(), /Proposals \(0\).*No proposals yet\./s);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("Tally's palette is drawn by Mantine: its buttons by variant with the ranked actions, and its accordion closed", async ({ browser, base }) => {
+  const { page, errors, context } = await openTally(browser, base);
+  await page.getByRole("tab", { name: "Project" }).click();
+  const palette = page.getByTestId("palette");
+  await palette.waitFor();
+  assert.deepEqual(await palette.locator(".specimen").evaluateAll((items) => items.map((item) => item.dataset.component)), ["Accordion", "Button", "Card", "NumberInput", "Stack", "Text", "TextInput", "Title"]);
+  await tileDrawn(page, "Button");
+  const frame = page.frameLocator('iframe[title="Button, drawn by @mantine/core"]');
+  assert.deepEqual((await frame.getByRole("button").allTextContents()).slice(0, 2), ["Submit expense", "Save draft"]);
+  assert.ok((await frame.locator(".mantine-Button-root").count()) >= 2, "Mantine's own buttons");
+  assert.deepEqual(await tile(page, "Button").locator('.specimen-sample[data-sample="Submit expense"] .role-tag').allTextContents(), ["action", "primary action"]);
+  assert.match(await tile(page, "Button").locator('.specimen-sample[data-sample="Submit expense"]').textContent(), /variant filled, or none/);
+  await tileDrawn(page, "Accordion");
+  assert.deepEqual(await tile(page, "Accordion").locator(".role-tag").allTextContents(), ["disclosure", "disclosure summary"]);
+  assert.equal(await page.frameLocator('iframe[title="Accordion, drawn by @mantine/core"]').getByRole("button", { name: "Section name" }).getAttribute("aria-expanded"), "false");
+  await tileDrawn(page, "NumberInput");
+  assert.deepEqual(await tile(page, "NumberInput").locator(".role-tag").allTextContents(), ["question"]);
+  // Tally carries only its inventoried parts, so Mantine's Card stands in inside the Stack.
+  await tileDrawn(page, "Stack");
+  assert.match(await tile(page, "Stack").getByTestId("specimen-stand-in").textContent(), /the three Card inside are stand-ins/);
+  await page.locator("#project-inventories").evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await page.waitForTimeout(400);
+  await shot(page, "project-palette-tally-light");
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("the proposals list is cards that lead with the change: a cap before and after with its direction, and a rule's glyph", async ({ browser, base, api }) => {
+  const { page, errors, context } = await openApp(browser, base);
+  await measured(page, 1);
+  await draftByAgent(page, api, {
+    id: "two-questions",
+    title: "Let the booking page ask two questions",
+    reason: "Booking needs a date and a duration.",
+    inventory: [{ op: "set-cap", name: "MAX_VISIBLE_QUESTIONS", value: 2 }],
+    examples: { pass: [{ name: "as-is" }], fail: [{ name: "three-questions", flagged_by: { rule: "visible-questions" } }] },
+  });
+  await draftByAgent(
+    page,
+    api,
+    {
+      id: "book-without-hold",
+      title: "Booking offers no second action",
+      reason: "One action per booking page: holding a room confuses people.",
+      rules: { add: [{ type: "count", id: "no-secondary-on-booking", scope: "page", pages: { types: ["booking"] }, select: { role: "secondary-action" }, max: 0 }] },
+      examples: { pass: [{ name: "book-only", files: { "pages/booking.tsx": BOOKING.replace(/\s*<Slot name="alternate">[\s\S]*?<\/Slot>/, "") } }], fail: [{ name: "with-hold", flagged_by: { rule: "no-secondary-on-booking" } }] },
+    },
+    { key: false },
+  );
+  await page.getByRole("tab", { name: /Proposals/ }).click();
+  const cards = page.locator(".proposal-cards > li");
+  assert.equal(await cards.count(), 2);
+  const cap = page.locator('.proposal-cards [data-proposal="two-questions"]');
+  assert.equal(await cap.getByTestId("proposal-preview").getAttribute("data-preview"), "cap");
+  assert.equal(await cap.getByTestId("cap-change").getAttribute("data-moved"), "looser");
+  assert.deepEqual(await cap.getByTestId("cap-change").getByTestId("figure-count-words").allTextContents(), ["at most 1", "at most 2"]);
+  assert.match(await cap.getByTestId("cap-change").textContent(), /looser: this cap is stricter when lower/);
+  assert.equal(await cap.getByTestId("class-scale").getAttribute("data-class"), "loosens-or-removes");
+  assert.match(await cap.textContent(), /Changes 1 cap\..*1 must pass.*1 must fail/s);
+  const rule = page.locator('.proposal-cards [data-proposal="book-without-hold"]');
+  assert.equal(await rule.getByTestId("proposal-preview").getAttribute("data-preview"), "rule");
+  assert.match(await rule.getByTestId("proposal-preview").textContent(), /^\+ rule/);
+  assert.equal(await rule.locator(".rule-glyph").getAttribute("data-glyph"), "count");
+  assert.equal(await rule.getByTestId("class-scale").getAttribute("data-class"), "tightens");
+  await shot(page, "proposals-cards-light");
+  await shotDark(page, "proposals-cards-dark");
+  // The review page draws the moved cap too, and core's reason for the class.
+  await cap.getByRole("button", { name: "Let the booking page ask two questions" }).click();
+  await page.locator('.review[data-proposal="two-questions"]').waitFor();
+  assert.equal(await page.locator('[data-testid="op-figures"] [data-testid="cap-change"]').getAttribute("data-moved"), "looser");
+  assert.equal(await page.locator('.review [data-testid="class-scale"]').getAttribute("data-class"), "loosens-or-removes");
   assert.deepEqual(errors, []);
   await context.close();
 });

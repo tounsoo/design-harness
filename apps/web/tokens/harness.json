@@ -245,6 +245,48 @@
           "value": 11,
           "unit": "rem"
         }
+      },
+      "tile": {
+        "$type": "dimension",
+        "$value": {
+          "value": 19,
+          "unit": "rem"
+        }
+      },
+      "stage": {
+        "$type": "dimension",
+        "$value": {
+          "value": 6,
+          "unit": "rem"
+        }
+      },
+      "stage-max": {
+        "$type": "dimension",
+        "$value": {
+          "value": 20,
+          "unit": "rem"
+        }
+      },
+      "diagram": {
+        "$type": "dimension",
+        "$value": {
+          "value": 12,
+          "unit": "rem"
+        }
+      },
+      "proposal-card": {
+        "$type": "dimension",
+        "$value": {
+          "value": 19,
+          "unit": "rem"
+        }
+      },
+      "preview": {
+        "$type": "dimension",
+        "$value": {
+          "value": 9,
+          "unit": "rem"
+        }
       }
     },
     "annotation": {
@@ -392,6 +434,27 @@
         "$type": "dimension",
         "$value": {
           "value": 5.5,
+          "unit": "rem"
+        }
+      },
+      "slot": {
+        "$type": "dimension",
+        "$value": {
+          "value": 1.75,
+          "unit": "rem"
+        }
+      },
+      "glyph": {
+        "$type": "dimension",
+        "$value": {
+          "value": 4.5,
+          "unit": "rem"
+        }
+      },
+      "stop": {
+        "$type": "dimension",
+        "$value": {
+          "value": 0.5,
           "unit": "rem"
         }
       }
