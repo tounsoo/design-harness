@@ -499,6 +499,26 @@
   .pin[data-off] { opacity: 0.6; }
   .pin-badge { position: absolute; inset-block-start: calc(var(--todae-harness-pin-size) / -4); inset-inline-end: calc(var(--todae-harness-pin-size) / -4); display: grid; place-items: center; inline-size: calc(var(--todae-harness-pin-size) / 1.7); block-size: calc(var(--todae-harness-pin-size) / 1.7); border-radius: var(--todae-radius-full); background: var(--pin-ring); color: var(--pin-bg); box-shadow: 0 0 0 var(--todae-border-width) var(--pin-bg); }
   .pin-badge svg { inline-size: 80%; block-size: 80%; stroke-width: 3; }
+  /* Whichever note is open or has the keyboard is the one on top of its spot. */
+  .pin:focus-visible, .pin[aria-expanded="true"] { z-index: 1; }
+  /* A marker's width, for the app to measure: notes pinned closer than most of it share a spot. */
+  .pin-probe { position: absolute; visibility: hidden; pointer-events: none; inline-size: var(--todae-harness-pin-size); block-size: 0; }
+  /*
+   * Several notes on one spot: a count beside the marker on top, which lists them. A pill with a stack glyph and a number, hollow in
+   * the pin's colours, so it reads as "more here" and never as a note or a check. Todae's Menu trigger, sized to a marker.
+   */
+  .pin-spot { position: absolute; translate: 0 -100%; z-index: 1; margin: 0; margin-inline-start: calc(var(--todae-harness-pin-size) * 1.25 + var(--todae-harness-pin-ring)); pointer-events: auto; box-sizing: border-box; block-size: var(--todae-harness-pin-size); min-block-size: 0; --todae-button-padding-x: var(--todae-space-2); --todae-button-padding-y: 0; --todae-button-radius: var(--todae-radius-full); --todae-button-gap: var(--todae-space-1); --todae-button-font-size: var(--todae-font-size-1); --todae-button-font-weight: var(--todae-font-weight-bold); --todae-button-icon-size: var(--todae-harness-pin-size-quiet); --todae-button-border-width: var(--todae-harness-pin-ring); --todae-button-bg-default: var(--pin-ring); --todae-button-bg-hover: var(--pin-ring); --todae-button-bg-active: var(--pin-ring); --todae-button-bg-focus: var(--pin-ring); --todae-button-fg-default: var(--pin-bg); --todae-button-fg-hover: var(--pin-bg); --todae-button-fg-active: var(--pin-bg); --todae-button-fg-focus: var(--pin-bg); --todae-button-border-default: var(--pin-bg); --todae-button-border-hover: var(--pin-bg); --todae-button-border-active: var(--pin-bg); --todae-button-border-focus: var(--pin-bg); --todae-button-shadow: var(--todae-harness-shadow-raised); font-variant-numeric: tabular-nums; line-height: 1; }
+  .pin-spot[data-side="start"] { translate: -100% -100%; margin-inline-start: calc(-1 * (var(--todae-harness-pin-size) / 4 + var(--todae-harness-pin-ring))); }
+  .pin-spot-list { max-inline-size: min(var(--todae-harness-pin-card), calc(100vw - var(--todae-space-8))); }
+  .pin-spot-item { display: flex; align-items: center; gap: var(--todae-space-2); }
+  .pin-spot-words { display: grid; min-inline-size: 0; }
+  .pin-spot-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pin-spot-status { color: var(--todae-color-fg-muted); font-size: var(--todae-font-size-1); }
+  /* The Variants view's own "Pin a note": the toggle at the end of its head, and what it says while it is on. */
+  .variants-root { display: contents; }
+  .variants-pin { margin-inline-start: auto; }
+  .variants-pinning { margin: 0; padding: var(--todae-space-2) var(--todae-space-3); border-radius: var(--todae-radius-md); background: var(--todae-harness-note-soft); color: var(--todae-color-fg-default); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  .variants-pinning kbd { font: inherit; font-weight: var(--todae-font-weight-medium); }
   /* In the app's own panels and cards a note's mark follows the app's appearance. */
   .note-mark { --pin-bg: var(--todae-harness-note-bg); --pin-fg: var(--todae-harness-note-fg); --pin-ring: var(--todae-color-bg-surface); flex: none; }
   .note-mark[data-status="closed"] { font-size: 0; }

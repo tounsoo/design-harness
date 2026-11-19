@@ -4,6 +4,9 @@ import { pinElementWords } from "./describe";
 import type { Pin, PinState } from "./model";
 import { LOST_WORDS, NoteMark, NoteStatus, PinHistory, type PinActions } from "./PinLayer";
 
+/** A note's frame in words, and, when the frame is no longer there, what became of it. */
+export type NoteFrame = { readonly name: string; readonly gone: string | null };
+
 /**
  * "Your notes": every note the person pinned on the open prototype, under
  * the checks and apart from them. A different section, different words and a
@@ -22,8 +25,8 @@ export function PinNotes({
   onStart,
 }: {
   readonly state: PinState;
-  /** A pin's frame in words, or null when the prototype no longer has that scenario or view. */
-  readonly frameOf: (pin: Pin) => string | null;
+  /** A pin's frame in words: the prototype's, or a variant's; `gone` says so when the scenario, the view or the variant is no longer there. */
+  readonly frameOf: (pin: Pin) => NoteFrame;
   readonly actions: PinActions;
   /** Moves the canvas to a pin and opens its card. */
   readonly onShow: (number: number) => void;
@@ -68,7 +71,7 @@ export function PinNotes({
             const frame = frameOf(pin);
             const element = pinElementWords(pin.anchor);
             return (
-              <li key={pin.number} className="note" data-note={pin.number} data-status={pin.status} data-lost={pin.anchor.lost || frame === null ? "" : undefined}>
+              <li key={pin.number} className="note" data-note={pin.number} data-status={pin.status} data-lost={pin.anchor.lost || frame.gone !== null ? "" : undefined} data-variant={pin.anchor.variant}>
                 <Card.Root className="note-card" aria-label={`Your note ${pin.number}`}>
                   <Stack.Root gap="condensed">
                     <div className="note-head">
@@ -79,12 +82,12 @@ export function PinNotes({
                       {pin.note}
                     </Text.Root>
                     <Text.Root as="p" tone="muted" className="note-where">
-                      {element ? `On ${element}` : "On the page"} · {frame ?? `${pin.anchor.scenario} at ${pin.anchor.view}`}
+                      {element ? `On ${element}` : "On the page"} · {frame.name}
                     </Text.Root>
-                    {(pin.anchor.lost || frame === null) && (
+                    {(pin.anchor.lost || frame.gone !== null) && (
                       <Text.Root as="p" className="pin-lost" data-testid="note-lost">
                         <CircleHelp aria-hidden="true" />
-                        <span>{frame === null ? "Moved or gone: the prototype no longer has this note's frame. The note is kept." : LOST_WORDS}</span>
+                        <span>{frame.gone ?? LOST_WORDS}</span>
                       </Text.Root>
                     )}
                     {pin.reply !== undefined && pin.status !== "open" && (
@@ -96,7 +99,7 @@ export function PinNotes({
                       </div>
                     )}
                     <Stack.Root direction="row" gap="condensed" wrap className="note-actions">
-                      <Button.Root variant="secondary" onClick={() => onShow(pin.number)} disabled={frame === null} data-testid="note-show">
+                      <Button.Root variant="secondary" onClick={() => onShow(pin.number)} disabled={frame.gone !== null} data-testid="note-show">
                         <Button.Icon>
                           <Crosshair />
                         </Button.Icon>

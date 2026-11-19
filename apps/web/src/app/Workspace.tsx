@@ -17,7 +17,7 @@ import type { LoadNote } from "../store/migrate";
 import { exportFileName, exportProject, importProject, type Imported, type PrototypeRecord } from "../store/project-file";
 import { fingerprint, reanchor, type FrameMeasure } from "../pins/anchor";
 import { NO_PINS, addPin, closePin, editPin, openPins, reopenPin, type Pin, type PinResult, type PinState } from "../pins/model";
-import { PinNotes } from "../pins/PinNotes";
+import { PinNotes, type NoteFrame } from "../pins/PinNotes";
 import type { PinActions } from "../pins/PinLayer";
 import { Board, FramesShown, type BoardHandle, type BoardPins } from "./Board";
 import { ChatPanel } from "./ChatPanel";
@@ -158,17 +158,24 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   /** "Pin a note" mode, and whether the board holds Escape for it or for an open note. */
   const [pinning, setPinningState] = useState(false);
   const [boardHolds, setBoardHolds] = useState(false);
+  const [variantsHold, setVariantsHold] = useState(false);
   const setPinning = useCallback(
     (next: boolean) => {
       setPinningState(next);
-      if (next) setCenter("canvas");
+      // Notes are pinned on the canvas, and on the Variants view's frames when a spec prototype is open there; from anywhere else, the canvas comes up.
+      const spec = recordsRef.current.find((record) => record.id === currentId)?.prototype.format === "spec";
+      if (next) setCenter((now) => (now === "variants" && spec ? now : "canvas"));
       announce(next ? "Pin a note: click a spot on a frame, or pick an element from a frame's list. Press Escape to leave." : "Left pin a note.");
     },
-    [announce],
+    [announce, currentId],
   );
+  // Pin mode belongs to the views that show frames to pin on: opening another one leaves it.
+  useEffect(() => {
+    if (pinning && center !== "canvas" && center !== "variants") setPinningState(false);
+  }, [pinning, center]);
   useHotkey(SHORTCUTS.pin.keys, () => setPinning(!pinning));
   // Escape leaves pin mode or closes a note's card first, and canvas only after that.
-  useHotkey(SHORTCUTS.leave.keys, leaveCanvasOnly, { enabled: canvasOnly && !pinning && !boardHolds });
+  useHotkey(SHORTCUTS.leave.keys, leaveCanvasOnly, { enabled: canvasOnly && !pinning && !boardHolds && !variantsHold });
   useHotkey(SHORTCUTS.chat.keys, () => {
     if (canvasOnly) leaveCanvasOnly();
     toggle("chat", canvasOnly ? true : undefined);
@@ -502,45 +509,55 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   }, [recordOf, updatePins]);
   const tagKind = prototype?.format === "spec" ? "key" : "source";
   const pinRevision = useMemo(() => (prototype ? fingerprint(prototype) : ""), [prototype]);
-  /**
-   * What each frame measured for the revision now and for the one before, of the open prototype, in memory only:
-   * re-anchoring reads the one before to tell an element renamed where it stands from another that moved into its
-   * place in the file.
-   */
-  const measures = useRef<{ id: string; revision: string; now: Record<string, FrameMeasure>; before: Record<string, FrameMeasure> }>({ id: "", revision: "", now: {}, before: {} });
-  // Each time frames are measured for the prototype as it is now, every pin is placed again: on its element where that still exists, "moved or gone" where it does not.
+  // Each time frames are measured for the prototype as it is now, every pin on its own frames is placed again: on its element where that
+  // still exists, "moved or gone" where it does not. Everything that decides is in the pin and in the measurement (`pins/anchor.ts`), so
+  // nothing is remembered here between revisions. A note on a variant is placed by the Variants view, on that variant's frames.
   useEffect(() => {
     const record = recordOf();
     const running = session.current();
     if (!record || !running || running.prototype !== record.prototype) return;
+    if (!record.pins || record.pins.pins.length === 0) return;
     const revision = fingerprint(record.prototype);
-    const kept = measures.current;
-    if (kept.id !== record.id) measures.current = { id: record.id, revision, now: {}, before: {} };
-    else if (kept.revision !== revision) measures.current = { id: record.id, revision, now: {}, before: { ...kept.before, ...kept.now } };
-    const frames = measures.current.now;
+    const frames: Record<string, FrameMeasure> = {};
     for (const frame of state.frames) {
       const value = state.frameStates[frame.key];
       if (value?.state === "measured") frames[frame.key] = { snapshot: value.snapshot, places: value.places ?? [], width: frame.view.width, height: frame.view.height };
     }
-    if (!record.pins || record.pins.pins.length === 0) return;
     const kind = record.prototype.format === "spec" ? "key" : "source";
-    const before = measures.current.before;
-    const next = reanchor(record.pins, frames, revision, kind, before);
-    if (next !== record.pins) updatePins((latest) => reanchor(latest, frames, revision, kind, before));
+    const next = reanchor(record.pins, frames, revision, kind);
+    if (next !== record.pins) updatePins((latest) => reanchor(latest, frames, revision, kind));
   }, [state.frames, state.frameStates, session, recordOf, updatePins, pinState]);
   const boardPins = useMemo((): BoardPins => ({ prototype: current?.id ?? "", state: pinState, pinning, onPinning: setPinning, actions: pinActions, revision: pinRevision, kind: tagKind, onHold: setBoardHolds }), [current?.id, pinState, pinning, setPinning, pinActions, pinRevision, tagKind]);
+  const variantsPins = useMemo((): BoardPins => ({ ...boardPins, onHold: setVariantsHold }), [boardPins]);
+  const keptVariants = current?.variants?.variants;
+  /** A note's frame in words, and what became of it when it is no longer there: the prototype's own frame, or a variant's. */
   const pinFrame = useCallback(
-    (pin: Pin) => {
-      const frame = state.frames.find((item) => item.scenario.id === pin.anchor.scenario && item.view.name === pin.anchor.view);
-      return frame ? frameName(frame.scenario, frame.view.name) : null;
+    (pin: Pin): NoteFrame => {
+      const { scenario, view, variant } = pin.anchor;
+      const frame = state.frames.find((item) => item.scenario.id === scenario && item.view.name === view);
+      const words = frame ? frameName(frame.scenario, frame.view.name) : `${scenario} at ${view}`;
+      const name = variant !== undefined ? `${variantLabel(variant)} · ${words}` : words;
+      if (variant !== undefined && !keptVariants?.some((item) => item.id === variant)) return { name, gone: `Moved or gone: ${variantLabel(variant)} is no longer among the variants. The note is kept.` };
+      return frame ? { name, gone: null } : { name, gone: "Moved or gone: the prototype no longer has this note's frame. The note is kept." };
     },
-    [state.frames],
+    [state.frames, keptVariants],
   );
-  const showPin = useCallback((number: number) => {
-    setCenter("canvas");
-    // After the canvas is the view on top again.
-    requestAnimationFrame(() => board.current?.showPin(number));
-  }, []);
+  /** A note on a variant to show in the Variants view. */
+  const [variantShow, setVariantShow] = useState<{ readonly number: number; readonly nonce: number } | null>(null);
+  const showPin = useCallback(
+    (number: number) => {
+      const pin = (recordOf()?.pins ?? NO_PINS).pins.find((item) => item.number === number);
+      if (pin?.anchor.variant !== undefined) {
+        setCenter("variants");
+        setVariantShow((before) => ({ number, nonce: (before?.nonce ?? 0) + 1 }));
+        return;
+      }
+      setCenter("canvas");
+      // After the canvas is the view on top again.
+      requestAnimationFrame(() => board.current?.showPin(number));
+    },
+    [recordOf],
+  );
   /** "Ask the agent to address them": a message for the person to edit and send; the open notes ride with it. */
   const askAboutNotes = useCallback(() => {
     const open = openPins(recordOf()?.pins ?? NO_PINS).length;
@@ -849,7 +866,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
                 </div>
                 {center === "variants" && (
                   <div className="app-main-pane app-main-scroll" data-testid="variants-pane">
-                    <VariantsView key={current?.id ?? ""} config={checked(config)} record={current} agent={agent} onApply={applyPick} onUndo={undoPick} onDismiss={dismissVariant} onSend={(message) => void controller.send(message)} onPrefill={prefillChat} />
+                    <VariantsView key={current?.id ?? ""} config={checked(config)} record={current} agent={agent} onApply={applyPick} onUndo={undoPick} onDismiss={dismissVariant} onSend={(message) => void controller.send(message)} onPrefill={prefillChat} pins={current ? variantsPins : undefined} onReanchor={updatePins} show={variantShow} />
                   </div>
                 )}
                 {center === "project" && (

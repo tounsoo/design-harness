@@ -1,9 +1,14 @@
 import { Alert, Badge, Button, Card, Code, Disclosure, EmptyState, Field, Label, RadioGroup, Stack, Table, Text } from "@tounsoo/todae";
-import { Layers, RotateCcw, Sparkles, Wand2, X } from "lucide-react";
+import { Layers, MessageSquarePlus, RotateCcw, Sparkles, Wand2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CURRENT, formatSpec, parseJson, pickScope, recombine, variantLabel, variantPrototype, type CheckReport, type Finding, type PickRecord, type PickScope, type ProjectConfig, type Prototype, type Recombination, type Variant } from "@design-harness/core";
+import { fingerprint, reanchor, type FrameMeasure } from "../pins/anchor";
+import type { PinState } from "../pins/model";
+import { NoPins, PinContext, PinSurface, cardOf, usePinBoard, type BoardPins } from "../pins/PinLayer";
+import { frameKey } from "../runtime/session";
 import type { PrototypeRecord } from "../store/project-file";
 import { FrameCard } from "./Board";
+import { SHORTCUTS, ariaKeys } from "./shortcuts";
 import { MIN_SCALE, rowScale, type RowBox } from "./frame-row";
 import { useSessions, type Measured } from "./sessions";
 import { humanize, ruleLead, scenarioName, viewLabel } from "./words";
@@ -24,6 +29,14 @@ import { humanize, ruleLead, scenarioName, viewLabel } from "./words";
  * and Apply makes it a new revision, recorded with where each slot came
  * from and undoable. Only the person applies a pick: nothing the agent
  * sends reaches this view's actions.
+ *
+ * Pinned notes work here as on the board (`pins/`). "Current" is the
+ * prototype as it is, so it shows the board's own notes. A note pinned on a
+ * variant is that variant's: its anchor names the variant, it is found again
+ * on what the variant draws after the agent revises it, and it stays in the
+ * list if the variant is dismissed. The combination being picked takes no
+ * note: it is not kept anywhere until it is applied, and then it is the
+ * prototype. A note is never read by `pickScope` or by any standing here.
  */
 
 export type ApplyPick = { readonly page: string; readonly slots: Readonly<Record<string, string>>; readonly notes: Readonly<Record<string, string>>; readonly before: string; readonly after: string; readonly prototype: Prototype };
@@ -41,6 +54,12 @@ type Props = {
   readonly onSend: (message: string) => void;
   /** Puts a message in the chat's box for the person to edit and send. */
   readonly onPrefill: (message: string) => void;
+  /** The open prototype's pinned notes and "Pin a note" mode; absent, the frames here carry none. */
+  readonly pins?: BoardPins | undefined;
+  /** Places the notes again on what a variant's frames measured; it changes anchors only. */
+  readonly onReanchor?: (change: (state: PinState) => PinState) => void;
+  /** A note on a variant to show: its page and scenario are chosen, its frame scrolled to, and its card opened. The nonce makes the same note show twice. */
+  readonly show?: { readonly number: number; readonly nonce: number } | null;
 };
 
 type Source = { readonly id: string; readonly label: string; readonly note: string; readonly like?: string; readonly prototype: Prototype; readonly variant?: Variant };
@@ -137,7 +156,7 @@ function FrameRow({ item, label, scenario, viewName }: { readonly item: Measured
   );
 }
 
-export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss, onSend, onPrefill }: Props) {
+export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss, onSend, onPrefill, pins, onReanchor, show }: Props) {
   const prototype = record?.prototype;
   const state = record?.variants;
   const variants = useMemo(() => state?.variants ?? [], [state]);
@@ -175,6 +194,51 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
   const items = useMemo(() => [...sources.map((source) => ({ id: source.id, config, prototype: source.prototype })), ...(combined ? [{ id: "combination", config, prototype: combined.prototype }] : [])], [sources, combined, config]);
   const measured = useSessions(items);
   const byId = new Map(measured.map((item) => [item.id, item]));
+
+  // Pinned notes on these frames: which card is open, the note being written, and Escape.
+  const root = useRef<HTMLDivElement>(null);
+  const { context: pinBoard, setOpen: setOpenPin, dropDraft } = usePinBoard(prototype?.format === "spec" ? pins : undefined, root);
+  const pinning = pinBoard?.pinning ?? false;
+  // Each time a variant's frames are measured, the notes pinned on it are placed again, as the board's are on the prototype's.
+  const noted = pins?.state.pins.some((pin) => pin.anchor.variant !== undefined) ?? false;
+  useEffect(() => {
+    if (!noted || !onReanchor) return;
+    for (const item of measured) {
+      if (item.id === CURRENT || item.id === "combination") continue;
+      const frames: Record<string, FrameMeasure> = {};
+      for (const frame of item.state.frames) {
+        const value = item.state.frameStates[frame.key];
+        if (value?.state === "measured") frames[frame.key] = { snapshot: value.snapshot, places: value.places ?? [], width: frame.view.width, height: frame.view.height };
+      }
+      const revision = fingerprint(item.prototype);
+      // The same state comes back when no anchor moved, and then nothing is saved.
+      onReanchor((state) => reanchor(state, frames, revision, "key", item.id));
+    }
+  });
+  // "Show me" on a note pinned to a variant: its page and scenario, then its frame and its card.
+  const showNonce = show?.nonce;
+  useEffect(() => {
+    const pin = show ? pins?.state.pins.find((item) => item.number === show.number) : undefined;
+    const variant = variants.find((item) => item.id === pin?.anchor.variant);
+    if (!pin || !variant) return;
+    setPage(variant.page);
+    setScenario(pin.anchor.scenario);
+    setView("all");
+    dropDraft();
+    let tries = 0;
+    let frame = 0;
+    const look = () => {
+      const card = cardOf(root.current, frameKey(pin.anchor.scenario, pin.anchor.view), variant.id);
+      if (card?.querySelector(`[data-pin="${pin.number}"]`)) {
+        // The view's own pane scrolls to the frame; the board is not touched.
+        card.scrollIntoView({ block: "center", inline: "nearest" });
+        setOpenPin(pin.number);
+      } else if ((tries += 1) < 120) frame = requestAnimationFrame(look);
+    };
+    frame = requestAnimationFrame(look);
+    return () => cancelAnimationFrame(frame);
+    // Only a new request moves the view: what the person chooses afterwards is theirs.
+  }, [showNonce]);
 
   if (!record || !prototype) return null;
   if (prototype.format !== "spec") {
@@ -221,9 +285,21 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
   const picksHere = (state?.picks ?? []).map((pick, index) => ({ pick, index })).filter(({ pick }) => pick.page === page);
   const undoable = [...picksHere].reverse().find(({ pick }) => !pick.undone);
 
-  const frameRow = (item: Measured | undefined, label: string) => (item ? <FrameRow item={item} label={label} scenario={scenario} viewName={viewName} /> : null);
+  // A source's frames carry its notes: the prototype's own for "Current", a variant's for that variant, and none for the combination.
+  const frameRow = (item: Measured | undefined, label: string) => {
+    if (!item) return null;
+    const row = <FrameRow item={item} label={label} scenario={scenario} viewName={viewName} />;
+    if (item.id === "combination") return <NoPins>{row}</NoPins>;
+    return (
+      <PinSurface {...(item.id === CURRENT ? {} : { variant: item.id })} revision={fingerprint(item.prototype)} kind="key">
+        {row}
+      </PinSurface>
+    );
+  };
 
   return (
+    <PinContext value={pinBoard}>
+    <div className="variants-root" ref={root} data-pinning={pinning ? "" : undefined}>
     <Stack.Root gap="normal" className="variants" data-testid="variants">
       <Stack.Root direction="row" align="center" gap="normal" wrap className="variants-head">
         <Text.Root as="h2" className="variants-title">
@@ -272,7 +348,20 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
             </Field.Root>
           </Stack.Root>
         )}
+        {pins && page && (
+          <Button.Root variant="ghost" className="variants-pin" pressed={pinning} onPressedChange={(next) => pins.onPinning(next)} aria-label={`Pin a note (${SHORTCUTS.pin.label})`} aria-keyshortcuts={ariaKeys(SHORTCUTS.pin)} data-testid="variants-pin-mode">
+            <Button.Icon>
+              <MessageSquarePlus />
+            </Button.Icon>
+            Pin a note
+          </Button.Root>
+        )}
       </Stack.Root>
+      {pinning && page && (
+        <Text.Root as="p" className="variants-pinning" data-testid="variants-pin-hint">
+          Click a spot on Current or on a variant to pin a note there, or pick an element from a frame&apos;s list. A note on a variant is about that variant. <kbd>Esc</kbd> leaves.
+        </Text.Root>
+      )}
 
       {!page ? (
         <EmptyState.Root data-testid="variants-empty">
@@ -414,6 +503,8 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
         </>
       )}
     </Stack.Root>
+    </div>
+    </PinContext>
   );
 }
 
