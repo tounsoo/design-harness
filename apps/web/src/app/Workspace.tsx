@@ -728,7 +728,10 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
                 )}
                 {center === "project" && (
                   <div className="app-main-pane app-main-scroll">
-                    <ProjectView config={config} onOpenProposal={openProposal} prototype={current} onGoToState={goToState} />
+                    <ProjectView config={config} onOpenProposal={openProposal} onOpenProposals={() => {
+                      setReviewing(null);
+                      setCenter("proposals");
+                    }} prototype={current} onGoToState={goToState} />
                   </div>
                 )}
                 {center === "proposals" && (
