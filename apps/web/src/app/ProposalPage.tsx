@@ -33,7 +33,7 @@ import { FindingButton } from "./ChecksPanel";
 import { lineRange } from "./CodePanel";
 import { ClassBadge, RuleWords, StatusBadge, classWords, classificationOf } from "./proposal-parts";
 import { measurementOf, useSessions, type Measured, type Measurement } from "./sessions";
-import { scenarioLabel, viewLabel } from "./words";
+import { exampleLabel, frameNameOf, scenarioNameOf, viewLabel } from "./words";
 
 type Props = {
   readonly config: ProjectConfig;
@@ -183,7 +183,7 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
     const measurement = frames.measurement;
     if (measurement.state === "measuring") return { name: example.name, expect, example, frames, findings: [], verdict: { state: "measuring", text: `Measuring: ${measurement.answered} of ${measurement.total} frames answered.` } };
     if (measurement.state === "failed") {
-      return { name: example.name, expect, example, frames, findings: [], verdict: { state: "unmeasured", text: `Not measured: ${measurement.problems.map((problem) => `${problem.frame} (${problem.stage}): ${problem.message}`).join("; ")}` } };
+      return { name: example.name, expect, example, frames, findings: [], verdict: { state: "unmeasured", text: `Not measured: ${measurement.problems.map((problem) => `${frameNameOf(problem.frame, frames.state.frames)} (${problem.stage}): ${problem.message}`).join("; ")}` } };
     }
     if (!judged) return { name: example.name, expect, example, frames, findings: [], verdict: { state: "measuring", text: "Measured; waiting for the other examples." } };
     if ("refusal" in judged) return { name: example.name, expect, example, frames, findings: [], verdict: { state: "bad", text: judged.refusal.message, refusal: judged.refusal } };
@@ -502,7 +502,7 @@ function RefusalAlert({ action, refusal, onShowExample, onOpenProposal }: { read
                     </>
                   ) : (
                     <Button.Root variant="ghost" onClick={() => onShowExample(refusal.example ?? "")}>
-                      {`Show ${refusal.example}`}
+                      {`Show ${exampleLabel(refusal.example)}`}
                     </Button.Root>
                   )}
                 </DataList.Details>
@@ -701,6 +701,8 @@ function DiffView({ section }: { readonly section: DiffSection }) {
 /** Passing examples on one side, failing on the other, each in frames at the chosen scenario and views. */
 function Examples({ views, config, status, focus, onFocused }: { readonly views: readonly ExampleView[]; readonly config: ProjectConfig; readonly status: Proposal["status"]; readonly focus: string | null; readonly onFocused: () => void }) {
   const scenarios = useMemo(() => [...new Set(views.flatMap((view) => view.example.prototype.scenarios.map((scenario) => scenario.id)))], [views]);
+  // Every example's scenarios, to name one by its page and state where only its id is in hand.
+  const known = useMemo(() => views.flatMap((view) => view.example.prototype.scenarios), [views]);
   // The scenario the first failing example is flagged in, so the page opens on what the rule catches.
   const flaggedScenario = useMemo(() => {
     for (const view of views.filter((item) => item.expect === "fail")) {
@@ -750,7 +752,7 @@ function Examples({ views, config, status, focus, onFocused }: { readonly views:
             <Field.Select value={scenario} onValueChange={setChosen}>
               {scenarios.map((id) => (
                 <option key={id} value={id}>
-                  {scenarioLabel(id)}
+                  {scenarioNameOf(id, known)}
                   {id === flaggedScenario ? " (flagged)" : ""}
                 </option>
               ))}
@@ -841,7 +843,7 @@ function ExampleCard({ view, scenario, views, status }: { readonly view: Example
       <Card.Header className="example-head">
         <Stack.Root direction="row" align="center" gap="condensed" wrap>
           <Text.Root as="h4" className="example-name">
-            {view.name}
+            {exampleLabel(view.name)}
           </Text.Root>
           <Badge.Root tone={badge.tone} data-testid="example-verdict">
             {badge.text}
@@ -871,20 +873,21 @@ function ExampleCard({ view, scenario, views, status }: { readonly view: Example
                   hidden={!visible}
                   selected={visible && pointed.has(spec.key)}
                   label={view.name}
+                  caption={exampleLabel(view.name)}
                 />
               );
             })}
           </div>
           {flaggedElsewhere && (
             <Text.Root as="p" tone="muted" className="review-small">
-              Flagged in another scenario: {[...new Set(view.findings.map((finding) => finding.scenario).filter(Boolean))].join(", ")}.
+              Flagged in another scenario: {[...new Set(view.findings.flatMap((finding) => finding.scenario ?? []))].map((id) => scenarioNameOf(id, view.example.prototype.scenarios)).join("; ")}.
             </Text.Root>
           )}
           <Text.Root as="p" className="pre review-small example-detail" data-testid="example-detail">
             {view.verdict.text}
           </Text.Root>
           {view.findings.length > 0 && status !== "declined" && (
-            <ul className="findings" aria-label={`What core found in ${view.name}`}>
+            <ul className="findings" aria-label={`What core found in ${exampleLabel(view.name)}`}>
               {view.findings.slice(0, 4).map((finding, index) => (
                 <li key={index}>
                   <FindingButton finding={finding} selected={false} onSelect={() => undefined} />
@@ -921,7 +924,7 @@ function SourceLine({ view, finding }: { readonly view: ExampleView; readonly fi
       <Text.Root as="p" tone="muted" className="review-small">
         {file}, line {finding.line}
       </Text.Root>
-      <Field.Root className="code-field example-code" aria-label={`${view.name}: ${file} around line ${finding.line}`}>
+      <Field.Root className="code-field example-code" aria-label={`${exampleLabel(view.name)}: ${file} around line ${finding.line}`}>
         <Field.Textarea value={excerpt} readOnly highlights={[{ ...range, kind: "finding" }]} rows={to - from + 1} spellCheck={false} className="code-text" data-testid="example-source" />
       </Field.Root>
     </div>

@@ -266,7 +266,7 @@
   .example { position: relative; min-width: 0; }
   .example[data-verdict="bad"] { box-shadow: 0 0 0 var(--todae-focus-ring-width) var(--todae-color-status-critical-border); }
   .example-head { display: grid; gap: var(--todae-space-1); }
-  .example-name { margin: 0; --todae-text-h3-font-size: var(--todae-font-size-2); font-family: var(--todae-font-family-mono); }
+  .example-name { margin: 0; --todae-text-h3-font-size: var(--todae-font-size-2); --todae-text-h4-font-size: var(--todae-font-size-2); }
   .example-frames { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--todae-space-4); min-width: 0; overflow: hidden; padding: var(--todae-space-3); border-radius: var(--todae-radius-md); background-color: var(--todae-harness-canvas-bg); }
   .impact-frames { position: relative; height: 0; overflow: hidden; }
   .example-detail { overflow-wrap: anywhere; }

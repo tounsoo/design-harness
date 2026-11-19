@@ -5,7 +5,7 @@ import { CURRENT, formatSpec, parseJson, pickScope, recombine, variantLabel, var
 import type { PrototypeRecord } from "../store/project-file";
 import { FrameCard } from "./Board";
 import { useSessions, type Measured } from "./sessions";
-import { humanize, ruleLead, scenarioLabel, viewLabel } from "./words";
+import { humanize, ruleLead, scenarioName, viewLabel } from "./words";
 
 /**
  * Variants side by side, and the person's pick. For the page being
@@ -239,7 +239,7 @@ export function VariantsView({ config, record, agent, onApply, onUndo, onDismiss
               <Field.Select value={scenario ?? ""} onValueChange={(value) => setScenario(value)}>
                 {scenarios.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {scenarioLabel(item.id)}
+                    {scenarioName(item)}
                   </option>
                 ))}
               </Field.Select>

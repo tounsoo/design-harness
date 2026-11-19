@@ -185,6 +185,8 @@ export type CardProps = {
   readonly onOpen?: () => void;
   /** Names the frame when the same scenario is shown more than once, as a proposal's examples are: "two-toasts: lantern-open at desktop". */
   readonly label?: string;
+  /** The label as the artboard's head shows it, when the label is an id: "Two toasts" for "two-toasts". */
+  readonly caption?: string;
 };
 
 /**
@@ -192,7 +194,7 @@ export type CardProps = {
  * view and size above it, quiet unless it is still measuring or failed. The
  * review page shows examples with it too.
  */
-export function FrameCard({ session, spec, revision, frameState, scale, focused, hidden, selected, onOpen, label }: CardProps) {
+export function FrameCard({ session, spec, revision, frameState, scale, focused, hidden, selected, onOpen, label, caption }: CardProps) {
   const name = `${label ? `${label}: ` : ""}${spec.scenario.id} at ${spec.view.name}`;
   // A fresh document, on a fresh channel, for every revision.
   const doc = useMemo(() => (spec.blocked ? null : session.documentFor(spec.key)), [session, spec.key, spec.blocked, revision]);
@@ -211,7 +213,7 @@ export function FrameCard({ session, spec, revision, frameState, scale, focused,
     <figure className="frame-card" style={{ width: width * scale }} data-frame-key={spec.key} data-state={frameState.state} data-selected={selected ? "" : undefined} data-focused={focused ? "" : undefined} data-hidden={hidden ? "" : undefined} aria-hidden={hidden || undefined}>
       <figcaption className="frame-head">
         <Text.Root as="span" weight="medium" className="frame-view">
-          {label ? `${label} · ` : ""}
+          {label ? `${caption ?? label} · ` : ""}
           {viewLabel(spec.view.name)}
         </Text.Root>
         <Text.Root as="span" tone="muted" className="frame-size">

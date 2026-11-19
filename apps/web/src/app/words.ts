@@ -1,4 +1,6 @@
 import { describeRule, type Finding, type ProjectConfig, type RuleReport } from "@design-harness/core";
+import type { FrameSpec } from "../runtime/session";
+import type { OutlinePlan } from "../runtime/tags";
 
 /**
  * Plain words for what the app shows a designer first. They lead; the exact
@@ -38,6 +40,42 @@ export function artboardLabel(scenario: { readonly page: string; readonly state:
   return `${screenTitle(scenario)} — ${view.toLowerCase()}`;
 }
 
+/** What a scenario is told by: the page it opens, the state it shows, and its id. */
+type Scenario = { readonly id: string; readonly page: string; readonly state: string };
+
+/**
+ * A scenario's name wherever one is named outside its own row of the board,
+ * in a picker or a sentence: its screen, then its own name, "Booking, room
+ * held (Lantern held)". Its id stays in details and code.
+ */
+export function scenarioName(scenario: Scenario): string {
+  const screen = screenTitle(scenario);
+  const own = scenarioLabel(scenario.id);
+  return own.toLowerCase() === screen.toLowerCase() ? screen : `${screen} (${own})`;
+}
+
+/** One frame's whole name, the way its artboard's Open button says it: "Booking, room held — phone (Lantern held)". */
+export function frameName(scenario: Scenario, view: string): string {
+  return `${artboardLabel(scenario, view)} (${scenarioLabel(scenario.id)})`;
+}
+
+/** A frame known only by its key, named from the frames in hand; its key when it is not among them. */
+export function frameNameOf(key: string, frames: readonly FrameSpec[]): string {
+  const spec = frames.find((frame) => frame.key === key);
+  return spec ? frameName(spec.scenario, spec.view.name) : key;
+}
+
+/** A scenario known only by its id, named from the scenarios in hand; its id in words when it is not among them. */
+export function scenarioNameOf(id: string, scenarios: readonly Scenario[]): string {
+  const scenario = scenarios.find((item) => item.id === id);
+  return scenario ? scenarioName(scenario) : scenarioLabel(id);
+}
+
+/** An example of a proposal, by the name its author gave it: "two-toasts" is "Two toasts". */
+export function exampleLabel(name: string): string {
+  return humanize(name);
+}
+
 /** One frame's name where only its scenario and view are known, as on a finding: "Lantern held — phone". */
 export function frameLabel(scenario: string, view: string): string {
   return `${scenarioLabel(scenario)} — ${view.toLowerCase()}`;
@@ -66,4 +104,17 @@ export function findingPlace(finding: Finding): string {
   if (finding.page !== undefined) return `The ${humanize(finding.page).toLowerCase()} page`;
   if (finding.scenario !== undefined) return scenarioLabel(finding.scenario);
   return "The whole prototype";
+}
+
+/** Where a finding's elements are outlined, in words, for the line under a selected finding: scenarios by name, never by id. */
+export function describeOutline(plan: OutlinePlan, frames: readonly FrameSpec[]): string {
+  const specs = plan.frames.flatMap((item) => frames.find((frame) => frame.key === item.key) ?? []);
+  const scenarios = frames.map((frame) => frame.scenario);
+  const drawn = [...new Map(specs.map((spec) => [spec.scenario.id, scenarioName(spec.scenario)])).values()];
+  const parts: string[] = [];
+  if (drawn.length > 0) parts.push(`Outlined in ${plan.frames.length} ${plan.frames.length === 1 ? "frame" : "frames"}: ${drawn.join("; ")}.`);
+  if (plan.missing.length > 0) parts.push(`Not drawn in ${plan.missing.map((id) => scenarioNameOf(id, scenarios)).join("; ")}.`);
+  if (plan.unmeasured.length > 0) parts.push(`Not measured in ${plan.unmeasured.map((key) => frameNameOf(key, frames)).join("; ")}.`);
+  if (parts.length === 0) parts.push("Not drawn in any scenario.");
+  return parts.join(" ");
 }
