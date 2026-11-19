@@ -59,32 +59,30 @@ export function groupRules(rules: readonly RuleSpec[]): readonly { readonly grou
   return RULE_GROUPS.map((group) => ({ group, rules: rules.filter((rule) => ruleGroup(rule) === group.id) })).filter((item) => item.rules.length > 0);
 }
 
-/** The glyph a rule card draws: the rule's shape, never this prototype's page. `code` is the plain plate. */
-export type RuleGlyph = "count" | "count-min" | "slot" | "inside" | "outside" | "nest" | "list" | "target-size" | "contrast" | "headings" | "first-view" | "sideways" | "names" | "coverage" | "budget" | "code";
+/**
+ * The glyph a rule card draws, for a rule about how a rendered page looks:
+ * a control's size, text on its ground, the heading outline, where the
+ * first view ends, a page wider than its view. Every other rule has none
+ * (`null`): a count, a place, a list, a flow or a rule about code reads
+ * whole in its sentence, and a generic picture beside it would only repeat it.
+ */
+export type RuleGlyph = "target-size" | "contrast" | "headings" | "first-view" | "sideways";
 
-export function ruleGlyph(rule: RuleSpec): RuleGlyph {
-  switch (rule.type) {
-    case "count":
-      return rule.scope === "source" ? "code" : rule.max === undefined && rule.min !== undefined ? "count-min" : "count";
-    case "slot":
-    case "page-structure":
-      return "slot";
-    case "containment":
-      return rule.must === "nest-at-most" ? "nest" : rule.must === "be-inside" ? "inside" : "outside";
-    case "requires":
-      return "inside";
-    case "membership":
-      return rule.of === "imports" ? "code" : "list";
-    case "prop-values":
-      return "list";
-    case "flow":
-      return rule.check === "step-budget" ? "budget" : "coverage";
-    case "rendered":
-      return rule.check === "target-size" ? "target-size" : rule.check === "contrast" ? "contrast" : rule.check === "headings" ? "headings" : rule.check === "first-view" ? "first-view" : rule.check === "no-sideways-scroll" ? "sideways" : "names";
-    case "reachable":
-    case "isolation":
-    case "style-props":
-      return "code";
+export function ruleGlyph(rule: RuleSpec): RuleGlyph | null {
+  if (rule.type !== "rendered") return null;
+  switch (rule.check) {
+    case "target-size":
+      return "target-size";
+    case "contrast":
+      return "contrast";
+    case "headings":
+      return "headings";
+    case "first-view":
+      return "first-view";
+    case "no-sideways-scroll":
+      return "sideways";
+    case "accessible-names":
+      return null;
   }
 }
 

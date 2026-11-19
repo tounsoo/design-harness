@@ -29,24 +29,25 @@ describe("rule groups", () => {
     expect(RULE_GROUPS.map((group) => group.id)).toEqual(["count", "where", "rendered", "inventory", "flow", "code"]);
   });
 
-  it("has a group and a glyph for every rule of both projects", () => {
+  it("has a group for every rule of both projects, and a glyph only for a rule about how a rendered page looks", () => {
     for (const rule of [...nook.rules, ...tally.rules]) {
       expect(RULE_GROUPS.map((group) => group.id)).toContain(ruleGroup(rule));
-      expect(typeof ruleGlyph(rule)).toBe("string");
+      expect(ruleGlyph(rule) !== null).toBe(rule.type === "rendered" && rule.check !== "accessible-names");
     }
   });
 
-  it("groups a rule a proposal adds the day it is adopted, and gives a rule about code the plain plate", () => {
+  it("groups a rule a proposal adds the day it is adopted, and draws no glyph for a count, a list, a flow or code", () => {
     expect(ruleGroup(toastRule)).toBe("count");
-    expect(ruleGlyph(toastRule)).toBe("count");
+    expect(ruleGlyph(toastRule)).toBeNull();
     expect(ruleBound(toastRule, nook)).toBe("at most 1");
-    expect(ruleGlyph({ type: "count", id: "some", select: { role: "primary-action" }, scope: "pages", min: 1 })).toBe("count-min");
+    expect(ruleGlyph({ type: "count", id: "some", select: { role: "primary-action" }, scope: "pages", min: 1 })).toBeNull();
     expect(ruleGroup({ type: "isolation", id: "no-ambient-globals" })).toBe("code");
-    expect(ruleGlyph({ type: "isolation", id: "no-ambient-globals" })).toBe("code");
-    expect(ruleGlyph({ type: "membership", id: "imports", of: "imports" })).toBe("code");
-    expect(ruleGlyph({ type: "membership", id: "parts", of: "components" })).toBe("list");
+    expect(ruleGlyph({ type: "isolation", id: "no-ambient-globals" })).toBeNull();
+    expect(ruleGlyph({ type: "membership", id: "imports", of: "imports" })).toBeNull();
+    expect(ruleGlyph({ type: "membership", id: "parts", of: "components" })).toBeNull();
     expect(ruleGlyph({ type: "rendered", id: "c", check: "contrast" })).toBe("contrast");
-    expect(ruleGlyph({ type: "flow", id: "f", check: "step-budget" })).toBe("budget");
+    expect(ruleGlyph({ type: "flow", id: "f", check: "step-budget" })).toBeNull();
+    expect(ruleGlyph({ type: "rendered", id: "n", check: "accessible-names" })).toBeNull();
   });
 
   it("reads a cap's value into a rule's bound, and names the rules that read each cap", () => {

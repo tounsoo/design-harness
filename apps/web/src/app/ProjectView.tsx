@@ -3,8 +3,8 @@ import { useMemo, useState } from "react";
 import { ROLE_NAMES, describeRule, flowFacts, rerunExamples, type ConfirmedRole, type ExampleRun, type ProjectConfig, type RoleMapping, type RuleSpec } from "@design-harness/core";
 import { formatTime } from "../review/timeline";
 import type { PrototypeRecord } from "../store/project-file";
-import { BudgetFigure, CapMeterView, PageTypeFigure, RuleFigure, SlotLegend, glyphNote } from "../visual/project-figures";
-import { RULE_GROUPS, budgetMeter, capReaders, capsRead, groupRules, projectTimeline, ruleBound, ruleGlyph, ruleGroup, ruleSource, type RuleGroupId } from "../visual/project-model";
+import { BudgetFigure, CapMeterView, PageTypeFigure, RuleFigure, SlotLegend } from "../visual/project-figures";
+import { RULE_GROUPS, budgetMeter, capReaders, capsRead, groupRules, projectTimeline, ruleBound, ruleGroup, ruleSource, type RuleGroupId } from "../visual/project-model";
 import { TaskMaps } from "./ChecksPanel";
 import { LayoutsView } from "./LayoutsView";
 import { LibraryVersionSection } from "./LibraryVersion";
@@ -303,7 +303,7 @@ function Rules({ config, onOpenProposal }: { readonly config: ProjectConfig; rea
   const shown = groups.filter((item) => filter === "all" || item.group.id === filter);
   return (
     <section aria-labelledby="project-rules" data-testid="project-rules">
-      <SectionHead id="project-rules" title={`Rules in force (${config.rules.length})`} text="Each rule is checked on every change, by code, the same way every time. A picture shows the kind of thing a rule checks, not a page of yours; open a rule for its id, type and data." />
+      <SectionHead id="project-rules" title={`Rules in force (${config.rules.length})`} text="Each rule is checked on every change, by code, the same way every time. A rule about how a page looks carries a picture of what it measures, not a page of yours; open a rule for its id, type and data." />
       <ToggleGroup.Root aria-label="Show rules" value={filter} onValueChange={(value) => setFilter((value ?? "all") as "all" | RuleGroupId)} className="proposals-filter rule-filter">
         <ToggleGroup.Item value="all">{`All (${config.rules.length})`}</ToggleGroup.Item>
         {RULE_GROUPS.map((group) => {
@@ -341,8 +341,8 @@ function RuleCard({ rule, config, onOpenProposal }: { readonly rule: RuleSpec; r
   const source = ruleSource(config, rule.id);
   const caps = capsRead(rule);
   return (
-    <Card.Root className="rule-card" data-rule={rule.id} data-glyph-note={glyphNote(rule)}>
-      <RuleFigure rule={rule} label={ruleGlyph(rule) === "count" || ruleGlyph(rule) === "count-min" ? ruleBound(rule, config) : undefined} />
+    <Card.Root className="rule-card" data-rule={rule.id}>
+      <RuleFigure rule={rule} label={ruleBound(rule, config)} />
       <div className="rule-card-body">
         <Text.Root as="p" weight="medium" className="rule-card-lead">
           {rule.description ?? words}
@@ -374,7 +374,7 @@ function RuleCard({ rule, config, onOpenProposal }: { readonly rule: RuleSpec; r
           </Disclosure.Summary>
           <Stack.Root gap="condensed" className="project-rule-detail">
             <Text.Root as="p" tone="muted">
-              {rule.type}. {glyphNote(rule)}.
+              {rule.type}
             </Text.Root>
             <pre className="project-json">{JSON.stringify(rule, null, 2)}</pre>
           </Stack.Root>
