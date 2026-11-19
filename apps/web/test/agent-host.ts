@@ -1,14 +1,15 @@
 import { NO_VARIANTS, checkPrototype, type ProjectConfig, type Prototype, type Variant, type VariantState } from "@design-harness/core";
 import { nook } from "../../../packages/core/examples/nook/project";
 import type { AgentHost } from "../src/agent/tools";
-import { seedLegal } from "./nook";
+import { seedSpec } from "./nook";
 
 /**
- * An agent host over plain values, for tests in Node: changes apply at once,
+ * An agent host over plain values, for tests in Node, on the legal Nook spec
+ * prototype unless given another: changes apply at once,
  * and "measured" checks the source with core, without frames (so rendered
  * rules report not-run).
  */
-export function fakeHost(initial: Prototype = seedLegal(), config: ProjectConfig = nook, startVariants: VariantState = NO_VARIANTS) {
+export function fakeHost(initial: Prototype = seedSpec(), config: ProjectConfig = nook, startVariants: VariantState = NO_VARIANTS) {
   let prototype = initial;
   let variants = startVariants;
   const savedVariants: (readonly Variant[])[] = [];
@@ -24,7 +25,7 @@ export function fakeHost(initial: Prototype = seedLegal(), config: ProjectConfig
       prototype = next;
       revision += 1;
       applied.push(next);
-      return { revision, compileProblems: [] };
+      return { revision };
     },
     async saveConfig(next) {
       current = next;

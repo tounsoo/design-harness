@@ -4,13 +4,13 @@ import type { CheckStatus, Prototype } from "@design-harness/core";
 import { describeError, isAbort, redact } from "./errors";
 import { History, toolCalls } from "./history";
 import { NO_USAGE, addUsage, requestCost, type AgentSettings, type Usage } from "./models";
-import { createClient, requestBody, type AgentMode, type MessagesApi } from "./request";
+import { createClient, requestBody, type MessagesApi } from "./request";
 import { specCatalogPrompt } from "./spec-prompt";
 import { reportRules, type LoopEvent } from "./patterns";
 import { describePins } from "../pins/describe";
 import { openPins, unaddressPin } from "../pins/model";
 import type { SpecStreamPreview } from "./spec-stream";
-import { checksTitle, describeMeasured, runTool, type AddressedNote, type AgentHost, type ToolOutcome } from "./tools";
+import { TSX_READ_ONLY, checksTitle, describeMeasured, isSpec, runTool, type AddressedNote, type AgentHost, type ToolOutcome } from "./tools";
 
 /**
  * One prototype's conversation with the agent. A turn is one message from
@@ -201,6 +201,11 @@ export class AgentController {
     // A message sent while the saved chat is still loading waits for it, so the loaded history cannot replace it.
     if (this.loading) await this.loading;
     if (!message || this.state.running) return;
+    // A TSX prototype is read-only: nothing is sent, and the history is left as it is.
+    if (!isSpec(this.options.host.prototype())) {
+      this.set({ problem: TSX_READ_ONLY });
+      return;
+    }
     const settings = this.options.settings();
     const start = this.options.host.checked?.() ?? null;
     const turn: Turn = {
@@ -230,7 +235,7 @@ export class AgentController {
   /** Runs the last turn again from where it failed, when its error allows a retry. */
   async retry(): Promise<void> {
     const last = this.state.turns.at(-1);
-    if (!last || this.state.running || last.end.status !== "error" || !last.end.retry) return;
+    if (!last || this.state.running || last.end.status !== "error" || !last.end.retry || !isSpec(this.options.host.prototype())) return;
     this.patchTurn(last.id, () => ({ end: { status: "running" } }));
     await this.run(last.id);
   }
@@ -253,7 +258,8 @@ export class AgentController {
    * stands as it left it.
    */
   undoable(): Turn | undefined {
-    if (this.state.running) return undefined;
+    // A TSX prototype is read-only: undo would change it.
+    if (this.state.running || !isSpec(this.options.host.prototype())) return undefined;
     return [...this.state.turns].reverse().find((turn) => !turn.undone && (turn.before !== null || this.standing(turn).length > 0));
   }
 
@@ -332,9 +338,8 @@ export class AgentController {
         const blocks = new Map<number, number>();
         let message: BetaMessage;
         try {
-          // A spec prototype's agent writes specs, with the catalog's instructions; a TSX prototype's writes code.
-          const mode: AgentMode = this.options.host.prototype().format === "spec" ? { kind: "spec", catalogPrompt: specCatalogPrompt(this.options.host.config()) } : { kind: "tsx" };
-          const stream = client.stream(requestBody(settings, this.history.messages, mode), { signal: abort.signal });
+          // The agent writes specs, with the catalog's instructions.
+          const stream = client.stream(requestBody(settings, this.history.messages, specCatalogPrompt(this.options.host.config())), { signal: abort.signal });
           for await (const event of stream) this.onEvent(id, event, blocks);
           message = await stream.finalMessage();
           parseFailures = 0;

@@ -9,7 +9,7 @@ import { latestMeasured, waitForMeasured } from "../agent/measure";
 import { detectPatterns, suggestion as suggestionOf, patternMessage } from "../agent/patterns";
 import type { AgentSettings } from "../agent/models";
 import { loadSettings, saveSettings } from "../agent/settings";
-import type { AgentHost } from "../agent/tools";
+import { TSX_READ_ONLY, isSpec, type AgentHost } from "../agent/tools";
 import { frameKey, type SessionState } from "../runtime/session";
 import { planOutline } from "../runtime/tags";
 import type { Store } from "../store/db";
@@ -24,7 +24,7 @@ import { ChatPanel } from "./ChatPanel";
 import { ChecksPanel } from "./ChecksPanel";
 import { CodePanel, MANIFEST_FILE } from "./CodePanel";
 import { NewPrototype } from "./NewPrototype";
-import { blankPrototype, prototypeId, type PrototypeFormat } from "./new-prototype";
+import { blankPrototype, cannotCreate, prototypeId } from "./new-prototype";
 import { ProjectView } from "./ProjectView";
 import { PackagesNotice } from "./LibraryVersion";
 import { ProposalPage } from "./ProposalPage";
@@ -206,9 +206,15 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   const [variantsHold, setVariantsHold] = useState(false);
   const setPinning = useCallback(
     (next: boolean) => {
+      // Notes are pinned on the canvas, and on the Variants view's frames; from anywhere else, the canvas comes up.
+      const record = recordsRef.current.find((item) => item.id === currentId) ?? recordsRef.current[0];
+      const spec = record !== undefined && isSpec(record.prototype);
+      // A TSX prototype is read-only, its notes included: no new note is pinned on it.
+      if (next && !spec) {
+        setNotice({ tone: "info", title: "No notes on a TSX prototype", lines: [TSX_READ_ONLY] });
+        return;
+      }
       setPinningState(next);
-      // Notes are pinned on the canvas, and on the Variants view's frames when a spec prototype is open there; from anywhere else, the canvas comes up.
-      const spec = recordsRef.current.find((record) => record.id === currentId)?.prototype.format === "spec";
       if (next) {
         setCenterState((now) => (now === "variants" && spec ? now : "canvas"));
         // On a phone, a panel covering the main view steps aside, as for any way to the frames.
@@ -260,6 +266,9 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
 
   const edit = useCallback(
     (next: Prototype) => {
+      // A TSX prototype is read-only: the code view does not offer an edit, and none is taken here.
+      const record = recordsRef.current.find((item) => item.id === currentId);
+      if (record && !isSpec(record.prototype)) return;
       setSelected(null);
       setRecords((items) => items.map((item) => (item.id === currentId ? { ...item, prototype: next } : item)));
     },
@@ -318,8 +327,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
         setSelected(null);
         setRecords((items) => items.map((item) => (item.id === currentId ? { ...item, prototype: next } : item)));
         session.update(checked(configRef.current), next);
-        const after = session.getState();
-        return { revision: after.revision, compileProblems: after.compileProblems };
+        return { revision: session.getState().revision };
       },
       saveConfig: (next) => saveConfig(next),
       measured: (signal) =>
@@ -537,7 +545,12 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   const pinState = current?.pins ?? NO_PINS;
   const pinActions = useMemo((): PinActions => {
     const run = (change: (state: PinState) => PinResult): boolean => {
-      const result = change(recordOf()?.pins ?? NO_PINS);
+      const record = recordOf();
+      if (record && !isSpec(record.prototype)) {
+        setNotice({ tone: "info", title: "The note was not changed", lines: [TSX_READ_ONLY] });
+        return false;
+      }
+      const result = change(record?.pins ?? NO_PINS);
       if (!result.ok) {
         setNotice({ tone: "warning", title: "The note was not changed", lines: [result.error] });
         return false;
@@ -565,7 +578,8 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     const record = recordOf();
     const running = session.current();
     if (!record || !running || running.prototype !== record.prototype) return;
-    if (!record.pins || record.pins.pins.length === 0) return;
+    // A TSX prototype's notes stay as they were stored: it is read-only.
+    if (!record.pins || record.pins.pins.length === 0 || !isSpec(record.prototype)) return;
     const revision = fingerprint(record.prototype);
     const frames: Record<string, FrameMeasure> = {};
     for (const frame of state.frames) {
@@ -623,10 +637,10 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     [],
   );
 
-  /** A new, empty prototype in the format the person chose (spec by default), saved and opened on the board. */
+  /** A new, empty spec prototype, saved and opened on the board. */
   const createPrototype = useCallback(
-    (name: string, format: PrototypeFormat) => {
-      const record: PrototypeRecord = { projectId: initialConfig.id, id: prototypeId(name, recordsRef.current.map((item) => item.id)), name, prototype: blankPrototype(format) };
+    (name: string) => {
+      const record: PrototypeRecord = { projectId: initialConfig.id, id: prototypeId(name, recordsRef.current.map((item) => item.id)), name, prototype: blankPrototype() };
       setRecords((items) => [...items, record]);
       void store.putPrototype(record);
       setSelected(null);
@@ -679,7 +693,8 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
 
   const measuredCount = state.frames.filter((frame) => state.frameStates[frame.key]?.state === "measured").length;
   const verdict = verdictOf(state);
-  const formatName = current?.prototype.format === "spec" ? "Spec" : "TSX";
+  /** The open prototype is TSX: kept and shown, never changed here. */
+  const readOnly = current !== undefined && !isSpec(current.prototype);
   const prototypeName = current?.name ?? "No prototype";
 
   return (
@@ -731,7 +746,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
               >
                 {records.map((record) => (
                   <option key={record.id} value={record.id}>
-                    {record.name}
+                    {isSpec(record.prototype) ? record.name : `${record.name} (TSX, read-only)`}
                   </option>
                 ))}
               </Field.Select>
@@ -741,9 +756,9 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
               {prototypeName}
             </Text.Root>
           )}
-          {current && (
-            <Badge.Root tone="neutral" data-testid="prototype-format" title={current.prototype.format === "spec" ? "A json-render spec prototype: pages and layouts as data" : "A TSX prototype: pages and layouts as React code"}>
-              {formatName}
+          {readOnly && (
+            <Badge.Root tone="neutral" data-testid="prototype-format" title="A TSX prototype: pages and layouts as React code, kept read-only">
+              TSX, read-only
             </Badge.Root>
           )}
         </Stack.Root>
@@ -887,7 +902,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
 
       <Splitter.Root className="shell-body" show={canvasOnly ? "end" : panes === 1 ? (open.chat ? "start" : "end") : "both"} value={open.chat ? panels.chat.width : 0} onValueChange={(value) => resizePanel("chat", value)} min={PANEL_SIZES.chat.min} max={PANEL_SIZES.chat.max} collapsible>
         <Splitter.Panel id={chatId} className="shell-panel">
-          <ChatPanel controller={controller} vault={vault} settings={settings} onSettings={changeSettings} onOpenProposal={openProposal} onOpenVariants={() => setCenter("variants")} prefill={prefill} onClose={() => showPanel("chat", false)} {...(offered ? { suggestion: { pattern: offered, onAccept: () => void answerSuggestion("accepted"), onDismiss: () => void answerSuggestion("dismissed") } } : {})} />
+          <ChatPanel controller={controller} vault={vault} settings={settings} {...(readOnly ? { readOnly: TSX_READ_ONLY } : {})} onSettings={changeSettings} onOpenProposal={openProposal} onOpenVariants={() => setCenter("variants")} prefill={prefill} onClose={() => showPanel("chat", false)} {...(offered ? { suggestion: { pattern: offered, onAccept: () => void answerSuggestion("accepted"), onDismiss: () => void answerSuggestion("dismissed") } } : {})} />
         </Splitter.Panel>
         <Splitter.Handle aria-label="Resize the chat" className="shell-handle" data-side="start" />
         <Splitter.Panel className="shell-panel">
@@ -896,6 +911,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
               <main id={mainId} tabIndex={-1} className="app-main" aria-label={center === "canvas" ? "Canvas" : center === "project" ? "Project" : center === "variants" ? "Variants" : "Proposals"}>
                 {/* The board stays laid out under the project view, so frames keep their viewport and keep measuring; out of sight, they are parked once measured. */}
                 <div className="app-main-pane" data-inactive={center === "canvas" ? undefined : ""} aria-hidden={center === "canvas" ? undefined : true}>
+                  {readOnly && current && <TsxNotice name={current.name} unavailable={cannotCreate(config)} onExport={downloadCode} onStart={() => createPrototype(`${current.name} (spec)`)} />}
                   <PackagesNotice
                     config={config}
                     packages={state.packages}
@@ -1029,7 +1045,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
                     {current && <PinNotes state={pinState} frameOf={pinFrame} actions={pinActions} onShow={showPin} onStart={() => setPinning(true)} onAsk={askAboutNotes} />}
                   </Tabs.Panel>
                   <Tabs.Panel value="code" keepMounted className="app-side-panel">
-                    {current && <CodePanel prototype={current.prototype} target={code} onTarget={setCode} onEdit={edit} problems={state.compileProblems} />}
+                    {current && <CodePanel prototype={current.prototype} target={code} onTarget={setCode} onEdit={edit} problems={state.compileProblems} readOnly={readOnly} />}
                   </Tabs.Panel>
                 </Tabs.Root>
               </aside>
@@ -1038,6 +1054,35 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
         </Splitter.Panel>
       </Splitter.Root>
     </div>
+  );
+}
+
+/**
+ * What the canvas says over a TSX prototype: it is kept and still renders
+ * and checks, but is no longer edited here. Its code can be exported, and a
+ * spec version started beside it, empty, for the agent to build.
+ */
+function TsxNotice({ name, unavailable, onExport, onStart }: { readonly name: string; readonly unavailable: string | null; readonly onExport: () => void; readonly onStart: () => void }) {
+  return (
+    <Alert.Root tone="info" className="app-preview" data-testid="tsx-notice">
+      <Alert.Title>TSX prototypes are no longer edited here</Alert.Title>
+      <Alert.Description>
+        <Stack.Root gap="condensed">
+          <Text.Root as="p">
+            {name} is written in TSX. It still renders and its checks still run, but nothing changes it here: not the agent, the code view, variants or notes. Export its code to keep working on it as React, or start a spec version, an empty spec prototype in this project, and describe it to the agent.
+          </Text.Root>
+          {unavailable !== null && <Text.Root as="p">{unavailable}</Text.Root>}
+          <Stack.Root direction="row" gap="condensed" wrap>
+            <Button.Root variant="secondary" onClick={onExport}>
+              Export code
+            </Button.Root>
+            <Button.Root variant="primary" onClick={onStart} disabled={unavailable !== null}>
+              Start a spec version
+            </Button.Root>
+          </Stack.Root>
+        </Stack.Root>
+      </Alert.Description>
+    </Alert.Root>
   );
 }
 

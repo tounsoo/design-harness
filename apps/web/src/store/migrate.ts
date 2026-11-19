@@ -7,8 +7,8 @@ import todae0113 from "../../../../packages/core/libraries/todae-0.11.3.json";
  * description of the library's parts a spec is checked against. On load the
  * app adds the description bundled for exactly that package and version, if
  * there is one; otherwise it says plainly that spec prototypes cannot be
- * checked in that project, and leaves the config as it is. A TSX prototype
- * never needs the description.
+ * checked in that project, and leaves the config as it is. A stored TSX
+ * prototype never needs the description, but it is read-only.
  */
 
 type Parts = Readonly<Record<string, PartDescription>>;
@@ -38,7 +38,7 @@ export function withLibraryParts(config: ProjectConfig, bundled: Readonly<Record
     return {
       kind: "no-parts",
       config,
-      note: `Project "${config.name}" uses ${name} ${version}, and this app has no description of that library's parts, so its spec prototypes cannot be checked or written. Its TSX prototypes work as before. Import a project file whose config has library.parts for ${name} ${version} to use specs.`,
+      note: `Project "${config.name}" uses ${name} ${version}, and this app has no description of that library's parts, so no prototype can be made or edited in it: its spec prototypes cannot be checked, and its TSX ones are read-only. Import a project file whose config has library.parts for ${name} ${version} to use specs.`,
     };
   }
   return {

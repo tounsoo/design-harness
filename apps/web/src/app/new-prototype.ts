@@ -1,22 +1,20 @@
 import { specCatalog, type ProjectConfig, type Prototype } from "@design-harness/core";
 
-/** Making a new prototype: its format, its empty start, and its id. */
-
-/** What a new prototype is written in. Spec is the default; TSX stays selectable. */
-export type PrototypeFormat = "spec" | "tsx";
-
-/** The format a new prototype starts in: spec, unless the project's library has no part description to check specs against. */
-export function defaultFormat(config: ProjectConfig): PrototypeFormat {
-  return specCatalog(config) ? "spec" : "tsx";
-}
+/** Making a new prototype: its empty start, whether the project can take one, and its id. */
 
 /**
- * An empty prototype in a format: no files, pages, layouts or scenarios yet,
- * for the agent or the code view to build. A spec prototype says so in its
- * manifest; a TSX one leaves `format` out, as every TSX prototype does.
+ * Why a new prototype cannot be made in this project, or null when it can. A
+ * prototype is a spec, and a spec is checked against the catalog the
+ * project's library description gives; a project with no description has
+ * none.
  */
-export function blankPrototype(format: PrototypeFormat): Prototype {
-  return { ...(format === "spec" ? { format: "spec" as const } : {}), files: {}, pages: [], layouts: [], scenarios: [], flow: { states: [], tasks: [] } };
+export function cannotCreate(config: ProjectConfig): string | null {
+  return specCatalog(config) ? null : "The project's library has no part description, so a spec prototype cannot be checked here. Import a project file whose config has library.parts to make one.";
+}
+
+/** An empty spec prototype: no files, pages, layouts or scenarios yet, for the agent or the code view to build. */
+export function blankPrototype(): Prototype {
+  return { format: "spec", files: {}, pages: [], layouts: [], scenarios: [], flow: { states: [], tasks: [] } };
 }
 
 /** A prototype id from its name, unique among `taken`: "Booking (spec)" is "booking-spec", then "booking-spec-2". */
@@ -26,4 +24,3 @@ export function prototypeId(name: string, taken: readonly string[]): string {
   for (let count = 2; taken.includes(id); count += 1) id = `${base}-${count}`;
   return id;
 }
-

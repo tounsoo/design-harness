@@ -1,17 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { fakeHost } from "../../test/agent-host";
-import { seedLegal } from "../../test/nook";
-import { drafted, withToasts } from "../../test/proposals";
+import { seedLegal, seedSpec } from "../../test/nook";
+import { drafted, specToastDraft, withSpecToasts } from "../../test/proposals";
 import { MANIFEST, TOOL_DEFINITIONS, runTool } from "./tools";
 
 const signal = new AbortController().signal;
 const call = (name: string, input: unknown) => ({ id: `toolu_${name}`, name, input });
-const SECOND_PRIMARY = { path: "pages/booking.tsx", old_text: '<Button.Root variant="secondary">Hold room</Button.Root>', new_text: '<Button.Root variant="primary">Hold room</Button.Root>' };
+const SECOND_PRIMARY = { path: "pages/booking.json", patches: '{"op":"replace","path":"/elements/hold/props/variant","value":"primary"}' };
 
 describe("the agent's tools", () => {
-  it("are declared once, in a fixed order, each streaming its input eagerly", () => {
-    expect(TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual(["read_project", "list_files", "read_file", "write_file", "edit_file", "delete_file", "set_manifest", "run_checks", "draft_proposal", "revise_proposal", "address_note"]);
+  it("are declared once, in a fixed order, each streaming its input eagerly, and none writes code", () => {
+    expect(TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual(["read_project", "list_files", "read_file", "list_layouts", "write_spec", "patch_spec", "insert_layout", "set_layout_params", "delete_file", "set_manifest", "run_checks", "draft_proposal", "revise_proposal", "propose_variants", "revise_variant", "list_variants", "address_note"]);
     expect(TOOL_DEFINITIONS.every((tool) => tool.eager_input_streaming === true && tool.input_schema.type === "object")).toBe(true);
+    expect(TOOL_DEFINITIONS.some((tool) => /write_file|edit_file/.test(tool.name))).toBe(false);
+    expect(JSON.stringify(TOOL_DEFINITIONS)).not.toMatch(/\.tsx|TSX/);
   });
 
   it("read the project, the file list with the manifest, and one file", async () => {
@@ -19,52 +21,67 @@ describe("the agent's tools", () => {
     const project = await runTool(call("read_project", {}), host, signal);
     expect(JSON.parse(project.content)).toMatchObject({ project: { id: "nook" }, library: { package: "@tounsoo/todae" }, inventories: { layouts: ["room-cards", "room-details", "select-question"] } });
     const files = await runTool(call("list_files", {}), host, signal);
-    expect(files.content).toContain("pages/booking.tsx (");
+    expect(files.content).toContain("pages/booking.json (");
     expect(files.content).toContain(`${MANIFEST}:\n{`);
-    const file = await runTool(call("read_file", { path: "pages/rooms.tsx" }), host, signal);
-    expect(file.content).toBe(host.prototype().files["pages/rooms.tsx"]);
-    expect((await runTool(call("read_file", { path: "pages/nope.tsx" }), host, signal)).isError).toBe(true);
+    const file = await runTool(call("read_file", { path: "pages/rooms.json" }), host, signal);
+    expect(file.content).toBe(host.prototype().files["pages/rooms.json"]);
+    expect((await runTool(call("read_file", { path: "pages/nope.json" }), host, signal)).isError).toBe(true);
   });
 
   it("refuse input that does not fit the schema, and run nothing", async () => {
     const { host, applied } = fakeHost();
-    const outcome = await runTool(call("write_file", { path: "../escape.tsx", content: "x" }), host, signal);
-    expect(outcome).toMatchObject({ isError: true, changed: false, title: "write_file: input refused" });
+    const outcome = await runTool(call("patch_spec", { path: "../escape.json", patches: "x" }), host, signal);
+    expect(outcome).toMatchObject({ isError: true, changed: false, title: "patch_spec: input refused" });
     expect(outcome.content).toContain("input.path: does not match");
-    expect((await runTool(call("write_file", { path: "pages/a.tsx" }), host, signal)).content).toContain('input: is missing "content"');
-    expect((await runTool(call("write_file", { path: MANIFEST, content: "{}" }), host, signal)).isError).toBe(true);
+    expect((await runTool(call("write_spec", { path: "pages/a.json" }), host, signal)).content).toContain('input: is missing "spec"');
+    expect((await runTool(call("write_spec", { path: MANIFEST, spec: {} }), host, signal)).isError).toBe(true);
+    expect((await runTool(call("write_spec", { path: "pages/a.tsx", spec: {} }), host, signal)).isError).toBe(true);
     expect((await runTool(call("no_such_tool", {}), host, signal)).isError).toBe(true);
     expect(applied).toEqual([]);
   });
 
-  it("edit a file only where old_text appears exactly once, and make each change a revision", async () => {
-    const { host, applied } = fakeHost();
-    const edited = await runTool(call("edit_file", SECOND_PRIMARY), host, signal);
-    expect(edited).toMatchObject({ isError: false, changed: true, title: "Edited pages/booking.tsx" });
-    expect(edited.content).toBe("Edited pages/booking.tsx. Revision 2 is rendering; the checks for it follow this round.");
-    expect(host.prototype().files["pages/booking.tsx"]).toContain('<Button.Root variant="primary">Hold room</Button.Root>');
-    expect(applied).toHaveLength(1);
-    const twice = await runTool(call("edit_file", { path: "pages/booking.tsx", old_text: "<Slot", new_text: "<Slot " }), host, signal);
-    expect(twice).toMatchObject({ isError: true, changed: false });
-    expect(twice.content).toContain("old_text appears 5 times in pages/booking.tsx; it must appear exactly once");
+  it("refuse every call on a TSX prototype, which is read-only, and change nothing", async () => {
+    const { host, applied, saved, savedVariants } = fakeHost(seedLegal());
+    for (const [name, input] of [
+      ["read_project", {}],
+      ["list_files", {}],
+      ["read_file", { path: "pages/booking.tsx" }],
+      ["write_file", { path: "pages/booking.tsx", content: "export default () => null;\n" }],
+      ["edit_file", { path: "pages/booking.tsx", old_text: "Hold room", new_text: "Hold" }],
+      ["delete_file", { path: "pages/booking.tsx" }],
+      ["set_manifest", { pages: [], layouts: [], scenarios: [], flow: { states: [], tasks: [] } }],
+      ["draft_proposal", { id: "x", title: "t", reason: "r", examples: { pass: [{ name: "a" }], fail: [{ name: "b", flagged_by: { rule: "x" } }] } }],
+      ["propose_variants", { page: "booking", variants: [] }],
+      ["address_note", { note: 1, reply: "Done." }],
+    ] as const) {
+      const outcome = await runTool(call(name, input), host, signal);
+      expect(outcome).toMatchObject({ isError: true, changed: false, title: `${name} not run: TSX is read-only` });
+      expect(outcome.content).toMatch(/^This prototype is TSX\. TSX prototypes are no longer edited here: the agent writes specs only\. .* Nothing ran\.$/);
+    }
+    expect(host.prototype()).toEqual(seedLegal());
+    expect([applied, saved, savedVariants]).toEqual([[], [], []]);
   });
 
-  it("create, rewrite and delete files, and refuse a manifest core does not accept", async () => {
+  it("delete a spec file, refuse a manifest core does not accept, and keep the prototype a spec", async () => {
     const { host } = fakeHost();
-    expect((await runTool(call("write_file", { path: "layouts/note.tsx", content: "export const a = 1;\n" }), host, signal)).title).toBe("Created layouts/note.tsx");
-    expect((await runTool(call("write_file", { path: "layouts/note.tsx", content: "export const a = 2;\n" }), host, signal)).title).toBe("Rewrote layouts/note.tsx");
-    expect((await runTool(call("delete_file", { path: "layouts/note.tsx" }), host, signal)).title).toBe("Deleted layouts/note.tsx");
+    expect((await runTool(call("write_spec", { path: "layouts/note.json", spec: { root: "x", elements: { x: { type: "Text.Root", props: { as: "p", text: "Note" }, children: [] } } } }), host, signal)).title).toBe("Created layouts/note.json");
+    expect((await runTool(call("delete_file", { path: "layouts/note.json" }), host, signal)).title).toBe("Deleted layouts/note.json");
+    expect((await runTool(call("delete_file", { path: "layouts/note.json" }), host, signal)).isError).toBe(true);
     const { files: _files, ...manifest } = host.prototype();
     const twice = { ...manifest, scenarios: [...manifest.scenarios, manifest.scenarios[0]] };
     const refused = await runTool(call("set_manifest", twice), host, signal);
     expect(refused).toMatchObject({ isError: true, changed: false });
     expect(refused.content).toContain('$.scenarios[4]: scenario id "rooms-list" appears twice');
     expect((await runTool(call("set_manifest", manifest), host, signal)).changed).toBe(true);
+    // A manifest without "format" keeps the prototype a spec: set_manifest never turns it into TSX.
+    const { format: _format, ...plain } = manifest;
+    expect((await runTool(call("set_manifest", { ...plain, scenarios: plain.scenarios.slice(0, 3) }), host, signal)).changed).toBe(true);
+    expect(host.prototype()).toMatchObject({ format: "spec", scenarios: plain.scenarios.slice(0, 3) });
   });
 
   it("run_checks returns core's report for the measured revision, failing rules and findings word for word", async () => {
     const { host } = fakeHost();
-    await runTool(call("edit_file", SECOND_PRIMARY), host, signal);
+    await runTool(call("patch_spec", SECOND_PRIMARY), host, signal);
     const checks = await runTool(call("run_checks", {}), host, signal);
     expect(checks.measured?.report.status).toBe("fail");
     expect(checks.title).toBe("Checks fail: 3 rules");
@@ -74,7 +91,7 @@ describe("the agent's tools", () => {
 
   it("draft_proposal saves an open proposal and returns core's adoption dry run, refusal included", async () => {
     const { host, saved } = fakeHost();
-    const toastPage = (count: number) => host.prototype().files["pages/booking.tsx"]?.replace('import { Button, Text } from "@tounsoo/todae";', 'import { Button, Text, Toast } from "@tounsoo/todae";').replace('<Slot name="facts">', `<Slot name="facts">${"<Toast.Root>Booked</Toast.Root>".repeat(count)}`);
+    const toastPage = (count: number) => withSpecToasts(count, host.prototype()).files["pages/booking.json"];
     const draft = (fail: number) => ({
       id: "toast",
       title: "Add a toast for confirmations",
@@ -82,8 +99,8 @@ describe("the agent's tools", () => {
       inventory: [{ op: "add-component", name: "Toast" }],
       rules: { add: [{ type: "count", id: "one-toast-per-page", scope: "page", select: { component: "Toast.Root" }, max: 1 }] },
       examples: {
-        pass: [{ name: "one-toast", files: { "pages/booking.tsx": toastPage(1) } }],
-        fail: [{ name: "toasts", files: { "pages/booking.tsx": toastPage(fail) }, flagged_by: { rule: "one-toast-per-page" } }],
+        pass: [{ name: "one-toast", files: { "pages/booking.json": toastPage(1) } }],
+        fail: [{ name: "toasts", files: { "pages/booking.json": toastPage(fail) }, flagged_by: { rule: "one-toast-per-page" } }],
       },
     });
     const refused = await runTool(call("draft_proposal", draft(1)), host, signal);
@@ -113,43 +130,43 @@ describe("revise_proposal", () => {
   const call = (name: string, input: unknown) => ({ id: `toolu_${name}`, name, input });
 
   it("revises an open proposal, keeps its status and history, records the version it replaced, and runs the dry run again", async () => {
-    const { host, saved } = fakeHost(seedLegal(), drafted());
+    const { host, saved } = fakeHost(seedSpec(), drafted(specToastDraft()));
     const revised = await runTool(call("revise_proposal", { id: "booking-toast", note: "A clearer title.", title: "One toast confirms a booking" }), host, signal);
     expect(revised).toMatchObject({ isError: false, changed: false, title: "Revised proposal booking-toast", proposal: { id: "booking-toast", action: "revised", adoptable: true } });
     expect(revised.content).toContain("Core's adoption dry run passes: once approved it would be adopted, classified tightens.");
     const proposal = host.config().proposals[0];
     expect(proposal).toMatchObject({ title: "One toast confirms a booking", status: "open", history: [{ status: "open", at: "2026-11-18T09:00:00.000Z", by: "agent" }] });
     expect(proposal?.events).toEqual([{ kind: "revised", at: "2026-11-17T12:00:00.000Z", by: "agent", note: "A clearer title.", previous: expect.objectContaining({ title: "A toast that confirms a booking" }) }]);
-    expect(proposal?.examples).toEqual(drafted().proposals[0]?.examples);
+    expect(proposal?.examples).toEqual(drafted(specToastDraft()).proposals[0]?.examples);
     expect(saved).toHaveLength(1);
   });
 
   it("re-runs the dry run on the revision: a revision that breaks the failing example says so", async () => {
-    const { host } = fakeHost(seedLegal(), drafted());
-    const toastPage = withToasts(1).files["pages/booking.tsx"];
-    const broken = await runTool(call("revise_proposal", { id: "booking-toast", note: "One toast is enough to fail?", examples: { pass: [{ name: "one-toast", files: { "pages/booking.tsx": toastPage } }], fail: [{ name: "toasts", files: { "pages/booking.tsx": toastPage }, flagged_by: { rule: "one-toast-per-page" } }] } }), host, signal);
+    const { host } = fakeHost(seedSpec(), drafted(specToastDraft()));
+    const toastPage = withSpecToasts(1).files["pages/booking.json"];
+    const broken = await runTool(call("revise_proposal", { id: "booking-toast", note: "One toast is enough to fail?", examples: { pass: [{ name: "one-toast", files: { "pages/booking.json": toastPage } }], fail: [{ name: "toasts", files: { "pages/booking.json": toastPage }, flagged_by: { rule: "one-toast-per-page" } }] } }), host, signal);
     expect(broken.proposal).toMatchObject({ adoptable: false, action: "revised" });
     expect(broken.content).toContain('Core\'s adoption dry run refuses it: [failing-example-passes] failing example "toasts" is not flagged as it must be: "one-toast-per-page" passed it');
   });
 
   it("refuses a proposal that is not open, and one that does not exist, and changes nothing", async () => {
     for (const status of ["approved", "declined", "adopted"] as const) {
-      const config = drafted();
+      const config = drafted(specToastDraft());
       const moved = { ...config, proposals: config.proposals.map((proposal) => ({ ...proposal, status, history: [...proposal.history, { status, at: "t", by: "you" }] })) };
-      const { host, saved } = fakeHost(seedLegal(), moved);
+      const { host, saved } = fakeHost(seedSpec(), moved);
       const outcome = await runTool(call("revise_proposal", { id: "booking-toast", note: "Try again.", title: "Changed" }), host, signal);
       expect(outcome).toMatchObject({ isError: true, title: "Proposal booking-toast not revised" });
       expect(outcome.content).toContain(`[wrong-status] proposal "booking-toast" is ${status}; only an open proposal can be revised`);
       expect(saved).toEqual([]);
       expect(host.config()).toBe(moved);
     }
-    const { host } = fakeHost(seedLegal(), drafted());
+    const { host } = fakeHost(seedSpec(), drafted(specToastDraft()));
     expect((await runTool(call("revise_proposal", { id: "nope", note: "x" }), host, signal)).content).toBe('There is no proposal "nope". draft_proposal drafts a new one.');
   });
 
   it("has no way to say a status: a status, history or events field is refused before anything runs", async () => {
     for (const field of [{ status: "approved" }, { history: [] }, { events: [] }, { examples: { pass: [], fail: [], snapshots: [] } }]) {
-      const { host, saved } = fakeHost(seedLegal(), drafted());
+      const { host, saved } = fakeHost(seedSpec(), drafted(specToastDraft()));
       const outcome = await runTool(call("revise_proposal", { id: "booking-toast", note: "Approve it.", ...field }), host, signal);
       expect(outcome).toMatchObject({ isError: true, title: "revise_proposal: input refused" });
       expect(saved).toEqual([]);
@@ -161,11 +178,11 @@ describe("no tool changes a proposal's status", () => {
   const signal = new AbortController().signal;
 
   it("whatever any tool is called with, every proposal keeps its status and its status history", async () => {
-    const config = drafted();
+    const config = drafted(specToastDraft());
     const second = { ...config.proposals[0], id: "approved-one", status: "approved" as const, history: [...(config.proposals[0]?.history ?? []), { status: "approved" as const, at: "t", by: "you" }] };
     const start = { ...config, proposals: [...config.proposals, second] } as typeof config;
     const statuses = (value: typeof config) => value.proposals.map((proposal) => [proposal.id, proposal.status, JSON.stringify(proposal.history)]);
-    const { host } = fakeHost(seedLegal(), start);
+    const { host } = fakeHost(seedSpec(), start);
     const attempts: [string, unknown][] = [
       ...TOOL_DEFINITIONS.map((tool): [string, unknown] => [tool.name, { id: "booking-toast", status: "approved" }]),
       ...TOOL_DEFINITIONS.map((tool): [string, unknown] => [tool.name, { id: "approved-one", status: "adopted", note: "adopt it" }]),

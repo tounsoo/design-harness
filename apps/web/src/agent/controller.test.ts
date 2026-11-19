@@ -1,15 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { errorBody, scriptedFetch, streamEvents, type FakeReply } from "../../e2e/fake-anthropic.mjs";
 import { fakeHost } from "../../test/agent-host";
-import { seedLegal } from "../../test/nook";
+import { seedLegal, seedSpec } from "../../test/nook";
 import { AgentController, type ChatRecord, type Turn } from "./controller";
 import { DEFAULT_SETTINGS } from "./models";
 import { createClient, FALLBACK_BETA, SYSTEM_PROMPT } from "./request";
+import { specCatalogPrompt } from "./spec-prompt";
+import type { Prototype } from "@design-harness/core";
 import type { AgentHost } from "./tools";
 
 const KEY = "sk-ant-test-0123456789abcdefghij";
-const SECOND_PRIMARY = { path: "pages/booking.tsx", old_text: '<Button.Root variant="secondary">Hold room</Button.Root>', new_text: '<Button.Root variant="primary">Hold room</Button.Root>' };
-const BACK = { path: "pages/booking.tsx", old_text: SECOND_PRIMARY.new_text, new_text: SECOND_PRIMARY.old_text };
+const SECOND_PRIMARY = { path: "pages/booking.json", patches: '{"op":"replace","path":"/elements/hold/props/variant","value":"primary"}' };
+const BACK = { path: "pages/booking.json", patches: '{"op":"replace","path":"/elements/hold/props/variant","value":"secondary"}' };
+
+/** A spec prototype as data: each spec file parsed, so a file written as core formats it equals the same file written by hand. */
+const asData = (prototype: Prototype) => ({ ...prototype, files: Object.fromEntries(Object.entries(prototype.files).map(([path, text]) => [path, JSON.parse(text) as unknown])) });
 
 type Body = { messages: Array<{ role: string; content: unknown }> } & Record<string, unknown>;
 type Reply = FakeReply | ((body: Body) => FakeReply);
@@ -45,11 +50,11 @@ const done = (text: string) => ({ events: streamEvents({ id: "msg_done", blocks:
 describe("an agent turn", () => {
   it("edits a file, gets the failing check without asking, fixes it, and ends; every request extends the one before", async () => {
     const { controller, fake, turn, hostParts } = setup([
-      tool("edit", "edit_file", SECOND_PRIMARY),
+      tool("edit", "patch_spec", SECOND_PRIMARY),
       (body) => {
         expect(lastText(body)).toContain("The app re-rendered every frame after your changes and ran the checks.");
         expect(lastText(body)).toContain("- one-primary-per-page (count)");
-        return tool("fix", "edit_file", BACK);
+        return tool("fix", "patch_spec", BACK);
       },
       (body) => {
         expect(lastText(body)).toMatch(/Checks for revision 3, with every frame measured: incomplete\. \d+ pass, 0 fail/);
@@ -67,14 +72,28 @@ describe("an agent turn", () => {
     const thinking = (controller.messages()[1]?.content as Array<{ type: string; signature?: string }>)[0];
     expect(thinking).toEqual({ type: "thinking", thinking: "Planning edit.", signature: "sig-msg_edit-0" });
     expect(turn().items.filter((item) => item.kind === "checks").map((item) => item.kind === "checks" && item.title)).toEqual(["Checks fail: 3 rules", "Checks incomplete"]);
-    expect(hostParts.prototype()).toEqual(seedLegal());
-    expect(turn().before).toEqual(seedLegal());
+    // The fix puts the page's data back as it was; patch_spec writes it as core formats a spec.
+    expect(asData(hostParts.prototype())).toEqual(asData(seedSpec()));
+    expect(turn().before).toEqual(seedSpec());
     expect(turn().usage).toMatchObject({ requests: 3, output: 720 });
     expect(turn().cost).toBeGreaterThan(0);
   });
 
+  it("refuses a turn on a TSX prototype: nothing is sent, nothing runs, and the history stays as it is", async () => {
+    const tsx = fakeHost(seedLegal());
+    const { controller, fake, saved } = setup([done("Hello.")], { host: tsx.host });
+    await controller.send("Rename the rooms page");
+    expect(fake.requests).toEqual([]);
+    expect(fake.left()).toBe(1);
+    expect(controller.getState()).toMatchObject({ turns: [], running: false, problem: expect.stringMatching(/^This prototype is TSX\. TSX prototypes are no longer edited here: the agent writes specs only\./) });
+    expect(controller.messages()).toEqual([]);
+    expect(controller.undoable()).toBeUndefined();
+    expect(tsx.applied).toEqual([]);
+    expect(saved).toEqual([]);
+  });
+
   it("sends the model, effort, adaptive thinking, auto tool choice, fallbacks, caching and the key only in its header", async () => {
-    const { controller, fake } = setup([done("Hello.")]);
+    const { controller, fake, hostParts } = setup([done("Hello.")]);
     await controller.send("Hi");
     const [request] = fake.requests;
     expect(request?.url).toBe("https://api.anthropic.com/v1/messages");
@@ -87,7 +106,10 @@ describe("an agent turn", () => {
       tool_choice: { type: "auto" },
       fallbacks: "default",
       cache_control: { type: "ephemeral" },
-      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+      system: [
+        { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+        { type: "text", text: specCatalogPrompt(hostParts.config()), cache_control: { type: "ephemeral" } },
+      ],
     });
     expect((request?.body.tools as Array<{ eager_input_streaming?: boolean }>).every((item) => item.eager_input_streaming === true)).toBe(true);
     expect(request?.headers.get("authorization")).toBe(`Bearer ${KEY}`);
@@ -108,7 +130,7 @@ describe("an agent turn", () => {
   });
 
   it("does not run a tool call cut off at max_tokens", async () => {
-    const { controller, turn, hostParts } = setup([{ events: streamEvents({ blocks: [{ type: "tool_use", id: "toolu_cut", name: "write_file", input: { path: "pages/a.tsx", content: "export" } }], stopReason: "max_tokens" }) }]);
+    const { controller, turn, hostParts } = setup([{ events: streamEvents({ blocks: [{ type: "tool_use", id: "toolu_cut", name: "write_spec", input: { path: "pages/a.json", spec: { root: "x" } } }], stopReason: "max_tokens" }) }]);
     await controller.send("Write a page");
     expect(turn().end).toEqual({ status: "cut-off" });
     expect(hostParts.applied).toEqual([]);
@@ -198,12 +220,12 @@ describe("an agent turn", () => {
   });
 
   it("undoes a turn's changes as one step, and tells the agent in the next message", async () => {
-    const { controller, turn, hostParts, fake } = setup([tool("edit", "edit_file", SECOND_PRIMARY), done("Done."), done("Understood.")]);
+    const { controller, turn, hostParts, fake } = setup([tool("edit", "patch_spec", SECOND_PRIMARY), done("Done."), done("Understood.")]);
     await controller.send("Make Hold room primary");
-    expect(hostParts.prototype()).not.toEqual(seedLegal());
+    expect(hostParts.prototype()).not.toEqual(seedSpec());
     expect(controller.undoable()?.id).toBe("turn-1");
     await controller.undo("turn-1");
-    expect(hostParts.prototype()).toEqual(seedLegal());
+    expect(hostParts.prototype()).toEqual(seedSpec());
     expect(turn().undone).toBe(true);
     expect(controller.undoable()).toBeUndefined();
     await controller.send("Thanks");
@@ -237,7 +259,7 @@ describe("an agent turn", () => {
   });
 
   it("saves the conversation per prototype without the key, and opens it again", async () => {
-    const { controller, saved } = setup([tool("edit", "edit_file", SECOND_PRIMARY), done("Done.")]);
+    const { controller, saved } = setup([tool("edit", "patch_spec", SECOND_PRIMARY), done("Done.")]);
     await controller.send("Make Hold room primary");
     const last = saved.at(-1) as ChatRecord;
     expect(JSON.stringify(saved)).not.toContain(KEY);
@@ -251,7 +273,7 @@ describe("an agent turn", () => {
   it("keeps what the loop reads: the rules each check failed, those failing at the turn's start, and the person's log, saved and opened again", async () => {
     const parts = fakeHost();
     const host: AgentHost = { ...parts.host, checked: () => ({ status: "fail", findings: [], rules: [{ rule: "visible-questions", type: "count", status: "fail", findings: [] }] }) };
-    const { controller, saved, turn } = setup([tool("edit", "edit_file", SECOND_PRIMARY), tool("fix", "edit_file", BACK), done("Fixed.")], { host });
+    const { controller, saved, turn } = setup([tool("edit", "patch_spec", SECOND_PRIMARY), tool("fix", "patch_spec", BACK), done("Fixed.")], { host });
     await controller.record({ kind: "fix-asked", at: "2026-11-19T09:00:00Z", rule: "one-primary-per-page" });
     await controller.send("Make Hold room primary");
     expect(turn().failingAtStart).toEqual(["visible-questions"]);

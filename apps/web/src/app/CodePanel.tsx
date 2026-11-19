@@ -55,8 +55,9 @@ function InstancePlaces({ target, onTarget }: { readonly target: CodeTarget; rea
 
 /**
  * A plain code view: pick a file, edit it, and the board and the checks
- * follow. It stands in for the agent until the agent arrives. A finding with
- * a file and line opens here with that line marked.
+ * follow. A finding with a file and line opens here with that line marked.
+ * `readOnly` shows a TSX prototype's files as they are, with no way to
+ * change them: TSX prototypes are no longer edited in the app.
  */
 export function CodePanel({
   prototype,
@@ -64,12 +65,14 @@ export function CodePanel({
   onTarget,
   onEdit,
   problems,
+  readOnly = false,
 }: {
   readonly prototype: Prototype;
   readonly target: CodeTarget;
   readonly onTarget: (target: CodeTarget) => void;
   readonly onEdit: (next: Prototype) => void;
   readonly problems: readonly CompileProblem[];
+  readonly readOnly?: boolean;
 }) {
   const files = useMemo(() => [...Object.keys(prototype.files).sort(), MANIFEST_FILE], [prototype.files]);
   const file = files.includes(target.file) ? target.file : (files[0] ?? MANIFEST_FILE);
@@ -98,6 +101,7 @@ export function CodePanel({
   const fileProblems = problems.filter((problem) => problem.file === file);
 
   const change = (text: string) => {
+    if (readOnly) return;
     if (isManifest) {
       setManifestDraft(text);
       let json: unknown;
@@ -107,7 +111,12 @@ export function CodePanel({
         setManifestIssues(`Not JSON yet: ${error instanceof Error ? error.message : String(error)}`);
         return;
       }
-      const parsed = parsePrototype({ ...(json as object), files: prototype.files });
+      // A prototype made here is a spec and stays one: the manifest cannot turn it into TSX.
+      if (typeof json === "object" && json !== null && "format" in json && (json as { format?: unknown }).format !== "spec") {
+        setManifestIssues('"format" is "spec": a prototype is written as specs here. Remove "format" or set it to "spec".');
+        return;
+      }
+      const parsed = parsePrototype({ ...(json as object), format: "spec", files: prototype.files });
       if (!parsed.ok) {
         setManifestIssues(formatIssues(parsed.error));
         return;
@@ -139,6 +148,11 @@ export function CodePanel({
           </Text.Root>
         )}
       </Stack.Root>
+      {readOnly && (
+        <Text.Root as="p" tone="muted" data-testid="code-read-only">
+          Read-only: TSX prototypes are no longer edited here.
+        </Text.Root>
+      )}
       {target.instance && <InstancePlaces target={target} onTarget={onTarget} />}
       {isManifest && manifestIssues && (
         <Alert.Root tone="warning">
@@ -160,7 +174,7 @@ export function CodePanel({
         </Alert.Root>
       ))}
       <Field.Root className="code-field" aria-label={`Source of ${file}`}>
-        <Field.Textarea ref={textarea} value={value} onValueChange={change} highlights={highlights} spellCheck={false} autoCapitalize="off" autoComplete="off" className="code-text" rows={30} data-testid="code-editor" />
+        <Field.Textarea ref={textarea} value={value} onValueChange={change} readOnly={readOnly} highlights={highlights} spellCheck={false} autoCapitalize="off" autoComplete="off" className="code-text" rows={30} data-testid="code-editor" />
       </Field.Root>
     </Stack.Root>
   );

@@ -1,23 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { checkPrototype, parsePrototype } from "@design-harness/core";
 import { nook } from "../../../../packages/core/examples/nook/project";
-import { blankPrototype, defaultFormat, prototypeId } from "./new-prototype";
+import { blankPrototype, cannotCreate, prototypeId } from "./new-prototype";
 
 describe("a new prototype", () => {
-  it("is a spec prototype by default, and TSX only when the project cannot check specs", () => {
-    expect(defaultFormat(nook)).toBe("spec");
+  it("is a spec, and cannot be made where the project cannot check specs", () => {
+    expect(cannotCreate(nook)).toBeNull();
     const { parts: _parts, ...library } = nook.library;
-    expect(defaultFormat({ ...nook, library })).toBe("tsx");
+    expect(cannotCreate({ ...nook, library })).toMatch(/no part description, so a spec prototype cannot be checked here/);
   });
 
-  it("starts empty and valid in either format, and core checks it", () => {
-    for (const format of ["spec", "tsx"] as const) {
-      const prototype = blankPrototype(format);
-      expect(parsePrototype(prototype)).toEqual({ ok: true, value: prototype });
-      expect(prototype.format).toBe(format === "spec" ? "spec" : undefined);
-      // Nothing is drawn and no flow is written yet: the checks say so, as for any prototype.
-      expect(checkPrototype({ config: nook, prototype }).rules.filter((rule) => rule.status === "fail").map((rule) => rule.rule)).toEqual(["disclosed-sections", "rank-1-shown", "step-budget"]);
-    }
+  it("starts empty and valid, and core checks it", () => {
+    const prototype = blankPrototype();
+    expect(parsePrototype(prototype)).toEqual({ ok: true, value: prototype });
+    expect(prototype.format).toBe("spec");
+    // Nothing is drawn and no flow is written yet: the checks say so, as for any prototype.
+    expect(checkPrototype({ config: nook, prototype }).rules.filter((rule) => rule.status === "fail").map((rule) => rule.rule)).toEqual(["disclosed-sections", "rank-1-shown", "step-budget"]);
   });
 
   it("gets an id from its name, unique in the project", () => {

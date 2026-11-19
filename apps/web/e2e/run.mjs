@@ -127,13 +127,22 @@ async function shotDark(page, name) {
   await page.emulateMedia({ colorScheme: "light" });
 }
 
-const SECOND_PRIMARY = (text) => text.replace('<Button.Root variant="secondary">Hold room</Button.Root>', '<Button.Root variant="primary">Hold room</Button.Root>');
-// Two 1-letter "buttons" side by side: each is under 24 CSS px wide and too close to the other for the spacing exception.
-const UNDERSIZED = (text) =>
-  text.replace(
-    "{lantern.seats} seats, {lantern.floor}\n        </Text.Root>",
-    '{lantern.seats} seats, {lantern.floor}\n        </Text.Root>\n        <Text.Root as="span" role="button" tabIndex={0}>A</Text.Root>\n        <Text.Root as="span" role="button" tabIndex={0}>B</Text.Root>',
-  );
+/** The booking spec with Hold room primary too: a second primary action. */
+const SECOND_PRIMARY = (text) => text.replace('"variant": "secondary", "text": "Hold room"', '"variant": "primary", "text": "Hold room"');
+/**
+ * Notes above the booking page's body that push Book room below the first
+ * view on a phone, and a door code too long to wrap, which makes the page
+ * wider than a phone. A spec on Todae cannot draw an undersized control or
+ * faint text (every Todae control is 24 px or more, and its tones pass AA);
+ * Tally on Mantine can (`TALLY_UNDERSIZED`, `TALLY_FAINT`).
+ */
+const TALL_AND_WIDE = (text) =>
+  text
+    .replace('"facts": ["seats", "booked-note", "held-note"]', '"facts": ["seats", "booked-note", "held-note", "notes", "code"]')
+    .replace(
+      '    "hold": {',
+      `    "notes": { "type": "Stack.Root", "props": { "gap": "normal" }, "children": [${Array.from({ length: 14 }, (_, index) => `"note-${index + 1}"`).join(", ")}] },\n${Array.from({ length: 14 }, (_, index) => `    "note-${index + 1}": { "type": "Text.Root", "props": { "as": "p", "text": "Note ${index + 1}: every room is cleaned between bookings, and its screen is reset." }, "children": [] },\n`).join("")}    "code": { "type": "Text.Root", "props": { "as": "p", "text": "Door code ${"7".repeat(80)}" }, "children": [] },\n    "hold": {`,
+    );
 
 const BOOKING_SCENARIOS = SCENARIOS.filter((scenario) => scenario !== "rooms-list");
 
@@ -232,50 +241,10 @@ test("the legal prototype passes every rule, the rendered rules included", async
   assert.equal(await page.getByTestId("report-status").textContent(), "pass");
 });
 
-test("a second primary action brings core's finding: selecting it outlines both actions in every frame, and Show in code marks the line", async ({ browser, base }) => {
-  const { page } = await openApp(browser, base);
-  await measured(page, 1);
-  const edited = await editFile(page, "pages/booking.tsx", SECOND_PRIMARY);
-  await measured(page, 2);
-  const value = await report(page);
-  assert.ok(failing(value).includes("one-primary-per-page"), `one-primary-per-page fails: ${failing(value)}`);
-  const finding = value.findings.find((item) => item.rule === "one-primary-per-page");
-  assert.match(finding.message, /^Page "booking" has 2 primary actions, more than 1/);
-  const lines = edited.split("\n");
-  assert.deepEqual(finding.targets, [
-    { file: "pages/booking.tsx", line: lines.findIndex((line) => line.includes(">Hold room<")) + 1, column: 9, page: "booking" },
-    { file: "pages/booking.tsx", line: lines.findIndex((line) => line.includes(">Book room<")) + 1, column: 9, page: "booking" },
-  ]);
-  await showAllRules(page);
-  const button = page.locator('.rule[data-rule="one-primary-per-page"] .finding').first();
-  assert.equal((await button.locator(".finding-message").textContent()).trim(), finding.message, "the panel shows core's message word for word");
-  await button.click();
-  // Both primary actions, outlined in every frame of the booking page, and nowhere else.
-  await outlinedInBookingFrames(page, 2);
-  for (const scenario of BOOKING_SCENARIOS) {
-    for (const view of VIEWS) {
-      const boxes = await overlays(page, scenario, view);
-      for (const name of ["Hold room", "Book room"]) {
-        const [target] = await buttonBoxes(page, scenario, view, name);
-        assert.ok(boxes.some((box) => surrounds(box, target)), `${name} is outlined in ${scenario} at ${view}`);
-      }
-      assert.equal(await page.locator(`.frame-card[data-frame-key="${scenario}@${view}"]`).getAttribute("data-selected"), "");
-    }
-  }
-  assert.equal(await page.getByTestId("finding-outline").textContent(), `Outlined in ${3 * VIEWS.length} frames: Booking, room open (Lantern open); Booking, booked (Lantern booked); Booking, held (Lantern held).`);
-  await shot(page, "failing-source-outlined-light");
-  await page.locator('.rule[data-rule="one-primary-per-page"]').getByRole("button", { name: "Show in code" }).first().click();
-  await page.waitForSelector('[data-testid="code-line"]');
-  assert.equal(await page.locator('[data-testid="code-line"]').textContent(), `line ${finding.line}, column ${finding.column}`);
-  const marked = (await page.locator('.code-field [data-kind="finding"]').textContent()) ?? "";
-  assert.equal(marked, edited.split("\n")[finding.line - 1], "the marked line is the finding's line");
-  await shot(page, "failing-source-light");
-});
-
 test("a frame drawn again outlines its finding without moving the board", async ({ browser, base }) => {
   const { page } = await openApp(browser, base);
   await measured(page, 1);
-  await editFile(page, "pages/booking.tsx", SECOND_PRIMARY);
+  await editFile(page, "pages/booking.json", SECOND_PRIMARY);
   await measured(page, 2);
   await showAllRules(page);
   await page.locator('.rule[data-rule="one-primary-per-page"] .finding').first().click();
@@ -295,31 +264,30 @@ test("a frame drawn again outlines its finding without moving the board", async 
 });
 
 test("an undersized control brings the rendered target-size finding, highlighted in its frame", async ({ browser, base }) => {
-  const { page } = await openApp(browser, base);
-  await measured(page, 1);
-  await editFile(page, "pages/booking.tsx", UNDERSIZED);
+  const { page } = await openTally(browser, base);
+  await editFile(page, "pages/expense.json", TALLY_UNDERSIZED);
   await measured(page, 2);
   const value = await report(page);
   assert.deepEqual(failing(value), ["target-size"]);
-  const finding = value.findings.find((item) => item.rule === "target-size" && item.scenario === "lantern-open" && item.view === "desktop");
-  assert.ok(finding, "target-size flags lantern-open at desktop");
-  assert.match(finding.message, /^At 1280 by 900: button "A" is \d+×\d+ CSS px, under 24, and fails the spacing exception\.$/);
+  const finding = value.findings.find((item) => item.rule === "target-size" && item.scenario === "lunch-open" && item.view === "desktop");
+  assert.ok(finding, "target-size flags lunch-open at desktop");
+  assert.match(finding.message, /^At 1280 by 900: button "[AB]" is \d+×\d+ CSS px, under 24, and fails the spacing exception\.$/);
   assert.equal(typeof finding.element, "number");
   await showAllRules(page);
-  await page.locator('.rule[data-rule="target-size"] .finding').filter({ hasText: finding.message }).filter({ hasText: "scenario lantern-open" }).filter({ hasText: /view desktop$/ }).click();
-  const frame = (await liveFrame(page, 'lantern-open at desktop'));
+  await page.locator('.rule[data-rule="target-size"] .finding').filter({ hasText: finding.message }).filter({ hasText: "scenario lunch-open" }).filter({ hasText: /view desktop$/ }).click();
+  const frame = (await liveFrame(page, 'lunch-open at desktop'));
   await frame.locator("[data-design-harness-overlay]").waitFor({ state: "attached" });
   const overlay = await frame.locator("[data-design-harness-overlay]").boundingBox();
-  const target = await frame.getByRole("button", { name: "A", exact: true }).boundingBox();
+  const target = await frame.getByRole("button", { name: finding.evidence.name, exact: true }).boundingBox();
   assert.ok(overlay && target && overlay.x <= target.x && overlay.x + overlay.width >= target.x + target.width, "the outline is drawn around the control");
-  assert.equal(await page.locator('.frame-card[data-frame-key="lantern-open@desktop"]').getAttribute("data-selected"), "");
+  assert.equal(await page.locator('.frame-card[data-frame-key="lunch-open@desktop"]').getAttribute("data-selected"), "");
   await shot(page, "failing-rendered-light");
 });
 
 test("the same prototype gives the same report on reload", async ({ browser, base }) => {
   const { page } = await openApp(browser, base);
   await measured(page, 1);
-  await editFile(page, "pages/booking.tsx", UNDERSIZED);
+  await editFile(page, "pages/booking.json", TALL_AND_WIDE);
   await measured(page, 2);
   const first = await report(page);
   await page.waitForTimeout(500); // the edit is saved once typing pauses
@@ -327,16 +295,16 @@ test("the same prototype gives the same report on reload", async ({ browser, bas
   await measured(page, 1);
   const again = await report(page);
   assert.deepEqual(again, first);
-  assert.ok(failing(again).includes("target-size"));
+  assert.deepEqual(failing(again), ["no-sideways-scroll", "rank-1-in-first-view"]);
 });
 
 test("a newer edit wins over frames still measuring an older one", async ({ browser, base }) => {
   const { page } = await openApp(browser, base);
   await measured(page, 1);
-  await editFile(page, "pages/booking.tsx", SECOND_PRIMARY);
+  await editFile(page, "pages/booking.json", SECOND_PRIMARY);
   await page.waitForSelector('.checks[data-revision="2"]', { state: "attached" });
   const editor = page.locator('[data-testid="code-editor"]');
-  await editor.fill((await editor.inputValue()).replace('<Button.Root variant="primary">Hold room</Button.Root>', '<Button.Root variant="secondary">Hold room</Button.Root>'));
+  await editor.fill((await editor.inputValue()).replace('"variant": "primary", "text": "Hold room"', '"variant": "secondary", "text": "Hold room"'));
   await measured(page, 3);
   const value = await report(page);
   assert.equal(value.status, "pass", `revision 3 is the legal source again: ${failing(value)}`);
@@ -351,9 +319,9 @@ test("export then import round-trips the project", async ({ browser, base }) => 
   const exported = JSON.parse(readFileSync(path, "utf8"));
   assert.equal(exported.format, "design-harness/project");
   assert.equal(exported.project.id, "nook");
-  assert.deepEqual(exported.prototypes.map((item) => [item.id, item.prototype.format ?? "tsx"]), [["booking", "tsx"], ["booking-spec", "spec"]]);
+  assert.deepEqual(exported.prototypes.map((item) => [item.id, item.name, item.prototype.format]), [["booking-spec", "Booking", "spec"]]);
 
-  await editFile(page, "pages/rooms.tsx", (text) => text.replace('<Text.Root as="h1">Rooms</Text.Root>', '<Text.Root as="h1">Spaces</Text.Root>'));
+  await editFile(page, "pages/rooms.json", (text) => text.replace('"as": "h1", "text": "Rooms"', '"as": "h1", "text": "Spaces"'));
   await measured(page, 2);
   assert.equal((await (await liveFrame(page, 'rooms-list at desktop')).locator("h1").textContent()).trim(), "Spaces");
 
@@ -372,19 +340,44 @@ test("export then import round-trips the project", async ({ browser, base }) => 
   assert.ok((await page.locator(".app-notices").textContent()).includes('rendered rule "target-size" is in force, but the config names no views'));
 });
 
+// ---- stored TSX prototypes, read-only ----------------------------------------
+
+const TSX_LEGAL = join(root, "..", "..", "packages", "core", "examples", "nook", "prototypes", "legal", "booking");
+
+/** Core's legal TSX booking prototype as a project file stores it, with `change` applied to its files. */
+function tsxBooking(change = (files) => files) {
+  const manifest = JSON.parse(readFileSync(join(TSX_LEGAL, "manifest.json"), "utf8"));
+  const files = {};
+  for (const folder of ["data", "layouts", "pages"]) for (const name of readdirSync(join(TSX_LEGAL, folder)).sort()) files[`${folder}/${name}`] = readFileSync(join(TSX_LEGAL, folder, name), "utf8");
+  return { ...manifest, files: change(files) };
+}
+
+/**
+ * Imports the open project again with a TSX prototype, "booking", before its
+ * own: a project stored or exported before the app went spec-only. The TSX
+ * prototype opens first, read-only, and this waits until its frames are measured.
+ */
+async function importWithTsx(page, change) {
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export", exact: true }).click()]);
+  const exported = JSON.parse(readFileSync(await download.path(), "utf8"));
+  const file = join(mkdtempSync(join(tmpdir(), "design-harness-tsx-")), "nook.design-harness.json");
+  writeFileSync(file, JSON.stringify({ ...exported, prototypes: [{ id: "booking", name: "Booking", prototype: tsxBooking(change) }, ...exported.prototypes] }));
+  await page.locator('[data-testid="import-file"]').setInputFiles(file);
+  await page.getByTestId("tsx-notice").waitFor();
+  await measured(page, 1);
+}
+
 test("a frame cannot reach the app: no parent DOM, storage, cookies or network", async ({ browser, base }) => {
   const { page } = await openApp(browser, base);
   await measured(page, 1);
-  // A prototype that tries, at load, to write into the app's DOM and storage.
-  await editFile(
-    page,
-    "pages/rooms.tsx",
-    (text) =>
+  // A spec runs no prototype code; a stored TSX prototype still renders, read-only. This one tries, at load, to write into the app's DOM and storage.
+  await importWithTsx(page, (files) => ({
+    ...files,
+    "pages/rooms.tsx":
       `try { window.parent.document.body.setAttribute("data-pwned", "1"); } catch {}\ntry { window.top.localStorage.setItem("pwned", "1"); } catch {}\ntry { localStorage.setItem("pwned", "1"); } catch {}\n` +
       `try { eval("1"); document.documentElement.dataset.evalProbe = "ran"; } catch (error) { document.documentElement.dataset.evalProbe = error.name; }\n` +
-      `try { new Function("return 1")(); document.documentElement.dataset.functionProbe = "ran"; } catch (error) { document.documentElement.dataset.functionProbe = error.name; }\n${text}`,
-  );
-  await measured(page, 2);
+      `try { new Function("return 1")(); document.documentElement.dataset.functionProbe = "ran"; } catch (error) { document.documentElement.dataset.functionProbe = error.name; }\n${files["pages/rooms.tsx"]}`,
+  }));
   assert.equal(await page.evaluate(() => document.body.getAttribute("data-pwned")), null);
   assert.equal(await page.evaluate(() => localStorage.getItem("pwned")), null);
   const flagged = (await report(page)).findings.filter((item) => item.rule === "no-ambient-globals").map((item) => item.message);
@@ -466,10 +459,10 @@ test("the board opens a frame at full size and the project view reads the config
     await shot(page, `project-${colorScheme}`);
     if (colorScheme === "dark") {
       await page.getByRole("tab", { name: "Canvas" }).click();
-      await editFile(page, "pages/booking.tsx", UNDERSIZED);
+      await editFile(page, "pages/booking.json", TALL_AND_WIDE);
       await measured(page, 2);
       await showAllRules(page);
-      await page.locator('.rule[data-rule="target-size"] .finding').filter({ hasText: "view desktop" }).filter({ hasText: "scenario lantern-open" }).first().click();
+      await page.locator('.rule[data-rule="rank-1-in-first-view"] .finding').filter({ hasText: /view phone$/ }).filter({ hasText: "scenario lantern-open" }).first().click();
       await shot(page, "failing-rendered-dark");
     }
     await context.close();
@@ -529,6 +522,14 @@ test("frames load React and the library by URL from a CDN-shaped origin", async 
 // ---- a project on another library: Tally on Mantine ----------------------------
 
 const TALLY_SCENARIOS = ["expenses-list", "lunch-open", "lunch-submitted", "lunch-saved"];
+/** Two 1-letter Mantine buttons in their compact size, side by side: each is under 24 CSS px tall and too close to the other for the spacing exception. */
+const TALLY_UNDERSIZED = (text) =>
+  text
+    .replace('"alternate": ["save"', '"alternate": ["save", "a", "b"')
+    .replace('    "submit": {', '    "a": { "type": "Button", "props": { "variant": "subtle", "size": "compact-xs", "text": "A" }, "children": [] },\n    "b": { "type": "Button", "props": { "variant": "subtle", "size": "compact-xs", "text": "B" }, "children": [] },\n    "submit": {');
+/** A Mantine button in yellow on white, which is under 4.5:1 in the light view and the dark one. */
+const TALLY_FAINT = (text) =>
+  text.replace('"alternate": ["save"', '"alternate": ["save", "faint"').replace('    "submit": {', '    "faint": { "type": "Button", "props": { "variant": "white", "color": "yellow", "text": "Faint helper text" }, "children": [] },\n    "submit": {');
 
 /**
  * Tally, core's second worked example, as a project file: its config (core's
@@ -650,8 +651,13 @@ test("a Mantine project loads its library and stylesheet by name and version fro
 
 /** A key that only the fake API accepts; no real key is used anywhere. */
 const KEY = "sk-ant-e2e-fake-0123456789abcdefghijklmnop";
-const HOLD_SECONDARY = '<Button.Root variant="secondary">Hold room</Button.Root>';
-const HOLD_PRIMARY = '<Button.Root variant="primary">Hold room</Button.Root>';
+/** patch_spec's input that makes Hold room primary, and the one that makes it secondary again. */
+const HOLD_PRIMARY = { path: "pages/booking.json", patches: '{"op":"replace","path":"/elements/hold/props/variant","value":"primary"}' };
+const HOLD_SECONDARY = { path: "pages/booking.json", patches: '{"op":"replace","path":"/elements/hold/props/variant","value":"secondary"}' };
+/** patch_spec's input that renames Hold room to say how long a hold lasts. */
+const RENAME_HOLD = { path: "pages/booking.json", patches: '{"op":"replace","path":"/elements/hold/props/text","value":"Hold for 10 minutes"}' };
+/** patch_spec's input that renames the rooms page Spaces. */
+const RENAME_ROOMS = { path: "pages/rooms.json", patches: '{"op":"replace","path":"/elements/heading/props/text","value":"Spaces"}' };
 
 const toolReply = (id, name, input, text) => ({
   events: streamEvents({ id: `msg_${id}`, blocks: [{ type: "thinking", thinking: `Planning: ${id}.` }, ...(text ? [{ type: "text", text }] : []), { type: "tool_use", id: `toolu_${id}`, name, input }], stopReason: "tool_use" }),
@@ -686,11 +692,11 @@ async function turnEnded(page) {
   return page.locator(".chat-reply").last().getAttribute("data-end");
 }
 
-test("the agent edits a file through the API, and the frames and checks follow", async ({ browser, base, api }) => {
+test("the agent patches a spec through the API, and the frames and checks follow", async ({ browser, base, api }) => {
   const { page, logs } = await openApp(browser, base);
   await measured(page, 1);
   api.script([
-    toolReply("rename", "edit_file", { path: "pages/rooms.tsx", old_text: '<Text.Root as="h1">Rooms</Text.Root>', new_text: '<Text.Root as="h1">Spaces</Text.Root>' }, "Renaming the rooms page."),
+    toolReply("rename", "patch_spec", RENAME_ROOMS, "Renaming the rooms page."),
     (body) => {
       assert.match(lastMessage(body), /Checks for revision 2, with every frame measured: pass\./, "the app sends the measured checks back without being asked");
       return textReply("The rooms page is now called Spaces, and every rule passes.");
@@ -704,8 +710,8 @@ test("the agent edits a file through the API, and the frames and checks follow",
   await measured(page, 2);
   assert.equal((await report(page)).status, "pass");
   const reply = page.locator(".chat-reply").last();
-  assert.equal(await reply.locator('.chat-tool[data-tool="edit_file"] .chat-tool-title').textContent(), "Changed the rooms page", "the tool call reads as a plain summary");
-  assert.equal(await reply.locator('.chat-tool[data-tool="edit_file"] .chat-tool-name').textContent(), "Edited pages/rooms.tsx", "its exact title is in its details");
+  assert.equal(await reply.locator('.chat-tool[data-tool="patch_spec"] .chat-tool-title').textContent(), "Changed the rooms page", "the tool call reads as a plain summary");
+  assert.equal(await reply.locator('.chat-tool[data-tool="patch_spec"] .chat-tool-name').textContent(), "Patched pages/rooms.json", "its exact title is in its details");
   assert.match(await reply.locator(".chat-checks").textContent(), /Checks pass, revision 2/);
   assert.match(await reply.getByTestId("turn-usage").textContent(), /in · 480 out · about \$/);
   const [first] = api.requests;
@@ -722,12 +728,12 @@ test("a second primary action: the failing check reaches the agent, and its fix 
   const { page } = await openApp(browser, base);
   await measured(page, 1);
   api.script([
-    toolReply("stand-out", "edit_file", { path: "pages/booking.tsx", old_text: HOLD_SECONDARY, new_text: HOLD_PRIMARY }),
+    toolReply("stand-out", "patch_spec", HOLD_PRIMARY),
     (body) => {
       const text = lastMessage(body);
       assert.match(text, /with every frame measured: fail\./);
       assert.match(text, /- one-primary-per-page \(count\)[^\n]*\n {2}violation: Page "booking" has 2 primary actions, more than 1/);
-      return toolReply("fix", "edit_file", { path: "pages/booking.tsx", old_text: HOLD_PRIMARY, new_text: HOLD_SECONDARY }, "one-primary-per-page fails: a page holds one primary action. Hold room goes back to secondary.");
+      return toolReply("fix", "patch_spec", HOLD_SECONDARY, "one-primary-per-page fails: a page holds one primary action. Hold room goes back to secondary.");
     },
     (body) => {
       assert.match(lastMessage(body), /with every frame measured: pass\./);
@@ -744,12 +750,9 @@ test("a second primary action: the failing check reaches the agent, and its fix 
   await shot(page, "chat-fix-light");
 });
 
-const TOAST_PAGE = (count) => (text) => text.replace('import { Button, Text } from "@tounsoo/todae";', 'import { Button, Text, Toast } from "@tounsoo/todae";').replace('<Slot name="facts">', `<Slot name="facts">${"<Toast.Root>Booked</Toast.Root>".repeat(count)}`);
-
 test("a drafted proposal is saved as open, with core's adoption dry run", async ({ browser, base, api }) => {
   const { page } = await openApp(browser, base);
   await measured(page, 1);
-  const booking = readFileSync(join(root, "..", "..", "packages", "core", "examples", "nook", "prototypes", "legal", "booking", "pages", "booking.tsx"), "utf8");
   api.script([
     toolReply(
       "toast",
@@ -762,8 +765,8 @@ test("a drafted proposal is saved as open, with core's adoption dry run", async 
         inventory: [{ op: "add-component", name: "Toast" }],
         rules: { add: [{ type: "count", id: "one-toast-per-page", scope: "page", select: { component: "Toast.Root" }, max: 1 }] },
         examples: {
-          pass: [{ name: "one-toast", files: { "pages/booking.tsx": TOAST_PAGE(1)(booking) } }],
-          fail: [{ name: "two-toasts", files: { "pages/booking.tsx": TOAST_PAGE(2)(booking) }, flagged_by: { rule: "one-toast-per-page", message: "has 2 Toast.Root" } }],
+          pass: [{ name: "one-toast", files: { "pages/booking.json": SPEC_TOASTS(1)(SPEC_BOOKING) } }],
+          fail: [{ name: "two-toasts", files: { "pages/booking.json": SPEC_TOASTS(2)(SPEC_BOOKING) }, flagged_by: { rule: "one-toast-per-page", message: "has 2 Toast.Root" } }],
         },
       },
       "Toast is outside the inventory, so I am drafting a proposal instead of using it.",
@@ -795,7 +798,7 @@ test("stop mid-stream: the reply stops, nothing runs, and the next message works
   await measured(page, 1);
   let held;
   const holding = new Promise((resolve) => (held = resolve));
-  const long = streamEvents({ id: "msg_long", blocks: [{ type: "text", text: "I will rewrite every page of this prototype, starting with the rooms page and then" }, { type: "tool_use", id: "toolu_never", name: "write_file", input: { path: "pages/rooms.tsx", content: "export default function RoomsPage() { return null; }" } }], stopReason: "tool_use" });
+  const long = streamEvents({ id: "msg_long", blocks: [{ type: "text", text: "I will rewrite every page of this prototype, starting with the rooms page and then" }, { type: "tool_use", id: "toolu_never", name: "write_spec", input: { path: "pages/rooms.json", spec: { root: "page", elements: {} } } }], stopReason: "tool_use" });
   api.script([{ events: long, holdAfter: 4, onHold: () => held() }, textReply("Stopped; nothing changed.")]);
   await enterKey(page);
   await ask(page, "Rewrite everything");
@@ -803,7 +806,7 @@ test("stop mid-stream: the reply stops, nothing runs, and the next message works
   await page.locator(".chat-reply").last().locator(".chat-text").first().waitFor();
   await page.getByRole("button", { name: "Stop" }).click();
   assert.equal(await turnEnded(page), "stopped");
-  assert.equal(await page.locator(".chat-reply").last().locator('.chat-tool[data-tool="write_file"]').count(), 0, "the half-streamed tool call never ran");
+  assert.equal(await page.locator(".chat-reply").last().locator('.chat-tool[data-tool="write_spec"]').count(), 0, "the half-streamed tool call never ran");
   assert.equal((await (await liveFrame(page, 'rooms-list at desktop')).locator("h1").textContent()).trim(), "Rooms");
   await ask(page, "Never mind");
   assert.equal(await turnEnded(page), "done");
@@ -835,7 +838,7 @@ test("undo puts the prototype back as it was before the turn, and the agent is t
   const { page } = await openApp(browser, base);
   await measured(page, 1);
   api.script([
-    toolReply("rename", "edit_file", { path: "pages/rooms.tsx", old_text: '<Text.Root as="h1">Rooms</Text.Root>', new_text: '<Text.Root as="h1">Spaces</Text.Root>' }),
+    toolReply("rename", "patch_spec", RENAME_ROOMS),
     textReply("Renamed."),
     (body) => {
       assert.match(lastMessage(body), /^The person undid your changes from their message "Call the rooms page Spaces"/);
@@ -859,7 +862,7 @@ test("undo puts the prototype back as it was before the turn, and the agent is t
 test("the key is in no frame, export, project storage, page storage or log; remember and forget work", async ({ browser, base, api }) => {
   const { page, logs } = await openApp(browser, base);
   await measured(page, 1);
-  api.script([toolReply("rename", "edit_file", { path: "pages/rooms.tsx", old_text: '<Text.Root as="h1">Rooms</Text.Root>', new_text: '<Text.Root as="h1">Spaces</Text.Root>' }), textReply("Renamed.")]);
+  api.script([toolReply("rename", "patch_spec", RENAME_ROOMS), textReply("Renamed.")]);
   await enterKey(page, { remember: true });
   await ask(page, "Call the rooms page Spaces");
   assert.equal(await turnEnded(page), "done");
@@ -953,8 +956,8 @@ test("screenshots of the chat in use, light and dark", async ({ browser, base, a
     await shot(page, `chat-key-${colorScheme}`);
     api.script([
       toolReply("read", "read_project", {}, "Reading the project first."),
-      toolReply("stand-out", "edit_file", { path: "pages/booking.tsx", old_text: HOLD_SECONDARY, new_text: HOLD_PRIMARY }),
-      () => toolReply("fix", "edit_file", { path: "pages/booking.tsx", old_text: HOLD_PRIMARY, new_text: HOLD_SECONDARY }, "one-primary-per-page fails: a page holds one primary action, and that is Book room. Hold room goes back to secondary."),
+      toolReply("stand-out", "patch_spec", HOLD_PRIMARY),
+      () => toolReply("fix", "patch_spec", HOLD_SECONDARY, "one-primary-per-page fails: a page holds one primary action, and that is Book room. Hold room goes back to secondary."),
       () => textReply("Hold room stays secondary. The project allows one primary action per page (Book room); every rule passes again."),
     ]);
     await enterKey(page);
@@ -969,9 +972,16 @@ test("screenshots of the chat in use, light and dark", async ({ browser, base, a
 
 // ---- proposal review --------------------------------------------------------
 
-const LEGAL = join(root, "..", "..", "packages", "core", "examples", "nook", "prototypes", "legal", "booking");
-const BOOKING = readFileSync(join(LEGAL, "pages", "booking.tsx"), "utf8");
-const ROOMS = readFileSync(join(LEGAL, "pages", "rooms.tsx"), "utf8");
+const SPEC_LEGAL = join(root, "..", "..", "packages", "core", "examples", "nook", "prototypes", "spec", "legal", "booking");
+const SPEC_BOOKING = readFileSync(join(SPEC_LEGAL, "pages", "booking.json"), "utf8");
+const SPEC_ROOMS = readFileSync(join(SPEC_LEGAL, "pages", "rooms.json"), "utf8");
+/** The booking spec with `count` toasts in its facts slot. */
+const SPEC_TOASTS = (count) => (text) =>
+  text
+    .replace('"facts": ["seats", "booked-note", "held-note"]', `"facts": ["seats", "booked-note", "held-note"${Array.from({ length: count }, (_, index) => `, "toast-${index + 1}"`).join("")}]`)
+    .replace('    "hold": {', `${Array.from({ length: count }, (_, index) => `    "toast-${index + 1}": { "type": "Toast.Root", "props": { "tone": "success", "text": "Booked" }, "children": [] },\n`).join("")}    "hold": {`);
+/** The booking spec with no Hold room: its alternate slot and the button gone. */
+const NO_HOLD = SPEC_BOOKING.replace('        "alternate": ["hold"],\n', "").replace(/ {4}"hold": .*\n/, "");
 const TOAST_RULE = { type: "count", id: "one-toast-per-page", scope: "page", select: { component: "Toast.Root" }, max: 1, description: "A page shows at most one toast." };
 
 /** The toast proposal; with `failing` at 1 its failing example has one toast, which the rule passes. */
@@ -984,17 +994,17 @@ function toastDraft({ failing = 2, ...extra } = {}) {
     inventory: [{ op: "add-component", name: "Toast" }],
     rules: { add: [TOAST_RULE] },
     examples: {
-      pass: [{ name: "one-toast", files: { "pages/booking.tsx": TOAST_PAGE(1)(BOOKING) } }],
-      fail: [failing === 2 ? { name: "two-toasts", files: { "pages/booking.tsx": TOAST_PAGE(2)(BOOKING) }, flagged_by: { rule: "one-toast-per-page", message: "has 2 Toast.Root" } } : { name: "only-one", files: { "pages/booking.tsx": TOAST_PAGE(1)(BOOKING) }, flagged_by: { rule: "one-toast-per-page" } }],
+      pass: [{ name: "one-toast", files: { "pages/booking.json": SPEC_TOASTS(1)(SPEC_BOOKING) } }],
+      fail: [failing === 2 ? { name: "two-toasts", files: { "pages/booking.json": SPEC_TOASTS(2)(SPEC_BOOKING) }, flagged_by: { rule: "one-toast-per-page", message: "has 2 Toast.Root" } } : { name: "only-one", files: { "pages/booking.json": SPEC_TOASTS(1)(SPEC_BOOKING) }, flagged_by: { rule: "one-toast-per-page" } }],
     },
     ...extra,
   };
 }
 
 /** A rendered rule only measured frames can prove: Harbor's open button is in the first view. Its failing example pushes it down with a long intro. */
-const LONG_INTRO = ROOMS.replace(
-  '<Text.Root as="p">Pick a free room to book or hold.</Text.Root>',
-  Array.from({ length: 24 }, (_, index) => `<Text.Root as="p">Note ${index + 1}: every room is cleaned between bookings, and its screen is reset.</Text.Root>`).join("\n        "),
+const LONG_INTRO = SPEC_ROOMS.replace('"intro": ["intro"]', `"intro": [${Array.from({ length: 24 }, (_, index) => `"note-${index + 1}"`).join(", ")}]`).replace(
+  /\n {4}"intro": .*\n/,
+  `\n${Array.from({ length: 24 }, (_, index) => `    "note-${index + 1}": { "type": "Text.Root", "props": { "as": "p", "text": "Note ${index + 1}: every room is cleaned between bookings, and its screen is reset." }, "children": [] },\n`).join("")}`,
 );
 const HARBOR_DRAFT = {
   id: "harbor-first-view",
@@ -1002,7 +1012,7 @@ const HARBOR_DRAFT = {
   reason: "Harbor is the big room; people must see its open button without scrolling.",
   states: [{ state: "rooms", note: "the list shows both rooms, Harbor's button above the fold" }],
   rules: { add: [{ type: "rendered", id: "harbor-in-first-view", check: "first-view", action: "Open Harbor" }] },
-  examples: { pass: [{ name: "as-is" }], fail: [{ name: "long-intro", files: { "pages/rooms.tsx": LONG_INTRO }, flagged_by: { rule: "harbor-in-first-view" } }] },
+  examples: { pass: [{ name: "as-is" }], fail: [{ name: "long-intro", files: { "pages/rooms.json": LONG_INTRO }, flagged_by: { rule: "harbor-in-first-view" } }] },
 };
 
 /** Has the agent draft a proposal through the fake API, and waits for the chat's card. */
@@ -1080,13 +1090,13 @@ test("a drafted proposal opens to its review page: examples side by side in fram
   }
   // The flagged line, marked as the code view marks a finding's line.
   const finding = await example(page, "two-toasts").locator(".finding-message").first().textContent();
-  assert.match(finding, /^Page "booking" has 2 Toast.Root, more than 1: Toast.Root "Booked" at pages\/booking.tsx:\d+:\d+/);
+  assert.match(finding, /^Page "booking" has 2 Toast.Root, more than 1: Toast.Root "Booked" at pages\/booking.json:\d+:\d+/);
   // A count against its cap reads whole in core's message, so the failing example draws no figure of it: core carries the evidence, and the message stands alone, once.
   assert.equal(await example(page, "two-toasts").getByTestId("evidence").count(), 0, "no figure for a count");
   assert.equal(await example(page, "two-toasts").locator(".pip").count(), 0, "no pips");
   assert.equal(await example(page, "two-toasts").getByTestId("example-figure-message").count(), 0, "the message is not said twice");
   const marked = await example(page, "two-toasts").locator('.example-source [data-kind="finding"]').textContent();
-  assert.ok(marked.includes("<Toast.Root>Booked</Toast.Root><Toast.Root>Booked</Toast.Root>"), `the marked line holds both toasts: ${marked}`);
+  assert.match(marked, /^ {4}"toast-2": \{ "type": "Toast.Root", "props": \{ "tone": "success", "text": "Booked" \}/, `the marked line is the toast past the cap: ${marked}`);
   assert.match(await page.getByTestId("review-verdict").textContent(), /^Core's adoption dry run: it would be adopted, classified tightens, and no prototype would newly fail\./);
   // The rule and its proof in one look: a passing and a failing example under it, each in a frame of its own, with core's verdict and message.
   const proof = page.locator('[data-rule-proof="one-toast-per-page"]');
@@ -1099,7 +1109,7 @@ test("a drafted proposal opens to its review page: examples side by side in fram
   assert.equal(await proofFrame.locator("text=Booked").count(), 2, "the proof frame renders the failing example's two toasts");
   assert.equal(await page.locator('iframe[title="two-toasts, as proof: lantern-open at phone"]').getAttribute("sandbox"), "allow-scripts");
   // Every prototype in the project is a tile of the impact grid; none newly fails.
-  assert.deepEqual(await page.locator('[data-testid="review-impact"] .impact-grid > li').evaluateAll((items) => items.map((item) => [item.dataset.prototype, item.dataset.impact])), [["booking", "holds"], ["booking-spec", "holds"]]);
+  assert.deepEqual(await page.locator('[data-testid="review-impact"] .impact-grid > li').evaluateAll((items) => items.map((item) => [item.dataset.prototype, item.dataset.impact])), [["booking-spec", "holds"]]);
   await proof.evaluate((element) => element.scrollIntoView({ block: "start" }));
   await page.waitForTimeout(300);
   await shot(page, "review-proof-light");
@@ -1147,7 +1157,7 @@ test("approve then adopt: the new rule is in the checks panel, and flags a proto
   await showAllRules(page);
   await page.waitForSelector('.checks[data-measured] .rule[data-rule="one-toast-per-page"][data-status="pass"]', { timeout: 60000, state: "attached" });
   const revision = Number(await page.locator(".checks").getAttribute("data-revision"));
-  await editFile(page, "pages/booking.tsx", TOAST_PAGE(2));
+  await editFile(page, "pages/booking.json", SPEC_TOASTS(2));
   await measured(page, revision + 1);
   const value = await report(page);
   assert.deepEqual(failing(value), ["one-toast-per-page"], "Toast is in the inventory now, and two of them break the new rule alone");
@@ -1255,31 +1265,28 @@ test("send back reaches the agent, which revises the proposal, and the history s
 test("the impact list names a prototype that would newly fail, and opens it on the board", async ({ browser, base, api }) => {
   const { page } = await openApp(browser, base);
   await measured(page, 1);
-  const noHold = BOOKING.replace(/\s*<Slot name="alternate">[\s\S]*?<\/Slot>/, "");
   await draftByAgent(page, api, {
     id: "book-without-hold",
     title: "Booking offers no second action",
     reason: "One action per booking page: holding a room confuses people.",
     rules: { add: [{ type: "count", id: "no-secondary-on-booking", scope: "page", pages: { types: ["booking"] }, select: { role: "secondary-action" }, max: 0 }] },
-    examples: { pass: [{ name: "book-only", files: { "pages/booking.tsx": noHold } }], fail: [{ name: "with-hold", flagged_by: { rule: "no-secondary-on-booking" } }] },
+    examples: { pass: [{ name: "book-only", files: { "pages/booking.json": NO_HOLD } }], fail: [{ name: "with-hold", flagged_by: { rule: "no-secondary-on-booking" } }] },
   });
   await openReview(page, "book-without-hold");
   await judged(page);
   const impact = page.getByTestId("review-impact");
-  await impact.locator('[data-prototype="booking"]').waitFor({ timeout: 60000 });
-  assert.match(await impact.locator('[data-prototype="booking"]').textContent(), /Booking.*would newly fail no-secondary-on-booking.*Page "booking" has 1 secondary action, more than 0: Button.Root "Hold room"/);
-  // The spec prototype is measured in frames of its own, and the same rule flags its Hold room.
+  // The prototype is measured in frames of its own, and the rule flags its Hold room.
   await impact.locator('[data-prototype="booking-spec"]').waitFor({ timeout: 60000 });
-  assert.match(await impact.locator('[data-prototype="booking-spec"]').textContent(), /Booking \(spec\).*would newly fail no-secondary-on-booking.*Page "booking" has 1 secondary action, more than 0: Button.Root "Hold room" at pages\/booking.json/);
-  assert.match(await page.getByTestId("review-verdict").textContent(), /2 prototypes would newly fail/);
+  assert.match(await impact.locator('[data-prototype="booking-spec"]').textContent(), /Booking.*would newly fail no-secondary-on-booking.*Page "booking" has 1 secondary action, more than 0: Button.Root "Hold room" at pages\/booking.json/);
+  assert.match(await page.getByTestId("review-verdict").textContent(), /1 prototype would newly fail/);
   // The grid holds every prototype; the newly failing ones are marked. This finding is about a line of code and names no element in a frame, so there is nothing to mark on a miniature, and none is drawn.
-  assert.deepEqual(await impact.locator(".impact-grid > li").evaluateAll((items) => items.map((item) => [item.dataset.prototype, item.dataset.impact])), [["booking", "fails"], ["booking-spec", "fails"]]);
-  assert.equal(await page.getByTestId("impact-some").textContent(), "2 of 2 prototypes would newly fail.");
-  assert.equal(await impact.locator('[data-prototype="booking"] [data-testid="snapshot-thumb"]').count(), 0);
+  assert.deepEqual(await impact.locator(".impact-grid > li").evaluateAll((items) => items.map((item) => [item.dataset.prototype, item.dataset.impact])), [["booking-spec", "fails"]]);
+  assert.equal(await page.getByTestId("impact-some").textContent(), "1 of 1 prototype would newly fail.");
+  assert.equal(await impact.locator('[data-prototype="booking-spec"] [data-testid="snapshot-thumb"]').count(), 0);
   await page.locator("#review-impact").evaluate((element) => element.scrollIntoView({ block: "start" }));
   await page.waitForTimeout(300);
   await shot(page, "review-impact-light");
-  await impact.locator('[data-prototype="booking"]').getByRole("button", { name: "Open on the board" }).click();
+  await impact.locator('[data-prototype="booking-spec"]').getByRole("button", { name: "Open on the board" }).click();
   await page.locator('main[aria-label="Canvas"]').waitFor();
   assert.equal(await page.locator(".app-main-pane").first().getAttribute("data-inactive"), null, "the board is in front");
 });
@@ -1329,9 +1336,10 @@ test("a proposal that adds a rendered rule adopts on measured snapshots, and giv
   const viewportsBefore = await page.locator(".frame-viewport").count();
   await page.getByRole("button", { name: "Re-run every adopted proposal's examples" }).click();
   assert.match(await page.getByTestId("regression-summary").textContent(), /^All 2 examples behave/);
-  // Every frame has a viewport, live or parked; the palette's tiles are named "drawn by". Re-running adds none, and renders no example.
+  // Every frame has a viewport, live or parked; the palette's tiles are named "drawn by", and the spec layouts' previews "<layout> preview: ...". Re-running adds none, and renders no example.
   assert.equal(await page.locator(".frame-viewport").count(), viewportsBefore, "re-running reads the stored snapshots: no example is rendered again");
-  assert.equal(await page.locator('.frame-viewport:not([data-frame-name*="drawn by"])').count(), FRAMES, "the only other frames are the board's");
+  assert.equal(await page.locator('.frame-viewport[data-frame-name*=" preview: "]').count(), 3, "one preview per layout of the spec prototype");
+  assert.equal(await page.locator('.frame-viewport:not([data-frame-name*="drawn by"]):not([data-frame-name*=" preview: "])').count(), FRAMES, "the only other frames are the board's");
   assert.deepEqual(await page.locator('[data-testid="regression"] tbody tr').evaluateAll((rows) => rows.map((row) => [...row.cells].map((cell) => cell.textContent.trim()))), [
     ["harbor-first-view", "as-is", "pass", "behaves", "passes every rule"],
     ["harbor-first-view", "long-intro", "fail", "behaves", 'flagged by "harbor-in-first-view"'],
@@ -1383,10 +1391,15 @@ test("a finding outside the inventories offers to ask the agent, with a message 
   const { page } = await openApp(browser, base);
   await measured(page, 1);
   api.script([]);
-  await editFile(page, "pages/rooms.tsx", (text) => text.replace('import { Text } from "@tounsoo/todae";', 'import { Text, Toast } from "@tounsoo/todae";').replace('<Text.Root as="p">Pick a free room to book or hold.</Text.Root>', '<Text.Root as="p">Pick a free room to book or hold.</Text.Root>\n        <Toast.Root>Harbor is free</Toast.Root>'));
+  // A spec cannot name a component outside the catalog (the catalog refuses it), but its manifest can name a flow state outside the inventory.
+  await editFile(page, "manifest.json", (text) => {
+    const manifest = JSON.parse(text);
+    manifest.flow.states.push("waitlisted");
+    return JSON.stringify(manifest, null, 2);
+  });
   await measured(page, 2);
   await showAllRules(page);
-  const rule = page.locator('.rule[data-rule="components-from-inventory"]');
+  const rule = page.locator('.rule[data-rule="flow-states-from-inventory"]');
   await rule.waitFor();
   assert.equal(await rule.getByRole("button", { name: "Ask the agent to propose this" }).count(), 0, "not offered without a key");
   await enterKey(page);
@@ -1394,7 +1407,7 @@ test("a finding outside the inventories offers to ask the agent, with a message 
   const box = page.getByRole("textbox", { name: "Message the agent" });
   await page.waitForFunction(() => (document.querySelector(".chat-composer textarea")?.value ?? "") !== "");
   const text = await box.inputValue();
-  assert.match(text, /^The check "components-from-inventory" says: .*Toast/);
+  assert.match(text, /^The check "flow-states-from-inventory" says: .*waitlisted/);
   assert.match(text, /draft a proposal that adds it to the inventory/);
   assert.equal(api.requests.length, 0, "the message waits for the person to send it");
   await box.fill(`${text}\nKeep it to the rooms page.`);
@@ -1438,11 +1451,11 @@ test("screenshots of the review page in dark", async ({ browser, base, api }) =>
     title: "Booking offers no second action",
     reason: "One action per booking page.",
     rules: { add: [{ type: "count", id: "no-secondary-on-booking", scope: "page", pages: { types: ["booking"] }, select: { role: "secondary-action" }, max: 0 }] },
-    examples: { pass: [{ name: "book-only", files: { "pages/booking.tsx": BOOKING.replace(/\s*<Slot name="alternate">[\s\S]*?<\/Slot>/, "") } }], fail: [{ name: "with-hold", flagged_by: { rule: "no-secondary-on-booking" } }] },
+    examples: { pass: [{ name: "book-only", files: { "pages/booking.json": NO_HOLD } }], fail: [{ name: "with-hold", flagged_by: { rule: "no-secondary-on-booking" } }] },
   });
   await openReview(impact.page, "book-without-hold");
   await judged(impact.page);
-  await impact.page.getByTestId("review-impact").locator('[data-prototype="booking"]').waitFor({ timeout: 60000 });
+  await impact.page.getByTestId("review-impact").locator('[data-prototype="booking-spec"]').waitFor({ timeout: 60000 });
   await impact.page.getByTestId("review-impact").scrollIntoViewIfNeeded();
   await shot(impact.page, "review-impact-dark");
   await impact.context.close();
@@ -1450,12 +1463,10 @@ test("screenshots of the review page in dark", async ({ browser, base, api }) =>
 
 // ---- spec prototypes -------------------------------------------------------
 
-/** Opens the app on the seeded spec prototype, Booking (spec), and waits for its frames to be measured. */
+/** Opens the app on the seeded spec prototype, Booking, the only one it starts with, and waits for its frames to be measured. */
 async function openSpec(browser, base, options = {}) {
   const opened = await openApp(browser, base, options);
   await measured(opened.page, 1);
-  await opened.page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
-  await measured(opened.page, 2);
   return opened;
 }
 
@@ -1492,7 +1503,7 @@ test("a spec frame loads the library, React, json-render and the spec renderer, 
 test("a violation injected into a spec is flagged: its JSON line marked, a rendered one outlined in its frame", async ({ browser, base }) => {
   const { page } = await openSpec(browser, base);
   const edited = await editFile(page, "pages/booking.json", (text) => text.replace('"variant": "secondary", "text": "Hold room"', '"variant": "primary", "text": "Hold room"'));
-  await measured(page, 3);
+  await measured(page, 2);
   let value = await report(page);
   assert.ok(failing(value).includes("one-primary-per-page"), `one-primary-per-page fails: ${failing(value)}`);
   const finding = value.findings.find((item) => item.rule === "one-primary-per-page");
@@ -1509,8 +1520,10 @@ test("a violation injected into a spec is flagged: its JSON line marked, a rende
         const [target] = await buttonBoxes(page, scenario, view, name);
         assert.ok(boxes.some((box) => surrounds(box, target)), `${name} is outlined in ${scenario} at ${view}`);
       }
+      assert.equal(await page.locator(`.frame-card[data-frame-key="${scenario}@${view}"]`).getAttribute("data-selected"), "");
     }
   }
+  assert.equal(await page.getByTestId("finding-outline").textContent(), `Outlined in ${3 * VIEWS.length} frames: Booking, room open (Lantern open); Booking, booked (Lantern booked); Booking, held (Lantern held).`);
   await shot(page, "spec-failing-source-outlined-light");
   await page.locator('.rule[data-rule="one-primary-per-page"]').getByRole("button", { name: "Show in code" }).first().click();
   await page.waitForSelector('[data-testid="code-line"]');
@@ -1521,7 +1534,7 @@ test("a violation injected into a spec is flagged: its JSON line marked, a rende
   await shot(page, "spec-failing-source-light");
 
   await editFile(page, "pages/booking.json", (text) => text.replace('"variant": "primary", "text": "Hold room"', '"variant": "secondary", "text": "Hold room"').replace('"as": "p", "text": { "$template"', '"as": "h3", "text": { "$template"'));
-  await measured(page, 4);
+  await measured(page, 3);
   value = await report(page);
   assert.deepEqual(failing(value), ["heading-structure"]);
   const heading = value.findings.find((item) => item.rule === "heading-structure" && item.scenario === "lantern-open" && item.view === "desktop");
@@ -1544,7 +1557,7 @@ test("what the catalog refuses is reported by extract and never reaches the fram
       .replace('"alternate": ["hold"]', '"alternate": ["hold", "free"]')
       .replace('"hold": {', '"free": { "type": "Badge.Root", "props": { "text": "Free" }, "children": [] },\n    "hold": {'),
   );
-  await measured(page, 3);
+  await measured(page, 2);
   const value = await report(page);
   assert.deepEqual(failing(value), ["extract"]);
   assert.deepEqual(
@@ -1564,8 +1577,6 @@ test("the same spec prototype gives the same report on reload", async ({ browser
   const first = await report(page);
   await page.reload();
   await measured(page, 1);
-  await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
-  await measured(page, 2);
   assert.deepEqual(await report(page), first);
   // zod, inside json-render, probes for eval to speed itself up; the frame's CSP refuses it and zod falls back. Nothing else is refused.
   const refused = logs.filter((line) => /Content Security Policy|unsafe-eval|EvalError/.test(line));
@@ -1574,13 +1585,6 @@ test("the same spec prototype gives the same report on reload", async ({ browser
 
 // ---- the agent and proposals on a spec prototype ---------------------------
 
-const SPEC_LEGAL = join(root, "..", "..", "packages", "core", "examples", "nook", "prototypes", "spec", "legal", "booking");
-const SPEC_BOOKING = readFileSync(join(SPEC_LEGAL, "pages", "booking.json"), "utf8");
-/** The booking spec with `count` toasts in its facts slot. */
-const SPEC_TOASTS = (count) => (text) =>
-  text
-    .replace('"facts": ["seats", "booked-note", "held-note"]', `"facts": ["seats", "booked-note", "held-note"${Array.from({ length: count }, (_, index) => `, "toast-${index + 1}"`).join("")}]`)
-    .replace('    "hold": {', `${Array.from({ length: count }, (_, index) => `    "toast-${index + 1}": { "type": "Toast.Root", "props": { "tone": "success", "text": "Booked" }, "children": [] },\n`).join("")}    "hold": {`);
 
 function specToastDraft({ failing = 2 } = {}) {
   return {
@@ -1634,7 +1638,7 @@ test("the agent writes specs: the catalog's prompt, a patch the catalog refuses,
   assert.deepEqual(await reply.locator(".chat-tool .chat-tool-title").allTextContents(), ["Could not change the rooms page", "Changed the rooms page"]);
   const last = await page.locator(".checks").getAttribute("data-revision");
   // The streamed drafts were drawn in place in the frames, not as revisions: the patch that applied is the only new one.
-  assert.equal(last, "3");
+  assert.equal(last, "2");
   await measured(page, Number(last));
   assert.equal((await (await liveFrame(page, 'rooms-list at desktop')).locator("h1").textContent()).trim(), "Spaces");
   assert.equal((await report(page)).status, "pass");
@@ -1721,7 +1725,7 @@ test("a violation inside a layout instance is flagged and highlighted: the layou
   const { page } = await openSpec(browser, base);
   // A primary action inside the room details layout: it breaks two rules, and each finding names both places.
   await editFile(page, "layouts/room-details.json", (text) => text.replace('"children": ["summary", "items"]', '"children": ["summary", "items", "go"]').replace('    "item":', '    "go": { "type": "Button.Root", "props": { "text": "Book room" }, "children": [] },\n    "item":'));
-  await measured(page, 3);
+  await measured(page, 2);
   let value = await report(page);
   assert.deepEqual(failing(value), ["one-primary-per-page", "primary-outside-disclosure"]);
   const inside = value.findings.find((item) => item.rule === "primary-outside-disclosure");
@@ -1759,10 +1763,10 @@ test("a violation inside a layout instance is flagged and highlighted: the layou
 
   // Back to legal, then a rendered violation inside the room cards layout: its heading skips a level, and is outlined in its frame.
   await editFile(page, "layouts/room-details.json", (text) => text.replace(', "go"]', "]").replace(/ {4}"go": .*\n/, ""));
-  await measured(page, 4);
+  await measured(page, 3);
   assert.equal((await report(page)).status, "pass");
   await editFile(page, "layouts/room-cards.json", (text) => text.replace('"as": "h2"', '"as": "h3"'));
-  await measured(page, 5);
+  await measured(page, 4);
   value = await report(page);
   assert.deepEqual(failing(value), ["heading-structure"]);
   await showAllRules(page);
@@ -1831,14 +1835,14 @@ test("the Project view lists the spec prototype's layouts with their parameters 
   await shot(page, "project-layouts-light");
 });
 
-test("a new prototype is a spec by default, and its agent writes specs", async ({ browser, base, api }) => {
+test("a new prototype is a spec, with no format to choose, and its agent writes specs", async ({ browser, base, api }) => {
   const { page } = await openApp(browser, base);
   await measured(page, 1);
   await page.getByRole("button", { name: "New prototype" }).click();
   const dialog = page.getByRole("dialog", { name: "New prototype" });
   await dialog.waitFor();
-  assert.equal(await dialog.getByRole("radio", { name: /^Spec, recommended/ }).isChecked(), true);
-  assert.equal(await dialog.getByRole("radio", { name: /TSX/ }).isChecked(), false);
+  assert.equal(await dialog.getByRole("radio").count(), 0, "there is no format to choose");
+  assert.equal(await dialog.getByTestId("new-prototype-unavailable").count(), 0, "Nook's library has a description, so a spec can be made");
   // The dialog fades in; the picture waits for it.
   if (shots) await page.waitForTimeout(400);
   await shot(page, "new-prototype-light");
@@ -1846,13 +1850,15 @@ test("a new prototype is a spec by default, and its agent writes specs", async (
   await dialog.getByRole("button", { name: "Create" }).click();
   await dialog.waitFor({ state: "hidden" });
   assert.equal(await page.getByRole("combobox", { name: "Prototype" }).inputValue(), "checkout");
-  assert.equal((await page.getByTestId("prototype-format").textContent()).trim(), "Spec");
+  assert.equal(await page.getByTestId("prototype-format").count(), 0, "only a TSX prototype is marked");
+  await showCode(page, "manifest.json");
+  assert.equal(JSON.parse(await page.locator('[data-testid="code-editor"]').inputValue()).format, "spec");
   api.script([
     (body) => {
       assert.match(body.system[0].text, /written as json-render specs/);
       assert.match(body.system[1].text, /^THE SPEC FORMAT/);
       const names = body.tools.map((tool) => tool.name);
-      assert.ok(names.includes("write_spec") && names.includes("insert_layout") && !names.includes("write_file"), names.join(", "));
+      assert.ok(names.includes("write_spec") && names.includes("insert_layout") && !names.includes("write_file") && !names.includes("edit_file"), names.join(", "));
       return textReply("This prototype is empty; tell me what to build.");
     },
   ]);
@@ -1863,32 +1869,80 @@ test("a new prototype is a spec by default, and its agent writes specs", async (
   await page.reload();
   await measured(page, 1);
   await page.getByRole("combobox", { name: "Prototype" }).selectOption("checkout");
-  assert.equal((await page.getByTestId("prototype-format").textContent()).trim(), "Spec");
+  await showCode(page, "manifest.json");
+  await eventually(page, async () => JSON.parse(await page.locator('[data-testid="code-editor"]').inputValue()).format, (format) => format === "spec", "the reloaded prototype is still a spec");
 });
 
-test("an existing TSX prototype still works: it passes, and its agent writes code", async ({ browser, base, api }) => {
-  const { page } = await openApp(browser, base);
+test("an imported TSX prototype is read-only: it renders and checks, says so, refuses every change, exports its code, and starts a spec version", async ({ browser, base, api }) => {
+  const { page, errors } = await openApp(browser, base);
   await measured(page, 1);
-  assert.equal(await page.getByRole("combobox", { name: "Prototype" }).inputValue(), "booking");
-  assert.equal((await page.getByTestId("prototype-format").textContent()).trim(), "TSX");
-  assert.equal((await report(page)).status, "pass");
-  api.script([
-    (body) => {
-      assert.equal(body.system.length, 1, "a TSX prototype's agent has one system block");
-      assert.match(body.system[0].text, /The prototype is React in TSX/);
-      const names = body.tools.map((tool) => tool.name);
-      assert.ok(names.includes("write_file") && !names.includes("patch_spec") && !names.includes("insert_layout"), names.join(", "));
-      return toolReply("rename", "edit_file", { path: "pages/rooms.tsx", old_text: '<Text.Root as="h1">Rooms</Text.Root>', new_text: '<Text.Root as="h1">Spaces</Text.Root>' }, "Renaming.");
-    },
-    (body) => {
-      assert.match(lastMessage(body), /Checks for revision 2, with every frame measured: pass\./);
-      return textReply("Done.");
-    },
-  ]);
+  api.script([]);
   await enterKey(page);
-  await ask(page, "Call the rooms page Spaces");
-  assert.equal(await turnEnded(page), "done");
-  assert.equal((await (await liveFrame(page, 'rooms-list at desktop')).locator("h1").textContent()).trim(), "Spaces");
+  await importWithTsx(page);
+  // It loads, in the prototype picker, marked as TSX, and opens first.
+  const picker = page.getByRole("combobox", { name: "Prototype" });
+  assert.equal(await picker.inputValue(), "booking");
+  assert.deepEqual(await picker.locator("option").allTextContents(), ["Booking (TSX, read-only)", "Booking"]);
+  assert.equal((await page.getByTestId("prototype-format").textContent()).trim(), "TSX, read-only");
+  // Its board renders and its checks run, as before.
+  assert.deepEqual(await page.locator(".frame-card").evaluateAll((cards) => cards.map((card) => card.dataset.state)), Array.from({ length: FRAMES }, () => "measured"));
+  assert.equal((await (await liveFrame(page, "rooms-list at desktop")).locator("h1").textContent()).trim(), "Rooms");
+  assert.equal((await report(page)).status, "pass");
+  // The notice says so plainly, with its two ways on.
+  const notice = page.getByTestId("tsx-notice");
+  assert.match(await notice.textContent(), /^TSX prototypes are no longer edited here.*Booking is written in TSX\. It still renders and its checks still run, but nothing changes it here: not the agent, the code view, variants or notes\./);
+  await shot(page, "tsx-read-only-light");
+
+  // The code view shows its files and takes no edit.
+  await showCode(page, "pages/rooms.tsx");
+  const editor = page.locator('[data-testid="code-editor"]');
+  assert.equal(await page.getByTestId("code-read-only").textContent(), "Read-only: TSX prototypes are no longer edited here.");
+  assert.equal(await editor.isEditable(), false);
+  const source = await editor.inputValue();
+  assert.match(source, /<Text.Root as="h1">Rooms<\/Text.Root>/);
+  await editor.focus();
+  await page.keyboard.type("x");
+  await page.waitForTimeout(500);
+  assert.equal(await editor.inputValue(), source);
+  // The agent takes no message: the box is disabled, and says why.
+  assert.match(await page.getByTestId("chat-read-only").textContent(), /^This prototype is TSX\. TSX prototypes are no longer edited here: the agent writes specs only\./);
+  assert.equal(await page.getByRole("textbox", { name: "Message the agent" }).isDisabled(), true);
+  // No note is pinned on it.
+  await page.getByTestId("pin-mode").click();
+  await eventually(page, () => page.getByTestId("notice").textContent().catch(() => ""), (text) => /No notes on a TSX prototype/.test(text), "pin mode is refused, with the reason");
+  assert.equal(await page.getByTestId("pin-hint").count(), 0, "pin mode stays off");
+  // No variants or picks.
+  await page.getByRole("tab", { name: "Variants" }).click();
+  assert.match(await page.getByTestId("variants-tsx").textContent(), /This prototype is TSX, which is read-only here: it takes no variants and no picks\./);
+  await page.getByRole("tab", { name: "Canvas" }).click();
+  assert.equal(api.requests.length, 0, "nothing reached the agent");
+  assert.equal(await page.locator(".checks").getAttribute("data-revision"), "1", "nothing started a revision");
+
+  // Export code writes its TSX as it is.
+  const [download] = await Promise.all([page.waitForEvent("download"), notice.getByRole("button", { name: "Export code" }).click()]);
+  assert.equal(download.suggestedFilename(), "nook-booking.zip");
+  const entries = unzipSync(readFileSync(await download.path()));
+  assert.equal(strFromU8(entries["nook-booking/src/prototype/pages/rooms.tsx"]), source);
+
+  // Start a spec version: a new, empty spec prototype in the same project, opened, which the agent can build.
+  await notice.getByRole("button", { name: "Start a spec version" }).click();
+  await eventually(page, () => picker.inputValue(), (value) => value === "booking-spec-2", "the spec version opens");
+  assert.deepEqual(await picker.locator("option").allTextContents(), ["Booking (TSX, read-only)", "Booking", "Booking (spec)"]);
+  assert.equal(await page.getByTestId("tsx-notice").count(), 0);
+  assert.equal(await page.getByTestId("prototype-format").count(), 0);
+  assert.equal(await page.getByTestId("chat-read-only").count(), 0);
+  assert.equal(await page.getByRole("textbox", { name: "Message the agent" }).isDisabled(), false);
+  await showCode(page, "manifest.json");
+  assert.deepEqual(JSON.parse(await page.locator('[data-testid="code-editor"]').inputValue()), { format: "spec", pages: [], layouts: [], scenarios: [], flow: { states: [], tasks: [] } });
+
+  // All three are kept: after a reload the TSX prototype is still there, still read-only, and still passes.
+  await page.waitForTimeout(500);
+  await page.reload();
+  await page.getByTestId("tsx-notice").waitFor();
+  await measured(page, 1);
+  assert.deepEqual(await picker.locator("option").evaluateAll((options) => options.map((option) => option.value)), ["booking", "booking-spec", "booking-spec-2"]);
+  assert.equal((await report(page)).status, "pass");
+  assert.deepEqual(errors, []);
 });
 
 test("a stored project without a library description gets the bundled one on load, and says so", async ({ browser, base }) => {
@@ -1918,9 +1972,8 @@ test("a stored project without a library description gets the bundled one on loa
   await page.getByTestId("notice").waitFor();
   assert.match(await page.getByTestId("notice").textContent(), /The project was brought up to date.*added the one it ships for @tounsoo\/todae 0\.11\.3 \(203 parts\)/);
   await measured(page, 1);
-  await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
-  await measured(page, 2);
-  assert.equal((await report(page)).status, "pass", "the spec prototype is checked with the description the app added");
+  const value = await report(page);
+  assert.equal(value.status, "pass", `the spec prototype is checked with the description the app added: ${JSON.stringify(value.rules.filter((rule) => rule.status !== "pass").map((rule) => [rule.rule, rule.status, rule.findings.slice(0, 2).map((finding) => finding.message)]))}`);
 });
 
 // ---- library versions: every version the app describes is served; one it does not serve says so ----
@@ -1990,16 +2043,13 @@ async function openOnTodae0101(browser, base, options = {}) {
 test("a stored Nook project on Todae 0.10.1 renders with 0.10.1, and passes every rule", async ({ browser, base }) => {
   const { page, context, errors, vendor } = await openOnTodae0101(browser, base);
   assert.match(await page.getByTestId("notice").textContent(), /added the one it ships for @tounsoo\/todae 0\.10\.1 \(203 parts\)/);
+  // The spec prototype is checked against the 0.10.1 description the app added, and renders with 0.10.1 too.
   const value = await report(page);
   assert.equal(value.status, "pass", `every rule passes on Todae 0.10.1: ${failing(value)}`);
   assert.equal(await page.locator(".frame-failure").count(), 0, "every frame renders");
   assert.equal(await page.getByTestId("packages-notice").count(), 0, "nothing to say about packages");
   assert.ok(vendor.includes("tounsoo-todae@0.10.1.js") && vendor.includes("tounsoo-todae@0.10.1-dist-todae.css"), `the frames get Todae 0.10.1 and its stylesheet: ${vendor.join(", ")}`);
   assert.ok(!vendor.includes("tounsoo-todae@0.11.3.js"), "and not the app's own 0.11.3");
-  // The spec prototype is checked against the 0.10.1 description the app added, and renders with 0.10.1 too.
-  await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
-  await measured(page, 2);
-  assert.equal((await report(page)).status, "pass", "the spec prototype passes on 0.10.1");
   await page.getByRole("tab", { name: "Project" }).click();
   assert.equal(await page.getByTestId("library-version-current").textContent(), "Todae 0.10.1");
   assert.deepEqual(errors, []);
@@ -2488,13 +2538,13 @@ test("the shell follows the window: every action in the header and both panels a
 });
 
 test("the checks lead with plain words: a summary, each thing to fix with core's message beside it, Show me, and the detail one step away", async ({ browser, base }) => {
-  const { page, context } = await openApp(browser, base);
-  await measured(page, 1);
+  // On Tally: a spec on Todae cannot draw an undersized control, and the rendered finding here is one.
+  const { page, context } = await openTally(browser, base);
   assert.equal(await page.getByTestId("checks-headline").textContent(), "Everything follows the project's rules");
   assert.equal(await page.locator(".fix").count(), 0);
   assert.equal(await page.getByTestId("checks-details").evaluate((element) => element.open), false, "the rule list sits behind Details");
 
-  const edited = await editFile(page, "pages/booking.tsx", (text) => UNDERSIZED(SECOND_PRIMARY(text)));
+  const edited = await editFile(page, "pages/expense.json", (text) => TALLY_UNDERSIZED(text.replace('"variant": "outline", "color": "violet", "text": "Save draft"', '"variant": "filled", "color": "violet", "text": "Save draft"')));
   await measured(page, 2);
   const value = await report(page);
   await page.getByRole("tab", { name: /Checks/ }).click();
@@ -2515,9 +2565,9 @@ test("the checks lead with plain words: a summary, each thing to fix with core's
   assert.match(await details.textContent(), /Ruleone-primary-per-page \(count\)/, "the rule's id and type are in its details");
   // Show me outlines both primary actions in every frame that draws them, and the card says where.
   await primary.getByRole("button", { name: "Show me" }).click();
-  await (await liveFrame(page, 'lantern-open at desktop')).locator("[data-design-harness-overlay]").first().waitFor({ state: "attached" });
-  await eventually(page, () => primary.getByTestId("fix-outline").textContent(), (text) => text === `Outlined in ${3 * VIEWS.length} frames: Booking, room open (Lantern open); Booking, booked (Lantern booked); Booking, held (Lantern held).`, "the card says where both actions are outlined");
-  await eventually(page, () => page.locator(".frame-card[data-selected]").count(), (count) => count === 3 * VIEWS.length, "the frames that draw them are selected");
+  await (await liveFrame(page, 'lunch-open at desktop')).locator("[data-design-harness-overlay]").first().waitFor({ state: "attached" });
+  await eventually(page, () => primary.getByTestId("fix-outline").textContent(), (text) => text === `Outlined in ${3 * TALLY_VIEWS.length} frames: Expense, expense open (Lunch open); Expense, submitted (Lunch submitted); Expense, saved (Lunch saved).`, "the card says where both actions are outlined");
+  await eventually(page, () => page.locator(".frame-card[data-selected]").count(), (count) => count === 3 * TALLY_VIEWS.length, "the frames that draw them are selected");
   // Show in code, one click away, marks the line.
   await primary.getByTestId("show-in-code").click();
   await page.waitForSelector('[data-testid="code-line"]');
@@ -2527,16 +2577,16 @@ test("the checks lead with plain words: a summary, each thing to fix with core's
   await page.getByRole("tab", { name: /Checks/ }).click();
   const target = page.locator('.fix[data-rule="target-size"]');
   assert.equal(await target.getByTestId("fix-lead").textContent(), "Every control meets 24 px or the WCAG 2.5.8 spacing exception.", "a cap reads as its value");
-  await target.getByRole("button", { name: "Show Lantern open — desktop", exact: true }).click();
-  const frame = (await liveFrame(page, 'lantern-open at desktop'));
+  await target.getByRole("button", { name: "Show Lunch open — desktop", exact: true }).click();
+  const frame = (await liveFrame(page, 'lunch-open at desktop'));
   // The two outlines Show me drew for the primary actions give way to this one finding's outline.
   const overlays = frame.locator("[data-design-harness-overlay]");
   for (let tries = 0; (await overlays.count()) !== 1; tries += 1) {
     assert.ok(tries < 100, `the frame should end with one outline, not ${await overlays.count()}`);
     await page.waitForTimeout(50);
   }
-  await eventually(page, () => page.locator('.frame-card[data-frame-key="lantern-open@desktop"]').getAttribute("data-selected"), (value) => value === "", "the frame shown is selected");
-  const shown = value.findings.find((item) => item.rule === "target-size" && item.scenario === "lantern-open" && item.view === "desktop");
+  await eventually(page, () => page.locator('.frame-card[data-frame-key="lunch-open@desktop"]').getAttribute("data-selected"), (value) => value === "", "the frame shown is selected");
+  const shown = value.findings.find((item) => item.rule === "target-size" && item.scenario === "lunch-open" && item.view === "desktop");
   await eventually(page, () => target.getByTestId("fix-message").textContent(), (text) => text === shown.message, "the message is the one of the place shown");
   await eventually(page, () => target.getByRole("button", { name: "Show me" }).getAttribute("aria-pressed"), (value) => value === "true", "Show me is pressed while its finding is shown");
   await shot(page, "checks-plain-light");
@@ -2546,7 +2596,7 @@ test("the checks lead with plain words: a summary, each thing to fix with core's
   const box = page.getByRole("textbox", { name: "Message the agent" });
   // The chat box is filled a tick after the press.
   const asked = await eventually(page, () => box.inputValue(), (text) => text !== "", "the chat box is filled with a message asking for the fix");
-  assert.match(asked, /^Please fix this so the prototype follows the project's rules\.\n\nThe check "one-primary-per-page" says: Page "booking" has 2 primary actions/);
+  assert.match(asked, /^Please fix this so the prototype follows the project's rules\.\n\nThe check "one-primary-per-page" says: Page "expense" has 2 primary actions/);
   await becomesFocused(page, page.getByLabel("Your Anthropic API key"), "without a key, the key comes first");
 
   await showAllRules(page);
@@ -2616,7 +2666,7 @@ test("a scripted agent offers three variants: side by side in measured frames, e
   await offerVariants(page, api);
   assert.equal(await page.locator(".chat-variants").getAttribute("data-variants"), "a b c");
   assert.equal(await page.getByTestId("variant-count").textContent(), "3");
-  assert.equal(await page.locator(".checks").getAttribute("data-revision"), "2", "offering variants changes no revision");
+  assert.equal(await page.locator(".checks").getAttribute("data-revision"), "1", "offering variants changes no revision");
   await page.getByRole("button", { name: "Compare variants" }).click();
   await standing(page, "current", "pass");
   await standing(page, "a", "pass");
@@ -2700,7 +2750,7 @@ test("picking slots from two variants applies a new revision that passes every r
   await shot(page, "variants-pick-light");
   await shotDark(page, "variants-pick-dark");
   await page.getByTestId("apply-pick").click();
-  await measured(page, 3);
+  await measured(page, 2);
   const after = await report(page);
   assert.equal(after.status, "pass", JSON.stringify(after.findings, null, 1));
   assert.deepEqual(after.findings, []);
@@ -2714,15 +2764,13 @@ test("picking slots from two variants applies a new revision that passes every r
   // Recorded with which variant supplied which slot, and kept through a reload.
   await page.reload();
   await measured(page, 1);
-  await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
-  await measured(page, 2);
   await page.getByRole("tab", { name: /Variants/ }).click();
   const history = page.getByTestId("pick-history");
   await history.waitFor();
   assert.match(await history.textContent(), /title from Current, facts from Variant B, body from Variant A, alternate from Current, action from Current/);
   assert.match(await history.textContent(), /Variant A: Asks for how long · Variant B: Leads with the floor/);
   await page.getByTestId("undo-pick").click();
-  await measured(page, 3);
+  await measured(page, 2);
   assert.equal((await report(page)).status, "pass");
   await showCode(page, "pages/booking.json");
   assert.equal(await page.locator('[data-testid="code-editor"]').inputValue(), original, "undo restores the page as it was");
@@ -2736,7 +2784,7 @@ test("a pick answers for its own page: with the rooms page already failing, a pa
   // The rooms page breaks a rule of its own: a primary action on a collection (core's own illegal fixture).
   const failingRooms = readFileSync(join(root, "..", "..", "packages", "core", "examples", "nook", "prototypes", "spec", "illegal", "primary-on-collection", "files", "pages", "rooms.json"), "utf8");
   await editFile(page, "pages/rooms.json", () => failingRooms);
-  await measured(page, 3);
+  await measured(page, 2);
   const before = await report(page);
   assert.equal(before.status, "fail");
   assert.ok(before.findings.length > 0 && before.findings.every((finding) => finding.page === "rooms"), `only the rooms page fails: ${JSON.stringify(before.findings)}`);
@@ -2772,7 +2820,7 @@ test("a pick answers for its own page: with the rooms page already failing, a pa
   assert.match(await page.getByTestId("apply-note").textContent(), /This page follows the rules\. \d+ things? to fix on another page stays? as (it is|they are)\./);
   await shot(page, "variants-scoped-light");
   await page.getByTestId("apply-pick").click();
-  await measured(page, 4);
+  await measured(page, 3);
   await eventually(page, () => page.getByTestId("notice").textContent(), (text) => /Pick applied/.test(text ?? ""), "the notice says the pick was applied");
   // The pick is the new revision: the booking page changed, and the rooms page fails exactly as it did.
   const after = await report(page);
@@ -2810,11 +2858,9 @@ test("more like this reaches the agent, naming the variant, and its new variants
   const file = JSON.parse(readFileSync(await download.path(), "utf8"));
   const spec = file.prototypes.find((item) => item.id === "booking-spec");
   assert.deepEqual(spec.variants.variants.map((variant) => [variant.id, variant.like ?? null]), [["a", null], ["b", null], ["c", null], ["d", "b"], ["e", "b"]]);
-  assert.equal(file.prototypes.find((item) => item.id === "booking").variants, undefined);
+  assert.deepEqual(file.prototypes.map((item) => item.id), ["booking-spec"], "the seeded project holds the spec prototype alone");
   await page.locator('[data-testid="import-file"]').setInputFiles(await download.path());
   await measured(page, 1);
-  await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
-  await measured(page, 2);
   assert.equal(await page.getByTestId("variant-count").textContent(), "5", "and come back with it on import");
 });
 
@@ -2845,7 +2891,7 @@ test("no tool call or chat message can apply a pick", async ({ browser, base, ap
   await ask(page, "Apply variant A to the booking page now: take its body. Pick it for me.");
   assert.equal(await turnEnded(page), "done");
   assert.equal(api.left(), 0);
-  assert.equal(await page.locator(".checks").getAttribute("data-revision"), "2", "no new revision");
+  assert.equal(await page.locator(".checks").getAttribute("data-revision"), "1", "no new revision");
   await showCode(page, "pages/booking.json");
   assert.equal(await page.locator('[data-testid="code-editor"]').inputValue(), original);
   await page.getByRole("tab", { name: /Variants/ }).click();
@@ -2853,14 +2899,9 @@ test("no tool call or chat message can apply a pick", async ({ browser, base, ap
   assert.equal(await page.getByTestId("pick-history").count(), 0, "no pick was recorded");
   await page.reload();
   await measured(page, 1);
-  await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
-  await measured(page, 2);
   await page.getByRole("tab", { name: /Variants/ }).click();
   await page.locator('.variant-card[data-variant="c"]').waitFor();
   assert.equal(await page.getByTestId("pick-history").count(), 0, "nor saved");
-  // A TSX prototype says plainly that variants are for spec prototypes.
-  await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking");
-  await page.getByTestId("variants-tsx").waitFor();
 });
 
 test("export code downloads a zip of a runnable project, which builds with Vite, typechecks and renders every scenario", async ({ browser, base }) => {
@@ -2926,7 +2967,7 @@ test("export code downloads a zip of a runnable project, which builds with Vite,
 test("a finding about a whole page outlines nothing, and opens its code at once", async ({ browser, base }) => {
   const { page } = await openApp(browser, base);
   await measured(page, 1);
-  await editFile(page, "pages/booking.tsx", (text) => text.replace(/\n {6}<Slot name="action">\n.*\n {6}<\/Slot>/, ""));
+  await editFile(page, "pages/booking.json", (text) => text.replace(',\n        "action": ["book"]', "").replace(/,\n {4}"book": .*/, ""));
   await measured(page, 2);
   const value = await report(page);
   const finding = value.findings.find((item) => item.rule === "primary-slot");
@@ -2944,7 +2985,7 @@ test("a finding about a whole page outlines nothing, and opens its code at once"
 
 /** Opens the app with every frame's snapshot message recorded as it reaches the app, tags on or off. */
 async function recording(browser, base, tags) {
-  const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
+  const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, acceptDownloads: true });
   await context.addInitScript(() => {
     if (window.top !== window) return;
     window.__frameMessages = [];
@@ -2955,12 +2996,13 @@ async function recording(browser, base, tags) {
   const page = await context.newPage();
   await page.goto(tags ? base : `${base}?frame-tags=off`);
   await measured(page, 1);
-  await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
-  await measured(page, 2);
-  const messages = await page.evaluate(() => window.__frameMessages);
+  const spec = await page.evaluate(() => window.__frameMessages.splice(0));
+  // A stored TSX prototype still renders, read-only, with its elements tagged where they are written.
+  await importWithTsx(page);
+  const tsx = await page.evaluate(() => window.__frameMessages.splice(0));
   await context.close();
-  const by = (generation) => Object.fromEntries(messages.filter((item) => item.generation === generation).map((item) => [`${item.snapshot.scenario}@${item.snapshot.view}`, item]));
-  return { tsx: by(1), spec: by(2) };
+  const by = (messages) => Object.fromEntries(messages.filter((item) => item.generation === 1).map((item) => [`${item.snapshot.scenario}@${item.snapshot.view}`, item]));
+  return { tsx: by(tsx), spec: by(spec) };
 }
 
 /**
@@ -3017,10 +3059,10 @@ test("core's checks run in a module worker and give the same report, byte for by
     const { context, page } = await openApp(browser, address);
     await measured(page, 1);
     assert.equal(await page.locator(".board").getAttribute("data-engine"), where);
-    const tsx = await page.locator('[data-testid="report-json"]').textContent();
-    await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
-    await measured(page, 2);
     const spec = await page.locator('[data-testid="report-json"]').textContent();
+    // A stored TSX prototype is still checked, read-only, by the same engine.
+    await importWithTsx(page);
+    const tsx = await page.locator('[data-testid="report-json"]').textContent();
     await context.close();
     const tally = await openTally(browser, address);
     assert.equal(await tally.page.locator(".board").getAttribute("data-engine"), where);
@@ -3053,11 +3095,9 @@ test("element tags change nothing a rule measures: Nook's snapshots are identica
 test("code export writes no element tags, for a TSX prototype or a spec", async ({ browser, base }) => {
   const { page } = await openApp(browser, base);
   await measured(page, 1);
-  for (const prototype of ["booking", "booking-spec"]) {
-    if (prototype !== "booking") {
-      await page.getByRole("combobox", { name: "Prototype" }).selectOption(prototype);
-      await measured(page, 2);
-    }
+  for (const prototype of ["booking-spec", "booking"]) {
+    // A stored TSX prototype exports its code as it is written.
+    if (prototype === "booking") await importWithTsx(page);
     const [download] = await Promise.all([page.waitForEvent("download"), page.getByTestId("export-code").click()]);
     const entries = unzipSync(readFileSync(await download.path()));
     assert.ok(Object.keys(entries).some((path) => path.endsWith("pages/booking.tsx")), `${prototype}: the export has the booking page`);
@@ -3070,10 +3110,6 @@ test("code export writes no element tags, for a TSX prototype or a spec", async 
 const lensButton = (page, name) => page.getByTestId("lens-control").getByRole("button", { name });
 const card = (page, key) => page.locator(`.frame-card[data-frame-key="${key}"]`);
 const fixCard = (page, rule) => page.locator(`.fix[data-rule="${rule}"]`);
-/** A paragraph in a grey that fails AA on white and on Todae's dark canvas alike. */
-const FAINT = (text) => text.replace("{lantern.seats} seats, {lantern.floor}\n        </Text.Root>", '{lantern.seats} seats, {lantern.floor}\n        </Text.Root>\n        <p style={{ color: "#777777" }}>Faint helper text</p>');
-/** A block that pushes Book room below the first view on a phone, and makes the page wider than a phone. */
-const TALL_AND_WIDE = (text) => text.replace("<RoomDetails items={lantern.details} />", '<RoomDetails items={lantern.details} />\n        <div style={{ height: 520, width: 470 }} />');
 /** One more state on the way to a booking, with no scenario: book-room's longest route is then 4 steps, against 3. */
 const LONGER_ROUTE = (text) => {
   const manifest = JSON.parse(text);
@@ -3090,9 +3126,9 @@ async function onScreen(page, locator) {
 }
 
 test("a target-size card shows its figure with the neighbour", async ({ browser, base }) => {
-  const { page, errors } = await openApp(browser, base);
-  await measured(page, 1);
-  await editFile(page, "pages/booking.tsx", UNDERSIZED);
+  // A spec on Todae cannot draw an undersized control; Tally's compact Mantine buttons can.
+  const { page, errors } = await openTally(browser, base);
+  await editFile(page, "pages/expense.json", TALLY_UNDERSIZED);
   await measured(page, 2);
   await page.getByRole("tab", { name: /Checks/ }).click();
   const fix = fixCard(page, "target-size");
@@ -3100,11 +3136,12 @@ test("a target-size card shows its figure with the neighbour", async ({ browser,
   assert.equal(await figure.getAttribute("data-evidence"), "box-with-neighbour");
   // Core's evidence for the finding shown: the control, the minimum, and the neighbour its circle meets.
   const found = (await report(page)).findings.find((finding) => finding.rule === "target-size");
-  assert.deepEqual([found.evidence.kind, found.evidence.name, found.evidence.min, found.evidence.neighbour.name, found.evidence.neighbour.meets], ["box-with-neighbour", "A", 24, "B", "in-circle"]);
+  const other = { A: "B", B: "A" }[found.evidence.name];
+  assert.deepEqual([found.evidence.kind, found.evidence.min, found.evidence.neighbour.name, found.evidence.neighbour.meets], ["box-with-neighbour", 24, other, "in-circle"]);
   // The figure draws that neighbour, hatched where the circle reaches it, and says the scale and what the marks mean.
   await figure.getByTestId("figure-neighbour").waitFor({ state: "attached" });
   assert.equal(await figure.getByTestId("figure-neighbour").locator("rect").count(), 2, "the neighbour's box, and the hatched part of it");
-  assert.match(await figure.locator(".evidence-legend").textContent(), /Shown at \d+(\.\d+)?×.*its 24 px circle.*where it meets "B"/);
+  assert.match(await figure.locator(".evidence-legend").textContent(), new RegExp(`Shown at \\d+(\\.\\d+)?×.*its 24 px circle.*where it meets "${other}"`));
   const box = await figure.locator(".vis-subject").evaluate((rect) => ({ width: Number(rect.getAttribute("width")), height: Number(rect.getAttribute("height")) }));
   assert.ok(Math.abs(box.width / box.height - found.evidence.box.width / found.evidence.box.height) < 0.05, "the control is drawn in its measured proportions");
   // The picture is hidden from a screen reader; core's message, word for word, is its caption.
@@ -3117,9 +3154,9 @@ test("a target-size card shows its figure with the neighbour", async ({ browser,
 });
 
 test("the contrast figure shows the ratio in light and dark", async ({ browser, base }) => {
-  const { page, errors } = await openApp(browser, base);
-  await measured(page, 1);
-  await editFile(page, "pages/booking.tsx", FAINT);
+  // Todae's tones pass AA in both schemes; a yellow Mantine button on white does not, in Tally's light view and its dark one.
+  const { page, errors } = await openTally(browser, base);
+  await editFile(page, "pages/expense.json", TALLY_FAINT);
   await measured(page, 2);
   await page.getByRole("tab", { name: /Checks/ }).click();
   const figure = fixCard(page, "text-contrast").getByTestId("evidence");
@@ -3155,7 +3192,7 @@ test("the contrast figure shows the ratio in light and dark", async ({ browser, 
 test("the heading figure shows the gap", async ({ browser, base }) => {
   const { page, errors } = await openApp(browser, base);
   await measured(page, 1);
-  await editFile(page, "layouts/room-cards.tsx", (text) => text.replace('as="h2"', 'as="h3"'));
+  await editFile(page, "layouts/room-cards.json", (text) => text.replace('"as": "h2"', '"as": "h3"'));
   await measured(page, 2);
   await page.getByRole("tab", { name: /Checks/ }).click();
   const figure = fixCard(page, "heading-structure").getByTestId("evidence");
@@ -3174,13 +3211,12 @@ test("the heading figure shows the gap", async ({ browser, base }) => {
 });
 
 test("Show me moves the camera to a tiny element: its artboard opens at full size, and closes again when the finding is put down", async ({ browser, base }) => {
-  const { page, errors } = await openApp(browser, base);
-  await measured(page, 1);
-  await editFile(page, "pages/booking.tsx", (text) => FAINT(UNDERSIZED(text)));
+  const { page, errors } = await openTally(browser, base);
+  await editFile(page, "pages/expense.json", (text) => TALLY_FAINT(TALLY_UNDERSIZED(text)));
   await measured(page, 2);
   await page.getByRole("tab", { name: /Checks/ }).click();
-  // At Fit the 11 by 20 px control is a few px on screen.
-  const scale = await card(page, "lantern-open@desktop").evaluate((element) => element.getBoundingClientRect().width / 1280);
+  // At Fit the 24 by 22 px control is a few px on screen.
+  const scale = await card(page, "lunch-open@desktop").evaluate((element) => element.getBoundingClientRect().width / 1280);
   assert.ok(scale < 0.7, `the board is zoomed out (${scale})`);
   const first = (await report(page)).findings.find((finding) => finding.rule === "target-size");
   const key = `${first.scenario}@${first.view}`;
@@ -3202,69 +3238,74 @@ test("Show me moves the camera to a tiny element: its artboard opens at full siz
   await eventually(page, () => page.locator(".frame-card[data-focused]").count(), (count) => count === 0, "the artboard the camera opened closes again");
 
   // A line of text is plain to see at this zoom: the camera only scrolls to its artboard.
-  const faint = (await report(page)).findings.find((finding) => finding.rule === "text-contrast" && finding.scenario === "lantern-held");
+  const faint = (await report(page)).findings.find((finding) => finding.rule === "text-contrast" && finding.scenario === "lunch-saved");
   await showAllRules(page);
   await page.locator('.checks-rules .rule[data-rule="text-contrast"] .finding').filter({ hasText: "At 390 by 844" }).nth(2).click();
   await eventually(page, () => page.getByTestId("board-said").textContent(), (text) => /^Showing /.test(text), "the camera says it moved");
   assert.equal(await page.locator(".frame-card[data-focused]").count(), 0, "nothing opens for an element that can be seen");
   const shownKey = await page.locator(".frame-card[data-selected]").first().getAttribute("data-frame-key");
   await eventually(page, () => onScreen(page, card(page, shownKey)), (value) => value === true, "the finding's artboard is scrolled into view");
-  assert.ok(faint, "the faint text is found on the held page too");
+  assert.ok(faint, "the faint text is found on the saved page too");
   assert.deepEqual(errors, []);
 });
 
 test("the tap-target lens draws failing and passing boxes on every artboard, with its words under each", async ({ browser, base }) => {
-  const { page, errors } = await openApp(browser, base);
-  await measured(page, 1);
+  // A spec on Todae cannot draw an undersized control; Tally's compact Mantine buttons can.
+  const { page, errors } = await openTally(browser, base);
+  const frames = TALLY_SCENARIOS.length * TALLY_VIEWS.length;
   // On the legal prototype every hit area is drawn quietly, and each artboard says so.
   assert.equal(await page.getByTestId("lens-layer").count(), 0, "no lens until one is chosen");
   await lensButton(page, "Tap targets").click();
-  await eventually(page, () => page.getByTestId("lens-layer").count(), (count) => count === FRAMES, "every artboard gets the lens");
+  await eventually(page, () => page.getByTestId("lens-layer").count(), (count) => count === frames, "every artboard gets the lens");
   assert.equal(await page.locator('[data-testid="lens-box"][data-tone="fail"]').count(), 0);
-  assert.equal(await card(page, "rooms-list@desktop").getByTestId("lens-words").textContent(), "2 controls, all 24 px or more.");
-  assert.equal(await card(page, "lantern-open@phone-dark").getByTestId("lens-words").textContent(), "4 controls, all 24 px or more.");
-  assert.equal(await card(page, "lantern-open@phone").locator('[data-testid="lens-box"][data-tone="quiet"]').count(), 4);
+  assert.equal(await card(page, "expenses-list@desktop").getByTestId("lens-words").textContent(), "2 controls, all 24 px or more.");
+  assert.equal(await card(page, "lunch-open@phone").getByTestId("lens-words").textContent(), "4 controls, all 24 px or more.");
+  assert.equal(await card(page, "lunch-open@phone").locator('[data-testid="lens-box"][data-tone="quiet"]').count(), 4);
   await shot(page, "visual-lens-targets-before-light");
 
-  await editFile(page, "pages/booking.tsx", UNDERSIZED);
+  await editFile(page, "pages/expense.json", TALLY_UNDERSIZED);
   // While the revision measures there is nothing true to draw.
   await measured(page, 2);
-  await eventually(page, () => page.getByTestId("lens-layer").count(), (count) => count === FRAMES, "the lens is back once the frames are measured");
+  await eventually(page, () => page.getByTestId("lens-layer").count(), (count) => count === frames, "the lens is back once the frames are measured");
   const found = (await report(page)).findings.filter((finding) => finding.rule === "target-size");
-  for (const key of ["lantern-open@phone", "lantern-booked@desktop-dark"]) {
+  for (const key of ["lunch-open@phone", "lunch-saved@desktop"]) {
     const [scenario, view] = key.split("@");
     const here = found.filter((finding) => finding.scenario === scenario && finding.view === view);
-    assert.equal(here.length, 2, `core finds A and B in ${key}`);
+    const names = here.map((finding) => finding.evidence.name);
+    assert.ok(names.length > 0 && names.every((name) => name === "A" || name === "B"), `core finds the compact buttons in ${key}: ${names}`);
     const board = card(page, key);
     // Failing: a solid box, a hatched circle and a size label each. Passing: a quiet dashed box.
-    assert.equal(await board.locator('[data-testid="lens-box"][data-tone="fail"]').count(), 2);
-    assert.equal(await board.locator('[data-testid="lens-box"][data-tone="quiet"]').count(), 4);
-    assert.equal(await board.getByTestId("lens-circle").count(), 2);
+    assert.equal(await board.locator('[data-testid="lens-box"][data-tone="fail"]').count(), names.length);
+    assert.equal(await board.locator('[data-testid="lens-box"][data-tone="quiet"]').count(), 6 - names.length);
+    assert.equal(await board.getByTestId("lens-circle").count(), names.length);
     assert.match(await board.getByTestId("lens-circle").first().getAttribute("fill"), /^url\(#.*hatch\)$/, "the circle is hatched, not only coloured");
     // Each label gives its control's size as the frame measured it: text metrics differ between machines, so the expected sizes come from the frame.
     const sized = async (name) => {
       const [box] = await buttonBoxes(page, scenario, view, name);
-      assert.ok(box.width < 24 && box.height < 24, `${key}: ${name} is under 24 px (${box.width} × ${box.height})`);
+      assert.ok(box.width < 24 || box.height < 24, `${key}: ${name} is under 24 px (${box.width} × ${box.height})`);
       return `✕ ${name} · ${Math.round(box.width)} × ${Math.round(box.height)}`;
     };
-    assert.deepEqual(await board.getByTestId("lens-label").evaluateAll((items) => items.map((item) => item.textContent)), [await sized("A"), await sized("B")]);
+    const labels = [];
+    for (const name of names) labels.push(await sized(name));
+    assert.deepEqual(await board.getByTestId("lens-label").evaluateAll((items) => items.map((item) => item.textContent)), labels);
     const styles = await board.evaluate((element) => ({ fail: window.getComputedStyle(element.querySelector('[data-testid="lens-box"][data-tone="fail"]')).strokeDasharray, quiet: window.getComputedStyle(element.querySelector('[data-testid="lens-box"][data-tone="quiet"]')).strokeDasharray }));
     assert.equal(styles.fail, "none", "a failing box is solid");
     assert.notEqual(styles.quiet, "none", "a passing box is dashed");
-    assert.equal(await board.getByTestId("lens-words").textContent(), "2 of 6 controls are under 24 px and too close to another.");
+    assert.equal(await board.getByTestId("lens-words").textContent(), `${names.length} of 6 ${names.length === 1 ? "control is" : "controls are"} under 24 px and too close to another.`);
     assert.equal(await board.getByTestId("lens-layer").getAttribute("aria-hidden"), "true");
-    assert.equal(await board.getByTestId("lens-layer").getAttribute("data-scheme"), view.endsWith("dark") ? "dark" : "light");
+    // Tally's phone view is dark.
+    assert.equal(await board.getByTestId("lens-layer").getAttribute("data-scheme"), view === "phone" ? "dark" : "light");
     // The box is drawn where the control is on screen: over the frame, at the artboard's zoom.
     const drawn = await board.locator('[data-testid="lens-box"][data-tone="fail"]').first().boundingBox();
     const artboard = await board.locator(".frame-viewport").boundingBox();
     const zoom = artboard.width / (view.startsWith("phone") ? 390 : 1280);
-    const [inFrame] = await buttonBoxes(page, scenario, view, "A");
+    const [inFrame] = await buttonBoxes(page, scenario, view, names[0]);
     // Centre to centre: the drawn box's bounds include its stroke.
     const control = { x: artboard.x + (inFrame.x + inFrame.width / 2) * zoom, y: artboard.y + (inFrame.y + inFrame.height / 2) * zoom };
     const centre = { x: drawn.x + drawn.width / 2, y: drawn.y + drawn.height / 2 };
     assert.ok(Math.abs(centre.x - control.x) < 1 && Math.abs(centre.y - control.y) < 1 && drawn.width - inFrame.width * zoom < 4, `${key}: the box sits on the control (${JSON.stringify(drawn)} against ${JSON.stringify(control)})`);
   }
-  assert.equal(await card(page, "rooms-list@phone").getByTestId("lens-words").textContent(), "2 controls, all 24 px or more.");
+  assert.equal(await card(page, "expenses-list@phone").getByTestId("lens-words").textContent(), "2 controls, all 24 px or more.");
   await shot(page, "visual-lens-targets-after-light");
   await shotDark(page, "visual-lens-targets-after-dark");
 
@@ -3277,7 +3318,7 @@ test("the tap-target lens draws failing and passing boxes on every artboard, wit
   await page.keyboard.press("Control+.");
   await page.locator(".board[data-floating]").waitFor();
   await lensButton(page, "Tap targets").click();
-  await eventually(page, () => page.getByTestId("lens-layer").count(), (count) => count === FRAMES, "the lens works from the canvas-only bar");
+  await eventually(page, () => page.getByTestId("lens-layer").count(), (count) => count === frames, "the lens works from the canvas-only bar");
   await shot(page, "visual-lens-canvas-only-light");
   assert.deepEqual(errors, []);
 });
@@ -3296,7 +3337,7 @@ test("the first-view lens draws the fold, a ghost of what lies below it, and the
   assert.equal(await card(page, "rooms-list@desktop").getByTestId("lens-words").textContent(), '"Book room" is not on this page. The whole page fits it.');
   await shot(page, "visual-lens-first-view-before-light");
 
-  await editFile(page, "pages/booking.tsx", TALL_AND_WIDE);
+  await editFile(page, "pages/booking.json", TALL_AND_WIDE);
   await measured(page, 2);
   await eventually(page, () => page.getByTestId("lens-layer").count(), (count) => count === FRAMES, "the lens is back once the frames are measured");
   const all = await report(page);
@@ -3369,7 +3410,7 @@ test("the coverage grid shows states against views and navigates to an artboard"
   assert.equal(await page.getByTestId("board-said").textContent(), "Showing Booking, held — phone-dark (Lantern held).");
 
   // Findings are counted where core put them, and a flow state with no scenario is a row with nowhere to go.
-  await editFile(page, "pages/booking.tsx", UNDERSIZED);
+  await editFile(page, "pages/booking.json", TALL_AND_WIDE);
   await measured(page, 2);
   await editFile(page, "manifest.json", LONGER_ROUTE);
   await measured(page, 3);
@@ -3454,35 +3495,42 @@ test("the flow map numbers the longest route against the budget, on the step-bud
   assert.deepEqual(errors, []);
 });
 
-test("lenses change nothing a rule measures: Nook's reports are identical with the lenses on and off", async ({ browser, base }) => {
-  const change = (text) => TALL_AND_WIDE(FAINT(UNDERSIZED(text)));
+test("lenses change nothing a rule measures: Nook's and Tally's reports are identical with the lenses on and off", async ({ browser, base }) => {
+  // On Nook the first-view lens has something to mark; on Tally, the tap-target lens (a spec on Todae cannot draw an undersized control or faint text).
+  const products = {
+    nook: { open: async () => openApp(browser, base), file: "pages/booking.json", change: TALL_AND_WIDE, frames: FRAMES },
+    tally: { open: async () => openTally(browser, base), file: "pages/expense.json", change: (text) => TALLY_FAINT(TALLY_UNDERSIZED(text)), frames: TALLY_SCENARIOS.length * TALLY_VIEWS.length },
+  };
   /** Core's report for the legal prototype and for the same edit, with a lens (or none) on from the start. */
-  const run = async (lens) => {
-    const { page, context, errors } = await openApp(browser, base);
+  const run = async (product, lens) => {
+    const { open, file, change, frames } = products[product];
+    const { page, context, errors } = await open();
     await measured(page, 1);
     if (lens) {
       await lensButton(page, lens).click();
-      await eventually(page, () => page.getByTestId("lens-layer").count(), (count) => count === FRAMES, `${lens} is on`);
+      await eventually(page, () => page.getByTestId("lens-layer").count(), (count) => count === frames, `${lens} is on`);
     }
     await showAllRules(page);
     const legal = await report(page);
-    await editFile(page, "pages/booking.tsx", change);
+    await editFile(page, file, change);
     await measured(page, 2);
-    if (lens) await eventually(page, () => page.getByTestId("lens-layer").count(), (count) => count === FRAMES, `${lens} is drawn on the measured revision`);
+    if (lens) await eventually(page, () => page.getByTestId("lens-layer").count(), (count) => count === frames, `${lens} is drawn on the measured revision`);
     await showAllRules(page);
     const failing = await report(page);
     assert.deepEqual(errors, []);
     await context.close();
     return { legal, failing };
   };
-  const off = await run(null);
-  assert.equal(off.legal.status, "pass");
-  assert.equal(off.failing.status, "fail");
-  assert.ok(off.failing.findings.some((finding) => finding.evidence), "the failing report carries evidence");
-  for (const lens of ["Tap targets", "First view"]) {
-    const on = await run(lens);
-    assert.deepEqual(on.legal, off.legal, `${lens}: the legal prototype's report is the same`);
-    assert.deepEqual(on.failing, off.failing, `${lens}: the failing prototype's report is the same, evidence included`);
+  for (const product of ["nook", "tally"]) {
+    const off = await run(product, null);
+    assert.equal(off.legal.status, "pass");
+    assert.equal(off.failing.status, "fail");
+    assert.ok(off.failing.findings.some((finding) => finding.evidence), `${product}: the failing report carries evidence`);
+    for (const lens of ["Tap targets", "First view"]) {
+      const on = await run(product, lens);
+      assert.deepEqual(on.legal, off.legal, `${product}, ${lens}: the legal prototype's report is the same`);
+      assert.deepEqual(on.failing, off.failing, `${product}, ${lens}: the failing prototype's report is the same, evidence included`);
+    }
   }
   // Turning a lens on and off on one measured revision changes nothing either, and starts no new revision.
   const { page } = await openApp(browser, base);
@@ -3501,10 +3549,10 @@ test("lenses change nothing a rule measures: Nook's reports are identical with t
 
 /** One turn in which the scripted agent makes Hold room primary, gets one-primary-per-page back, and fixes it. */
 const breakAndFix = (id) => [
-  toolReply(`${id}-break`, "edit_file", { path: "pages/booking.tsx", old_text: HOLD_SECONDARY, new_text: HOLD_PRIMARY }),
+  toolReply(`${id}-break`, "patch_spec", HOLD_PRIMARY),
   (body) => {
     assert.match(lastMessage(body), /- one-primary-per-page \(count\)/, "the failing check reaches the agent");
-    return toolReply(`${id}-fix`, "edit_file", { path: "pages/booking.tsx", old_text: HOLD_PRIMARY, new_text: HOLD_SECONDARY });
+    return toolReply(`${id}-fix`, "patch_spec", HOLD_SECONDARY);
   },
   textReply("Hold room stays secondary: a page holds one primary action."),
 ];
@@ -3514,7 +3562,7 @@ const HOLD_RULE_DRAFT = {
   title: "Hold room is always a secondary action",
   reason: "The agent made Hold room primary twice and had to fix it each time.",
   rules: { add: [{ type: "requires", id: "hold-room-secondary", select: { text: "Hold room" }, must: { role: "secondary-action" } }] },
-  examples: { pass: [{ name: "as-is" }], fail: [{ name: "hold-primary", files: { "pages/booking.tsx": BOOKING.replace(HOLD_SECONDARY, HOLD_PRIMARY) }, flagged_by: { rule: "hold-room-secondary" } }] },
+  examples: { pass: [{ name: "as-is" }], fail: [{ name: "hold-primary", files: { "pages/booking.json": SECOND_PRIMARY(SPEC_BOOKING) }, flagged_by: { rule: "hold-room-secondary" } }] },
 };
 
 test("the loop notices a rule the agent fixed in two turns: the suggestion appears, accepting sends the evidence, and the agent drafts a proposal", async ({ browser, base, api }) => {
@@ -4180,7 +4228,7 @@ test("the proposals list is cards that lead with the change: a cap before and af
       title: "Booking offers no second action",
       reason: "One action per booking page: holding a room confuses people.",
       rules: { add: [{ type: "count", id: "no-secondary-on-booking", scope: "page", pages: { types: ["booking"] }, select: { role: "secondary-action" }, max: 0 }] },
-      examples: { pass: [{ name: "book-only", files: { "pages/booking.tsx": BOOKING.replace(/\s*<Slot name="alternate">[\s\S]*?<\/Slot>/, "") } }], fail: [{ name: "with-hold", flagged_by: { rule: "no-secondary-on-booking" } }] },
+      examples: { pass: [{ name: "book-only", files: { "pages/booking.json": NO_HOLD } }], fail: [{ name: "with-hold", flagged_by: { rule: "no-secondary-on-booking" } }] },
     },
     { key: false },
   );
@@ -4362,13 +4410,12 @@ test("a pinned note reaches the scripted agent as a finding; the agent fixes it 
   await measured(page, 1);
   await pinOn(page, "lantern-open", "desktop", "button", "Hold room", "Say how long the hold lasts");
   await page.keyboard.press("Escape");
-  const RENAMED = '<Button.Root variant="secondary">Hold for 10 minutes</Button.Root>';
   api.script([
     (body) => {
       const content = body.messages.at(-1).content;
       assert.equal(content.length, 2, "the notes ride with the person's message");
       assert.match(content[0].text, /^Your notes from the person: 1 open note pinned on the canvas\. They are the person's own feedback, not checks/);
-      assert.match(content[0].text, /\n- note 1: "Say how long the hold lasts" \[pages\/booking\.tsx:34:\d+, scenario lantern-open, view desktop\]\n {2}on: button "Hold room"\n {2}where: [^\n]* of the view, at x \d+, y \d+ of 1280 × 900; [^\n]*nearest: /);
+      assert.match(content[0].text, /\n- note 1: "Say how long the hold lasts" \[spec element "hold", scenario lantern-open, view desktop\]\n {2}on: button "Hold room"\n {2}where: [^\n]* of the view, at x \d+, y \d+ of 1280 × 900; [^\n]*nearest: /);
       assert.equal(content[1].text, "Please address my pinned note.");
       assert.ok(body.tools.some((tool) => tool.name === "address_note"));
       // An input that tries to do more than answer is refused whole.
@@ -4376,7 +4423,7 @@ test("a pinned note reaches the scripted agent as a finding; the agent fixes it 
     },
     (body) => {
       assert.match(lastMessage(body), /The input does not fit address_note's schema, so nothing ran/);
-      return toolReply("rename", "edit_file", { path: "pages/booking.tsx", old_text: HOLD_SECONDARY, new_text: RENAMED }, "The note asks how long a hold lasts.");
+      return toolReply("rename", "patch_spec", RENAME_HOLD, "The note asks how long a hold lasts.");
     },
     (body) => {
       assert.match(lastMessage(body), /Checks for revision 2, with every frame measured: /);
@@ -4433,10 +4480,9 @@ test("a pinned note reaches the scripted agent as a finding; the agent fixes it 
   const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export", exact: true }).click()]);
   const path = await download.path();
   const exported = JSON.parse(readFileSync(path, "utf8"));
-  const pins = exported.prototypes.find((item) => item.id === "booking").pins;
+  const pins = exported.prototypes.find((item) => item.id === "booking-spec").pins;
   assert.deepEqual(pins.pins.map((pin) => [pin.number, pin.status, pin.note, pin.reply, pin.history.map((event) => event.kind)]), [[1, "closed", "Say how long the hold lasts", "The button now reads Hold for 10 minutes.", ["created", "addressed", "closed"]]]);
   assert.equal(pins.pins[0].anchor.scenario, "lantern-open");
-  assert.equal(exported.prototypes.find((item) => item.id === "booking-spec").pins, undefined, "a prototype with no notes exports none");
   assert.ok(!JSON.stringify(exported).includes(KEY));
   await noteRow(page, 1).getByTestId("note-reopen").click();
   await eventually(page, () => noteRow(page, 1).getAttribute("data-status"), (value) => value === "open", "the person reopened it");
@@ -4452,15 +4498,15 @@ test("a pinned note reaches the scripted agent as a finding; the agent fixes it 
   await context.close();
 });
 
-test("a pin whose element is removed shows moved or gone at its last position and is never dropped; one whose element only moved in the source stays on it", async ({ browser, base }) => {
+test("a pin whose element is removed shows moved or gone at its last position and is never dropped; one whose element stays is kept on it", async ({ browser, base }) => {
   const { page, errors, context } = await openApp(browser, base);
   await measured(page, 1);
   await pinOn(page, "lantern-open", "desktop", "button", "Hold room", "Is a hold needed at all?");
   await pinOn(page, "lantern-open", "desktop", "button", "Book room", "Keep this one");
   await page.keyboard.press("Escape");
   const [hold, book] = [await markerAt(page, 1), await markerAt(page, 2)];
-  // The alternate slot goes: Hold room is removed, and Book room is now written three lines higher.
-  await editFile(page, "pages/booking.tsx", (text) => text.replace(/\s*<Slot name="alternate">[\s\S]*?<\/Slot>/, ""));
+  // The alternate slot goes: Hold room is removed, and Book room is drawn where it was.
+  await editFile(page, "pages/booking.json", () => NO_HOLD);
   await measured(page, 2);
   await liveFrame(page, "lantern-open at desktop");
   await eventually(page, () => marker(page, 1).getAttribute("data-lost"), (value) => value === "", "the pin on the removed button is marked moved or gone");
@@ -4478,18 +4524,18 @@ test("a pin whose element is removed shows moved or gone at its last position an
   assert.equal(await noteRow(page, 1).getAttribute("data-lost"), "");
   assert.match(await noteRow(page, 1).getByTestId("note-lost").textContent(), /^Moved or gone/);
   assert.equal(await page.getByTestId("notes-summary").textContent(), "2 open", "no note was dropped");
-  // The other pin's element moved in the file, not off the page: still on it, at the same spot.
+  // The other pin's element is still on the page, under its key: still on it.
   assert.equal(await marker(page, 2).getAttribute("data-lost"), null);
   assert.match(await noteRow(page, 2).locator(".note-where").textContent(), /^On button "Book room" · /);
   const kept = await markerAt(page, 2);
   const placed = await pinIsOn(page, 2, "lantern-open", "desktop", "button", "Book room");
   assert.ok(placed.on, `the kept pin is on its button: ${JSON.stringify(placed)} (was at ${JSON.stringify(book)}, now ${JSON.stringify(kept)})`);
   // Putting the slot back finds the lost pin's element again.
-  await editFile(page, "pages/booking.tsx", () => BOOKING);
+  await editFile(page, "pages/booking.json", () => SPEC_BOOKING);
   await measured(page, 3);
   await eventually(page, () => marker(page, 1).getAttribute("data-lost"), (value) => value === null, "the pin is back on its element once it returns");
   // After a reload a lost pin is still there, still lost.
-  await editFile(page, "pages/booking.tsx", (text) => text.replace(/\s*<Slot name="alternate">[\s\S]*?<\/Slot>/, ""));
+  await editFile(page, "pages/booking.json", () => NO_HOLD);
   await measured(page, 4);
   await eventually(page, () => marker(page, 1).getAttribute("data-lost"), (value) => value === "", "lost again");
   await page.waitForTimeout(600);
@@ -4554,8 +4600,6 @@ test("pins show and work on a parked frame, from its snapshot: no document, no b
 test("keyboard-only pinning: the shortcut, a frame's list of elements, the note, and Escape, on a spec prototype", async ({ browser, base }) => {
   const { page, errors, context } = await openApp(browser, base);
   await measured(page, 1);
-  await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
-  await measured(page, 2);
   await page.keyboard.press("Control+Alt+N");
   await page.getByTestId("pin-hint").waitFor();
   assert.equal(await pinMode(page).getAttribute("aria-pressed"), "true");
@@ -4747,55 +4791,6 @@ test("two notes on one spot: a count lists them, each opens by pointer and by ke
   await context.close();
 });
 
-test("after a reload, and after an export and import, a pin still tells its element renamed where it stands from a neighbour moved into its place", async ({ browser, base }) => {
-  const { page, errors, context } = await openApp(browser, base);
-  await measured(page, 1);
-  await pinOn(page, "lantern-open", "desktop", "button", "Hold room", "Is a hold needed at all?");
-  await page.keyboard.press("Escape");
-  // What tells the two apart is kept with the pin: a short print of each element the frame drew elsewhere.
-  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export", exact: true }).click()]);
-  const path = await download.path();
-  const source = JSON.parse(readFileSync(path, "utf8")).prototypes.find((item) => item.id === "booking").pins.pins[0].anchor.element.source;
-  assert.equal(source.kind, "source");
-  assert.ok(Array.isArray(source.elsewhere) && source.elsewhere.length > 0 && source.elsewhere.length <= 256 && source.elsewhere.every((print) => /^[0-9a-f]{8}$/.test(print)), `the pin keeps prints of what was drawn elsewhere: ${JSON.stringify(source.elsewhere)}`);
-  assert.deepEqual(Object.keys(source).sort(), ["elsewhere", "kind", "nth", "rect", "tag", "within"]);
-  const removeSlot = (text) => text.replace(/\s*<Slot name="alternate">[\s\S]*?<\/Slot>/, "");
-  const lostRow = async (message) => {
-    await page.getByRole("tab", { name: /Checks/ }).click();
-    await eventually(page, () => noteRow(page, 1).getAttribute("data-lost"), (value) => value === "", message);
-    assert.match(await noteRow(page, 1).locator(".note-where").textContent(), /^On button "Hold room" · /, "it still names its own element, not the neighbour");
-  };
-
-  // After a reload nothing is in memory. Hold room is removed and Book room is now written in its place: the pin is gone, not moved onto Book room.
-  await page.reload();
-  await measured(page, 1);
-  await editFile(page, "pages/booking.tsx", removeSlot);
-  await measured(page, 2);
-  await lostRow("after a reload, the pin on the removed button is moved or gone");
-  await liveFrame(page, "lantern-open at desktop");
-  assert.equal(await marker(page, 1).getAttribute("data-lost"), "");
-
-  // After an import, the same: first a rename where it stands keeps the pin on its element, under its new name.
-  await page.locator('[data-testid="import-file"]').setInputFiles(path);
-  await measured(page, 1);
-  await page.getByRole("tab", { name: /Checks/ }).click();
-  await eventually(page, () => noteRow(page, 1).getAttribute("data-lost"), (value) => value === null, "the import brought the pin back on its element");
-  await editFile(page, "pages/booking.tsx", (text) => text.replace(HOLD_SECONDARY, '<Button.Root variant="secondary">Hold for 10 minutes</Button.Root>'));
-  await measured(page, 2);
-  await page.getByRole("tab", { name: /Checks/ }).click();
-  await eventually(page, () => noteRow(page, 1).locator(".note-where").textContent(), (value) => /^On button "Hold for 10 minutes" · /.test(value), "renamed where it stands, the pin stays on it after an import");
-  assert.equal(await noteRow(page, 1).getAttribute("data-lost"), null);
-  // And a neighbour moved into its place, straight after another import, is told apart again.
-  await page.locator('[data-testid="import-file"]').setInputFiles(path);
-  await measured(page, 1);
-  await editFile(page, "pages/booking.tsx", removeSlot);
-  await measured(page, 2);
-  await lostRow("after an import, the pin on the removed button is moved or gone");
-  assert.equal(await page.getByTestId("notes-summary").textContent(), "1 open", "and it was never dropped");
-  assert.deepEqual(errors, []);
-  await context.close();
-});
-
 test("undoing the agent's turn opens the note it addressed again and drops its reply, with the prototype back; a note the person closed stays closed", async ({ browser, base, api }) => {
   const { page, errors, context } = await openApp(browser, base);
   await measured(page, 1);
@@ -4805,7 +4800,7 @@ test("undoing the agent's turn opens the note it addressed again and drops its r
   await pinOn(page, "lantern-open", "desktop", "heading", "Lantern", "A warmer name");
   await page.keyboard.press("Escape");
   api.script([
-    toolReply("rename", "edit_file", { path: "pages/booking.tsx", old_text: HOLD_SECONDARY, new_text: '<Button.Root variant="secondary">Hold for 10 minutes</Button.Root>' }),
+    toolReply("rename", "patch_spec", RENAME_HOLD),
     toolReply("one", "address_note", { note: 1, reply: "The button now reads Hold for 10 minutes." }),
     toolReply("two", "address_note", { note: 2, reply: "The name is the room's own." }),
     textReply("Both notes are answered."),
@@ -4813,7 +4808,7 @@ test("undoing the agent's turn opens the note it addressed again and drops its r
       const said = body.messages.at(-1).content.map((block) => block.text);
       assert.equal(said[0], 'The person undid your changes from their message "Please address my notes": the prototype is back to what it was before that message. Read the files again before you change them. Also, note 1 is open again, and your reply to it was withdrawn.');
       assert.match(said[1], /^Your notes from the person: 1 open note pinned on the canvas\./);
-      assert.match(said[1], /\n- note 1: "Say how long the hold lasts" \[pages\/booking\.tsx:34:\d+, scenario lantern-open, view desktop\]\n {2}on: button "Hold room"\n/);
+      assert.match(said[1], /\n- note 1: "Say how long the hold lasts" \[spec element "hold", scenario lantern-open, view desktop\]\n {2}on: button "Hold room"\n/);
       assert.equal(said[2], "Thanks");
       return textReply("Understood.");
     },
@@ -4959,7 +4954,7 @@ test("a note pinned on a variant: on the variant's own element, listed with its 
   assert.deepEqual(await standings(), stood, "and so is every variant's standing and report");
   assert.equal(await pickRadio(page, "body", "Variant C").isDisabled(), true);
   assert.deepEqual(await boardScroll(page), boardAt, "pinning in the Variants view never scrolls the board");
-  assert.equal(await page.locator(".checks").getAttribute("data-revision"), "2", "a note starts no revision");
+  assert.equal(await page.locator(".checks").getAttribute("data-revision"), "1", "a note starts no revision");
 
   // The agent reads which variant the note is on, revises that variant, and answers the note.
   const revised = copy(BOOKING_SPEC);
@@ -4998,8 +4993,6 @@ test("a note pinned on a variant: on the variant's own element, listed with its 
   // A reload keeps it on its variant.
   await page.reload();
   await measured(page, 1);
-  await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
-  await measured(page, 2);
   await page.getByRole("tab", { name: /Checks/ }).click();
   assert.match(await noteRow(page, 1).locator(".note-where").textContent(), /^On button "Book room" · Variant A · /);
   assert.equal(await noteRow(page, 1).getAttribute("data-status"), "addressed");
