@@ -3,7 +3,7 @@
  * pure function of plain JSON, with no clock, randomness, network or file
  * system, so it runs unchanged in a browser and in Node.
  */
-export type { Cap, ComponentLibrary, Inventories, PageType, PartDescription, ProjectConfig, PropSchema, RankedAction, RoleMapping, RuleInputs, Task, View } from "./config/types";
+export type { Cap, ComponentLibrary, Inventories, LibraryRoot, PageType, PartDescription, ProjectConfig, PropSchema, RankedAction, RoleMapping, RuleInputs, SettablePropSchema, Task, View } from "./config/types";
 export { CONFIG_SCHEMA_VERSION } from "./config/types";
 export type { ComponentRef, Flow, LayoutEntry, PageEntry, Prototype, Scenario, TaskFlow, Transition } from "./prototype/types";
 export type { Rect, RenderedElement, RenderedSnapshot, Rgba, TextPaint } from "./rendered/types";
@@ -84,3 +84,6 @@ export type { TsxExport } from "./export/tsx";
 export { specToTsx } from "./export/tsx";
 export type { ProjectExport, ProjectExportInput } from "./export/project";
 export { EXPORT_PROTOTYPE_DIR, EXPORT_TOOLING, exportReactProject } from "./export/project";
+
+export type { Confidence, ConfirmedRole, ConfirmedRoles, LibraryDescription, MissingRole, MissingRoleEffect, RoleConfirmation, RoleDraft, RoleGuess } from "./library/roles";
+export { confirmRoles, draftRoles, missingRoleEffects } from "./library/roles";

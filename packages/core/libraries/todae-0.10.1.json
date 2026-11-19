@@ -178,6 +178,10 @@
     "id": {
      "type": "string",
      "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": false
     }
    },
    "content": "children",
@@ -480,10 +484,18 @@
      "type": "string",
      "required": false
     },
+    "initialFocusRef": {
+     "type": "unknown",
+     "required": false
+    },
     "open": {
      "type": "boolean",
      "required": false,
      "bind": "onOpenChange"
+    },
+    "restoreFocusRef": {
+     "type": "unknown",
+     "required": false
     },
     "snap": {
      "type": "enum",
@@ -493,6 +505,10 @@
      ],
      "required": false,
      "bind": "onSnapChange"
+    },
+    "snapPoints": {
+     "type": "unknown",
+     "required": false
     }
    },
    "content": "children",
@@ -668,6 +684,14 @@
      "type": "string",
      "required": false
     },
+    "defaultMonth": {
+     "type": "unknown",
+     "required": false
+    },
+    "defaultValue": {
+     "type": "unknown",
+     "required": false
+    },
     "disabled": {
      "type": "boolean",
      "required": false
@@ -684,12 +708,24 @@
      "type": "string",
      "required": false
     },
+    "max": {
+     "type": "unknown",
+     "required": false
+    },
+    "min": {
+     "type": "unknown",
+     "required": false
+    },
     "mode": {
      "type": "enum",
      "values": [
       "range",
       "single"
      ],
+     "required": false
+    },
+    "value": {
+     "type": "unknown",
      "required": false
     }
    },
@@ -825,6 +861,10 @@
      "type": "string",
      "required": false
     },
+    "removeIcon": {
+     "type": "string",
+     "required": false
+    },
     "removeLabel": {
      "type": "string",
      "required": false
@@ -860,12 +900,20 @@
      "type": "string",
      "required": false
     },
+    "chips": {
+     "type": "unknown",
+     "required": true
+    },
     "id": {
      "type": "string",
      "required": false
     },
     "maxRows": {
      "type": "number",
+     "required": false
+    },
+    "removeIcon": {
+     "type": "string",
      "required": false
     }
    },
@@ -1037,10 +1085,22 @@
      "type": "boolean",
      "required": false
     },
+    "initialFocusRef": {
+     "type": "unknown",
+     "required": false
+    },
     "open": {
      "type": "boolean",
      "required": false,
      "bind": "onOpenChange"
+    },
+    "restoreFocusRef": {
+     "type": "unknown",
+     "required": false
+    },
+    "targetRef": {
+     "type": "unknown",
+     "required": true
     }
    },
    "content": "children",
@@ -1246,6 +1306,10 @@
     "id": {
      "type": "string",
      "required": false
+    },
+    "label": {
+     "type": "string",
+     "required": false
     }
    },
    "content": "children",
@@ -1410,6 +1474,31 @@
     "press"
    ]
   },
+  "DensityProvider": {
+   "props": {
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "density": {
+     "type": "enum",
+     "values": [
+      "comfortable",
+      "compact",
+      "spacious"
+     ],
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
   "Description.Root": {
    "props": {
     "aria-label": {
@@ -1541,10 +1630,18 @@
      "type": "string",
      "required": false
     },
+    "initialFocusRef": {
+     "type": "unknown",
+     "required": false
+    },
     "open": {
      "type": "boolean",
      "required": false,
      "bind": "onOpenChange"
+    },
+    "restoreFocusRef": {
+     "type": "unknown",
+     "required": false
     },
     "role": {
      "type": "enum",
@@ -1723,10 +1820,18 @@
      "type": "string",
      "required": false
     },
+    "initialFocusRef": {
+     "type": "unknown",
+     "required": false
+    },
     "open": {
      "type": "boolean",
      "required": false,
      "bind": "onOpenChange"
+    },
+    "restoreFocusRef": {
+     "type": "unknown",
+     "required": false
     },
     "side": {
      "type": "enum",
@@ -1805,12 +1910,20 @@
   },
   "Drilldown.Root": {
    "props": {
+    "defaultValue": {
+     "type": "unknown",
+     "required": false
+    },
     "escape": {
      "type": "enum",
      "values": [
       "back",
       "close"
      ],
+     "required": false
+    },
+    "value": {
+     "type": "unknown",
      "required": false
     }
    },
@@ -1853,6 +1966,10 @@
    "props": {
     "id": {
      "type": "string",
+     "required": false
+    },
+    "initialFocusRef": {
+     "type": "unknown",
      "required": false
     },
     "label": {
@@ -2023,6 +2140,18 @@
      ],
      "required": false
     },
+    "chipRemoveIcon": {
+     "type": "string",
+     "required": false
+    },
+    "chips": {
+     "type": "unknown",
+     "required": true
+    },
+    "commitKeys": {
+     "type": "unknown",
+     "required": false
+    },
     "id": {
      "type": "string",
      "required": false
@@ -2086,6 +2215,14 @@
      "type": "string",
      "required": false
     },
+    "max": {
+     "type": "unknown",
+     "required": false
+    },
+    "min": {
+     "type": "unknown",
+     "required": false
+    },
     "placeholder": {
      "type": "string",
      "required": false
@@ -2093,6 +2230,10 @@
     "required": {
      "type": "boolean",
      "required": false
+    },
+    "value": {
+     "type": "unknown",
+     "required": true
     }
    },
    "content": "children",
@@ -2117,6 +2258,14 @@
      "type": "string",
      "required": false
     },
+    "max": {
+     "type": "unknown",
+     "required": false
+    },
+    "min": {
+     "type": "unknown",
+     "required": false
+    },
     "placeholder": {
      "type": "string",
      "required": false
@@ -2124,6 +2273,10 @@
     "required": {
      "type": "boolean",
      "required": false
+    },
+    "value": {
+     "type": "unknown",
+     "required": true
     }
    },
    "content": "children",
@@ -2148,6 +2301,14 @@
      "type": "string",
      "required": false
     },
+    "max": {
+     "type": "unknown",
+     "required": false
+    },
+    "min": {
+     "type": "unknown",
+     "required": false
+    },
     "placeholder": {
      "type": "string",
      "required": false
@@ -2155,6 +2316,10 @@
     "required": {
      "type": "boolean",
      "required": false
+    },
+    "value": {
+     "type": "unknown",
+     "required": true
     }
    },
    "content": "children",
@@ -2237,6 +2402,10 @@
    "props": {
     "aria-label": {
      "type": "string",
+     "required": false
+    },
+    "formatOptions": {
+     "type": "unknown",
      "required": false
     },
     "id": {
@@ -2327,6 +2496,10 @@
     },
     "defaultOpen": {
      "type": "boolean",
+     "required": false
+    },
+    "glyph": {
+     "type": "string",
      "required": false
     },
     "id": {
@@ -2476,6 +2649,10 @@
      "type": "boolean",
      "required": false
     },
+    "highlights": {
+     "type": "unknown",
+     "required": false
+    },
     "id": {
      "type": "string",
      "required": false
@@ -2517,6 +2694,14 @@
      "type": "string",
      "required": false
     },
+    "max": {
+     "type": "unknown",
+     "required": false
+    },
+    "min": {
+     "type": "unknown",
+     "required": false
+    },
     "placeholder": {
      "type": "string",
      "required": false
@@ -2524,6 +2709,10 @@
     "required": {
      "type": "boolean",
      "required": false
+    },
+    "value": {
+     "type": "unknown",
+     "required": true
     }
    },
    "content": "children",
@@ -2584,6 +2773,10 @@
      "type": "string",
      "required": false
     },
+    "errors": {
+     "type": "unknown",
+     "required": false
+    },
     "id": {
      "type": "string",
      "required": false
@@ -2603,11 +2796,27 @@
     "id": {
      "type": "string",
      "required": false
+    },
+    "title": {
+     "type": "string",
+     "required": false
     }
    },
    "content": "none",
    "events": [
     "press"
+   ]
+  },
+  "GlyphsProvider": {
+   "props": {
+    "glyphs": {
+     "type": "unknown",
+     "required": true
+    }
+   },
+   "content": "children",
+   "needs": [
+    "glyphs"
    ]
   },
   "Grid.Root": {
@@ -2719,6 +2928,10 @@
     "id": {
      "type": "string",
      "required": true
+    },
+    "source": {
+     "type": "unknown",
+     "required": true
     }
    },
    "content": "children",
@@ -2727,6 +2940,23 @@
    ],
    "needs": [
     "source"
+   ]
+  },
+  "MentionText": {
+   "props": {
+    "sources": {
+     "type": "unknown",
+     "required": true
+    },
+    "value": {
+     "type": "unknown",
+     "required": true
+    }
+   },
+   "content": "none",
+   "needs": [
+    "sources",
+    "value"
    ]
   },
   "Menu.CheckboxItem": {
@@ -3141,6 +3371,10 @@
       "short"
      ],
      "required": false
+    },
+    "value": {
+     "type": "unknown",
+     "required": true
     }
    },
    "content": "children",
@@ -3160,6 +3394,10 @@
     "id": {
      "type": "string",
      "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": false
     }
    },
    "content": "children",
@@ -3176,14 +3414,15 @@
     "id": {
      "type": "string",
      "required": false
+    },
+    "label": {
+     "type": "string",
+     "required": true
     }
    },
    "content": "children",
    "events": [
     "press"
-   ],
-   "needs": [
-    "label"
    ]
   },
   "Nav.Group": {
@@ -3193,6 +3432,10 @@
      "required": false
     },
     "id": {
+     "type": "string",
+     "required": false
+    },
+    "label": {
      "type": "string",
      "required": false
     }
@@ -3300,6 +3543,11 @@
     "tabIndex": {
      "type": "number",
      "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": true,
+     "bind": "onValueChange"
     }
    },
    "content": "children",
@@ -3307,8 +3555,7 @@
     "press"
    ],
    "needs": [
-    "onValueChange",
-    "value"
+    "onValueChange"
    ]
   },
   "Pagination.Ellipsis": {
@@ -3405,6 +3652,10 @@
      "required": false
     },
     "id": {
+     "type": "string",
+     "required": false
+    },
+    "value": {
      "type": "string",
      "required": false
     }
@@ -3578,7 +3829,15 @@
      "type": "string",
      "required": false
     },
+    "defaultValue": {
+     "type": "string",
+     "required": false
+    },
     "id": {
+     "type": "string",
+     "required": false
+    },
+    "value": {
      "type": "string",
      "required": false
     }
@@ -3810,6 +4069,18 @@
    "content": "children",
    "events": [
     "press"
+   ]
+  },
+  "StringsProvider": {
+   "props": {
+    "strings": {
+     "type": "unknown",
+     "required": true
+    }
+   },
+   "content": "children",
+   "needs": [
+    "strings"
    ]
   },
   "Switch.Root": {
@@ -4179,6 +4450,39 @@
     "press"
    ]
   },
+  "ThemeProvider": {
+   "props": {
+    "appearance": {
+     "type": "enum",
+     "values": [
+      "dark",
+      "light",
+      "system"
+     ],
+     "required": false
+    },
+    "aria-label": {
+     "type": "string",
+     "required": false
+    },
+    "id": {
+     "type": "string",
+     "required": false
+    },
+    "overrideTypes": {
+     "type": "unknown",
+     "required": false
+    },
+    "overrides": {
+     "type": "unknown",
+     "required": false
+    }
+   },
+   "content": "children",
+   "events": [
+    "press"
+   ]
+  },
   "Toast.Action": {
    "props": {
     "aria-label": {
@@ -4306,6 +4610,10 @@
       "top-start"
      ],
      "required": false
+    },
+    "toaster": {
+     "type": "unknown",
+     "required": true
     }
    },
    "content": "none",
@@ -4398,6 +4706,10 @@
      "type": "string",
      "required": false
     },
+    "defaultValue": {
+     "type": "string",
+     "required": false
+    },
     "disabled": {
      "type": "boolean",
      "required": false
@@ -4421,6 +4733,11 @@
       "single"
      ],
      "required": false
+    },
+    "value": {
+     "type": "string",
+     "required": false,
+     "bind": "onValueChange"
     }
    },
    "content": "children",
@@ -4583,8 +4900,16 @@
      "type": "string",
      "required": false
     },
+    "defaultExpanded": {
+     "type": "unknown",
+     "required": false
+    },
     "defaultValue": {
      "type": "string",
+     "required": false
+    },
+    "expanded": {
+     "type": "unknown",
      "required": false
     },
     "id": {

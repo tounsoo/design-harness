@@ -1,4 +1,4 @@
-import type { ProjectConfig, PropSchema } from "../config/types";
+import type { ProjectConfig, SettablePropSchema as PropSchema } from "../config/types";
 import { PAGE_KIT } from "../extract/evaluator";
 import type { Prototype } from "../prototype/types";
 import { LAYOUT_TYPE, SCENARIO_STATE, TEXT_PROP, type CatalogComponent, type SpecCatalog } from "../spec/catalog";

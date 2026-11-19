@@ -1,4 +1,4 @@
-import type { PartDescription, ProjectConfig, PropSchema } from "../config/types";
+import type { PartDescription, ProjectConfig, SettablePropSchema } from "../config/types";
 import { ROLE_NAMES, type RoleName } from "../rules/types";
 
 /**
@@ -29,7 +29,9 @@ export type CatalogComponent = {
   readonly kind: "part" | "page" | "layout";
   readonly description: string;
   /** Every prop a spec may set, `text` included where the part takes text. */
-  readonly props: Readonly<Record<string, PropSchema>>;
+  readonly props: Readonly<Record<string, SettablePropSchema>>;
+  /** Props the library declares whose type could not be read as a JSON value: a spec that sets one is refused. */
+  readonly unknownProps?: readonly string[];
   /** `default` when it takes child elements; a page's named slots; none for a leaf. */
   readonly slots: readonly string[];
   readonly content: PartDescription["content"];
@@ -44,7 +46,7 @@ export type SpecCatalog = {
   readonly left: readonly { readonly component: string; readonly why: string }[];
 };
 
-const TEXT: PropSchema = { type: "string", required: false };
+const TEXT: SettablePropSchema = { type: "string", required: false };
 
 function roleWords(part: string, config: ProjectConfig): { roles: RoleName[]; words: string[] } {
   const roles: RoleName[] = [];
@@ -81,7 +83,12 @@ export function specCatalog(config: ProjectConfig): SpecCatalog | null {
         continue;
       }
       const { roles, words } = roleWords(name, config);
-      const props: Record<string, PropSchema> = { ...part.props };
+      const props: Record<string, SettablePropSchema> = {};
+      const unknownProps: string[] = [];
+      for (const [prop, schema] of Object.entries(part.props)) {
+        if (schema.type === "unknown") unknownProps.push(prop);
+        else props[prop] = schema;
+      }
       if (part.content === "children") props[TEXT_PROP] = TEXT;
       // A press is what an action does; other parts are not pressed, whatever DOM events they pass on.
       const events = roles.includes("action") && part.events?.includes("press") ? (["press"] as const) : [];
@@ -94,6 +101,7 @@ export function specCatalog(config: ProjectConfig): SpecCatalog | null {
         content: part.content,
         events,
         roles,
+        ...(unknownProps.length > 0 ? { unknownProps: unknownProps.sort() } : {}),
       };
     }
   }

@@ -1,4 +1,4 @@
-import type { PropSchema, ProjectConfig } from "../config/types";
+import type { ProjectConfig, SettablePropSchema as PropSchema } from "../config/types";
 import type { SourceLocation } from "../extract/model";
 import type { Prototype } from "../prototype/types";
 import { LAYOUT_TYPE, PAGE_TYPE, SCENARIO_STATE, SPEC_ACTIONS, specCatalog, type CatalogComponent, type SpecCatalog } from "./catalog";
@@ -422,6 +422,11 @@ function checkProps(type: string, component: CatalogComponent, props: { readonly
   const kept: Record<string, JsonValue> = {};
   for (const name of Object.keys(props).sort(compare)) {
     const schema = component.props[name];
+    if (!schema && component.unknownProps?.includes(name)) {
+      // Fail closed: the library declares the prop, but its type could not be read as a JSON value, so no value a spec gives can be checked.
+      report(`sets "${name}", which a ${type} declares with a type that could not be read as a JSON value, so a spec cannot set it.`, "props", name);
+      continue;
+    }
     if (!schema) {
       report(`sets "${name}", which a ${type} does not take. ${names.length > 0 ? `It takes ${quote(names)}.` : "It takes no props."}`, "props", name);
       continue;
