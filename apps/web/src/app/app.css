@@ -475,9 +475,10 @@
    * hollow and small, and one whose element is gone is dashed with a question mark, and each says so in words.
    * Todae has no map-pin or annotation-marker part, so the marker is a plain button styled here.
    */
-  .board-pinning { align-self: center; margin: 0 0 var(--todae-space-1); padding: var(--todae-space-1) var(--todae-space-3); border-radius: var(--todae-radius-full); background: var(--todae-harness-note-soft); color: var(--todae-color-fg-default); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  /* The hint floats over the top of the board, so turning the mode on moves nothing under it. */
+  .board-pinning { position: absolute; z-index: 3; inset-block-start: calc(var(--todae-space-12) + var(--todae-space-2)); inset-inline-start: 50%; translate: -50% 0; max-inline-size: calc(100% - var(--todae-space-8)); margin: 0; padding: var(--todae-space-1) var(--todae-space-3); border-radius: var(--todae-radius-full); background: var(--todae-harness-note-soft); color: var(--todae-color-fg-default); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); box-shadow: var(--todae-harness-shadow-floating); pointer-events: none; }
   .board-pinning kbd { font: inherit; font-weight: var(--todae-font-weight-medium); }
-  .board[data-floating] .board-pinning { position: absolute; z-index: 3; inset-block-start: calc(var(--todae-space-4) + var(--todae-space-12)); inset-inline-start: 50%; translate: -50% 0; box-shadow: var(--todae-harness-shadow-floating); }
+  .board[data-floating] .board-pinning { inset-block-start: calc(var(--todae-space-4) + var(--todae-space-12)); }
   .board-lens-end { align-items: center; gap: var(--todae-space-2); }
   .frame-pin { margin-inline-start: auto; }
   .frame-pin + .frame-open { margin-inline-start: 0; }

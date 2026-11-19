@@ -502,19 +502,31 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   }, [recordOf, updatePins]);
   const tagKind = prototype?.format === "spec" ? "key" : "source";
   const pinRevision = useMemo(() => (prototype ? fingerprint(prototype) : ""), [prototype]);
+  /**
+   * What each frame measured for the revision now and for the one before, of the open prototype, in memory only:
+   * re-anchoring reads the one before to tell an element renamed where it stands from another that moved into its
+   * place in the file.
+   */
+  const measures = useRef<{ id: string; revision: string; now: Record<string, FrameMeasure>; before: Record<string, FrameMeasure> }>({ id: "", revision: "", now: {}, before: {} });
   // Each time frames are measured for the prototype as it is now, every pin is placed again: on its element where that still exists, "moved or gone" where it does not.
   useEffect(() => {
     const record = recordOf();
     const running = session.current();
-    if (!record?.pins || record.pins.pins.length === 0 || !running || running.prototype !== record.prototype) return;
-    const frames: Record<string, FrameMeasure> = {};
+    if (!record || !running || running.prototype !== record.prototype) return;
+    const revision = fingerprint(record.prototype);
+    const kept = measures.current;
+    if (kept.id !== record.id) measures.current = { id: record.id, revision, now: {}, before: {} };
+    else if (kept.revision !== revision) measures.current = { id: record.id, revision, now: {}, before: { ...kept.before, ...kept.now } };
+    const frames = measures.current.now;
     for (const frame of state.frames) {
       const value = state.frameStates[frame.key];
       if (value?.state === "measured") frames[frame.key] = { snapshot: value.snapshot, places: value.places ?? [], width: frame.view.width, height: frame.view.height };
     }
+    if (!record.pins || record.pins.pins.length === 0) return;
     const kind = record.prototype.format === "spec" ? "key" : "source";
-    const next = reanchor(record.pins, frames, fingerprint(record.prototype), kind);
-    if (next !== record.pins) updatePins(() => reanchor(recordOf()?.pins ?? next, frames, fingerprint(record.prototype), kind));
+    const before = measures.current.before;
+    const next = reanchor(record.pins, frames, revision, kind, before);
+    if (next !== record.pins) updatePins((latest) => reanchor(latest, frames, revision, kind, before));
   }, [state.frames, state.frameStates, session, recordOf, updatePins, pinState]);
   const boardPins = useMemo((): BoardPins => ({ state: pinState, pinning, onPinning: setPinning, actions: pinActions, revision: pinRevision, kind: tagKind, onHold: setBoardHolds }), [pinState, pinning, setPinning, pinActions, pinRevision, tagKind]);
   const pinFrame = useCallback(

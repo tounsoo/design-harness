@@ -138,10 +138,13 @@ export function Board({
   const [draft, setDraftState] = useState<PinDraft | null>(null);
   const [focusPin, setFocusPin] = useState<number | null>(null);
   const pinning = pins?.pinning ?? false;
+  /** The note being written was just pinned: focus goes to its pin, not back to the list's button. */
+  const pinned = useRef(false);
   const setDraft = useCallback((next: PinDraft | null) => {
     setDraftState((before) => {
       // A note started from a frame's list and put down gives focus back to that list's button, without a scroll.
-      if (next === null && before?.list) requestAnimationFrame(() => cardOf(before.frame)?.querySelector<HTMLElement>(".frame-pin")?.focus({ preventScroll: true }));
+      if (next === null && before?.list && !pinned.current) requestAnimationFrame(() => cardOf(before.frame)?.querySelector<HTMLElement>(".frame-pin")?.focus({ preventScroll: true }));
+      pinned.current = false;
       return next;
     });
   }, []);
@@ -153,7 +156,10 @@ export function Board({
             ...pinActions,
             create: (anchor, note) => {
               const number = pinActions.create(anchor, note);
-              if (number !== null) setFocusPin(number);
+              if (number !== null) {
+                pinned.current = true;
+                setFocusPin(number);
+              }
               return number;
             },
           }

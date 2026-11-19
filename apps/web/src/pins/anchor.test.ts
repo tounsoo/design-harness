@@ -49,6 +49,12 @@ describe("anchoring a pin", () => {
     expect(anchor.near).toEqual(['button "Hold room"', 'heading "Lantern"']);
   });
 
+  it("names the control under the point, not the run of text inside it; a heading before plain text", () => {
+    const nested = measure([el("button", "Book room", "button", [240, 200, 120, 40]), el("generic", "Book room", "span", [260, 210, 80, 20], { interactive: false }), el("heading", "Lantern", "h1", [100, 40, 300, 40], { headingLevel: 1 }), el("generic", "Lantern", "span", [100, 45, 90, 30])], []);
+    expect(anchorAt(nested, FRAME, { x: 300, y: 220 }, "rev-1", "source").element?.label).toMatchObject({ role: "button", html: "button" });
+    expect(anchorAt(nested, FRAME, { x: 120, y: 60 }, "rev-1", "source").element?.label).toMatchObject({ role: "heading", html: "h1" });
+  });
+
   it("anchors to the page when nothing is under the point, and to the point alone on an unmeasured frame", () => {
     expect(anchorAt(first, FRAME, { x: 1000, y: 700 }, "rev-1", "source").element).toBeUndefined();
     expect(anchorAt(first, FRAME, { x: 500, y: 300 }, "rev-1", "source").element).toEqual({ source: expect.objectContaining({ tag: "pages/booking.tsx:8:5" }) });
@@ -97,6 +103,31 @@ describe("a pin across revisions", () => {
     expect(next.element?.label?.name).toBe("Book room");
     expect(next.element?.source).toMatchObject({ tag: "pages/booking.tsx:16:9", kind: "source" });
     expect(next.lost).toBeUndefined();
+  });
+
+  it("is gone, not moved onto a neighbour, when its element is removed and another is now written in its place", () => {
+    // Hold room pinned at 14:9. Its line is deleted, so Book room is now written at 14:9.
+    const hold = anchorAt(first, FRAME, { x: 130, y: 210 }, "rev-1", "source");
+    const after = measure([el("heading", "Lantern", "h1", [100, 40, 300, 40]), el("button", "Book room", "button", [100, 200, 120, 40])], [place("pages/booking.tsx:8:5", [80, 20, 600, 400]), place("pages/booking.tsx:10:7", [100, 40, 300, 40]), place("pages/booking.tsx:14:9", [100, 200, 120, 40])]);
+    const lost = resolveAnchor(hold, after, "rev-2", "source", first);
+    expect(lost).toMatchObject({ lost: true, point: { x: 130, y: 210 }, element: { label: { name: "Hold room" } } });
+    // The same measurement, when the element there is new to the page, is a rename where it stands.
+    const renamed = measure([el("heading", "Lantern", "h1", [100, 40, 300, 40]), el("button", "Hold for 10 minutes", "button", [100, 200, 160, 40])], [place("pages/booking.tsx:8:5", [80, 20, 600, 400]), place("pages/booking.tsx:10:7", [100, 40, 300, 40]), place("pages/booking.tsx:14:9", [100, 200, 160, 40])]);
+    expect(resolveAnchor(hold, renamed, "rev-2", "source", first)).toMatchObject({ element: { label: { name: "Hold for 10 minutes" }, source: { tag: "pages/booking.tsx:14:9" } } });
+    expect(resolveAnchor(hold, renamed, "rev-2", "source", first).lost).toBeUndefined();
+    // Once lost it stays lost on that page, with or without the measurement before (after a reload there is none).
+    expect(resolveAnchor(lost, after, "rev-2", "source")).toBe(lost);
+    expect(resolveAnchor(lost, after, "rev-2", "source", after)).toBe(lost);
+    // And Book room's own pin, whose tag is gone, is found by name at its new place.
+    const book = anchorAt(first, FRAME, { x: 270, y: 210 }, "rev-1", "source");
+    expect(resolveAnchor(book, after, "rev-2", "source", first)).toMatchObject({ point: { x: 130, y: 210 }, element: { source: { tag: "pages/booking.tsx:14:9" }, label: { name: "Book room" } } });
+    // All of it through reanchor, which hands each frame its measurement before.
+    let state: PinState = NO_PINS;
+    for (const anchor of [hold, book]) {
+      const added = addPin(state, anchor, "A note", "2026-11-19T10:00:00.000Z");
+      if (added.ok) state = added.value;
+    }
+    expect(reanchor(state, { "lantern-open@desktop": after }, "rev-2", "source", { "lantern-open@desktop": first }).pins.map((pin) => pin.anchor.lost ?? false)).toEqual([true, false]);
   });
 
   it("stays on its element when the element is renamed where it stands, and names it anew", () => {

@@ -213,10 +213,17 @@ function OnLine({ anchor, frame }: { readonly anchor: PinAnchor; readonly frame:
   );
 }
 
-function NoteField({ value, onChange, label, onSubmit }: { readonly value: string; readonly onChange: (next: string) => void; readonly label: string; readonly onSubmit: () => void }) {
+function NoteField({ value, onChange, label, onSubmit, focus }: { readonly value: string; readonly onChange: (next: string) => void; readonly label: string; readonly onSubmit: () => void; /** Takes focus when it appears, the caret after its words: a note being edited. */ readonly focus?: boolean }) {
+  const field = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (!focus || !field.current) return;
+    field.current.focus({ preventScroll: true });
+    field.current.setSelectionRange(field.current.value.length, field.current.value.length);
+  }, [focus]);
   return (
     <Field.Root aria-label={label} className="pin-card-field">
       <Field.Textarea
+        ref={field}
         value={value}
         onValueChange={onChange}
         rows={3}
@@ -338,7 +345,7 @@ function PinCard({ pin, frame, actions, onDone }: { readonly pin: Pin; readonly 
       )}
       {editing ? (
         <>
-          <NoteField value={text} onChange={setText} label={`Your note ${pin.number}`} onSubmit={save} />
+          <NoteField value={text} onChange={setText} label={`Your note ${pin.number}`} onSubmit={save} focus />
           <Stack.Root direction="row" gap="condensed" className="pin-card-actions">
             <Button.Root variant="primary" onClick={save} disabled={text.trim() === ""} data-testid="pin-save">
               Save
