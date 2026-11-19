@@ -1,0 +1,36 @@
+# The form the New project wizard opens, filled in, for a library this deployment does not ship yet.
+# The library request workflow (.github/workflows/library-request.yml) reads each field by its label,
+# so keep the labels as they are: apps/web/scripts/library-request-input.mjs names them.
+name: Library request
+description: Ask for a component library to be added, so New project can offer it.
+title: "Library request: "
+labels: ["library-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A workflow reads this request: it checks that the package and exact version are on npm with TypeScript types, describes the library, adds it, runs every check, and opens a pull request for a person to review. If something stops it, it says why here. Editing the fields runs it again.
+  - type: input
+    id: package
+    attributes:
+      label: Package
+      description: The package's name on npm.
+      placeholder: "@mantine/core"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Exact version
+      description: One exact version, such as 9.7.4. Not a range such as ^9.0.0, and not a tag such as latest.
+      placeholder: "9.7.4"
+    validations:
+      required: true
+  - type: textarea
+    id: stylesheets
+    attributes:
+      label: Stylesheets
+      description: The library's CSS files, as paths inside the package, one a line. Leave it empty for a library that needs none.
+      placeholder: dist/styles.css
+    validations:
+      required: false

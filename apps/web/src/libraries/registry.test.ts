@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildProject, confirmationFrom, defaultStarterRules, draftRoles, parseLibraryDescription } from "@design-harness/core";
+import { vendoredLibraries } from "../../scripts/vendor-libraries.mjs";
 import { FRAME_REACT, SHIPPED_LIBRARIES } from "./registry";
 
 const web = join(import.meta.dirname, "..", "..");
@@ -14,7 +15,9 @@ describe("the libraries this deployment ships", () => {
 
   for (const library of SHIPPED_LIBRARIES) {
     it(`${library.name}: its description is of the version installed, and a project built on its draft has a starter that follows the rules`, async () => {
-      expect(packageJson.dependencies[library.package]).toBe(library.version);
+      // Installed at that version: under its own name, or, beside another version of it, under its npm alias.
+      const install = vendoredLibraries(packageJson).find((entry) => entry.package === library.package && entry.version === library.version)?.install;
+      expect(install && JSON.parse(readFileSync(join(web, "..", "..", "node_modules", install, "package.json"), "utf8")).version).toBe(library.version);
       expect(packageJson.dependencies.react).toBe(FRAME_REACT);
       const description = await library.describe();
       const parsed = parseLibraryDescription(JSON.parse(JSON.stringify(description)));
