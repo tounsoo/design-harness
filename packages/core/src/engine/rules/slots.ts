@@ -78,6 +78,7 @@ export function evaluateSlot(rule: SlotRule, ctx: CheckContext): Outcome {
           page: page.id,
           ...(at ? locate(at) : {}),
           ...pointAt(ctx, repeated ? [repeated.node] : definite.map((item) => item.node), page.id),
+          ...(repeated ? {} : { evidence: { kind: "count-vs-cap" as const, count: definite.length, cap: max, bound: "max" as const, unit: what } }),
           kind: "violation",
           message: repeated
             ? `The ${label} renders ${what} once per item of a list, so it may hold more than ${boundLabel(rule.max, ctx)}.`
@@ -89,6 +90,7 @@ export function evaluateSlot(rule: SlotRule, ctx: CheckContext): Outcome {
           rule: rule.id,
           page: page.id,
           ...locate(page.root.at),
+          evidence: { kind: "count-vs-cap", count: definite.length, cap: min, bound: "min", unit: what },
           kind: "violation",
           message: filled.length === 0 ? `Page "${page.id}" does not fill its ${which}, which must hold at least ${boundLabel(rule.min, ctx)} ${what}.` : `The ${label} must hold at least ${boundLabel(rule.min, ctx)} ${what}, found ${definite.length}.`,
         });

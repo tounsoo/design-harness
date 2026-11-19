@@ -44,8 +44,13 @@ export { isScript, resolvePath } from "./extract/modules";
 
 export type { CheckReport, CheckStatus, Finding, FindingTarget, RuleReport, RuleStatus } from "./engine/report";
 export { EXTRACT_RULE } from "./engine/report";
+export type { BoxWithNeighbourEvidence, ColourPairEvidence, CountVsCapEvidence, CoverageEvidence, Evidence, EvidenceDeclaration, EvidenceKind, RegionLineEvidence, RouteVsBudgetEvidence, SequenceGapEvidence } from "./engine/evidence";
+export { EVIDENCE_KINDS, RULE_EVIDENCE, evidenceFor } from "./engine/evidence";
+export type { FlowFacts, TaskFacts, ViewFacts } from "./engine/facts";
+export { flowFacts, viewFacts } from "./engine/facts";
+export type { TargetVerdict } from "./engine/rules/rendered";
 export type { CheckInput } from "./engine/check";
-export { checkPrototype } from "./engine/check";
+export { RULE_TYPES, checkPrototype } from "./engine/check";
 
 export { BUILT_IN_RULES } from "./builtins";
 export { describeRule } from "./engine/words";

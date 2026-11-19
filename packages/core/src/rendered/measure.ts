@@ -13,27 +13,37 @@ export const AA_LARGE = 3;
 export type Heading = { readonly text: string; readonly level: number; readonly shown: boolean };
 
 /** One outline problem, with the index of the heading it is about, when it is about one. */
-export type HeadingProblem = { readonly message: string; readonly index?: number };
+export type HeadingProblem = {
+  readonly message: string;
+  readonly index?: number;
+  /** What is wrong, for a picture of the outline. */
+  readonly problem: "skipped" | "second-first" | "before-first" | "no-first";
+  /** For a skipped level: the index of the heading it follows, and the levels left out. */
+  readonly after?: number;
+  readonly missing?: readonly number[];
+};
 
 /** The page's heading outline problems: one visible h1 first, no second h1, no level skipped going down. */
 export function headingProblems(headings: readonly Heading[]): HeadingProblem[] {
   const titleIndex = headings.findIndex((heading) => heading.level === 1 && heading.shown);
   const title = headings[titleIndex];
-  if (!title) return [{ message: "The page has no visible title: it needs one h1, and the other headings sit under it." }];
+  if (!title) return [{ message: "The page has no visible title: it needs one h1, and the other headings sit under it.", problem: "no-first" }];
   const problems: HeadingProblem[] = [];
   let previous = title;
+  let previousIndex = titleIndex;
   headings.forEach((heading, index) => {
     if (index === titleIndex) return;
     const name = `h${heading.level} "${heading.text}"`;
     if (heading.level === 1) {
-      problems.push({ message: `${name} is a second h1. A page has one h1, its title "${title.text}".`, index });
+      problems.push({ message: `${name} is a second h1. A page has one h1, its title "${title.text}".`, index, problem: "second-first" });
     } else if (index < titleIndex) {
-      problems.push({ message: `${name} comes before the title "${title.text}". The title is the page's first heading.`, index });
+      problems.push({ message: `${name} comes before the title "${title.text}". The title is the page's first heading.`, index, problem: "before-first" });
       return;
     } else if (heading.level > previous.level + 1) {
-      problems.push({ message: `${name} skips a level: it follows h${previous.level} "${previous.text}", so it is h${Math.min(previous.level + 1, 6)} or a level above.`, index });
+      problems.push({ message: `${name} skips a level: it follows h${previous.level} "${previous.text}", so it is h${Math.min(previous.level + 1, 6)} or a level above.`, index, problem: "skipped", after: previousIndex, missing: Array.from({ length: heading.level - previous.level - 1 }, (_, step) => previous.level + 1 + step) });
     }
     previous = heading;
+    previousIndex = index;
   });
   return problems;
 }
@@ -86,14 +96,27 @@ function circleHitsRect(cx: number, cy: number, radius: number, rect: Rect): boo
  * undersized target.
  */
 export function failsSpacing(target: RenderedElement, others: readonly RenderedElement[], min: number): boolean {
+  return spacingNeighbour(target, others, min) !== null;
+}
+
+/**
+ * The first of `others`, in the order given, that breaks the spacing
+ * exception for `target`, and how: the target's circle reaches its box
+ * (`in-circle`), or both are undersized and their circles overlap
+ * (`circles-meet`). Null when the exception holds. `failsSpacing` is exactly
+ * "this is not null", so a picture of the neighbour and the verdict cannot
+ * disagree.
+ */
+export function spacingNeighbour(target: RenderedElement, others: readonly RenderedElement[], min: number): { readonly index: number; readonly meets: "in-circle" | "circles-meet" } | null {
   const cx = target.rect.x + target.rect.width / 2;
   const cy = target.rect.y + target.rect.height / 2;
-  return others.some((other) => {
-    if (other === target) return false;
-    if (circleHitsRect(cx, cy, min / 2, other.rect)) return true;
+  for (const [index, other] of others.entries()) {
+    if (other === target) continue;
+    if (circleHitsRect(cx, cy, min / 2, other.rect)) return { index, meets: "in-circle" };
     const undersized = other.rect.width < min || other.rect.height < min;
     const ox = other.rect.x + other.rect.width / 2;
     const oy = other.rect.y + other.rect.height / 2;
-    return undersized && Math.hypot(cx - ox, cy - oy) < min;
-  });
+    if (undersized && Math.hypot(cx - ox, cy - oy) < min) return { index, meets: "circles-meet" };
+  }
+  return null;
 }
