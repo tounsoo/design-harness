@@ -104,15 +104,13 @@ export const SHIPPED_LIBRARIES: readonly ShippedLibrary[] = [
     describe: async () => (await import("../../../../packages/core/libraries/mantine-core-9.7.4.json")).default as unknown as LibraryDescription,
   },
   {
-    // Added by the library request workflow from issue #32. A person must check:
-    //   - The primary-action role was drafted at medium confidence: check it in New project.
-    //   - Its `setup` (light and dark, root part, rules, part props) and `notes` are copied from the 0.11.3 entry: check they still hold for 0.11.2.
-    //   - `about` is the workflow's words: say what the library is.
+    // Added by the library request workflow from issue #32. Its setup is 0.11.3's, checked against 0.11.2: the stylesheet switches on
+    // data-appearance, and Text.Root takes `as` with the same heading, paragraph and span values.
     id: "tounsoo-todae-0-11-2",
     name: "@tounsoo/todae",
     package: "@tounsoo/todae",
     version: "0.11.2",
-    about: "Requested in issue #32. Parts are namespaced, such as Button.Root.",
+    about: "The design system this app is built with, one patch release behind the version the app ships. Parts are namespaced, such as Button.Root.",
     setup: {
       react: FRAME_REACT,
       stylesheets: ["dist/todae.css"],
