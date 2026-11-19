@@ -1,7 +1,7 @@
 import { PAGE_KIT } from "../../extract";
 import { resolvePath } from "../../extract/modules";
 import type { MembershipRule } from "../../rules/types";
-import { everyNode, locate, named, where, type CheckContext } from "../context";
+import { everyNode, locate, named, pointAt, where, type CheckContext } from "../context";
 import type { Finding } from "../report";
 import type { Outcome } from "./outcome";
 
@@ -58,7 +58,7 @@ function components(rule: MembershipRule, ctx: CheckContext): Finding[] {
   for (const { node } of everyNode(ctx.model.source)) {
     if (node.kind === "library") {
       const root = node.name.split(".")[0] ?? node.name;
-      if (!allowed.has(root)) findings.push({ rule: rule.id, ...locate(node.at), kind: "violation", message: `${named(node)} at ${where(node.at)} is from ${root}, which is not an inventoried component (${inventory}).` });
+      if (!allowed.has(root)) findings.push({ rule: rule.id, ...locate(node.at), ...pointAt(ctx, [node]), kind: "violation", message: `${named(node)} at ${where(node.at)} is from ${root}, which is not an inventoried component (${inventory}).` });
     } else if (node.kind === "unresolved") {
       findings.push({ rule: rule.id, ...locate(node.at), kind: "unverifiable", message: `Cannot tell which component <${node.name}> at ${where(node.at)} is: ${node.reason ?? "it cannot be resolved"}.` });
     }

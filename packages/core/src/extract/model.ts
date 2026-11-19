@@ -65,6 +65,13 @@ export type ElementNode = {
   readonly layout?: string;
   /** On an unresolved node: why it could not be named. */
   readonly reason?: string;
+  /**
+   * On an element of a spec page: its key in the expanded page, which a frame
+   * draws it under (`details/summary` inside instance `details`); a page's
+   * slot is `<page root>/slots/<name>`. Absent on TSX, whose elements are
+   * found by where they are written, and on a spec file's elements as written.
+   */
+  readonly key?: string;
   readonly children: readonly ElementNode[];
 };
 

@@ -1,7 +1,7 @@
 import type { PageType } from "../../config/types";
 import type { ElementNode } from "../../extract/model";
 import type { PageStructureRule, ReachableRule, SlotRule } from "../../rules/types";
-import { bound, boundLabel, everyNode, locate, named, pagesFor, where, type CheckContext } from "../context";
+import { bound, boundLabel, everyNode, locate, named, pagesFor, pointAt, where, type CheckContext } from "../context";
 import { article, describe } from "../describe";
 import type { Finding } from "../report";
 import { matches } from "../select";
@@ -77,6 +77,7 @@ export function evaluateSlot(rule: SlotRule, ctx: CheckContext): Outcome {
           rule: rule.id,
           page: page.id,
           ...(at ? locate(at) : {}),
+          ...pointAt(ctx, repeated ? [repeated.node] : definite.map((item) => item.node), page.id),
           kind: "violation",
           message: repeated
             ? `The ${label} renders ${what} once per item of a list, so it may hold more than ${boundLabel(rule.max, ctx)}.`
@@ -93,7 +94,7 @@ export function evaluateSlot(rule: SlotRule, ctx: CheckContext): Outcome {
         });
       } else if ((max !== undefined && definite.length + maybe.length > max) || (min !== undefined && definite.length < min)) {
         for (const item of maybe) {
-          findings.push({ rule: rule.id, page: page.id, ...locate(item.node.at), kind: "unverifiable", message: `Cannot tell whether ${named(item.node)} at ${where(item.node.at)} in the ${label} is one of the ${what}: ${item.result.why ?? "it cannot be read statically"}.` });
+          findings.push({ rule: rule.id, page: page.id, ...locate(item.node.at), ...pointAt(ctx, [item.node], page.id), kind: "unverifiable", message: `Cannot tell whether ${named(item.node)} at ${where(item.node.at)} in the ${label} is one of the ${what}: ${item.result.why ?? "it cannot be read statically"}.` });
         }
       }
     }
@@ -106,6 +107,7 @@ export function evaluateSlot(rule: SlotRule, ctx: CheckContext): Outcome {
           rule: rule.id,
           page: page.id,
           ...locate(item.node.at),
+          ...pointAt(ctx, [item.node], page.id),
           kind: result.v === false ? "violation" : "unverifiable",
           message:
             result.v === false
@@ -134,6 +136,7 @@ export function evaluateReachable(rule: ReachableRule, ctx: CheckContext): Outco
     findings.push({
       rule: rule.id,
       ...locate(node.at),
+      ...pointAt(ctx, [node]),
       kind: result.v === true ? "violation" : "unverifiable",
       message:
         result.v === true
@@ -153,24 +156,25 @@ export function evaluatePageStructure(rule: PageStructureRule, ctx: CheckContext
       for (const child of node.children) {
         const again = repeated || child.repeated;
         const base = { rule: rule.id, page: page.id, ...locate(child.at) };
+        const here = () => pointAt(ctx, [child], page.id);
         if (child.kind === "component" && child.page !== undefined) continue;
         if (child.kind === "kit" && child.name === "Slot") {
           const name = slotName(child);
           if (name === null) {
-            findings.push({ ...base, kind: "unverifiable", message: `The Slot at ${where(child.at)} has a computed name, so which slot it fills cannot be told. Write the name as a string.` });
+            findings.push({ ...base, ...here(), kind: "unverifiable", message: `The Slot at ${where(child.at)} has a computed name, so which slot it fills cannot be told. Write the name as a string.` });
           } else if (slot !== null) {
-            findings.push({ ...base, kind: "violation", message: `Slot "${name}" at ${where(child.at)} is inside slot "${slot}". Slots sit side by side, not inside each other.` });
+            findings.push({ ...base, ...here(), kind: "violation", message: `Slot "${name}" at ${where(child.at)} is inside slot "${slot}". Slots sit side by side, not inside each other.` });
           } else if (!type.slots.includes(name)) {
-            findings.push({ ...base, kind: "violation", message: `Page "${page.id}" fills slot "${name}" at ${where(child.at)}, but page type "${type.id}" has no such slot; its slots are ${type.slots.map((item) => `"${item}"`).join(", ")}.` });
+            findings.push({ ...base, ...here(), kind: "violation", message: `Page "${page.id}" fills slot "${name}" at ${where(child.at)}, but page type "${type.id}" has no such slot; its slots are ${type.slots.map((item) => `"${item}"`).join(", ")}.` });
           } else if (seen.has(name) || again) {
-            findings.push({ ...base, kind: "violation", message: `Page "${page.id}" fills slot "${name}" ${again ? "once per item of a list" : `twice, at ${where((seen.get(name) as ElementNode).at)} and ${where(child.at)}`}. A page fills each slot once.` });
+            findings.push({ ...base, ...(seen.has(name) && !again ? pointAt(ctx, [seen.get(name) as ElementNode, child], page.id) : here()), kind: "violation", message: `Page "${page.id}" fills slot "${name}" ${again ? "once per item of a list" : `twice, at ${where((seen.get(name) as ElementNode).at)} and ${where(child.at)}`}. A page fills each slot once.` });
           }
           if (name !== null) seen.set(name, child);
           walk(child, name ?? "?", again);
           continue;
         }
         if (slot === null && child.kind !== "component") {
-          findings.push({ ...base, kind: child.kind === "unresolved" ? "unverifiable" : "violation", message: `${named(child)} at ${where(child.at)} is outside every slot of page "${page.id}". Put it in one of page type "${type.id}"'s slots: ${type.slots.map((item) => `"${item}"`).join(", ")}.` });
+          findings.push({ ...base, ...here(), kind: child.kind === "unresolved" ? "unverifiable" : "violation", message: `${named(child)} at ${where(child.at)} is outside every slot of page "${page.id}". Put it in one of page type "${type.id}"'s slots: ${type.slots.map((item) => `"${item}"`).join(", ")}.` });
           continue;
         }
         walk(child, slot, again);
