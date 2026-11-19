@@ -278,3 +278,185 @@ describe("a layout's preview", () => {
     expect(layoutPreview(bare, nook, "select-question")?.missing).toEqual(["label"]);
   });
 });
+
+describe("parameters in conditions and templates", () => {
+  const text = (value: unknown, visible?: unknown) => ({ type: "Text.Root", props: { as: "p", text: value }, ...(visible === undefined ? {} : { visible }), children: [] });
+  const scenario = { id: "home-open", state: "room-open", page: "home" };
+  const texts = (prototype: Prototype) => flat(pageRoot(prototype)).filter((node) => node.name === "Text.Root").map((node) => node.text);
+
+  const CARD = {
+    params: { shown: { type: "boolean", default: true }, tone: { type: "enum", values: ["quiet", "loud"] }, count: { type: "number" } },
+    root: "box",
+    elements: {
+      box: { type: "Stack.Root", props: {}, children: ["a", "b", "c", "d", "e", "f"] },
+      a: text("A", { $param: "shown" }),
+      b: text("B", { $param: "tone", eq: "loud" }),
+      c: text("C", [{ $param: "count", gt: 1 }, { $state: "/scenario/state", eq: "held" }]),
+      d: text({ $cond: { $param: "tone", eq: "loud" }, $then: "Loud", $else: "Quiet" }),
+      e: text("E", { $param: "count", gt: { $state: "/n" } }),
+      f: text("F", { $or: [{ $state: "/n", lt: { $param: "count" } }, { $param: "shown", not: true }] }),
+    },
+  };
+
+  it("works a condition of known values out, so an element shown never is left out", () => {
+    const prototype = project({ elements: { page: page({ body: ["card"] }), card: { type: "Layout", props: { id: "card", tone: "quiet", count: 2 }, children: [] } }, state: { n: 1 } }, { card: CARD });
+    expect(problems(prototype)).toEqual([]);
+    const spec = resolvePageSpec(prototype, config, scenario);
+    expect(spec?.elements["card/a"]?.visible).toBeUndefined();
+    expect(spec?.elements["card/b"]?.visible).toBe(false);
+    expect(spec?.elements["card/c"]?.visible).toEqual([{ $state: "/scenario/state", eq: "held" }]);
+    expect(spec?.elements["card/d"]?.props.text).toBe("Quiet");
+    // A known value compared with state turns round, so state is the source json-render reads.
+    expect(spec?.elements["card/e"]?.visible).toEqual({ $state: "/n", lt: 2 });
+    expect(spec?.elements["card/f"]?.visible).toEqual({ $or: [{ $state: "/n", lt: 2 }] });
+    expect(texts(prototype)).toEqual(["A", "C", "Quiet", "E", "F"]);
+  });
+
+  it("puts a value read from the page in as the condition's source or operand", () => {
+    const prototype = project({ elements: { page: page({ body: ["card"] }), card: { type: "Layout", props: { id: "card", shown: { $state: "/show" }, tone: { $state: "/tone" }, count: { $state: "/count" } }, children: [] } }, state: { show: true, tone: "loud", count: 3, n: 1 } }, { card: CARD });
+    expect(problems(prototype)).toEqual([]);
+    const spec = resolvePageSpec(prototype, config, scenario);
+    expect(spec?.elements["card/a"]?.visible).toEqual({ $state: "/show" });
+    expect(spec?.elements["card/b"]?.visible).toEqual({ $state: "/tone", eq: "loud" });
+    expect(spec?.elements["card/c"]?.visible).toEqual([{ $state: "/count", gt: 1 }, { $state: "/scenario/state", eq: "held" }]);
+    expect(spec?.elements["card/d"]?.props.text).toEqual({ $cond: { $state: "/tone", eq: "loud" }, $then: "Loud", $else: "Quiet" });
+    expect(spec?.elements["card/e"]?.visible).toEqual({ $state: "/count", gt: { $state: "/n" } });
+    expect(spec?.elements["card/f"]?.visible).toEqual({ $or: [{ $state: "/n", lt: { $state: "/count" } }, { $state: "/show", not: true }] });
+    // Every element that can show counts, and a $cond's text is either value.
+    expect(texts(prototype)).toEqual(["A", "B", "C", "", "E", "F"]);
+    expect(flat(pageRoot(prototype)).find((node) => node.origin === "layouts/card.json#d")?.props).toEqual({ as: { kind: "literal", value: "p" } });
+  });
+
+  it("joins an instance's own condition to its root's with $and, and leaves out an instance shown never", () => {
+    const shown = { params: { on: { type: "boolean" } }, root: "t", elements: { t: text("T", { $param: "on" }) } };
+    const twice = project(
+      {
+        elements: {
+          page: page({ body: ["first", "second"] }),
+          first: { type: "Layout", props: { id: "card", on: { $state: "/on" } }, visible: { $state: "/scenario/state", eq: "held" }, children: [] },
+          second: { type: "Layout", props: { id: "card", on: false }, visible: { $state: "/scenario/state", eq: "held" }, children: [] },
+        },
+        state: { on: true },
+      },
+      { card: shown },
+    );
+    const spec = resolvePageSpec(twice, config, scenario);
+    expect(spec?.elements["first/t"]?.visible).toEqual({ $and: [{ $state: "/scenario/state", eq: "held" }, { $state: "/on" }] });
+    expect(spec?.elements["second/t"]?.visible).toBe(false);
+    expect(texts(twice)).toEqual(["T"]);
+  });
+
+  const LINE = {
+    params: { name: { type: "text" }, seats: { type: "number" }, size: { type: "enum", values: ["small", "large"], default: "small" } },
+    root: "t",
+    elements: { t: text({ $template: "${$param:name}: ${$param:seats} seats, ${$param:size}, ${/floor}" }) },
+  };
+  const line = (props: Record<string, unknown>, state: Record<string, unknown> = { floor: "Second floor", room: { name: "Lantern", seats: 6 } }) =>
+    project({ elements: { page: page({ body: ["line"] }), line: { type: "Layout", props: { id: "line", ...props }, children: [] } }, state }, { line: LINE });
+
+  it("puts a parameter's value in a template: literal text, a state path, an item's field or the page's own template", () => {
+    const literal = line({ name: "Lantern", seats: 6 });
+    expect(problems(literal)).toEqual([]);
+    expect(resolvePageSpec(literal, config, scenario)?.elements["line/t"]?.props.text).toEqual({ $template: "Lantern: 6 seats, small, ${/floor}" });
+    expect(texts(literal)).toEqual(["Lantern: 6 seats, small, Second floor"]);
+
+    const read = line({ name: { $template: "Room ${/room/name}" }, seats: { $state: "/room/seats" }, size: "large" });
+    expect(problems(read)).toEqual([]);
+    expect(resolvePageSpec(read, config, scenario)?.elements["line/t"]?.props.text).toEqual({ $template: "Room ${/room/name}: ${/room/seats} seats, large, ${/floor}" });
+    expect(texts(read)).toEqual(["Room Lantern: 6 seats, large, Second floor"]);
+
+    const rooms = project(
+      { elements: { page: page({ body: ["rooms"] }), rooms: { type: "Stack.Root", props: {}, repeat: { statePath: "/rooms", key: "name" }, children: ["line"] }, line: { type: "Layout", props: { id: "line", name: { $item: "name" }, seats: { $item: "seats" } }, children: [] } }, state: { floor: "Ground floor", rooms: [{ name: "Lantern", seats: 6 }, { name: "Harbor", seats: 10 }] } },
+      { line: LINE },
+    );
+    expect(problems(rooms)).toEqual([]);
+    expect(resolvePageSpec(rooms, config, scenario)?.elements["line/t"]?.props.text).toEqual({ $template: "${name}: ${seats} seats, small, ${/floor}" });
+    expect(texts(rooms)).toEqual(["Lantern: 6 seats, small, Ground floor", "Harbor: 10 seats, small, Ground floor"]);
+  });
+
+  it("draws a template once for each value of a $cond given for it", () => {
+    const chosen = line({ name: "Lantern", seats: { $cond: { $state: "/scenario/state", eq: "held" }, $then: 4, $else: { $state: "/room/seats" } } });
+    expect(problems(chosen)).toEqual([]);
+    expect(resolvePageSpec(chosen, config, scenario)?.elements["line/t"]?.props.text).toEqual({
+      $cond: { $state: "/scenario/state", eq: "held" },
+      $then: { $template: "Lantern: 4 seats, small, ${/floor}" },
+      $else: { $template: "Lantern: ${/room/seats} seats, small, ${/floor}" },
+    });
+    expect(flat(pageRoot(chosen)).find((node) => node.name === "Text.Root")?.props).toEqual({ as: { kind: "literal", value: "p" } });
+  });
+
+  it("passes a parameter on to an inner layout inside a template, and reads the outer one's", () => {
+    const outer = { params: { who: { type: "text" } }, root: "inner", elements: { inner: { type: "Layout", props: { id: "line", name: { $template: "Hello ${$param:who}" }, seats: 2 }, children: [] } } };
+    const prototype = project({ elements: { page: page({ body: ["outer"] }), outer: { type: "Layout", props: { id: "panel", who: { $state: "/who" } }, children: [] } }, state: { who: "Ben", floor: "Top" } }, { line: LINE, panel: outer });
+    expect(problems(prototype)).toEqual([]);
+    expect(resolvePageSpec(prototype, config, scenario)?.elements["outer/inner/t"]?.props.text).toEqual({ $template: "Hello ${/who}: 2 seats, small, ${/floor}" });
+  });
+
+  it("fails closed: a template reading state the page changes cannot be told, and a value json-render cannot read there is an issue at both places", () => {
+    const details = (legal.files["layouts/room-details.json"] as string).replace('"text": { "$param": "summary" }', '"text": { "$template": "${$param:summary}" }');
+    const changing = { ...legal, files: { ...legal.files, "layouts/room-details.json": details, "pages/booking.json": bookingFile.replace('"items": { "$state": "/room/details" } }', '"items": { "$state": "/room/details" }, "summary": { "$state": "/duration" } }') } };
+    const report = checkPrototype({ config: nook, prototype: changing });
+    expect(report.rules.filter((rule) => rule.status === "fail").map((rule) => rule.rule)).toEqual(["disclosed-sections"]);
+    expect(report.findings.find((item) => item.rule === "disclosed-sections")?.message).toContain('Cannot tell whether Disclosure.Summary at layouts/room-details.json:9:5 (in layout "room-details" used at pages/booking.json:21:5)');
+
+    const indexed = project(
+      { elements: { page: page({ body: ["rows"] }), rows: { type: "Stack.Root", props: {}, repeat: { statePath: "/rooms", key: "name" }, children: ["line"] }, line: { type: "Layout", props: { id: "line", name: { $item: "name" }, seats: { $index: true } }, children: [] } }, state: { rooms: [{ name: "a" }], floor: "x" } },
+      { line: LINE },
+    );
+    expect(problems(indexed)).toEqual(['layouts/line.json: element "t" reads parameter "seats" in a $template, but it was given {"$index":true}, which a template cannot put in: give text, a number, { "$state": "/path" }, { "$item": "field" }, a $template or a $cond of them.']);
+    const finding = checkPrototype({ config, prototype: indexed }).findings.find((item) => item.rule === "extract");
+    expect(finding).toMatchObject({ file: "layouts/line.json", via: [{ layout: "line", file: "pages/home.json" }] });
+
+    const templated = project({ elements: { page: page({ body: ["card"] }), card: { type: "Layout", props: { id: "card", tone: "quiet", count: { $template: "${/n}" } }, children: [] } }, state: { n: 1 } }, { card: { ...CARD, params: { ...CARD.params, count: { type: "text" } }, elements: { ...CARD.elements, c: text("C", { $param: "count", eq: "1" }), e: text("E"), f: text("F") } } });
+    expect(problems(templated)).toEqual(['layouts/card.json: element "c" reads parameter "count" in a condition, but it was given {"$template":"${/n}"}, which a condition cannot read: give a literal, { "$state": "/path" }, { "$item": "field" } or { "$index": true }.']);
+    // The element a condition could not be read for stays in, so the rules still see it.
+    expect(texts(templated)).toContain("C");
+  });
+
+  it("checks a parameter's type where a condition or a template reads it", () => {
+    const layout = (elements: Record<string, unknown>) => ({ params: { label: { type: "text" }, on: { type: "boolean" }, tone: { type: "enum", values: ["quiet", "loud"] }, count: { type: "number" }, rows: { type: "list", of: "text" } }, root: "box", elements: { box: { type: "Stack.Root", props: {}, children: Object.keys(elements) }, ...elements } });
+    const values = { label: "L", on: true, tone: "quiet", count: 1, rows: [] };
+    const bad = project(
+      { elements: { page: page({ body: ["q"] }), q: { type: "Layout", props: { id: "question", ...values }, children: [] } } },
+      {
+        question: layout({
+          a: text("A", { $param: "label" }),
+          b: text("B", { $param: "tone", gt: 1 }),
+          c: text("C", { $param: "tone", eq: "loud!" }),
+          d: text("D", { $param: "rows", eq: "x" }),
+          e: text("E", { $param: "nothing" }),
+          f: text("F", { $param: "count", eq: { $param: "label" } }),
+          g: text("G", { $state: "/n", lt: { $param: "label" } }),
+          h: text({ $template: "${$param:on}" }),
+          i: text({ $template: "${$param:rows} and ${$param:nothing}" }),
+          j: text({ $template: "${$foo}" }),
+          k: text({ $cond: { $param: "count" }, $then: "x", $else: "y" }),
+        }),
+      },
+    );
+    expect(problems(bad)).toEqual([
+      'layouts/question.json: element "a" has a condition that tests parameter "label" alone, but it is text; a condition with no operator tests a boolean, so compare it with "eq" or "neq".',
+      'layouts/question.json: element "b" has a condition that compares parameter "tone" with "gt", which compares numbers, but it is one of "quiet", "loud".',
+      'layouts/question.json: element "c" has a condition that compares parameter "tone" with "loud!", which it never holds: it is one of "quiet", "loud".',
+      'layouts/question.json: element "d" has a condition that reads parameter "rows", which is a list of texts; a condition reads a boolean, text, a number or one of an enum\'s values.',
+      'layouts/question.json: element "e" has a condition that reads { "$param": "nothing" }, which is not a parameter of this layout ("count", "label", "on", "rows", "tone").',
+      'layouts/question.json: element "f" has a condition that compares parameter "count", a number, with parameter "label", text, so they are never equal.',
+      'layouts/question.json: element "g" has a condition that compares with parameter "label" using "lt", which compares numbers, but it is text.',
+      'layouts/question.json: element "h" sets text with a $template that reads parameter "on", but it is a boolean, and a template puts in text, a number or one of an enum\'s values.',
+      'layouts/question.json: element "i" sets text with a $template that reads parameter "rows", but it is a list of texts, and a template puts in text, a number or one of an enum\'s values.',
+      'layouts/question.json: element "i" sets text with a $template that reads ${$param:nothing}, which is not a parameter of this layout ("count", "label", "on", "rows", "tone").',
+      'layouts/question.json: element "j" sets text with a $template that reads ${$foo}, which is not a reference a template here may use: ${/path} reads state, ${field} the repeat item, and ${$param:name} a parameter.',
+      'layouts/question.json: element "k" has a condition that tests parameter "count" alone, but it is a number; a condition with no operator tests a boolean, so compare it with "eq" or "neq".',
+    ]);
+    // On a page there are no parameters to read, in a condition, a template, or a template given to a layout.
+    const onPage = project(
+      { elements: { page: page({ title: ["t", "u"], body: ["q"] }), t: text("T", { $param: "on" }), u: text({ $template: "${$param:label}" }), q: { type: "Layout", props: { id: "question", ...values, label: { $template: "${$param:label}" } }, children: [] } } },
+      { question: layout({ a: text({ $param: "label" }) }) },
+    );
+    expect(problems(onPage)).toEqual([
+      'pages/home.json: element "q" gives "label" a $template that reads ${$param:label}, but only a layout has parameters.',
+      'pages/home.json: element "t" has a condition that reads { "$param": "on" }, but only a layout has parameters.',
+      'pages/home.json: element "u" sets text with a $template that reads ${$param:label}, but only a layout has parameters.',
+    ]);
+  });
+});

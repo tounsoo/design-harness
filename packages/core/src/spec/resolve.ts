@@ -15,15 +15,16 @@ export type FlatSpec = {
 /**
  * An expanded page as one json-render spec: each layout instance replaced by
  * the layout's root, expanded with its parameters (an instance's `visible`
- * joins its root's), and only the elements that passed validation. Null when
- * nothing renders.
+ * joins its root's with `$and`), and only the elements that passed
+ * validation. Null when nothing renders.
  */
 export function flatSpecOf(page: ExpandedPage, state: { readonly [key: string]: JsonValue }): FlatSpec | null {
   const elements: Record<string, FlatSpec["elements"][string]> = {};
   const draw = (key: string, visible: JsonValue | undefined): string | null => {
     const element = page.elements.get(key);
     if (!element) return null;
-    const both = (own: JsonValue | undefined): JsonValue | undefined => (visible === undefined ? own : own === undefined ? visible : [visible, own]);
+    // json-render's list form holds single conditions only, so two conditions join with $and, which takes any.
+    const both = (own: JsonValue | undefined): JsonValue | undefined => (visible === undefined || visible === true ? own : own === undefined || own === true ? visible : visible === false || own === false ? false : { $and: [visible, own] });
     if (element.layout !== undefined) {
       const [root] = element.children;
       return root === undefined ? null : draw(root, both(element.visible));

@@ -95,18 +95,36 @@ A page draws an instance with the parameters as the `Layout` element's other pro
 
 | Type | A page gives | The layout reads it as |
 | --- | --- | --- |
-| `text`, `number`, `boolean`, `enum` (`values`) | a literal of the type, or an expression that reads the page (`$state`, `$item`, `$index`, `$template` for text, `$cond`) | a prop's value; the prop's schema must take the type (an enum's values must be the prop's) |
+| `text`, `number`, `boolean`, `enum` (`values`) | a literal of the type, or an expression that reads the page (`$state`, `$item`, `$index`, `$template` for text, `$cond`) | a prop's value; the prop's schema must take the type (an enum's values must be the prop's). In a condition (`visible`, or a `$cond`'s): a `boolean` alone, or any of the four compared with `eq` or `neq` to a value it can hold, `gt`, `gte`, `lt` and `lte` for a `number`. In a `$template` as `${$param:name}`: `text`, `number` or `enum` |
 | `list` (`of`: `text`, `number`, `boolean`, `option`, or `{ "record": { field: type } }`) | a literal list, `$state` or `$item` | `"repeat": { "param": name, "key"?: field }`, or a prop such as `options` |
 | `binding` | `{ "$bindState": "/path" }` | a bindable prop: each instance writes its own path |
 | `slot` | element keys in the instance's `slots` | `{ "$param": name }` among an element's `children`, placed once |
 
 A parameter is required unless it has a `default` or `"required": false`; `description` and `example` are for people and the agent. Inside another layout, an instance may pass on its own parameters with `$param` where the types fit.
 
+A condition and a template read parameters too. Nook's `room-cards` shows each card's seats only when the page asks for them, and puts its button's verb before the room's name:
+
+```json
+"params": {
+  "detail": { "type": "enum", "values": ["seats", "none"], "default": "seats" },
+  "verb": { "type": "text", "default": "Open" }
+},
+"elements": {
+  "seats": { "type": "Text.Root", "props": { "as": "p", "text": { "$template": "${seats} seats" } }, "visible": { "$param": "detail", "eq": "seats" }, "children": [] },
+  "open": { "type": "Button.Root", "props": { "variant": "secondary", "text": { "$template": "${$param:verb} ${name}" } }, "children": [] }
+}
+```
+
+`{ "$param": name }` is a condition's source or the value it compares with; `${$param:name}` is a template's reference, beside `${/path}` for state and `${field}` for the repeat item.
+
 [`src/spec/params.ts`](src/spec/params.ts) reads the declarations and checks each value an instance gives, and [`src/spec/read.ts`](src/spec/read.ts) checks every use of a parameter against the prop it feeds: a wrong type, a missing required parameter, a parameter the layout lacks, a slot placed twice or nowhere, and an instance of a layout the manifest lacks are each an `extract` finding where they are written. [`src/spec/expand.ts`](src/spec/expand.ts) then expands every instance, deterministically and before anything else reads a page, so the page model and the frame's spec are the same expanded tree and neither sees a parameter:
 
 - an instance's elements are keyed `<instance>/<key>`, with nested instances joined by `/`, so two instances never collide; a key in a file holds no `/`;
 - `{ "$scopedId": "field" }` is `<instance>/field`, an element id unique per instance, and per item, through the repeat's key, inside one keyed repeat (anywhere else it is an `extract` finding, since the id would repeat);
 - a literal list given for a repeat is kept in the page's state at `/params/<instance>/<param>`, where json-render's repeat reads it (`params` is reserved in a page's state, as `scenario` is);
+- a condition that reads a parameter becomes json-render's own: the value given stands in as its source or operand (`{ "$param": "detail", "eq": "seats" }` given `{ "$state": "/card-detail" }` is `{ "$state": "/card-detail", "eq": "seats" }`), a literal compared with state turns the comparison round so state is the source, and a condition of literals alone is worked out: true drops it, and false leaves the element out of the page model (and hides it in the frame), as `"visible": false` does. A `$cond` whose condition is worked out is the value it picks;
+- `${$param:name}` in a template becomes what was given: a literal's text, `${/path}` for `$state`, `${field}` for `$item`, a page's own `$template` spliced in, and for a `$cond` a `$cond` of two templates, one per value;
+- a value json-render has no way to read there, such as `$index` or `{ "$item": "" }` in a template or a `$template` in a condition, is an `extract` finding at the layout's element, with `via`: the element stays in the page model, shown, so no rule passes on it unseen;
 - a value from outside a layout that reads a repeat item, used inside a repeat of the layout, is an `extract` finding: it would read the layout's item;
 - a layout that draws itself is drawn once, as an unresolved element, and the rules that depend on it say they cannot tell.
 
@@ -312,13 +330,14 @@ A pick is the person's alone: core has no function that applies one, and a pick 
 | `repeat` | `list.map((item) => <El key={item.key} />)` |
 | `$template` | text and expressions, `{room.seats} seats, {room.floor}` |
 | `$scopedId` | `useId()`, with the item's key inside a keyed repeat |
+| `{ "$param": name }` in a condition, `${$param:name}` in a template | the parameter's prop: `detail === "seats" && <El />`, `{verb} {room.name}` |
 | setState, pushState, removeState | the state's setter in an `onClick` |
 | an element nothing lists | kept as JSX nothing renders, so the export checks as the spec does |
 
 `exportReactProject({ config, prototype, name, at, checks? })` ([`src/export/project.ts`](src/export/project.ts)) puts it in a runnable Vite project: the prototype under `src/prototype/` with its `manifest.json`, `src/page-kit.tsx` (`Slot`, `PageProps` and the page shell, which `vite.config.ts` and `tsconfig.json` alias as `@design-harness/page`), `src/scenarios.ts`, `src/main.tsx` (the entry, with a scenario switcher and `?scenario=<id>`), `index.html`, `tsconfig.json`, a `package.json` pinning the config's exact library and React versions and `EXPORT_TOOLING` (Vite, TypeScript and React's types at the versions this repository builds with), and a README saying where it came from. A TSX prototype goes in with its files as they are. Pages and layouts import only the library, React and the page kit.
 
-The export is checkable: [`test/export-equivalence.test.ts`](test/export-equivalence.test.ts) reads it back as a TSX prototype with the same manifest and compares core's reports. Every rule's id and status, and its findings' kinds and count, match the spec's, for the legal Nook spec, every illegal spec fixture, and a page with actions, conditions, templates and repeats. Messages are not compared: they name the file and line, which are JSON in the spec and TSX in the export. It cannot hold for the `extract` rule where the catalog refused part of a spec (`param-missing`, `param-wrong-type`, `instance-of-unknown-layout` and the refused fixtures): what was refused is left out of the export, so the TSX has nothing to refuse; every other rule still agrees there. Rendered rules are compared without snapshots (both `not-run`); the web app's end-to-end test builds the exported Nook project with Vite and renders it in Chromium.
+The export is checkable: [`test/export-equivalence.test.ts`](test/export-equivalence.test.ts) reads it back as a TSX prototype with the same manifest and compares core's reports. Every rule's id and status, and its findings' kinds and count, match the spec's, for the legal Nook spec, every illegal spec fixture, a page with actions, conditions, templates and repeats, and a layout that reads its parameters in conditions and templates. Messages are not compared: they name the file and line, which are JSON in the spec and TSX in the export. It cannot hold for the `extract` rule where the catalog refused part of a spec (`param-missing`, `param-wrong-type`, `param-wrong-type-in-condition`, `param-wrong-type-in-template`, `instance-of-unknown-layout` and the refused fixtures): what was refused is left out of the export, so the TSX has nothing to refuse; every other rule still agrees there. Rendered rules are compared without snapshots (both `not-run`); the web app's end-to-end test builds the exported Nook project with Vite and renders it in Chromium.
 
 ## Size
 
-`npm run bundle:core` bundles the library for the browser platform, which refuses Node built-ins, and prints its size. At this commit it is about 525 KiB minified and 148 KiB gzipped, of which `@babel/parser` is about 310 KiB minified; the proposal review milestone added 9 KiB minified and 2.5 KiB gzipped (rule words, revisions, measured examples), the json-render trial 27.5 KiB and 9.3 KiB (the spec format), layouts with parameters 20.7 KiB and 6.0 KiB (parameters, expansion, the layout summary and preview), variants with code export 43.1 KiB and 14.9 KiB (variant checks, recombination, the TSX writer and the project around it), and library onboarding 10.8 KiB and 3.7 KiB (the role drafter and its confirmation, unknown props, the library's root part). The parser is the one runtime dependency: it parses TSX with positions in the browser, synchronously, with no WebAssembly to load.
+`npm run bundle:core` bundles the library for the browser platform, which refuses Node built-ins, and prints its size. At this commit it is about 532 KiB minified and 150 KiB gzipped, of which `@babel/parser` is about 310 KiB minified; the proposal review milestone added 9 KiB minified and 2.5 KiB gzipped (rule words, revisions, measured examples), the json-render trial 27.5 KiB and 9.3 KiB (the spec format), layouts with parameters 20.7 KiB and 6.0 KiB (parameters, expansion, the layout summary and preview), variants with code export 43.1 KiB and 14.9 KiB (variant checks, recombination, the TSX writer and the project around it), parameters in conditions and templates about 7 KiB and 2 KiB, and library onboarding 10.8 KiB and 3.7 KiB (the role drafter and its confirmation, unknown props, the library's root part). The parser is the one runtime dependency: it parses TSX with positions in the browser, synchronously, with no WebAssembly to load.

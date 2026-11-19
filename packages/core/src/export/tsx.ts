@@ -3,7 +3,7 @@ import { PAGE_KIT } from "../extract/evaluator";
 import type { Prototype } from "../prototype/types";
 import { LAYOUT_TYPE, SCENARIO_STATE, TEXT_PROP, type CatalogComponent, type SpecCatalog } from "../spec/catalog";
 import { isRecord, type JsonValue } from "../spec/json";
-import { LAYOUT_ID_PROP, type LayoutParam, type LayoutParams, type ListItem } from "../spec/params";
+import { LAYOUT_ID_PROP, TEMPLATE_PARAM, type LayoutParam, type LayoutParams, type ListItem } from "../spec/params";
 import { isExpression, keysOf, readSpecs, type ChildRef, type SpecDoc, type SpecElement } from "../spec/read";
 import { camel, fresh, isIdentifier, pascal, singular } from "./names";
 
@@ -23,7 +23,10 @@ import { camel, fresh, isIdentifier, pascal, singular } from "./names";
  *   what a layout reads of its page's state is a prop too;
  * - `visible` is `&&`, `$cond` is `?:`, `repeat` is `.map`, `$template` is
  *   text and expressions, `$scopedId` is `useId()`, and setState, pushState
- *   and removeState are the state's setter in an `onClick`.
+ *   and removeState are the state's setter in an `onClick`;
+ * - a parameter a layout reads in a condition or a template is its prop
+ *   there too: `{ "$param": "tone", "eq": "quiet" }` is `tone === "quiet"`,
+ *   and `${$param:verb}` is `{verb}`.
  *
  * Pure: the same prototype and config give the same files.
  */
@@ -162,8 +165,11 @@ function stringAttribute(name: string, text: string): string {
   return /["&\\\n\r]/.test(text) ? `${name}={${JSON.stringify(text)}}` : `${name}="${text}"`;
 }
 
-function templateLiteral(parts: readonly { text: string } [] | readonly ({ text: string } | { expr: string })[]): string {
-  return `\`${parts.map((part) => ("expr" in part ? `\${${part.expr}}` : part.text.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$\{/g, "\\${"))).join("")}\``;
+/** A piece of a template: text, or an expression; `absent` when it may be undefined, which a template shows as "" and a template literal as "undefined". */
+type TemplatePart = { readonly text: string } | { readonly expr: string; readonly absent?: true };
+
+function templateLiteral(parts: readonly TemplatePart[]): string {
+  return `\`${parts.map((part) => ("expr" in part ? `\${${part.absent ? `${part.expr} ?? ""` : part.expr}}` : part.text.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$\{/g, "\\${"))).join("")}\``;
 }
 
 /** Every value under an element that a walk should read: its props, condition, repeat and actions. */
@@ -233,6 +239,8 @@ class TsxWriter {
         if (typeof value.$template === "string") {
           for (const match of value.$template.matchAll(/\$\{([^}]*)\}/g)) {
             const ref = match[1] ?? "";
+            // A layout's parameter (`${$param:name}`) is a prop, not page state.
+            if (ref.startsWith("$")) continue;
             if (ref.startsWith("/")) use(ref, false);
             else if (!item) use(`/${ref}`, false);
           }
@@ -367,17 +375,30 @@ class TsxWriter {
     return keyed ? templateLiteral([{ expr: id }, { text: "-" }, { expr: `${keyed.name}${access(keyed.key as string)}` }]) : id;
   }
 
-  private templateParts(ctx: FileContext, template: string, items: readonly Item[]): ({ text: string } | { expr: string })[] {
-    const parts: ({ text: string } | { expr: string })[] = [];
+  private templateParts(ctx: FileContext, template: string, items: readonly Item[]): TemplatePart[] {
+    const parts: TemplatePart[] = [];
     let rest = template;
     for (let match = /\$\{([^}]*)\}/.exec(rest); match; match = /\$\{([^}]*)\}/.exec(rest)) {
       if (match.index > 0) parts.push({ text: rest.slice(0, match.index) });
       const ref = match[1] ?? "";
-      parts.push({ expr: ref.startsWith("/") ? this.readPath(ctx, ref) : items.length > 0 ? this.readItem(items, ref) : this.readPath(ctx, `/${ref}`) });
+      parts.push(ref.startsWith(TEMPLATE_PARAM) ? this.paramPart(ctx, ref.slice(TEMPLATE_PARAM.length)) : { expr: ref.startsWith("/") ? this.readPath(ctx, ref) : items.length > 0 ? this.readItem(items, ref) : this.readPath(ctx, `/${ref}`) });
       rest = rest.slice(match.index + match[0].length);
     }
     if (rest.length > 0) parts.push({ text: rest });
     return parts;
+  }
+
+  /** A layout's parameter as a template puts it in: its prop, which may be absent when it is optional with no default. */
+  private paramPart(ctx: FileContext, name: string): TemplatePart {
+    const prop = ctx.layout?.props.get(name);
+    if (prop === undefined) return { text: "" };
+    const param = ctx.layout ? this.params.get(ctx.layout.id)?.[name] : undefined;
+    return param && !param.required && !("default" in param && param.default !== undefined) ? { expr: prop, absent: true } : { expr: prop };
+  }
+
+  /** A layout's parameter read in a condition: its prop. */
+  private paramRef(ctx: FileContext, name: string): string {
+    return ctx.layout?.props.get(name) ?? "undefined";
   }
 
   /**
@@ -393,12 +414,14 @@ class TsxWriter {
     if (!isRecord(condition)) return "false";
     if (Array.isArray(condition.$and)) return join(condition.$and, "&&");
     if (Array.isArray(condition.$or)) return join(condition.$or, "||");
-    const source = typeof condition.$state === "string" ? this.readPath(ctx, condition.$state) : typeof condition.$item === "string" ? this.readItem(items, condition.$item) : condition.$index === true ? (items.at(-1)?.index ?? "0") : "undefined";
+    const source = typeof condition.$state === "string" ? this.readPath(ctx, condition.$state) : typeof condition.$item === "string" ? this.readItem(items, condition.$item) : condition.$index === true ? (items.at(-1)?.index ?? "0") : typeof condition.$param === "string" ? this.paramRef(ctx, condition.$param) : "undefined";
     const operator = Object.keys(OPERATORS).find((name) => name in condition);
     const negate = condition.not === true;
-    if (!operator) return negate ? `!${source}` : boolean ? `!!${source}` : source;
+    // A boolean parameter is already true or false (or absent, which renders nothing), so it needs no `!!`.
+    const bool = typeof condition.$param === "string" && ctx.layout !== undefined && this.params.get(ctx.layout.id)?.[condition.$param]?.type === "boolean";
+    if (!operator) return negate ? `!${source}` : boolean && !bool ? `!!${source}` : source;
     const operand = condition[operator] as JsonValue;
-    const right = isRecord(operand) && typeof operand.$state === "string" ? this.readPath(ctx, operand.$state) : literal(operand);
+    const right = isRecord(operand) && typeof operand.$state === "string" ? this.readPath(ctx, operand.$state) : isRecord(operand) && typeof operand.$param === "string" ? this.paramRef(ctx, operand.$param) : literal(operand);
     const test = `${source} ${OPERATORS[operator]} ${right}`;
     return negate ? `!(${test})` : test;
   }

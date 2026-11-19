@@ -2,8 +2,8 @@ import type { LayoutUse, SourceLocation } from "../extract/model";
 import type { PageEntry, Prototype } from "../prototype/types";
 import { LAYOUT_TYPE } from "./catalog";
 import { isRecord, pointer, type JsonValue } from "./json";
-import { LAYOUT_ID_PROP, PARAM_STATE } from "./params";
-import { locateIn, type ChildRef, type ReadSpecs, type SpecDoc, type SpecElement, type SpecIssue } from "./read";
+import { LAYOUT_ID_PROP, PARAM_STATE, TEMPLATE_PARAM } from "./params";
+import { isExpression, locateIn, type ChildRef, type ReadSpecs, type SpecDoc, type SpecElement, type SpecIssue } from "./read";
 
 /**
  * Layout instances expanded: one page as one tree of elements, every
@@ -21,7 +21,18 @@ import { locateIn, type ChildRef, type ReadSpecs, type SpecDoc, type SpecElement
  * - `{ "$scopedId": "name" }` is `<instance>/name`: an element id unique per
  *   instance, and per item, through the repeat's key, inside one keyed repeat;
  * - a literal list a page gives for a repeat is kept in the page's state at
- *   `/params/<instance>/<param>`, which json-render's repeat reads.
+ *   `/params/<instance>/<param>`, which json-render's repeat reads;
+ * - a condition that reads a parameter (`visible`, or a `$cond`) becomes
+ *   json-render's own: the value given put in as its source or operand, and
+ *   a condition of literals alone worked out to true or false, so an
+ *   element shown never is left out;
+ * - `${$param:name}` in a `$template` becomes what was given: literal text,
+ *   `${/path}` for state, `${field}` for an item, a page's own template, or,
+ *   for a `$cond`, a `$cond` of two templates.
+ *
+ * A given value json-render has no way to read there (an `$index` in a
+ * template, a `$template` in a condition) is an issue where the layout reads
+ * it, so the extract rule fails rather than anything passing on a guess.
  *
  * Each expanded element keeps where it is written and the layout uses that
  * draw it (`via`), so a finding inside an instance points both at the
@@ -92,14 +103,46 @@ function compare(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-/** True when a value reads the repeat item it is drawn in: `$item`, `$index`, `$bindItem`, or a template field without "/". */
+/** True when a value reads the repeat item it is drawn in: `$item`, `$index`, `$bindItem`, or a template field without "/" (a parameter's aside). */
 export function readsItem(value: JsonValue | undefined): boolean {
   if (Array.isArray(value)) return value.some(readsItem);
   if (!isRecord(value)) return false;
   if ("$item" in value || "$index" in value || "$bindItem" in value) return true;
-  if (typeof value.$template === "string" && /\$\{(?!\/)[^}]*\}/.test(value.$template)) return true;
+  if (typeof value.$template === "string" && /\$\{(?!\/|\$param:)[^}]*\}/.test(value.$template)) return true;
   return Object.values(value).some(readsItem);
 }
+
+/** True when a condition reads a parameter anywhere in it. */
+function conditionReadsParam(condition: JsonValue | undefined): boolean {
+  if (Array.isArray(condition)) return condition.some(conditionReadsParam);
+  if (!isRecord(condition)) return false;
+  return "$param" in condition || Object.values(condition).some(conditionReadsParam);
+}
+
+const FLIPPED: Readonly<Record<string, string>> = { eq: "eq", neq: "neq", gt: "lt", gte: "lte", lt: "gt", lte: "gte" };
+
+/** A comparison of two known values, as json-render makes it: strict equality, and order between numbers only. */
+function compareLiterals(left: JsonValue | undefined, operator: string | undefined, right: JsonValue | undefined): boolean {
+  if (operator === undefined) return Boolean(left);
+  if (operator === "eq") return left === right;
+  if (operator === "neq") return left !== right;
+  if (typeof left !== "number" || typeof right !== "number") return false;
+  return operator === "gt" ? left > right : operator === "gte" ? left >= right : operator === "lt" ? left < right : left <= right;
+}
+
+/** One side of a condition, once a parameter is put in: a value known now, a reference json-render reads, or what neither can be. */
+type Side = { readonly known: JsonValue | undefined } | { readonly reads: { readonly [key: string]: JsonValue } } | null;
+
+function sideOf(value: JsonValue | undefined): Side {
+  if (value === undefined || !isExpression(value)) return { known: value };
+  const keys = Object.keys(value);
+  if (keys.length !== 1) return null;
+  if (typeof value.$state === "string" || typeof value.$item === "string" || value.$index === true) return { reads: value };
+  return null;
+}
+
+/** A piece of a template: text as written, or a parameter's value to put in. */
+type Piece = string | { readonly name: string; readonly value: JsonValue | undefined };
 
 class Expander {
   readonly issues: SpecIssue[] = [];
@@ -148,23 +191,143 @@ class Expander {
     if (Array.isArray(value)) return value.map((item, index) => this.substitute(item, frame, key, [...path, index]) ?? null);
     if (!isRecord(value)) return value;
     const keys = Object.keys(value);
-    if (keys.length === 1 && typeof value.$param === "string") {
-      const given = frame.instance?.values[value.$param];
-      if (given !== undefined && frame.repeatsInLayout > 0 && readsItem(given)) {
-        this.issue(
-          `${frame.doc.file}: element "${key}" reads parameter "${value.$param}" inside a repeat of layout "${frame.instance?.id}", but the value it was given reads the repeat item where it is used, so here it would read the layout's item instead. Give the value from page state, or move the repeat out of the layout.`,
-          this.at(frame, key, ...path),
-        );
-      }
-      return given;
-    }
+    if (keys.length === 1 && typeof value.$param === "string") return this.given(value.$param, frame, key, path);
     if (keys.length === 1 && typeof value.$scopedId === "string") return this.scopedId(frame, value.$scopedId, key, path);
+    if (keys.length === 1 && typeof value.$template === "string" && value.$template.includes(`\${${TEMPLATE_PARAM}`)) return this.template(value.$template, frame, key, [...path, "$template"]);
+    if (keys.length === 3 && "$cond" in value && "$then" in value && "$else" in value && conditionReadsParam(value.$cond)) {
+      const condition = this.condition(value.$cond as JsonValue, frame, key, [...path, "$cond"]);
+      const then = this.substitute(value.$then as JsonValue, frame, key, [...path, "$then"]);
+      const otherwise = this.substitute(value.$else as JsonValue, frame, key, [...path, "$else"]);
+      if (condition === true) return then;
+      if (condition === false) return otherwise;
+      // A condition json-render cannot read was reported; both values stay, so every rule still sees both.
+      return { $cond: condition ?? true, $then: then ?? null, $else: otherwise ?? null };
+    }
     const out: Record<string, JsonValue> = {};
     for (const field of keys) {
       const next = this.substitute(value[field] as JsonValue, frame, key, [...path, field]);
       if (next !== undefined) out[field] = next;
     }
     return out;
+  }
+
+  /** What the instance was given for a parameter, refused where the layout repeats if it reads the item where it is used. */
+  private given(name: string, frame: Frame, key: string, path: (string | number)[]): JsonValue | undefined {
+    const given = frame.instance?.values[name];
+    if (given !== undefined && frame.repeatsInLayout > 0 && readsItem(given)) {
+      this.issue(
+        `${frame.doc.file}: element "${key}" reads parameter "${name}" inside a repeat of layout "${frame.instance?.id}", but the value it was given reads the repeat item where it is used, so here it would read the layout's item instead. Give the value from page state, or move the repeat out of the layout.`,
+        this.at(frame, key, ...path),
+      );
+    }
+    return given;
+  }
+
+  /**
+   * A condition with its parameters put in, as json-render reads it: true or
+   * false where it no longer reads anything that changes, or null when a
+   * value given cannot stand in it, which is reported where it is read.
+   */
+  condition(condition: JsonValue, frame: Frame, key: string, path: (string | number)[]): JsonValue | null {
+    if (!conditionReadsParam(condition)) return condition;
+    const every = (list: readonly JsonValue[], at: (string | number)[]) => list.map((item, index) => this.condition(item, frame, key, [...at, index]));
+    if (Array.isArray(condition) || (isRecord(condition) && Array.isArray(condition.$and))) {
+      const list = Array.isArray(condition) ? every(condition, path) : every(condition.$and as JsonValue[], [...path, "$and"]);
+      if (list.includes(null)) return null;
+      if (list.includes(false)) return false;
+      const rest = list.filter((item) => item !== true) as JsonValue[];
+      // A list holds single conditions only; a joined one stays joined.
+      return rest.length === 0 ? true : Array.isArray(condition) && rest.every((item) => isRecord(item) && !("$and" in item) && !("$or" in item)) ? rest : { $and: rest };
+    }
+    if (isRecord(condition) && Array.isArray(condition.$or)) {
+      const list = every(condition.$or as JsonValue[], [...path, "$or"]);
+      if (list.includes(null)) return null;
+      if (list.includes(true)) return true;
+      const rest = list.filter((item) => item !== false) as JsonValue[];
+      return rest.length === 0 ? false : { $or: rest };
+    }
+    if (!isRecord(condition)) return condition;
+    const operator = Object.keys(FLIPPED).find((name) => name in condition);
+    const operand = operator === undefined ? undefined : condition[operator];
+    const not = condition.not === true;
+    const refuse = (name: string, value: JsonValue | undefined, why: string, at: (string | number)[]): null => {
+      this.issue(`${frame.doc.file}: element "${key}" reads parameter "${name}" in a condition, but it was given ${value === undefined ? "no value" : JSON.stringify(value).slice(0, 80)}, ${why}.`, this.at(frame, key, ...at));
+      return null;
+    };
+    let source: Side;
+    if (typeof condition.$param === "string") {
+      const value = this.given(condition.$param, frame, key, [...path, "$param"]);
+      source = sideOf(value);
+      if (source === null) return refuse(condition.$param, value, 'which a condition cannot read: give a literal, { "$state": "/path" }, { "$item": "field" } or { "$index": true }', [...path, "$param"]);
+    } else {
+      const ref = ["$state", "$item", "$index"].find((name) => name in condition) as string;
+      source = { reads: { [ref]: condition[ref] as JsonValue } };
+    }
+    let other: Side = operator === undefined ? { known: undefined } : sideOf(operand);
+    if (operator !== undefined && isRecord(operand) && typeof operand.$param === "string") {
+      const value = this.given(operand.$param, frame, key, [...path, operator]);
+      other = sideOf(value);
+      if (other === null || ("reads" in other && typeof other.reads.$state !== "string")) return refuse(operand.$param, value, 'which a condition cannot compare with: give a literal or { "$state": "/path" }', [...path, operator]);
+      if ("known" in other && other.known === undefined) return refuse(operand.$param, value, "so there is nothing to compare with", [...path, operator]);
+    }
+    if (other === null) return null;
+    const flag = not ? { not: true } : {};
+    if ("reads" in source) return { ...source.reads, ...(operator === undefined ? {} : { [operator]: "reads" in other ? other.reads : (other.known as JsonValue) }), ...flag };
+    if ("known" in other) return compareLiterals(source.known, operator, other.known) !== not;
+    // A known value compared with state: the state is the source, and the comparison turns round.
+    const name = typeof condition.$param === "string" ? condition.$param : "";
+    if (source.known === undefined) return refuse(name, undefined, "so there is nothing to compare the state with", [...path, "$param"]);
+    return { ...other.reads, [FLIPPED[operator as string] as string]: source.known, ...flag };
+  }
+
+  /** A `$template` with each `${$param:name}` put in, as a template json-render reads, or a `$cond` of templates for a value given as one. */
+  template(template: string, frame: Frame, key: string, path: (string | number)[]): JsonValue {
+    const pieces: Piece[] = [];
+    let rest = template;
+    for (let match = /\$\{([^}]*)\}/.exec(rest); match; match = /\$\{([^}]*)\}/.exec(rest)) {
+      const ref = match[1] ?? "";
+      pieces.push(rest.slice(0, match.index));
+      if (ref.startsWith(TEMPLATE_PARAM)) {
+        const name = ref.slice(TEMPLATE_PARAM.length);
+        pieces.push({ name, value: this.given(name, frame, key, path) });
+      } else pieces.push(match[0]);
+      rest = rest.slice(match.index + match[0].length);
+    }
+    pieces.push(rest);
+    return this.joined(pieces, frame, key, path);
+  }
+
+  private joined(pieces: readonly Piece[], frame: Frame, key: string, path: (string | number)[]): JsonValue {
+    let out = "";
+    for (const [index, piece] of pieces.entries()) {
+      if (typeof piece === "string") {
+        out += piece;
+        continue;
+      }
+      const { name, value } = piece;
+      const refuse = (why: string) => this.issue(`${frame.doc.file}: element "${key}" reads parameter "${name}" in a $template, but it was given ${JSON.stringify(value).slice(0, 80)}, ${why}.`, this.at(frame, key, ...path));
+      if (value === undefined || value === null) continue;
+      if (!isRecord(value) && !Array.isArray(value)) {
+        const text = String(value);
+        if (text.includes("${")) refuse('which holds "${", so json-render would read it as a reference');
+        else out += text;
+      } else if (isRecord(value) && Object.keys(value).length === 1 && typeof value.$state === "string") out += `\${${value.$state}}`;
+      else if (isRecord(value) && Object.keys(value).length === 1 && typeof value.$item === "string" && value.$item !== "" && !value.$item.includes("}")) out += `\${${value.$item}}`;
+      else if (isRecord(value) && Object.keys(value).length === 1 && typeof value.$template === "string") out += value.$template;
+      else if (isRecord(value) && Object.keys(value).length === 3 && "$cond" in value && "$then" in value && "$else" in value) {
+        // A value chosen by a condition: the template is drawn once for each, under the same condition.
+        const branch = (chosen: JsonValue | undefined) => this.joined([out, { name, value: chosen }, ...pieces.slice(index + 1)], frame, key, path);
+        return { $cond: value.$cond as JsonValue, $then: branch(value.$then), $else: branch(value.$else) };
+      } else refuse('which a template cannot put in: give text, a number, { "$state": "/path" }, { "$item": "field" }, a $template or a $cond of them');
+    }
+    return { $template: out };
+  }
+
+  /** An element's `visible` with its parameters put in: undefined when it always shows, so a condition that cannot be read leaves the element shown and reported. */
+  private visible(visible: JsonValue | undefined, frame: Frame, key: string): JsonValue | undefined {
+    if (visible === undefined || !conditionReadsParam(visible)) return visible;
+    const condition = this.condition(visible, frame, key, ["visible"]);
+    return condition === null || condition === true ? undefined : condition;
   }
 
   /** Expands element `key` of the frame's file, and returns its expanded key, or null when it draws nothing. */
@@ -183,7 +346,7 @@ class Expander {
     const repeat = element.repeat ? this.repeat(frame, element) : undefined;
     const inner: Frame = element.repeat ? { ...frame, repeatsInLayout: frame.repeatsInLayout + (frame.instance ? 1 : 0), repeats: [...frame.repeats, element.repeat.key] } : frame;
     // Claimed before the children, so what they reach is keyed under an element that exists.
-    const placeholder: ExpandedElement = { key: out, type: element.type, props, children: [], visible: element.visible, repeat, on: element.on, doc: frame.doc, source: key, via: frame.via };
+    const placeholder: ExpandedElement = { key: out, type: element.type, props, children: [], visible: this.visible(element.visible, frame, key), repeat, on: element.on, doc: frame.doc, source: key, via: frame.via };
     this.elements.set(out, placeholder);
     const children = this.list(inner, element.children, key);
     const slots = element.slots ? Object.fromEntries(Object.keys(element.slots).sort(compare).map((slot) => [slot, this.list(inner, element.slots?.[slot] ?? [], key)])) : undefined;
@@ -248,7 +411,7 @@ class Expander {
   private instance(frame: Frame, element: SpecElement, out: string): string {
     const id = typeof element.props[LAYOUT_ID_PROP] === "string" ? (element.props[LAYOUT_ID_PROP] as string) : "";
     const doc = this.layoutDoc(id);
-    const base: ExpandedElement = { key: out, type: LAYOUT_TYPE, props: { [LAYOUT_ID_PROP]: id }, children: [], visible: element.visible, repeat: undefined, on: undefined, doc: frame.doc, source: element.key, via: frame.via, layout: id };
+    const base: ExpandedElement = { key: out, type: LAYOUT_TYPE, props: { [LAYOUT_ID_PROP]: id }, children: [], visible: this.visible(element.visible, frame, element.key), repeat: undefined, on: undefined, doc: frame.doc, source: element.key, via: frame.via, layout: id };
     if (frame.chain.includes(id)) {
       this.elements.set(out, { ...base, recursive: true });
       return out;

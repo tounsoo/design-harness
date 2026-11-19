@@ -3,7 +3,7 @@ import type { SourceLocation } from "../extract/model";
 import type { Prototype } from "../prototype/types";
 import { LAYOUT_TYPE, PAGE_TYPE, SCENARIO_STATE, SPEC_ACTIONS, specCatalog, type CatalogComponent, type SpecCatalog } from "./catalog";
 import { isRecord, parseJson, pointer, type JsonValue, type Position } from "./json";
-import { LAYOUT_ID_PROP, PARAM_STATE, checkParamValue, isScopedIdName, paramMismatch, readParams, type LayoutParams } from "./params";
+import { LAYOUT_ID_PROP, PARAM_STATE, checkParamValue, conditionParamProblems, isScopedIdName, paramMismatch, readParams, templateParamProblems, type LayoutParams } from "./params";
 
 /**
  * Reading a spec prototype's files: each JSON file parsed with positions,
@@ -14,7 +14,8 @@ import { LAYOUT_ID_PROP, PARAM_STATE, checkParamValue, isScopedIdName, paramMism
  * (`root`, `elements` of `{ type, props, children }`, optional `state`), with
  * the subset of its expressions that keeps a spec data: no `$computed`
  * functions, no watchers, no custom actions. A layout file may also declare
- * `params`, and read them with `{ "$param": name }` (params.ts); a Layout
+ * `params`, and read them with `{ "$param": name }`, in a condition too, and
+ * with `${$param:name}` in a template (params.ts); a Layout
  * element sets them. Two expressions are core's own and never reach
  * json-render: `$param`, and `$scopedId`, an element id unique per instance.
  * Core expands both before anything renders (expand.ts).
@@ -342,7 +343,7 @@ function readElement(key: string, value: JsonValue, context: ReadContext, report
   } else if (component.kind === "page") {
     for (const [slot, list] of Object.entries(slots ?? {})) if (list.some((child) => typeof child !== "string")) fail(`fills slot "${slot}" with a parameter; a Page's slots hold element keys.`, "slots", slot);
   }
-  if (value.visible !== undefined) checkCondition(value.visible, fail, ["visible"]);
+  if (value.visible !== undefined) checkCondition(value.visible, fail, ["visible"], context.params);
   let repeat: SpecElement["repeat"];
   if (value.repeat !== undefined) {
     const r = value.repeat;
@@ -473,7 +474,7 @@ function checkInstance(props: { readonly [key: string]: JsonValue }, context: Re
       ok = false;
       report(message, ...path);
     };
-    checkParamValue(name, param, props[name] as JsonValue, { outer: context.params, condition: (condition, path) => checkCondition(condition, failParam, path) }, failParam, ["props", name]);
+    checkParamValue(name, param, props[name] as JsonValue, { outer: context.params, condition: (condition, path) => checkCondition(condition, failParam, path, context.params) }, failParam, ["props", name]);
     if (ok) keep(kept, name, props[name] as JsonValue);
   }
   for (const name of settable) if (params[name]?.required && props[name] === undefined) report(`has no "${name}", which layout "${id}" needs.`, "props");
@@ -530,10 +531,11 @@ function checkValue(type: string, name: string, schema: PropSchema, value: JsonV
     if (only("$template")) {
       if (schema.type !== "string") fail(`sets ${name} with $template, which makes a string; ${name} is ${describeSchema(schema)}.`, ...path);
       else if (typeof value.$template !== "string") fail(`has a $template that is not a string.`, ...path);
+      else for (const problem of templateParamProblems(value.$template, params)) fail(`sets ${name} with a $template that reads ${problem}.`, ...path);
       return;
     }
     if (only("$cond", "$else", "$then")) {
-      checkCondition(value.$cond as JsonValue, fail, [...path, "$cond"]);
+      checkCondition(value.$cond as JsonValue, fail, [...path, "$cond"], params);
       checkValue(type, name, schema, value.$then as JsonValue, fail, [...path, "$then"], params);
       checkValue(type, name, schema, value.$else as JsonValue, fail, [...path, "$else"], params);
       return;
@@ -565,11 +567,16 @@ function checkValue(type: string, name: string, schema: PropSchema, value: JsonV
   }
 }
 
-/** json-render's visibility conditions, strictly: one source and at most one operator per condition. */
-function checkCondition(condition: JsonValue, fail: Report, path: (string | number)[]): void {
+/**
+ * json-render's visibility conditions, strictly: one source and at most one
+ * operator per condition. In a layout, `{ "$param": name }` may also be the
+ * source or the value compared with, checked against the parameter's type;
+ * core expands it before json-render sees the condition (expand.ts).
+ */
+function checkCondition(condition: JsonValue, fail: Report, path: (string | number)[], params: LayoutParams | null): void {
   if (typeof condition === "boolean") return;
   if (Array.isArray(condition)) {
-    condition.forEach((item, index) => checkCondition(item, fail, [...path, index]));
+    condition.forEach((item, index) => checkCondition(item, fail, [...path, index], params));
     return;
   }
   if (!isRecord(condition)) {
@@ -580,17 +587,19 @@ function checkCondition(condition: JsonValue, fail: Report, path: (string | numb
     if (joiner in condition) {
       const list = condition[joiner];
       if (Object.keys(condition).length !== 1 || !Array.isArray(list)) fail(`has a ${joiner} condition that is not { "${joiner}": [conditions] }.`, ...path);
-      else list.forEach((item, index) => checkCondition(item, fail, [...path, joiner, index]));
+      else list.forEach((item, index) => checkCondition(item, fail, [...path, joiner, index], params));
       return;
     }
   }
-  const sources = ["$state", "$item", "$index"].filter((key) => key in condition);
+  const sources = ["$state", "$item", "$index", "$param"].filter((key) => key in condition);
   const operators = OPERATORS.filter((key) => key in condition);
-  const extra = Object.keys(condition).filter((key) => !["$state", "$item", "$index", "not", ...OPERATORS].includes(key));
+  const extra = Object.keys(condition).filter((key) => !["$state", "$item", "$index", "$param", "not", ...OPERATORS].includes(key));
   const sourceOk = sources.length === 1 && (sources[0] === "$index" ? condition.$index === true : typeof condition[sources[0] as string] === "string");
   const operand = operators[0] === undefined ? undefined : condition[operators[0]];
-  const operandOk = operand === undefined || !isRecord(operand) || (Object.keys(operand).length === 1 && typeof operand.$state === "string");
+  const operandOk = operand === undefined || !isRecord(operand) || (Object.keys(operand).length === 1 && (typeof operand.$state === "string" || typeof operand.$param === "string"));
   if (!sourceOk || operators.length > 1 || extra.length > 0 || (condition.not !== undefined && condition.not !== true) || !operandOk) {
-    fail(`has a condition ${JSON.stringify(condition).slice(0, 80)} that is not one of json-render's: one of $state, $item or $index, at most one of ${OPERATORS.join(", ")}, and "not": true.`, ...path);
+    fail(`has a condition ${JSON.stringify(condition).slice(0, 80)} that is not one of json-render's: one of $state, $item${params ? ", $index or $param" : " or $index"}, at most one of ${OPERATORS.join(", ")}, and "not": true.`, ...path);
+    return;
   }
+  for (const problem of conditionParamProblems(condition, params)) fail(`has a condition that ${problem}.`, ...path);
 }
