@@ -1,0 +1,141 @@
+name: Library request
+
+# Answers an issue made from the library request form (.github/ISSUE_TEMPLATE/library-request.yml), which the
+# New project wizard opens filled in. It adds the library the way a person did by hand, runs every check on it,
+# and opens a pull request; when something stops it, it says why on the issue.
+#
+# The logic is apps/web/scripts/library-request.mjs. The issue's text is never written into this file's
+# expressions or a shell: each job's script reads it from the event file and checks it again. The jobs that
+# install and test the requested package can only read the repository; the one that pushes installs nothing
+# from the request and takes only the description and the lockfile from the build.
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions: {}
+
+jobs:
+  # Is this a request to answer, written right, and not already served or requested? No write access.
+  parse:
+    if: contains(github.event.issue.labels.*.name, 'library-request') && github.event.issue.state == 'open' && (github.event.action == 'opened' || github.event.changes.body != null)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      go: ${{ steps.parse.outputs.go }}
+      key: ${{ steps.parse.outputs.key }}
+      reason: ${{ steps.parse.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - id: parse
+        run: node apps/web/scripts/library-request.mjs parse
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  # Adds the library and runs every check on it. Read access only: the package is untrusted code.
+  build:
+    needs: parse
+    if: needs.parse.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    # One run at a time per package and version; a second request for it waits, then finds the first's pull request.
+    concurrency:
+      group: library-request-${{ needs.parse.outputs.key }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      # No install scripts run, here or when the library is added: nothing from the package runs in Node.
+      # The script writes what it found to $RUNNER_TEMP/library-request, which the artifact carries.
+      - run: npm ci --ignore-scripts
+      - name: Check npm, describe the library and add it
+        run: node apps/web/scripts/library-request.mjs prepare
+      - run: npx playwright install --with-deps chromium
+      - name: Run every check, the build, and the end-to-end test of the library
+        run: node apps/web/scripts/library-request.mjs verify
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: library-request
+          path: ${{ runner.temp }}/library-request
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Makes the edits again on a clean checkout, pushes the branch and opens the pull request.
+  publish:
+    needs: [parse, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    concurrency:
+      group: library-request-publish-${{ needs.parse.outputs.key }}
+      cancel-in-progress: false
+    outputs:
+      reason: ${{ steps.publish.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      # This repository's own dependencies, for core's role drafter; nothing from the request is installed here.
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@v8
+        with:
+          name: library-request
+          path: ${{ runner.temp }}/library-request
+      - id: publish
+        run: node apps/web/scripts/library-request.mjs publish
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REQUEST_ARTIFACT: ${{ runner.temp }}/library-request
+
+  # Says on the issue why a run stopped.
+  report:
+    needs: [parse, build, publish]
+    if: always() && needs.parse.result == 'success' && ((needs.parse.outputs.go != 'true' && needs.parse.outputs.reason != '') || needs.build.result == 'failure' || needs.build.result == 'cancelled' || needs.publish.result == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: apps/web/scripts
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v8
+        if: needs.build.result == 'failure'
+        continue-on-error: true
+        with:
+          name: library-request
+          path: ${{ runner.temp }}/library-request
+      - run: node apps/web/scripts/library-request.mjs report
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REQUEST_ARTIFACT: ${{ runner.temp }}/library-request
+          PARSE_REASON: ${{ needs.parse.outputs.reason }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          PUBLISH_REASON: ${{ needs.publish.outputs.reason }}
