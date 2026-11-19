@@ -1,7 +1,7 @@
-import { checkPrototype, type CheckReport, type PageType, type ProjectConfig, type Prototype, type RenderedSnapshot, type Scenario, type View } from "@design-harness/core";
+import { checkPrototype, type CheckReport, type ComponentLibrary, type PageType, type ProjectConfig, type Prototype, type RenderedSnapshot, type Scenario, type View } from "@design-harness/core";
 import { frameDocument } from "./frame-document";
 import { resolvePackages, type PackageSource, type RuntimePackages } from "./package-source";
-import { PROTOCOL, readFrameMessage, type FrameMessage, type FrameStage, type ModuleSource, type PageRef, type RenderRequest } from "./protocol";
+import { PROTOCOL, readFrameMessage, type FrameMessage, type FrameStage, type ModuleSource, type PageRef, type RenderRequest, type RootRef } from "./protocol";
 import { SPEC_RENDERER, specParts, specPayload } from "./spec-payload";
 import { compilePrototype, moduleSpecifier, type CompileProblem } from "./transform";
 
@@ -18,6 +18,13 @@ import { compilePrototype, moduleSpecifier, type CompileProblem } from "./transf
  */
 
 export type FrameKey = string;
+
+/** The library's root part for one view: its props, with the view's scheme in its scheme prop. */
+export function rootRef(library: ComponentLibrary, scheme: View["scheme"]): RootRef | undefined {
+  const root = library.root;
+  if (!root) return undefined;
+  return { module: library.package, component: root.component, props: { ...root.props, ...(root.schemeProp ? { [root.schemeProp]: scheme } : {}) } };
+}
 
 export function frameKey(scenario: string, view: string): FrameKey {
   return `${scenario}@${view}`;
@@ -283,6 +290,7 @@ export class Session {
       pageType: spec.pageType,
       view: spec.view,
       settleMs: this.options.settleMs ?? 3000,
+      ...(this.config?.library.root ? { root: rootRef(this.config.library, spec.view.scheme) as RootRef } : {}),
     };
     this.setFrame(key, { state: "rendering" });
     attached.timer = setTimeout(() => {

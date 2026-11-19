@@ -207,3 +207,13 @@ describe("a session of a spec prototype", () => {
     expect(session.redraw(nook, draft)).toBe(false);
   });
 });
+
+describe("the library's root part", () => {
+  it("goes to each frame with its props and the view's scheme, and is absent for a library without one", async () => {
+    const { tally } = await import("../../../../packages/core/examples/tally/project");
+    const { rootRef } = await import("./session");
+    expect(rootRef(tally.library, "dark")).toEqual({ module: "@mantine/core", component: "MantineProvider", props: { forceColorScheme: "dark" } });
+    expect(rootRef({ ...tally.library, root: { component: "MantineProvider", props: { withGlobalClasses: true } } }, "light")).toEqual({ module: "@mantine/core", component: "MantineProvider", props: { withGlobalClasses: true } });
+    expect(rootRef(nook.library, "light")).toBeUndefined();
+  });
+});

@@ -77,13 +77,21 @@ class Boundary extends Component<{ readonly onError: (error: unknown) => void; r
 }
 
 /**
- * Renders a page into `container` inside the default shell, synchronously.
+ * Renders a page into `container` inside the default shell, and inside the
+ * library's root part when it has one, synchronously.
  * Resolves once React has committed it, or rejects with what the page threw
  * while rendering; `onLateError` hears what it throws afterwards, from an
  * effect or an event. Internal to the frame: a prototype that imports it is
  * flagged by core's imports rule, which allows only Slot and PageProps.
  */
-export function mount(container: HTMLElement, Page: ComponentType<PageProps>, props: PageProps, type: PageType, onLateError: (error: Error) => void): Promise<void> {
+export function mount(
+  container: HTMLElement,
+  Page: ComponentType<PageProps>,
+  props: PageProps,
+  type: PageType,
+  onLateError: (error: Error) => void,
+  root?: { readonly component: ComponentType<Record<string, unknown>>; readonly props: Readonly<Record<string, unknown>> },
+): Promise<void> {
   if (!container.ownerDocument.getElementById("dh-shell-css")) {
     const style = container.ownerDocument.createElement("style");
     style.id = "dh-shell-css";
@@ -101,17 +109,16 @@ export function mount(container: HTMLElement, Page: ComponentType<PageProps>, pr
         reject(asError);
       }
     };
-    const root = createRoot(container, { onUncaughtError: fail, onRecoverableError: () => undefined });
+    const reactRoot = createRoot(container, { onUncaughtError: fail, onRecoverableError: () => undefined });
+    const shell = (
+      <DefaultShell type={type}>
+        <Page scenario={props.scenario} state={props.state} />
+      </DefaultShell>
+    );
+    // The library's root, when it needs one, outside the shell: the shell and the page render inside its provider.
+    const Root = root?.component;
     try {
-      flushSync(() =>
-        root.render(
-          <Boundary onError={fail}>
-            <DefaultShell type={type}>
-              <Page scenario={props.scenario} state={props.state} />
-            </DefaultShell>
-          </Boundary>,
-        ),
-      );
+      flushSync(() => reactRoot.render(<Boundary onError={fail}>{Root ? <Root {...root.props}>{shell}</Root> : shell}</Boundary>));
     } catch (error) {
       fail(error);
     }

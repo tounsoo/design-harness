@@ -31,6 +31,13 @@ export type SpecPart = {
 /** A spec prototype's page for one scenario, as data: the library to draw it with, core's resolved spec, and the catalog's parts. */
 export type SpecPayload = { readonly library: string; readonly spec: FlatSpec; readonly parts: Readonly<Record<string, SpecPart>> };
 
+/**
+ * The library part every page renders inside (a provider or theme root), by
+ * the module it is exported from, its export name, and its literal props,
+ * the view's colour scheme already set where the library takes one.
+ */
+export type RootRef = { readonly module: string; readonly component: string; readonly props: Readonly<Record<string, string | number | boolean | null>> };
+
 /** What a frame renders: a module's export (a TSX prototype's page), or a spec (a spec prototype's page, no prototype code). */
 export type PageRef = { readonly module: string; readonly export: string } | { readonly spec: SpecPayload };
 
@@ -50,6 +57,8 @@ export type RenderRequest = {
   readonly view: View;
   /** The longest the frame waits for the page to stop changing before it measures. */
   readonly settleMs: number;
+  /** The library part the page renders inside, when the library needs one. */
+  readonly root?: RootRef;
 };
 
 /** App → frame: outline one element of the last snapshot, by its index, or clear the outline. */
@@ -138,6 +147,12 @@ function isPageRef(value: unknown, modules: Json): value is PageRef {
   return hasOnly(value, ["module", "export"]) && isString(value.module) && isString(value.export) && value.module in modules;
 }
 
+function isRoot(value: unknown, modules: Json): value is RootRef {
+  if (!isObject(value) || !hasOnly(value, ["module", "component", "props"]) || !isString(value.module) || !(value.module in modules)) return false;
+  const { component, props } = value;
+  return isString(component) && /^[A-Z][\w$]*$/.test(component) && isObject(props) && Object.values(props).every((prop) => prop === null || ["string", "number", "boolean"].includes(typeof prop));
+}
+
 function isScenario(value: unknown): value is ScenarioRef {
   return isObject(value) && hasOnly(value, ["id", "state", "page"]) && isString(value.id) && isString(value.state) && isString(value.page);
 }
@@ -152,13 +167,14 @@ export function readParentMessage(data: unknown, channel: string): ParentMessage
   }
   if (data.type === "redraw") return hasOnly(data, ["protocol", "type", "channel", "generation", "spec"]) && isSpecPayload(data.spec) ? (data as RedrawRequest) : null;
   if (data.type !== "render") return null;
-  if (!hasOnly(data, ["protocol", "type", "channel", "generation", "modules", "styles", "page", "scenario", "pageType", "view", "settleMs"])) return null;
+  if (!hasOnly(data, ["protocol", "type", "channel", "generation", "modules", "styles", "page", "scenario", "pageType", "view", "settleMs", "root"])) return null;
   const { modules, styles, page, settleMs } = data;
   if (!isObject(modules) || !Object.values(modules).every(isModuleSource)) return null;
   if (!Array.isArray(styles) || !styles.every(isStyleSource)) return null;
   if (!isPageRef(page, modules)) return null;
   if (!isScenario(data.scenario) || !isPageType(data.pageType) || !isView(data.view)) return null;
   if (typeof settleMs !== "number" || !Number.isFinite(settleMs) || settleMs < 0 || settleMs > 60000) return null;
+  if (data.root !== undefined && !isRoot(data.root, modules)) return null;
   return data as RenderRequest;
 }
 

@@ -1,4 +1,4 @@
-import { createElement, Fragment, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
+import { Children, Component, createElement, Fragment, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
 import { JSONUIProvider, Renderer, useBoundProp, type ComponentRegistry, type ComponentRenderProps } from "@json-render/react";
 import type { SpecPart, SpecPayload } from "../runtime/protocol";
 
@@ -15,7 +15,9 @@ import type { SpecPart, SpecPayload } from "../runtime/protocol";
  * reaches the DOM even in a spec core did not pass), its `text` and child
  * elements, its options as `<option>`s when it takes them as data, a bound
  * prop's value and change callback, and an `onClick` that emits `press`
- * when the spec binds one. A Page fills its slots with the kit's Slot.
+ * when the spec binds one. A Page fills its slots with the kit's Slot. A
+ * part that throws is reported to the frame through `onError`, so the frame
+ * fails rather than measuring the page without it.
  */
 
 type Slot = ComponentType<{ readonly name: string; readonly children?: ReactNode }>;
@@ -29,13 +31,32 @@ function partOf(library: Readonly<Record<string, unknown>>, type: string): Compo
   return typeof value === "function" || (typeof value === "object" && value !== null) ? (value as ComponentType<Record<string, unknown>>) : null;
 }
 
+/**
+ * Catches what one library part throws while it renders, before
+ * json-render's own boundary would draw it as nothing and log it, and hands
+ * it to the frame, which then reports the page as failing to render rather
+ * than measuring a page with the part missing.
+ */
+class PartBoundary extends Component<{ readonly type: string; readonly onError: (error: Error) => void; readonly children: ReactNode }, { failed: boolean }> {
+  override state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  override componentDidCatch(error: unknown) {
+    this.props.onError(new Error(`${this.props.type} could not render: ${error instanceof Error ? error.message : String(error)}`));
+  }
+  override render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
 /** One bound prop: its value from state and the callback that writes it back. A hook, so each part calls it once per bindable prop, in a fixed order. */
 function useBinding(props: Readonly<Record<string, unknown>>, bindings: Readonly<Record<string, string>> | undefined, prop: string): [unknown, ((value: unknown) => void) | undefined] {
   const [value, set] = useBoundProp<unknown>(props[prop], bindings?.[prop]);
   return [value, bindings?.[prop] !== undefined ? set : undefined];
 }
 
-function partRenderer(Part: ComponentType<Record<string, unknown>>, part: SpecPart): ComponentType<ComponentRenderProps> {
+function partRenderer(type: string, Part: ComponentType<Record<string, unknown>>, part: SpecPart, onError: (error: Error) => void): ComponentType<ComponentRenderProps> {
   const bindable = Object.keys(part.binds).sort();
   function SpecPart({ element, children, emit, on, bindings }: ComponentRenderProps) {
     const props = element.props as Readonly<Record<string, unknown>>;
@@ -54,10 +75,12 @@ function partRenderer(Part: ComponentType<Record<string, unknown>>, part: SpecPa
     if (part.content === "children") {
       const text = typeof props.text === "string" || typeof props.text === "number" ? String(props.text) : null;
       content = text === null ? children : createElement(Fragment, null, text, children);
+      // Nothing to put in it: no children at all, as a part such as an input may take none even when its types say it does.
+      if (text === null && Children.count(children) === 0) content = undefined;
     } else if (part.content === "options" && Array.isArray(props.options)) {
       content = (props.options as { value?: unknown; label?: unknown }[]).map((option) => createElement("option", { key: String(option.value), value: String(option.value) }, String(option.label)));
     }
-    return createElement(Part, given, content);
+    return createElement(PartBoundary, { type, onError }, content === undefined ? createElement(Part, given) : createElement(Part, given, content));
   }
   return SpecPart;
 }
@@ -74,7 +97,7 @@ export type SpecPage = ComponentType & { readonly redraw: (payload: SpecPayload)
  * updates: elements that stay keep their DOM. A change of the spec's
  * starting state remounts the state provider, so the draft's state shows.
  */
-export function specPage(library: Readonly<Record<string, unknown>>, Slot: Slot, payload: SpecPayload, slotOrder: readonly string[]): SpecPage {
+export function specPage(library: Readonly<Record<string, unknown>>, Slot: Slot, payload: SpecPayload, slotOrder: readonly string[], onError: (error: Error) => void = () => undefined): SpecPage {
   const rank = (name: string) => (slotOrder.includes(name) ? slotOrder.indexOf(name) : slotOrder.length);
   const registry: ComponentRegistry = {};
   for (const [type, part] of Object.entries(payload.parts)) {
@@ -86,7 +109,7 @@ export function specPage(library: Readonly<Record<string, unknown>>, Slot: Slot,
       continue;
     }
     const Part = partOf(library, type);
-    if (Part) registry[type] = partRenderer(Part, part);
+    if (Part) registry[type] = partRenderer(type, Part, part, onError);
   }
   let current = payload;
   const listeners = new Set<() => void>();

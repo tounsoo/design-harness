@@ -1,14 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { nook } from "../../../../packages/core/examples/nook/project";
-import { esmShPackageSource, localPackageSource, resolvePackages } from "./package-source";
+import type { ComponentLibrary } from "@design-harness/core";
+import { esmShPackageSource, localPackageSource, resolvePackages, type VendorManifest } from "./package-source";
 
-const manifest = {
+const manifest: VendorManifest = {
   packages: {
-    react: { version: "19.3.1", modules: { react: "react.js", "react/jsx-runtime": "react-jsx-runtime.js" }, files: {} },
-    "react-dom": { version: "19.3.1", modules: { "react-dom": "react-dom.js", "react-dom/client": "react-dom-client.js" }, files: {} },
-    "@tounsoo/todae": { version: "0.10.1", modules: { "@tounsoo/todae": "library.js" }, files: { "dist/todae.css": "todae.css" } },
+    react: { versions: { "19.3.1": { modules: { react: "react.js", "react/jsx-runtime": "react-jsx-runtime.js" }, files: {} } } },
+    "react-dom": { versions: { "19.3.1": { modules: { "react-dom": "react-dom.js", "react-dom/client": "react-dom-client.js" }, files: {} } } },
+    "@tounsoo/todae": {
+      versions: {
+        "0.10.1": { modules: { "@tounsoo/todae": "tounsoo-todae@0.10.1.js" }, files: { "dist/todae.css": "tounsoo-todae@0.10.1-dist-todae.css" } },
+        "0.11.3": { modules: { "@tounsoo/todae": "tounsoo-todae@0.11.3.js" }, files: { "dist/todae.css": "tounsoo-todae@0.11.3-dist-todae.css" } },
+      },
+    },
+    "@acme/ui": { versions: { "2.0.0": { modules: { "@acme/ui": "acme-ui@2.0.0.js" }, files: { "styles.css": "acme-ui@2.0.0-styles.css" } } } },
   },
 };
+
+/** Another project's library: any package the vendor build lists, by name and version. */
+const acme: ComponentLibrary = { ...nook.library, package: "@acme/ui", version: "2.0.0", stylesheets: ["styles.css"] };
 
 function fakeFetch() {
   const asked: string[] = [];
@@ -27,18 +37,29 @@ describe("the local package source", () => {
     const source = localPackageSource("https://app.example/vendor", fetchText);
     const packages = await resolvePackages(nook.library, source);
     expect(Object.keys(packages.modules)).toEqual(["react", "react/jsx-runtime", "react-dom", "react-dom/client", "@tounsoo/todae"]);
-    expect(packages.modules["@tounsoo/todae"]).toEqual({ code: "/* library.js */" });
-    expect(packages.styles).toEqual([{ css: "/* todae.css */" }]);
+    expect(packages.modules["@tounsoo/todae"]).toEqual({ code: "/* tounsoo-todae@0.10.1.js */" });
+    expect(packages.styles).toEqual([{ css: "/* tounsoo-todae@0.10.1-dist-todae.css */" }]);
     await resolvePackages(nook.library, source);
     expect(asked.filter((url) => url.endsWith("manifest.json"))).toHaveLength(1);
     expect(source.origins).toEqual([]);
   });
 
+  it("serves each project's library and its stylesheets by name and exact version, not one library by name", async () => {
+    const source = localPackageSource("https://app.example/vendor", fakeFetch().fetchText);
+    const other = await resolvePackages(acme, source);
+    expect(other.modules["@acme/ui"]).toEqual({ code: "/* acme-ui@2.0.0.js */" });
+    expect(other.styles).toEqual([{ css: "/* acme-ui@2.0.0-styles.css */" }]);
+    const newer = await resolvePackages({ ...nook.library, version: "0.11.3" }, source);
+    expect(newer.modules["@tounsoo/todae"]).toEqual({ code: "/* tounsoo-todae@0.11.3.js */" });
+    await expect(resolvePackages({ ...acme, stylesheets: ["dist/other.css"] }, source)).rejects.toThrow("has no dist/other.css in @acme/ui");
+  });
+
   it("refuses a version it does not have, naming both", async () => {
     const source = localPackageSource("https://app.example/vendor/", fakeFetch().fetchText);
-    await expect(resolvePackages({ ...nook.library, version: "0.11.3" }, source)).rejects.toThrow("the local package source has @tounsoo/todae 0.10.1, but the project asks for 0.11.3");
+    await expect(resolvePackages({ ...nook.library, version: "0.12.0" }, source)).rejects.toThrow("the local package source has @tounsoo/todae 0.10.1, 0.11.3, but the project asks for 0.12.0");
     await expect(resolvePackages({ ...nook.library, react: "18.3.1" }, source)).rejects.toThrow("has react 19.3.1, but the project asks for 18.3.1");
-    await expect(resolvePackages({ ...nook.library, package: "@acme/ui" }, source)).rejects.toThrow("has no @acme/ui");
+    await expect(resolvePackages({ ...nook.library, package: "@acme/ui" }, source)).rejects.toThrow("has @acme/ui 2.0.0, but the project asks for 0.10.1");
+    await expect(resolvePackages({ ...nook.library, package: "@other/ui" }, source)).rejects.toThrow("has no @other/ui");
     await expect(source.module("@tounsoo/todae/stack", { package: "@tounsoo/todae", version: "0.10.1" })).rejects.toThrow("serves only @tounsoo/todae of @tounsoo/todae");
   });
 });
@@ -56,6 +77,25 @@ describe("the esm.sh package source", () => {
     });
     expect(packages.styles).toEqual([{ url: "https://esm.sh/@tounsoo/todae@0.10.1/dist/todae.css" }]);
     expect(source.origins).toEqual(["https://esm.sh"]);
+  });
+
+  it("serves any package and its stylesheet by name and version", async () => {
+    const packages = await resolvePackages({ ...acme, package: "@mantine/core", version: "9.7.4" }, esmShPackageSource("https://cdn.example/"));
+    expect(packages.modules["@mantine/core"]).toEqual({ url: "https://cdn.example/@mantine/core@9.7.4?external=react,react-dom" });
+    expect(packages.styles).toEqual([{ url: "https://cdn.example/@mantine/core@9.7.4/styles.css" }]);
+  });
+});
+
+describe("the libraries the vendor build serves", () => {
+  it("are app dependencies at exact versions, each with the stylesheets a project may name", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const app = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "package.json"), "utf8")) as { dependencies: Record<string, string>; designHarness: { libraries: Record<string, string[]> } };
+    expect(Object.keys(app.designHarness.libraries).sort()).toEqual(["@mantine/core", "@tounsoo/todae"]);
+    for (const [name, stylesheets] of Object.entries(app.designHarness.libraries)) {
+      expect(app.dependencies[name]).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(stylesheets.length).toBeGreaterThan(0);
+    }
   });
 });
 

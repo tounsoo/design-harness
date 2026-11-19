@@ -11,8 +11,9 @@
  * E2E_SCREENSHOTS to a folder to save screenshots of the app.
  */
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createServer } from "node:http";
 import { dirname, join } from "node:path";
@@ -20,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { strFromU8, unzipSync } from "fflate";
 import { build as viteBuild, preview } from "vite";
+import { build as esbuild } from "esbuild";
 import { errorBody, fakeAnthropic, streamEvents } from "./fake-anthropic.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -340,9 +342,11 @@ test("the board opens a frame at full size and the project view reads the config
 async function fakeCdn() {
   const manifest = JSON.parse(readFileSync(join(root, "dist", "vendor", "manifest.json"), "utf8"));
   const routes = new Map();
-  for (const [name, entry] of Object.entries(manifest.packages)) {
-    for (const [specifier, file] of Object.entries(entry.modules)) routes.set(`/${name}@${entry.version}${specifier.slice(name.length)}`, { file, type: "text/javascript" });
-    for (const [path, file] of Object.entries(entry.files)) routes.set(`/${name}@${entry.version}/${path}`, { file, type: "text/css" });
+  for (const [name, { versions }] of Object.entries(manifest.packages)) {
+    for (const [version, entry] of Object.entries(versions)) {
+      for (const [specifier, file] of Object.entries(entry.modules)) routes.set(`/${name}@${version}${specifier.slice(name.length)}`, { file, type: "text/javascript" });
+      for (const [path, file] of Object.entries(entry.files)) routes.set(`/${name}@${version}/${path}`, { file, type: "text/css" });
+    }
   }
   const served = [];
   const server = createServer((request, response) => {
@@ -371,6 +375,91 @@ test("frames load React and the library by URL from a CDN-shaped origin", async 
     assert.ok(cdn.served.includes("/@tounsoo/todae@0.10.1?external=react,react-dom"));
     assert.ok(cdn.served.includes("/@tounsoo/todae@0.10.1/dist/todae.css"));
     assert.deepEqual(errors, []);
+  } finally {
+    await cdn.close();
+  }
+});
+
+// ---- a project on another library: Tally on Mantine ----------------------------
+
+const TALLY_SCENARIOS = ["expenses-list", "lunch-open", "lunch-submitted", "lunch-saved"];
+
+/**
+ * Tally, core's second worked example, as a project file: its config (core's
+ * TypeScript, bundled here) and its legal spec prototype, read from the
+ * files core's own tests read, so the two cannot drift apart.
+ */
+async function tallyProjectFile() {
+  const core = join(root, "..", "..", "packages", "core");
+  const bundled = await esbuild({ stdin: { contents: 'export { tally } from "./examples/tally/project";', resolveDir: core, loader: "ts" }, bundle: true, format: "esm", platform: "neutral", write: false, logLevel: "silent" });
+  const { tally } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString("base64")}`);
+  const dir = join(core, "examples", "tally", "prototypes", "spec", "legal", "expense");
+  const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
+  const files = {};
+  for (const folder of ["layouts", "pages"]) for (const name of readdirSync(join(dir, folder)).sort()) files[`${folder}/${name}`] = readFileSync(join(dir, folder, name), "utf8");
+  const file = join(mkdtempSync(join(tmpdir(), "design-harness-tally-")), "tally.design-harness.json");
+  writeFileSync(file, JSON.stringify({ format: "design-harness/project", version: 1, project: tally, prototypes: [{ id: "expense", name: "Expense", prototype: { ...manifest, files } }] }));
+  return file;
+}
+
+/** Imports Tally over the seeded project and waits until its own frames are measured. */
+async function importTally(page) {
+  await measured(page, 1);
+  await page.locator('[data-testid="import-file"]').setInputFiles(await tallyProjectFile());
+  await page.locator('iframe[title="lunch-open at desktop"]').waitFor({ state: "attached" });
+  await measured(page, 1);
+}
+
+async function openTally(browser, base) {
+  const opened = await openApp(browser, base);
+  await importTally(opened.page);
+  return opened;
+}
+
+test("a project on another library, Mantine, renders on the board with every rule passing, and an injected violation is flagged", async ({ browser, base }) => {
+  const { page, errors, logs } = await openTally(browser, base);
+  const value = await report(page);
+  assert.equal(value.status, "pass", `the legal Tally prototype passes every rule: ${JSON.stringify(value.rules.filter((rule) => rule.status !== "pass").map((rule) => [rule.rule, rule.status, rule.findings.slice(0, 3).map((finding) => finding.message)]))}`);
+  for (const rule of ["target-size", "accessible-names", "heading-structure", "text-contrast", "rank-1-in-first-view", "no-sideways-scroll"]) {
+    assert.equal(value.rules.find((item) => item.rule === rule)?.status, "pass", `${rule} ran on measured Mantine frames`);
+  }
+  for (const scenario of TALLY_SCENARIOS) for (const view of VIEWS) assert.equal(await page.locator(`iframe[title="${scenario} at ${view}"]`).count(), 1, `${scenario} at ${view} is on the board`);
+  // Mantine's own parts, inside its provider, in each view's scheme: the phone view is dark.
+  const open = page.frameLocator('iframe[title="lunch-open at desktop"]');
+  assert.equal((await open.locator("h1").textContent()).trim(), "Team lunch");
+  assert.equal(await open.locator("button.mantine-Button-root").count(), 2);
+  assert.equal(await open.getByLabel("Amount in euros").count(), 1, `Mantine's label names the amount field: ${logs.join("\n").slice(0, 3000)}`);
+  assert.equal(await open.getByLabel("Amount in euros").inputValue(), "48.20");
+  assert.equal(await open.locator(":root").getAttribute("data-mantine-color-scheme"), "light");
+  assert.equal(await page.frameLocator('iframe[title="lunch-open at phone"]').locator(":root").getAttribute("data-mantine-color-scheme"), "dark");
+  await shot(page, "tally-board-light");
+
+  // Injected: the expense's title drawn as an h3, which only the measured heading structure can see.
+  await editFile(page, "pages/expense.json", (text) => text.replace('"name": { "type": "Title", "props": { "order": 1,', '"name": { "type": "Title", "props": { "order": 3,'));
+  await measured(page, 2);
+  const broken = await report(page);
+  assert.deepEqual(failing(broken), ["heading-structure"]);
+  assert.ok(broken.findings.some((finding) => finding.rule === "heading-structure" && finding.scenario === "lunch-open"), "the finding names the Mantine frame it was measured in");
+
+  // A part that throws while it renders (an input given text) fails its frames: it is never measured as missing.
+  await editFile(page, "layouts/amount-question.json", (text) => text.replace('"min": 0, "decimalScale": 2 }', '"min": 0, "decimalScale": 2, "text": "48" }'));
+  const card = page.locator('[data-frame-key="lunch-open@desktop"]');
+  await page.waitForFunction(() => document.querySelector('[data-frame-key="lunch-open@desktop"]')?.getAttribute("data-state") === "failed", undefined, { timeout: 60000 });
+  assert.match(await card.textContent(), /NumberInput could not render/);
+  assert.equal((await report(page)).status === "pass", false, "a frame that failed to render does not pass");
+  assert.deepEqual(errors, []);
+});
+
+test("a Mantine project loads its library and stylesheet by name and version from a CDN-shaped origin", async ({ browser, base }) => {
+  const cdn = await fakeCdn();
+  try {
+    const opened = await openApp(browser, `${base}?packages=esm.sh&packages-origin=${encodeURIComponent(cdn.origin)}`);
+    await importTally(opened.page);
+    const value = await report(opened.page);
+    assert.equal(value.status, "pass", `every rule passes when Mantine comes by URL: ${failing(value)}`);
+    assert.ok(cdn.served.includes("/@mantine/core@9.7.4?external=react,react-dom"));
+    assert.ok(cdn.served.includes("/@mantine/core@9.7.4/styles.css"));
+    assert.deepEqual(opened.errors, []);
   } finally {
     await cdn.close();
   }
@@ -1559,7 +1648,7 @@ test("a stored project without a library description gets the bundled one on loa
   );
   await page.reload();
   await page.getByTestId("notice").waitFor();
-  assert.match(await page.getByTestId("notice").textContent(), /The project was brought up to date.*added the one it ships for @tounsoo\/todae 0\.10\.1 \(198 parts\)/);
+  assert.match(await page.getByTestId("notice").textContent(), /The project was brought up to date.*added the one it ships for @tounsoo\/todae 0\.10\.1 \(203 parts\)/);
   await measured(page, 1);
   await page.getByRole("combobox", { name: "Prototype" }).selectOption("booking-spec");
   await measured(page, 2);
