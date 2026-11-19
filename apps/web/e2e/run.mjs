@@ -2069,8 +2069,8 @@ test("moving a project from Todae 0.10.1 to 0.11.3 shows the diff first, and mov
     assert.equal(await page.getByTestId("library-move-parts").textContent(), "Parts: 1 changed, 202 the same.");
     assert.match(await plan.locator('tr[data-part="Slider.Root"]').textContent(), /adds .*disabled.*max.*min/);
     assert.match(await page.getByTestId("library-move-roles").textContent(), /^Every role still holds/);
-    assert.match(await page.getByTestId("library-move-reports").textContent(), /^No prototype's report changes: core checks all 2 the same on 0\.11\.3\./);
-    assert.equal(await plan.locator("tr[data-prototype]").count(), 2);
+    assert.match(await page.getByTestId("library-move-reports").textContent(), /^No prototype's report changes: core checks all 1 the same on 0\.11\.3\./);
+    assert.equal(await plan.locator("tr[data-prototype]").count(), 1, "the seeded project holds one prototype");
     await shot(page, `library-move-plan-${colorScheme}`);
     // Nothing has moved yet.
     assert.equal((await storedLibrary(page)).version, "0.10.1", "the dry run changes nothing");
@@ -2325,7 +2325,8 @@ test("at phone width the header's parts do not overlap, the page does not scroll
   assert.deepEqual([await chatToggle.getAttribute("aria-expanded"), await sideToggle.getAttribute("aria-expanded")], ["false", "false"]);
   const parts = await headerIsLaidOut(page, "phone");
   for (const name of ["Canvas", "Variants", "Project", "Proposals"]) assert.ok(parts.some((part) => part.name === name), `the ${name} tab is in the header`);
-  assert.equal(await page.getByRole("combobox", { name: "Prototype" }).isVisible(), true, "the prototype picker stays");
+  // The seed holds one prototype, so the header names it where a picker would be.
+  assert.equal(await page.locator(".shell-prototype-name").isVisible(), true, "the prototype's name stays");
   await noSidewaysScroll(page, "phone");
   assert.deepEqual(await page.locator(".frame-card").evaluateAll((cards) => cards.map((card) => card.dataset.state)), Array(FRAMES).fill("measured"), "every frame is measured at phone width");
 
@@ -2907,18 +2908,18 @@ test("no tool call or chat message can apply a pick", async ({ browser, base, ap
 test("export code downloads a zip of a runnable project, which builds with Vite, typechecks and renders every scenario", async ({ browser, base }) => {
   const { page } = await openSpec(browser, base);
   const [download] = await Promise.all([page.waitForEvent("download"), page.getByTestId("export-code").click()]);
-  assert.equal(download.suggestedFilename(), "nook-booking-spec.zip");
+  assert.equal(download.suggestedFilename(), "nook-booking.zip");
   const entries = unzipSync(readFileSync(await download.path()));
   assert.deepEqual(Object.keys(entries).sort(), [
     "README.md", "index.html", "package.json", "src/main.tsx", "src/page-kit.tsx",
     "src/prototype/layouts/room-cards.tsx", "src/prototype/layouts/room-details.tsx", "src/prototype/layouts/select-question.tsx",
     "src/prototype/manifest.json", "src/prototype/pages/booking.tsx", "src/prototype/pages/rooms.tsx",
     "src/scenarios.ts", "src/shell.css", "tsconfig.json", "vite.config.ts",
-  ].map((path) => `nook-booking-spec/${path}`));
-  const readme = strFromU8(entries["nook-booking-spec/README.md"]);
-  assert.match(readme, /^# Booking \(spec\)\n\nExported from design-harness on \d{4}-\d\d-\d\dT[\d:.]+Z: prototype "Booking \(spec\)" of project "Nook"/);
+  ].map((path) => `nook-booking/${path}`));
+  const readme = strFromU8(entries["nook-booking/README.md"]);
+  assert.match(readme, /^# Booking\n\nExported from design-harness on \d{4}-\d\d-\d\dT[\d:.]+Z: prototype "Booking" of project "Nook"/);
   assert.match(readme, /Core's checks at export: pass: every rule passes\./);
-  assert.deepEqual(JSON.parse(strFromU8(entries["nook-booking-spec/package.json"])).dependencies, { "@tounsoo/todae": "0.11.3", react: "19.3.1", "react-dom": "19.3.1" });
+  assert.deepEqual(JSON.parse(strFromU8(entries["nook-booking/package.json"])).dependencies, { "@tounsoo/todae": "0.11.3", react: "19.3.1", "react-dom": "19.3.1" });
 
   // Build it with Vite and typecheck it, offline: its packages are this repository's node_modules.
   const dir = mkdtempSync(join(tmpdir(), "design-harness-export-"));
@@ -2927,7 +2928,7 @@ test("export code downloads a zip of a runnable project, which builds with Vite,
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, bytes);
   }
-  const project = join(dir, "nook-booking-spec");
+  const project = join(dir, "nook-booking");
   symlinkSync(join(root, "..", "..", "node_modules"), join(project, "node_modules"), "dir");
   await viteBuild({ root: project, configFile: join(project, "vite.config.ts"), logLevel: "silent" });
   assert.ok(existsSync(join(project, "dist", "index.html")));
@@ -3177,9 +3178,10 @@ test("the contrast figure shows the ratio in light and dark", async ({ browser, 
     assert.deepEqual(painted, [rgb(evidence.foreground), rgb(evidence.background)], `${scheme}: the sample is painted in the measured pair`);
     assert.ok(evidence.ratio < 4.5);
   }
-  assert.notEqual(bySchemeFrom("light").background, bySchemeFrom("dark").background);
+  // Mantine's white button keeps its white background in the dark scheme and darkens its yellow: each scheme's own measured pair.
+  assert.notDeepEqual([bySchemeFrom("light").foreground, bySchemeFrom("light").background], [bySchemeFrom("dark").foreground, bySchemeFrom("dark").background]);
   // The picture is the text in its colours. The ratios are numbers beside it, with what the text needs, and no scale repeats them.
-  assert.match(await figure.locator(".evidence-legend").textContent(), /^\d+ px: needs 4\.5:1$/);
+  assert.match(await figure.locator(".evidence-legend").textContent(), /^\d+ px(, bold)?: needs 4\.5:1$/);
   assert.equal(await figure.getByTestId("figure-scale").count(), 0);
   assert.equal(await figure.locator("ul.contrast").getAttribute("aria-label"), "Measured contrast, by colour scheme");
   assert.equal(await figure.locator("figcaption").getByTestId("fix-message").textContent(), findings[0].message);
@@ -3272,7 +3274,8 @@ test("the tap-target lens draws failing and passing boxes on every artboard, wit
     const [scenario, view] = key.split("@");
     const here = found.filter((finding) => finding.scenario === scenario && finding.view === view);
     const names = here.map((finding) => finding.evidence.name);
-    assert.ok(names.length > 0 && names.every((name) => name === "A" || name === "B"), `core finds the compact buttons in ${key}: ${names}`);
+    // A, at the row's start, meets the spacing exception; B, its circle reaching A, does not.
+    assert.deepEqual(names, ["B"], `core finds B in ${key}`);
     const board = card(page, key);
     // Failing: a solid box, a hatched circle and a size label each. Passing: a quiet dashed box.
     assert.equal(await board.locator('[data-testid="lens-box"][data-tone="fail"]').count(), names.length);
@@ -3291,7 +3294,7 @@ test("the tap-target lens draws failing and passing boxes on every artboard, wit
     const styles = await board.evaluate((element) => ({ fail: window.getComputedStyle(element.querySelector('[data-testid="lens-box"][data-tone="fail"]')).strokeDasharray, quiet: window.getComputedStyle(element.querySelector('[data-testid="lens-box"][data-tone="quiet"]')).strokeDasharray }));
     assert.equal(styles.fail, "none", "a failing box is solid");
     assert.notEqual(styles.quiet, "none", "a passing box is dashed");
-    assert.equal(await board.getByTestId("lens-words").textContent(), `${names.length} of 6 ${names.length === 1 ? "control is" : "controls are"} under 24 px and too close to another.`);
+    assert.equal(await board.getByTestId("lens-words").textContent(), "1 of 6 controls is under 24 px and too close to another. 1 is under 24 px but clear of the rest.");
     assert.equal(await board.getByTestId("lens-layer").getAttribute("aria-hidden"), "true");
     // Tally's phone view is dark.
     assert.equal(await board.getByTestId("lens-layer").getAttribute("data-scheme"), view === "phone" ? "dark" : "light");
@@ -3835,7 +3838,7 @@ test("new project on Todae: named, roles confirmed by eye with a correction and 
   await page.locator('iframe[title="rooms-list at desktop"]').waitFor({ state: "attached" });
   await measured(page, 1);
   assert.equal((await report(page)).status, "pass");
-  assert.equal(await page.getByRole("combobox", { name: "Prototype" }).locator("option").count(), 2);
+  assert.equal((await page.locator(".shell-prototype-name").textContent()).trim(), "Booking", "with its one seeded prototype");
   assert.deepEqual(errors, []);
   await context.close();
 });

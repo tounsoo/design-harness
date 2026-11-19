@@ -1045,7 +1045,8 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
                     {current && <PinNotes state={pinState} frameOf={pinFrame} actions={pinActions} onShow={showPin} onStart={() => setPinning(true)} onAsk={askAboutNotes} />}
                   </Tabs.Panel>
                   <Tabs.Panel value="code" keepMounted className="app-side-panel">
-                    {current && <CodePanel prototype={current.prototype} target={code} onTarget={setCode} onEdit={edit} problems={state.compileProblems} readOnly={readOnly} />}
+                    {/* One code view per prototype: the manifest's draft belongs to the prototype it was opened on. */}
+                    {current && <CodePanel key={current.id} prototype={current.prototype} target={code} onTarget={setCode} onEdit={edit} problems={state.compileProblems} readOnly={readOnly} />}
                   </Tabs.Panel>
                 </Tabs.Root>
               </aside>
