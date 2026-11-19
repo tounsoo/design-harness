@@ -1,1 +1,1 @@
-{ "what": "A style prop on the room cards' stack", "expect": [{ "rule": "no-inline-styles", "message": "element with a style prop" }] }
+{ "what": "A style prop on the room cards' stack", "expect": [{ "rule": "no-inline-styles", "message": "Stack.Root at layouts/room-cards.tsx:7:5 sets \"style\", a style prop the project excludes (\"style\" in library.excludedProps)" }] }

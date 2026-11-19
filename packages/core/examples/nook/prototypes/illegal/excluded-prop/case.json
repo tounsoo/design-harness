@@ -1,0 +1,1 @@
+{ "what": "A className on a room's card: Nook excludes Todae's style props, in TSX as in a spec", "expect": [{ "rule": "no-inline-styles", "message": "Card.Root at layouts/room-cards.tsx:9:9 sets \"className\", a style prop the project excludes (\"className\" in library.excludedProps): a Card.Root's styling must come from the library's own variants and tokens" }] }
