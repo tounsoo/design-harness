@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Finding } from "@design-harness/core";
 import { FRAME_SANDBOX } from "../runtime/frame-document";
 import { frameKey, type FrameSpec, type FrameState, type Session, type SessionState } from "../runtime/session";
+import { planOutline } from "../runtime/tags";
 
 type Zoom = "fit" | "0.25" | "0.5" | "1";
 
@@ -38,6 +39,8 @@ export function Board({ session, state, selected }: { readonly session: Session;
   const fit = Math.min(1, Math.max(0.12, (width - gaps) / rowWidth));
   const scale = zoom === "fit" ? fit : Number(zoom);
   const selectedKey = selected?.scenario !== undefined && selected.view !== undefined ? frameKey(selected.scenario, selected.view) : null;
+  // A finding about elements is outlined in every frame that drew them.
+  const outlined = useMemo(() => new Set(selected ? (planOutline(selected, state.frames, state.frameStates)?.frames.map((frame) => frame.key) ?? []) : []), [selected, state.frames, state.frameStates]);
   const focusedSpec = state.frames.find((frame) => frame.key === focused);
 
   return (
@@ -97,7 +100,7 @@ export function Board({ session, state, selected }: { readonly session: Session;
                     scale={focused === spec.key ? 1 : scale}
                     focused={focused === spec.key}
                     hidden={focused !== null && focused !== spec.key}
-                    selected={selectedKey === spec.key}
+                    selected={selectedKey === spec.key || outlined.has(spec.key)}
                     onOpen={() => setFocused(spec.key)}
                   />
                 ))}
