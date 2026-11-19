@@ -1,6 +1,7 @@
 import type { BetaTool } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { ROLE_NAMES, dryRunAdoption, formatIssues, parsePrototype, propose, revise, type CheckReport, type JsonValue, type Variant, type VariantState, type FailingExample, type PassingExample, type ProjectConfig, type Proposal, type Prototype, type ProposalDraft } from "@design-harness/core";
 import type { CompileProblem } from "../runtime/transform";
+import { MAX_REPLY_LENGTH, addressPin, openPins, type PinState } from "../pins/model";
 import { validateInput, type JsonSchema } from "./schema";
 import { SPEC_TOOL_DESCRIPTIONS, SPEC_TOOL_SCHEMAS, insertLayout, listLayouts, patchSpec, setLayoutParams, writeSpec } from "./spec-tools";
 import { VARIANT_TOOL_DESCRIPTIONS, VARIANT_TOOL_SCHEMAS, listVariants, proposeVariants, reviseVariant } from "./variant-tools";
@@ -41,6 +42,10 @@ export interface AgentHost {
   variants(): VariantState;
   /** Keeps a new list of variants. It takes only variants: a pick is the person's, and nothing here applies one or changes the prototype. */
   saveVariants(variants: readonly Variant[]): void;
+  /** The notes the person pinned on the open prototype's frames (`pins/model.ts`); absent where the app keeps none. */
+  pins?(): PinState;
+  /** Keeps the pins after the agent marked one addressed. Nothing else of the agent's reaches them: `address_note` is the one tool that calls it. */
+  savePins?(next: PinState): void;
 }
 
 type Tool = { readonly definition: BetaTool; readonly schema: JsonSchema };
@@ -184,6 +189,16 @@ const TOOLS: readonly Tool[] = [
     "Revise an open proposal, such as one the user sent back to you with a note. Give its id, a note saying what you changed and why (kept in the proposal's history beside the version it replaces), and only the fields you change: each one you give replaces that field whole, and the rest stay as they are. examples, when given, replaces both lists, each example starting from the current prototype. Core's adoption dry run runs again on the revision. Only an open proposal can be revised, and its status stays open: only the user can approve, decline or adopt it.",
     { type: "object", properties: { id: { type: "string", pattern: SLUG }, note: { type: "string", minLength: 1, maxLength: 2000 }, ...PROPOSAL_FIELDS }, required: ["id", "note"], additionalProperties: false },
   ),
+  tool(
+    "address_note",
+    "Mark one of the person's pinned notes as addressed, after you changed the prototype for it, with a short reply saying what you did (or why you could not). Notes are the person's feedback on a spot of a frame; they arrive with the person's message as \"Your notes from the person\". They are never checks and change no rule's verdict. This is all you can do to a note: you cannot write, edit, close, reopen or remove one. The person closes it, or reopens it for you to try again.",
+    {
+      type: "object",
+      properties: { note: { type: "integer", minimum: 1, description: "The note's number, as the person's notes list it." }, reply: { type: "string", minLength: 1, maxLength: MAX_REPLY_LENGTH, description: "One or two sentences for the person: what you changed for this note." } },
+      required: ["note", "reply"],
+      additionalProperties: false,
+    },
+  ),
 ];
 
 /** The tool definitions sent with every request, in a fixed order so the cached prefix never changes. */
@@ -214,6 +229,7 @@ const SPEC_TOOLS: readonly Tool[] = [
   tool("propose_variants", VARIANT_TOOL_DESCRIPTIONS.propose_variants, VARIANT_TOOL_SCHEMAS.propose_variants),
   tool("revise_variant", VARIANT_TOOL_DESCRIPTIONS.revise_variant, VARIANT_TOOL_SCHEMAS.revise_variant),
   tool("list_variants", VARIANT_TOOL_DESCRIPTIONS.list_variants, VARIANT_TOOL_SCHEMAS.list_variants),
+  shared("address_note"),
 ];
 
 /** The spec mode's tool definitions, in a fixed order. */
@@ -299,9 +315,26 @@ export async function runTool(call: ToolCall, host: AgentHost, signal: AbortSign
       return reviseVariant(host, input as Parameters<typeof reviseVariant>[1]);
     case "list_variants":
       return listVariants(host);
+    case "address_note":
+      return addressNote(host, Number(input.note), String(input.reply));
     default:
       return refused(`Unknown tool ${call.name}`, `There is no tool "${call.name}".`);
   }
+}
+
+/**
+ * Marks one pinned note addressed, with the agent's reply. The pin's own
+ * rules decide (`addressPin`): only an open note, and never its text, its
+ * place or another note. The prototype is not touched, so no revision starts.
+ */
+function addressNote(host: AgentHost, number: number, reply: string): ToolOutcome {
+  const pins = host.pins?.();
+  if (!pins || !host.savePins) return refused("address_note: no notes here", "This prototype has no pinned notes to address.");
+  const addressed = addressPin(pins, number, reply, host.now());
+  if (!addressed.ok) return refused(`Note ${number} not marked addressed`, `${addressed.error} Nothing changed. The open notes are: ${openPins(pins).map((pin) => pin.number).join(", ") || "none"}.`);
+  host.savePins(addressed.value);
+  const left = openPins(addressed.value).map((pin) => pin.number);
+  return { content: `Marked note ${number} as addressed, with your reply. The person will close it or reopen it. ${left.length > 0 ? `Still open: ${left.map((item) => `note ${item}`).join(", ")}.` : "No note is open now."}`, isError: false, changed: false, title: `Addressed note ${number}` };
 }
 
 function manifestOf(prototype: Prototype): Omit<Prototype, "files"> {

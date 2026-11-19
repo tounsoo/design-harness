@@ -15,7 +15,11 @@ import { planOutline } from "../runtime/tags";
 import type { Store } from "../store/db";
 import type { LoadNote } from "../store/migrate";
 import { exportFileName, exportProject, importProject, type Imported, type PrototypeRecord } from "../store/project-file";
-import { Board, FramesShown, type BoardHandle } from "./Board";
+import { fingerprint, reanchor, type FrameMeasure } from "../pins/anchor";
+import { NO_PINS, addPin, closePin, editPin, openPins, reopenPin, type Pin, type PinResult, type PinState } from "../pins/model";
+import { PinNotes } from "../pins/PinNotes";
+import type { PinActions } from "../pins/PinLayer";
+import { Board, FramesShown, type BoardHandle, type BoardPins } from "./Board";
 import { ChatPanel } from "./ChatPanel";
 import { ChecksPanel } from "./ChecksPanel";
 import { CodePanel, MANIFEST_FILE } from "./CodePanel";
@@ -26,6 +30,7 @@ import { PackagesNotice } from "./LibraryVersion";
 import { ProposalPage } from "./ProposalPage";
 import { ProposalsView } from "./ProposalsView";
 import { PANEL_SIZES, usePanels } from "./panels";
+import { frameName } from "./words";
 import type { ProjectEntry } from "./projects";
 import { createSession } from "./runtime";
 import { SHORTCUTS, ariaKeys } from "./shortcuts";
@@ -150,7 +155,20 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     target?.focus();
   }, [canvasOnly]);
   useHotkey(SHORTCUTS.canvasOnly.keys, () => (canvasOnly ? leaveCanvasOnly() : enterCanvasOnly()));
-  useHotkey(SHORTCUTS.leave.keys, leaveCanvasOnly, { enabled: canvasOnly });
+  /** "Pin a note" mode, and whether the board holds Escape for it or for an open note. */
+  const [pinning, setPinningState] = useState(false);
+  const [boardHolds, setBoardHolds] = useState(false);
+  const setPinning = useCallback(
+    (next: boolean) => {
+      setPinningState(next);
+      if (next) setCenter("canvas");
+      announce(next ? "Pin a note: click a spot on a frame, or pick an element from a frame's list. Press Escape to leave." : "Left pin a note.");
+    },
+    [announce],
+  );
+  useHotkey(SHORTCUTS.pin.keys, () => setPinning(!pinning));
+  // Escape leaves pin mode or closes a note's card first, and canvas only after that.
+  useHotkey(SHORTCUTS.leave.keys, leaveCanvasOnly, { enabled: canvasOnly && !boardHolds });
   useHotkey(SHORTCUTS.chat.keys, () => {
     if (canvasOnly) leaveCanvasOnly();
     toggle("chat", canvasOnly ? true : undefined);
@@ -215,6 +233,21 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     [recordOf, setRecords, store],
   );
 
+  /** Changes the open prototype's pinned notes, and saves the record at once. The prototype itself is never touched, so no revision starts and no check runs. */
+  const updatePins = useCallback(
+    (change: (state: PinState) => PinState) => {
+      const record = recordOf();
+      if (!record) return;
+      const before = record.pins ?? NO_PINS;
+      const pins = change(before);
+      if (pins === before) return;
+      const next: PrototypeRecord = { ...record, pins };
+      setRecords((items) => items.map((item) => (item.id === record.id ? next : item)));
+      void store.putPrototype(next);
+    },
+    [recordOf, setRecords, store],
+  );
+
   // The agent's view of the app, for the prototype open now: its changes are revisions at once, and its checks wait for every frame.
   const host = useMemo((): AgentHost => {
     const prototypeOf = () => recordsRef.current.find((record) => record.id === currentId)?.prototype ?? recordsRef.current[0]?.prototype;
@@ -251,8 +284,10 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
       variants: () => recordOf()?.variants ?? NO_VARIANTS,
       // Only the list of variants: the picks are kept as they are, and the prototype is not touched.
       saveVariants: (next: readonly Variant[]) => updateVariants((state) => ({ ...state, variants: next })),
+      pins: () => recordOf()?.pins ?? NO_PINS,
+      savePins: (next: PinState) => updatePins(() => next),
     };
-  }, [currentId, session, setRecords, saveConfig, checked, recordOf, updateVariants]);
+  }, [currentId, session, setRecords, saveConfig, checked, recordOf, updateVariants, updatePins]);
 
   // A spec prototype's patch_spec draws its draft on the canvas while it streams, in place; the board then returns to the prototype as it is.
   const [previewing, setPreviewing] = useState(false);
@@ -441,6 +476,66 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     },
     [toggle],
   );
+
+  // ---- Pinned notes: the person's feedback on the open prototype's frames. Never a check: nothing below reads or changes a report. ----
+  const pinState = current?.pins ?? NO_PINS;
+  const pinActions = useMemo((): PinActions => {
+    const run = (change: (state: PinState) => PinResult): boolean => {
+      const result = change(recordOf()?.pins ?? NO_PINS);
+      if (!result.ok) {
+        setNotice({ tone: "warning", title: "The note was not changed", lines: [result.error] });
+        return false;
+      }
+      updatePins(() => result.value);
+      return true;
+    };
+    const at = () => new Date().toISOString();
+    return {
+      create: (anchor, note) => {
+        const number = (recordOf()?.pins ?? NO_PINS).next;
+        return run((state) => addPin(state, anchor, note, at())) ? number : null;
+      },
+      edit: (number, note) => void run((state) => editPin(state, number, note, at())),
+      close: (number) => void run((state) => closePin(state, number, at())),
+      reopen: (number) => void run((state) => reopenPin(state, number, at())),
+    };
+  }, [recordOf, updatePins]);
+  const tagKind = prototype?.format === "spec" ? "key" : "source";
+  const pinRevision = useMemo(() => (prototype ? fingerprint(prototype) : ""), [prototype]);
+  // Each time frames are measured for the prototype as it is now, every pin is placed again: on its element where that still exists, "moved or gone" where it does not.
+  useEffect(() => {
+    const record = recordOf();
+    const running = session.current();
+    if (!record?.pins || record.pins.pins.length === 0 || !running || running.prototype !== record.prototype) return;
+    const frames: Record<string, FrameMeasure> = {};
+    for (const frame of state.frames) {
+      const value = state.frameStates[frame.key];
+      if (value?.state === "measured") frames[frame.key] = { snapshot: value.snapshot, places: value.places ?? [], width: frame.view.width, height: frame.view.height };
+    }
+    const kind = record.prototype.format === "spec" ? "key" : "source";
+    const next = reanchor(record.pins, frames, fingerprint(record.prototype), kind);
+    if (next !== record.pins) updatePins(() => reanchor(recordOf()?.pins ?? next, frames, fingerprint(record.prototype), kind));
+  }, [state.frames, state.frameStates, session, recordOf, updatePins, pinState]);
+  const boardPins = useMemo((): BoardPins => ({ state: pinState, pinning, onPinning: setPinning, actions: pinActions, revision: pinRevision, kind: tagKind, onHold: setBoardHolds }), [pinState, pinning, setPinning, pinActions, pinRevision, tagKind]);
+  const pinFrame = useCallback(
+    (pin: Pin) => {
+      const frame = state.frames.find((item) => item.scenario.id === pin.anchor.scenario && item.view.name === pin.anchor.view);
+      return frame ? frameName(frame.scenario, frame.view.name) : null;
+    },
+    [state.frames],
+  );
+  const showPin = useCallback((number: number) => {
+    setCenter("canvas");
+    // After the canvas is the view on top again.
+    requestAnimationFrame(() => board.current?.showPin(number));
+  }, []);
+  /** "Ask the agent to address them": a message for the person to edit and send; the open notes ride with it. */
+  const askAboutNotes = useCallback(() => {
+    const open = openPins(recordOf()?.pins ?? NO_PINS).length;
+    setPrefill((previous) => ({ text: open === 1 ? "Please address my pinned note." : `Please address my ${open} pinned notes.`, nonce: (previous?.nonce ?? 0) + 1 }));
+    setCanvasOnly(false);
+    toggle("chat", true);
+  }, [recordOf, toggle]);
 
   const proposable = useCallback(
     (finding: Finding) => {
@@ -711,6 +806,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
                     state={state}
                     selected={selected}
                     config={session.current()?.config}
+                    pins={current ? boardPins : undefined}
                     floating={
                       canvasOnly
                         ? {
@@ -818,6 +914,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
                   </div>
                   <Tabs.Panel value="checks" keepMounted className="app-side-panel">
                     <ChecksPanel state={state} measuredCount={measuredCount} selected={selected} onSelect={select} onShowCode={(finding) => showCode(finding, true)} onFix={fix} {...(key.present ? { onAsk: ask } : {})} proposable={proposable} config={config} flow={flow} onGoToState={goToState} />
+                    {current && <PinNotes state={pinState} frameOf={pinFrame} actions={pinActions} onShow={showPin} onStart={() => setPinning(true)} onAsk={askAboutNotes} />}
                   </Tabs.Panel>
                   <Tabs.Panel value="code" keepMounted className="app-side-panel">
                     {current && <CodePanel prototype={current.prototype} target={code} onTarget={setCode} onEdit={edit} problems={state.compileProblems} />}

@@ -7,6 +7,8 @@ import { NO_USAGE, addUsage, requestCost, type AgentSettings, type Usage } from 
 import { createClient, requestBody, type AgentMode, type MessagesApi } from "./request";
 import { specCatalogPrompt } from "./spec-prompt";
 import { reportRules, type LoopEvent } from "./patterns";
+import { describePins } from "../pins/describe";
+import { openPins } from "../pins/model";
 import type { SpecStreamPreview } from "./spec-stream";
 import { checksTitle, describeMeasured, runTool, type AgentHost, type ToolOutcome } from "./tools";
 
@@ -213,9 +215,13 @@ export class AgentController {
       undone: false,
       ...(start ? { failingAtStart: reportRules(start).failing } : {}),
     };
-    this.history.appendUser(message, this.pending);
+    // The person's open pinned notes ride with every message of theirs, as findings beside core's (pins/describe.ts).
+    const pins = this.options.host.pins?.();
+    const notes = pins ? describePins(pins) : null;
+    const open = pins ? openPins(pins).length : 0;
+    this.history.appendUser(message, [...this.pending, ...(notes ? [notes] : [])]);
     this.pending = [];
-    this.set({ turns: [...this.state.turns, turn] });
+    this.set({ turns: [...this.state.turns, notes ? { ...turn, items: [{ kind: "notice", text: `Sent with ${open === 1 ? "your open note" : `your ${open} open notes`} from the canvas.` }] } : turn] });
     await this.run(turn.id);
   }
 

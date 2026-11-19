@@ -458,6 +458,77 @@
           "unit": "rem"
         }
       }
+    },
+    "pin": {
+      "$description": "A pinned note's marker: a person's feedback on a spot of an artboard. Violet, which no check uses, so a note never reads as a finding. Like an annotation it is drawn over the prototype's page, so its colours are fixed for a light page and for a dark one.",
+      "on-light": {
+        "bg": {
+          "$type": "color",
+          "$value": {
+            "$ref": "#/color/violet/700/$value"
+          }
+        },
+        "fg": {
+          "$type": "color",
+          "$value": {
+            "$ref": "#/color/gray/0/$value"
+          }
+        },
+        "ring": {
+          "$type": "color",
+          "$value": {
+            "$ref": "#/color/gray/0/$value"
+          }
+        }
+      },
+      "on-dark": {
+        "bg": {
+          "$type": "color",
+          "$value": {
+            "$ref": "#/color/violet/300/$value"
+          }
+        },
+        "fg": {
+          "$type": "color",
+          "$value": {
+            "$ref": "#/color/violet/900/$value"
+          }
+        },
+        "ring": {
+          "$type": "color",
+          "$value": {
+            "$ref": "#/color/gray/950/$value"
+          }
+        }
+      },
+      "size": {
+        "$type": "dimension",
+        "$value": {
+          "value": 1.5,
+          "unit": "rem"
+        }
+      },
+      "size-quiet": {
+        "$type": "dimension",
+        "$value": {
+          "value": 1,
+          "unit": "rem"
+        }
+      },
+      "ring": {
+        "$type": "dimension",
+        "$value": {
+          "value": 2,
+          "unit": "px"
+        }
+      },
+      "card": {
+        "$type": "dimension",
+        "$value": {
+          "value": 20,
+          "unit": "rem"
+        }
+      }
     }
   }
 }

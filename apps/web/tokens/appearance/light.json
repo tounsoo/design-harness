@@ -1,5 +1,11 @@
 {
   "harness": {
+    "note": {
+      "$description": "A pinned note in the app's own panels, in the app's appearance: the same violet as its marker on the canvas.",
+      "bg": { "$type": "color", "$value": { "$ref": "#/color/violet/700/$value" } },
+      "fg": { "$type": "color", "$value": { "$ref": "#/color/gray/0/$value" } },
+      "soft": { "$type": "color", "$value": { "$ref": "#/color/violet/100/$value" } }
+    },
     "canvas": {
       "$description": "The board behind the prototype's frames: a quiet surface with a faint dot grid.",
       "bg": { "$type": "color", "$value": { "$ref": "#/color/gray/100/$value" } },

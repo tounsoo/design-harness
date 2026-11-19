@@ -132,6 +132,20 @@ describe("the app's reader of a frame's messages", () => {
     expect(readFrameMessage({ ...base, x: 0, y: 0, generation: -1 }, channel, expectFrame)).toBeNull();
   });
 
+  it("takes where each tag drew, beside the snapshot and never in it, and drops a message whose places are malformed", () => {
+    const base = { protocol: PROTOCOL, type: "snapshot", channel, generation: 1, snapshot, tags: ["a"] };
+    const place = { tag: "a", rect: { x: 1, y: 2.5, width: 30, height: 40 } };
+    const read = readFrameMessage({ ...base, places: [place] }, channel, expectFrame);
+    expect(read).toMatchObject({ type: "snapshot", places: [place] });
+    // The snapshot is the same with places and without: nothing a rule reads changes.
+    const without = readFrameMessage(base, channel, expectFrame);
+    expect(without).toMatchObject({ places: [] });
+    expect(JSON.stringify((read as { snapshot: unknown }).snapshot)).toBe(JSON.stringify((without as { snapshot: unknown }).snapshot));
+    for (const places of ["a", [null], [{ tag: "a" }], [{ ...place, extra: 1 }], [{ tag: "", rect: place.rect }], [{ tag: "a".repeat(1025), rect: place.rect }], [{ tag: "a", rect: { ...place.rect, width: -1 } }], [{ tag: "a", rect: { ...place.rect, x: Number.NaN } }], [{ tag: "a", rect: { ...place.rect, y: 1e9 } }], [{ tag: "a", rect: { ...place.rect, depth: 1 } }], Array.from({ length: 20001 }, () => place)]) {
+      expect(readFrameMessage({ ...base, places }, channel, expectFrame)).toBeNull();
+    }
+  });
+
   it("carries a snapshot's page height through, and drops a negative one", () => {
     const base = { protocol: PROTOCOL, type: "snapshot", channel, generation: 1, tags: [] };
     expect(readFrameMessage({ ...base, snapshot: { ...snapshot, scrollHeight: 1200 } }, channel, expectFrame)).toMatchObject({ snapshot: { scrollHeight: 1200 } });

@@ -468,6 +468,70 @@
   .lens-words[data-tone="fail"] .lens-words-icon { color: var(--todae-color-status-critical-fg); }
 
   /*
+   * ---- Pinned notes: a person's feedback on a spot of an artboard. ----
+   * Drawn by the app over the artboard, like a lens, never inside the frame. A note is not a check, so it never
+   * wears a check's colours: its marker is a violet drop with its number, on the harness's pin tokens, fixed for a
+   * light page and a dark one. State is never colour alone: an answered note carries a tick, a closed one is
+   * hollow and small, and one whose element is gone is dashed with a question mark, and each says so in words.
+   * Todae has no map-pin or annotation-marker part, so the marker is a plain button styled here.
+   */
+  .board-pinning { align-self: center; margin: 0 0 var(--todae-space-1); padding: var(--todae-space-1) var(--todae-space-3); border-radius: var(--todae-radius-full); background: var(--todae-harness-note-soft); color: var(--todae-color-fg-default); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  .board-pinning kbd { font: inherit; font-weight: var(--todae-font-weight-medium); }
+  .board[data-floating] .board-pinning { position: absolute; z-index: 3; inset-block-start: calc(var(--todae-space-4) + var(--todae-space-12)); inset-inline-start: 50%; translate: -50% 0; box-shadow: var(--todae-harness-shadow-floating); }
+  .board-lens-end { align-items: center; gap: var(--todae-space-2); }
+  .frame-pin { margin-inline-start: auto; }
+  .frame-pin + .frame-open { margin-inline-start: 0; }
+  .pin-layer { position: absolute; inset-block-start: 0; inset-inline-start: 0; z-index: 2; pointer-events: none; }
+  .pin-layer[data-scheme="light"] { --pin-bg: var(--todae-harness-pin-on-light-bg); --pin-fg: var(--todae-harness-pin-on-light-fg); --pin-ring: var(--todae-harness-pin-on-light-ring); }
+  .pin-layer[data-scheme="dark"] { --pin-bg: var(--todae-harness-pin-on-dark-bg); --pin-fg: var(--todae-harness-pin-on-dark-fg); --pin-ring: var(--todae-harness-pin-on-dark-ring); }
+  .pin-capture { position: absolute; inset: 0; pointer-events: auto; cursor: crosshair; border-radius: var(--todae-harness-artboard-radius); outline: var(--todae-harness-pin-ring) dashed var(--pin-bg); outline-offset: calc(-1 * var(--todae-harness-pin-ring)); }
+  /* The drop's point, its lower left corner, is on the spot. */
+  .pin { position: absolute; translate: 0 -100%; inline-size: var(--todae-harness-pin-size); block-size: var(--todae-harness-pin-size); margin: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; pointer-events: auto; cursor: pointer; display: grid; place-items: center; }
+  .pin-dot, .note-mark { position: relative; display: grid; place-items: center; box-sizing: border-box; inline-size: var(--todae-harness-pin-size); block-size: var(--todae-harness-pin-size); border-radius: var(--todae-radius-full) var(--todae-radius-full) var(--todae-radius-full) 0; background: var(--pin-bg); color: var(--pin-fg); font-size: var(--todae-font-size-1); font-weight: var(--todae-font-weight-bold); font-variant-numeric: tabular-nums; line-height: 1; }
+  .pin-dot { box-shadow: 0 0 0 var(--todae-harness-pin-ring) var(--pin-ring), var(--todae-harness-shadow-raised); }
+  .pin:focus-visible { outline: none; }
+  .pin:focus-visible .pin-dot { outline: var(--todae-focus-ring-width) solid var(--todae-focus-ring); outline-offset: var(--todae-harness-pin-ring); }
+  .pin[aria-expanded="true"] .pin-dot { box-shadow: 0 0 0 var(--todae-harness-pin-ring) var(--pin-ring), 0 0 0 calc(var(--todae-harness-pin-ring) * 2) var(--pin-bg), var(--todae-harness-shadow-raised); }
+  .pin[data-status="closed"] .pin-dot, .note-mark[data-status="closed"] { inline-size: var(--todae-harness-pin-size-quiet); block-size: var(--todae-harness-pin-size-quiet); background: var(--pin-ring); color: var(--pin-bg); border: var(--todae-harness-pin-ring) solid var(--pin-bg); font-size: 0; }
+  .pin[data-lost] .pin-dot, .note-mark[data-lost] { background: var(--pin-ring); color: var(--pin-bg); border: var(--todae-harness-pin-ring) dashed var(--pin-bg); }
+  .pin[data-draft] .pin-dot { border: var(--todae-harness-pin-ring) dashed var(--pin-fg); }
+  .pin[data-off] { opacity: 0.6; }
+  .pin-badge { position: absolute; inset-block-start: calc(var(--todae-harness-pin-size) / -4); inset-inline-end: calc(var(--todae-harness-pin-size) / -4); display: grid; place-items: center; inline-size: calc(var(--todae-harness-pin-size) / 1.7); block-size: calc(var(--todae-harness-pin-size) / 1.7); border-radius: var(--todae-radius-full); background: var(--pin-ring); color: var(--pin-bg); box-shadow: 0 0 0 var(--todae-border-width) var(--pin-bg); }
+  .pin-badge svg { inline-size: 80%; block-size: 80%; stroke-width: 3; }
+  /* In the app's own panels and cards a note's mark follows the app's appearance. */
+  .note-mark { --pin-bg: var(--todae-harness-note-bg); --pin-fg: var(--todae-harness-note-fg); --pin-ring: var(--todae-color-bg-surface); flex: none; }
+  .note-mark[data-status="closed"] { font-size: 0; }
+  .note-status { display: inline-flex; align-items: center; gap: var(--todae-space-1); }
+  .note-status svg { inline-size: 1em; block-size: 1em; }
+  .pin-card { inline-size: min(var(--todae-harness-pin-card), calc(100vw - var(--todae-space-8))); }
+  .pin-card-body { padding: var(--todae-space-1); }
+  .pin-card-head, .note-head { display: flex; align-items: center; gap: var(--todae-space-2); }
+  .pin-card-title { margin: 0; --todae-text-h3-font-size: var(--todae-font-size-2); }
+  .pin-card-head .note-status, .note-head .note-status { margin-inline-start: auto; }
+  .pin-card-glyph, .notes-glyph { display: inline-grid; place-items: center; flex: none; color: var(--todae-harness-note-bg); }
+  .pin-card-glyph svg { inline-size: var(--todae-space-5); block-size: var(--todae-space-5); }
+  .pin-card-on, .note-where { margin: 0; font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); overflow-wrap: anywhere; }
+  .pin-note, .note-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .pin-lost { display: flex; align-items: flex-start; gap: var(--todae-space-2); margin: 0; padding: var(--todae-space-2); border: var(--todae-border-width) dashed var(--todae-color-border-default); border-radius: var(--todae-radius-md); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  .pin-lost svg { flex: none; inline-size: var(--todae-space-4); block-size: var(--todae-space-4); margin-block-start: calc(var(--todae-space-1) / 2); }
+  .pin-reply { display: grid; gap: var(--todae-space-1); padding-inline-start: var(--todae-space-3); border-inline-start: var(--todae-harness-edge-quote) solid var(--todae-harness-note-bg); }
+  .pin-reply p { margin: 0; overflow-wrap: anywhere; }
+  .pin-history { font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  .pin-history-list { margin: var(--todae-space-1) 0 0; padding-inline-start: var(--todae-space-4); display: grid; gap: var(--todae-space-1); overflow-wrap: anywhere; }
+
+  /* "Your notes", under the checks and apart from them: its own heading, glyph and colour. */
+  .notes { display: grid; gap: var(--todae-space-3); margin-block-start: var(--todae-space-6); padding-block-start: var(--todae-space-4); border-block-start: var(--todae-border-width) solid var(--todae-color-border-subtle); }
+  .notes-head { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--todae-space-3); align-items: start; padding: var(--todae-space-4); border-radius: var(--todae-radius-lg); background: var(--todae-harness-note-soft); }
+  .notes-glyph svg { inline-size: var(--todae-space-6); block-size: var(--todae-space-6); }
+  .notes-title { margin: 0; --todae-text-h2-font-size: var(--todae-font-size-3); }
+  .notes-summary, .notes-what { margin: 0; font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  .notes-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--todae-space-3); }
+  .note-card { border-inline-start: var(--todae-harness-edge-status) solid var(--todae-harness-note-bg); }
+  .note[data-status="closed"] .note-card { border-inline-start-style: dashed; }
+  .note[data-status="closed"] .note-text { color: var(--todae-color-fg-muted); }
+  .notes-start, .notes-ask { justify-self: start; }
+
+  /*
    * New project: Todae's wizard recipe (Steps for where the person is, a Form
    * per step) with Card, RadioGroup, Checkbox, Field, DataList, Disclosure,
    * Alert and Badge. This sheet places them, and adds what Todae has no part

@@ -1,4 +1,4 @@
-import type { ElementNode, Finding, FindingTarget, PrototypeModel } from "@design-harness/core";
+import type { ElementNode, Finding, FindingTarget, PrototypeModel, Rect } from "@design-harness/core";
 import type { FrameKey, FrameSpec, FrameState } from "./session";
 
 /**
@@ -30,6 +30,17 @@ export const MAX_OUTLINE_TAGS = 256;
 export const MAX_TAG_LENGTH = 1024;
 /** At most this many tags a frame reports as drawn. */
 export const MAX_FRAME_TAGS = 20000;
+/** At most this many boxes a frame reports for the tags it drew. */
+export const MAX_FRAME_PLACES = 20000;
+
+/**
+ * Where a tag drew: the box of one DOM element a tagged part owns, in the
+ * page's CSS px with the page at the top, as the snapshot's own boxes are.
+ * A frame sends them with its snapshot, in tree order, so the app can tell
+ * which part is under a point of the page without asking the frame, which
+ * may be parked by then. No rule reads them and they are in no snapshot.
+ */
+export type TagPlace = { readonly tag: string; readonly rect: Rect };
 
 /** A TSX element's tag: where its JSX is written. */
 export function sourceTag(at: { readonly file: string; readonly line: number; readonly column: number }): string {

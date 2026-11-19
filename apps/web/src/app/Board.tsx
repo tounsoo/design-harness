@@ -1,5 +1,5 @@
-import { Badge, Button, Field, Loader, Popover, Stack, Text, ToggleGroup, Toolbar, VisuallyHidden, usePopover } from "@tounsoo/todae";
-import { ArrowLeft, Grid3x3, Maximize2, PanelBottomDashed, Pointer, ZoomIn, ZoomOut } from "lucide-react";
+import { Badge, Button, Field, Loader, Popover, Stack, Text, ToggleGroup, Toolbar, VisuallyHidden, useHotkey, usePopover } from "@tounsoo/todae";
+import { ArrowLeft, Grid3x3, ListPlus, Maximize2, MessageSquarePlus, PanelBottomDashed, Pointer, ZoomIn, ZoomOut } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type Ref } from "react";
 import { flowFacts, viewFacts, type Finding, type ProjectConfig, type RenderedSnapshot } from "@design-harness/core";
 import { FRAME_SANDBOX } from "../runtime/frame-document";
@@ -11,6 +11,10 @@ import { coverage } from "../visual/coverage";
 import { CoverageGrid } from "../visual/CoverageGrid";
 import { LENSES, lensDrawing, placeLens, type LensId } from "../visual/lens";
 import { LensLayer, LensWords } from "../visual/LensLayer";
+import { anchorAt, anchorOn, elementChoices } from "../pins/anchor";
+import type { PinState } from "../pins/model";
+import { PinContext, PinLayer, useMeasure, type PinActions, type PinBoard, type PinDraft } from "../pins/PinLayer";
+import { SHORTCUTS, ariaKeys } from "./shortcuts";
 import { artboardLabel, frameName, scenarioLabel, screenTitle, viewLabel } from "./words";
 
 /** Fit, or a fixed scale. The zoom buttons step through the fixed ones. */
@@ -21,6 +25,21 @@ type Zoom = "fit" | (typeof ZOOMS)[number];
 export type BoardHandle = {
   /** Scrolls to an artboard, back on the board if another was open at full size, and moves focus to it. */
   readonly goTo: (key: string) => void;
+  /** Moves the camera to a pinned note, as "Show me" does for a finding, and opens its card. */
+  readonly showPin: (number: number) => void;
+};
+
+/** The open prototype's pinned notes, and "Pin a note" mode, which the workspace owns. */
+export type BoardPins = {
+  readonly state: PinState;
+  readonly pinning: boolean;
+  readonly onPinning: (next: boolean) => void;
+  readonly actions: PinActions;
+  /** The open prototype's revision, and what its element tags are (`pins/anchor.ts`). */
+  readonly revision: string;
+  readonly kind: "source" | "key";
+  /** Says whether Escape is the board's now: pin mode is on, or a note's card is open. */
+  readonly onHold?: (held: boolean) => void;
 };
 
 /**
@@ -42,6 +61,7 @@ export function Board({
   selected,
   floating,
   config,
+  pins,
   ref,
 }: {
   readonly session: Session;
@@ -50,6 +70,8 @@ export function Board({
   /** The project's config, which the lenses and the coverage grid read core's facts with. */
   readonly config?: ProjectConfig | undefined;
   readonly ref?: Ref<BoardHandle>;
+  /** The prototype's pinned notes; absent, the board draws none and offers no pin mode. */
+  readonly pins?: BoardPins | undefined;
   /** Canvas only: the floating bar's start (the prototype's name) and end (status and the way back). */
   readonly floating?: { readonly start: ReactNode; readonly end: ReactNode } | undefined;
 }) {
@@ -111,7 +133,89 @@ export function Board({
     setSaid(`Showing ${frameName(spec.scenario, spec.view.name)}.`);
     bringIntoView(key, true);
   };
-  useImperativeHandle(ref, () => ({ goTo }));
+  // Pinned notes: which card is open, and the note being written. A pin is the app's own drawing over an artboard, and moves nothing.
+  const [openPin, setOpenPin] = useState<number | null>(null);
+  const [draft, setDraftState] = useState<PinDraft | null>(null);
+  const [focusPin, setFocusPin] = useState<number | null>(null);
+  const pinning = pins?.pinning ?? false;
+  const setDraft = useCallback((next: PinDraft | null) => {
+    setDraftState((before) => {
+      // A note started from a frame's list and put down gives focus back to that list's button, without a scroll.
+      if (next === null && before?.list) requestAnimationFrame(() => cardOf(before.frame)?.querySelector<HTMLElement>(".frame-pin")?.focus({ preventScroll: true }));
+      return next;
+    });
+  }, []);
+  const pinActions = pins?.actions;
+  const actions = useMemo(
+    (): PinActions | null =>
+      pinActions
+        ? {
+            ...pinActions,
+            create: (anchor, note) => {
+              const number = pinActions.create(anchor, note);
+              if (number !== null) setFocusPin(number);
+              return number;
+            },
+          }
+        : null,
+    [pinActions],
+  );
+  const focusedPin = useCallback(() => setFocusPin(null), []);
+  const pinBoard = useMemo(
+    (): PinBoard | null => (pins && actions ? { state: pins.state, pinning: pins.pinning, actions, revision: pins.revision, kind: pins.kind, open: openPin, setOpen: setOpenPin, draft, setDraft, focus: focusPin, focused: focusedPin } : null),
+    [pins, actions, openPin, draft, setDraft, focusPin, focusedPin],
+  );
+  // Leaving pin mode puts down a note not yet pinned.
+  useEffect(() => {
+    if (!pinning) setDraftState(null);
+  }, [pinning]);
+  const hold = pinning || openPin !== null || draft !== null;
+  const onHold = pins?.onHold;
+  useEffect(() => {
+    onHold?.(hold);
+    return () => onHold?.(false);
+  }, [hold, onHold]);
+  // Escape leaves pin mode, once no card is open: a card takes its own Escape first.
+  useHotkey(SHORTCUTS.leave.keys, () => pins?.onPinning(false), { enabled: pinning && openPin === null && draft === null });
+
+  const showPin = (number: number) => {
+    const pin = pins?.state.pins.find((item) => item.number === number);
+    if (!pin) return;
+    const key = frameKey(pin.anchor.scenario, pin.anchor.view);
+    const spec = state.frames.find((frame) => frame.key === key);
+    if (!spec) {
+      setSaid(`Note ${number}'s frame is no longer in the prototype.`);
+      return;
+    }
+    const name = frameName(spec.scenario, spec.view.name);
+    const rect = pin.anchor.element?.label?.rect ?? pin.anchor.element?.source?.rect;
+    opened.current = null;
+    setDraftState(null);
+    if (cameraMove(rect, scale) === "open") {
+      setFocused(key);
+      setSaid(`Opened ${name} at full size to show note ${number}.`);
+      const point = pin.anchor.point;
+      const within = session.scrollOf(key);
+      requestAnimationFrame(() => {
+        const board = area.current;
+        const viewport = cardOf(key)?.querySelector(".frame-viewport");
+        if (board && viewport) {
+          const from = board.getBoundingClientRect();
+          const at = viewport.getBoundingClientRect();
+          board.scrollTo({ left: board.scrollLeft + at.left - from.left + point.x - within.x - board.clientWidth / 2, top: board.scrollTop + at.top - from.top + point.y - within.y - board.clientHeight / 2 });
+        }
+        setOpenPin(number);
+      });
+    } else {
+      if (focused !== null && focused !== key) setFocused(null);
+      setPointed(key);
+      setSaid(`Showing note ${number} on ${name}.`);
+      bringIntoView(key, false);
+      // After the camera has moved, so the card opens beside a pin that is on screen.
+      requestAnimationFrame(() => requestAnimationFrame(() => setOpenPin(number)));
+    }
+  };
+  useImperativeHandle(ref, () => ({ goTo, showPin }));
   useEffect(() => {
     if (pointed === null) return;
     const timer = setTimeout(() => setPointed(null), 2400);
@@ -184,6 +288,23 @@ export function Board({
     </ToggleGroup.Root>
   );
 
+  const pinControl = pins ? (
+    <Button.Root
+      variant="ghost"
+      className="board-pin"
+      pressed={pinning}
+      onPressedChange={(next) => pins.onPinning(next)}
+      aria-label={`Pin a note (${SHORTCUTS.pin.label})`}
+      aria-keyshortcuts={ariaKeys(SHORTCUTS.pin)}
+      data-testid="pin-mode"
+    >
+      <Button.Icon>
+        <MessageSquarePlus />
+      </Button.Icon>
+      {!floating && "Pin a note"}
+    </Button.Root>
+  ) : null;
+
   const step = (direction: 1 | -1) => {
     const next = direction > 0 ? ZOOMS.find((value) => Number(value) > scale + 0.001) : [...ZOOMS].reverse().find((value) => Number(value) < scale - 0.001);
     if (next) setZoom(next);
@@ -215,7 +336,8 @@ export function Board({
   );
 
   return (
-    <div className="board" data-focused={focused ? "" : undefined} data-floating={floating ? "" : undefined} data-engine={session.engineWhere()}>
+    <PinContext value={pinBoard}>
+    <div className="board" data-focused={focused ? "" : undefined} data-floating={floating ? "" : undefined} data-engine={session.engineWhere()} data-pinning={pinning ? "" : undefined}>
       <Toolbar.Root aria-label="Canvas" className="board-toolbar">
         {floating && <div className="board-toolbar-start">{floating.start}</div>}
         {focusedSpec ? (
@@ -232,7 +354,10 @@ export function Board({
           </Stack.Root>
         ) : null}
         {focusedSpec ? (
-          <span className="board-lens-end">{lensControl}</span>
+          <span className="board-lens-end">
+            {lensControl}
+            {pinControl}
+          </span>
         ) : (
           <>
             {!floating &&
@@ -261,7 +386,10 @@ export function Board({
                   {summary}
                 </Text.Root>
               ))}
-            <span className="board-lens-end">{lensControl}</span>
+            <span className="board-lens-end">
+              {lensControl}
+              {pinControl}
+            </span>
             {zoomControls}
           </>
         )}
@@ -270,6 +398,11 @@ export function Board({
       <VisuallyHidden.Root role="status" aria-live="polite" data-testid="board-said">
         {said}
       </VisuallyHidden.Root>
+      {pinning && (
+        <Text.Root as="p" className="board-pinning" data-testid="pin-hint">
+          Click a spot on any frame to pin a note there, or pick an element from a frame's list. <kbd>Esc</kbd> leaves.
+        </Text.Root>
+      )}
       <div className="board-area" ref={area}>
         {state.packages.state === "failed" && <p className="board-error">{state.packages.message}</p>}
         {scenarios.map((row, rowIndex) => {
@@ -317,6 +450,7 @@ export function Board({
         })}
       </div>
     </div>
+    </PinContext>
   );
 }
 
@@ -377,6 +511,18 @@ export function FrameCard({ session, spec, revision, frameState, scale, focused,
   const snapshot = frameState.state === "measured" ? frameState.snapshot : null;
   const drawing = useMemo(() => (lens && config && snapshot ? lensDrawing(lens, viewFacts(config, spec.view, snapshot), snapshot, spec.view) : null), [lens, config, snapshot, spec.view]);
   const placed = useMemo(() => (drawing ? placeLens(drawing, spec.view, scale) : null), [drawing, spec.view, scale]);
+  // Pinned notes, where the board carries them: drawn over the artboard from what the frame measured, live or parked.
+  const pinBoard = useContext(PinContext);
+  const measure = useMeasure(spec, frameState);
+  const words = frameName(spec.scenario, spec.view.name);
+  const pinFromList = () => {
+    if (!pinBoard || !measure) return;
+    const frame = { scenario: spec.scenario.id, view: spec.view.name };
+    const first = elementChoices(measure)[0];
+    const anchor = (first ? anchorOn(measure, frame, first.index, pinBoard.revision, pinBoard.kind) : null) ?? anchorAt(measure, frame, { x: width / 2, y: height / 2 }, pinBoard.revision, pinBoard.kind);
+    pinBoard.setOpen(null);
+    pinBoard.setDraft({ frame: spec.key, anchor, list: true });
+  };
   return (
     <figure
       className="frame-card"
@@ -406,6 +552,13 @@ export function FrameCard({ session, spec, revision, frameState, scale, focused,
             {status.text}
           </Badge.Root>
         )}
+        {pinBoard?.pinning && !hidden && (
+          <Button.Root variant="ghost" onClick={pinFromList} disabled={!measure} aria-label={`Pin a note on ${words}: pick an element from a list`} className="frame-pin" data-testid="pin-from-list">
+            <Button.Icon>
+              <ListPlus />
+            </Button.Icon>
+          </Button.Root>
+        )}
         {!focused && onOpen && (
           <Button.Root variant="ghost" onClick={onOpen} aria-label={`Open ${frameName(spec.scenario, spec.view.name)} at full size`} className="frame-open">
             <Button.Icon>
@@ -417,6 +570,7 @@ export function FrameCard({ session, spec, revision, frameState, scale, focused,
       <div className="frame-stage" style={{ paddingBlockEnd: placed ? placed.below : 0 }}>
         <FrameViewport session={session} spec={spec} revision={revision} frameState={frameState} scale={scale} hidden={hidden} name={name} {...(packagesHint ? { packagesHint } : {})} />
         {placed && !hidden && <LensLayer session={session} frame={spec.key} placed={placed} scale={scale} scheme={spec.view.scheme} />}
+        {pinBoard && !hidden && <PinLayer session={session} spec={spec} scale={scale} measure={measure} name={words} />}
       </div>
       {drawing && !hidden && <LensWords drawing={drawing} />}
     </figure>

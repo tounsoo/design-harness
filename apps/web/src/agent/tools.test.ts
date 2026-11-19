@@ -10,7 +10,7 @@ const SECOND_PRIMARY = { path: "pages/booking.tsx", old_text: '<Button.Root vari
 
 describe("the agent's tools", () => {
   it("are declared once, in a fixed order, each streaming its input eagerly", () => {
-    expect(TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual(["read_project", "list_files", "read_file", "write_file", "edit_file", "delete_file", "set_manifest", "run_checks", "draft_proposal", "revise_proposal"]);
+    expect(TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual(["read_project", "list_files", "read_file", "write_file", "edit_file", "delete_file", "set_manifest", "run_checks", "draft_proposal", "revise_proposal", "address_note"]);
     expect(TOOL_DEFINITIONS.every((tool) => tool.eager_input_streaming === true && tool.input_schema.type === "object")).toBe(true);
   });
 

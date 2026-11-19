@@ -1,4 +1,5 @@
 import { formatIssues, parseProjectConfig, parsePrototype, parseVariantState, type ProjectConfig } from "@design-harness/core";
+import { parsePinState } from "../pins/model";
 import type { PrototypeRecord } from "./project-file";
 
 /**
@@ -16,7 +17,7 @@ const PROTOTYPES = "prototypes";
 const CHATS = "chats";
 
 type ProjectRow = { readonly id: string; readonly config: unknown };
-type PrototypeRow = { readonly projectId: string; readonly id: string; readonly name: string; readonly prototype: unknown; readonly variants?: unknown };
+type PrototypeRow = { readonly projectId: string; readonly id: string; readonly name: string; readonly prototype: unknown; readonly variants?: unknown; readonly pins?: unknown };
 
 export type Loaded<T> = { readonly items: readonly T[]; readonly problems: readonly string[] };
 
@@ -77,7 +78,10 @@ export class Store {
       // Variants are kept apart from the prototype: ones that no longer validate are reported and left out, and the prototype still loads.
       const variants = row.variants === undefined ? null : parseVariantState(row.variants);
       if (variants && !variants.ok) problems.push(`The variants stored with prototype "${row.id}" no longer validate and were not loaded:\n${formatIssues(variants.error)}`);
-      if (parsed.ok) items.push({ projectId: row.projectId, id: row.id, name: row.name, prototype: parsed.value, ...(variants?.ok ? { variants: variants.value } : {}) });
+      // Pins too are kept apart: ones that cannot be read are reported, never dropped without a word.
+      const pins = row.pins === undefined ? null : parsePinState(row.pins);
+      if (pins && !pins.ok) problems.push(`The pinned notes stored with prototype "${row.id}" could not be read and were not loaded:\n${pins.error.join("\n")}`);
+      if (parsed.ok) items.push({ projectId: row.projectId, id: row.id, name: row.name, prototype: parsed.value, ...(variants?.ok ? { variants: variants.value } : {}), ...(pins?.ok ? { pins: pins.value } : {}) });
       else problems.push(`Stored prototype "${row.id}" no longer validates and was not loaded:\n${formatIssues(parsed.error)}`);
     }
     return { items: items.sort(byId), problems };
@@ -85,7 +89,7 @@ export class Store {
 
   async putPrototype(record: PrototypeRecord): Promise<void> {
     const tx = this.db.transaction(PROTOTYPES, "readwrite");
-    tx.objectStore(PROTOTYPES).put({ projectId: record.projectId, id: record.id, name: record.name, prototype: record.prototype, ...(record.variants ? { variants: record.variants } : {}) } satisfies PrototypeRow);
+    tx.objectStore(PROTOTYPES).put({ projectId: record.projectId, id: record.id, name: record.name, prototype: record.prototype, ...(record.variants ? { variants: record.variants } : {}), ...(record.pins ? { pins: record.pins } : {}) } satisfies PrototypeRow);
     await done(tx);
   }
 
@@ -114,7 +118,7 @@ export class Store {
     const store = tx.objectStore(PROTOTYPES);
     const keys = await request(store.index("projectId").getAllKeys(IDBKeyRange.only(config.id)));
     for (const key of keys) store.delete(key);
-    for (const record of prototypes) store.put({ projectId: config.id, id: record.id, name: record.name, prototype: record.prototype, ...(record.variants ? { variants: record.variants } : {}) } satisfies PrototypeRow);
+    for (const record of prototypes) store.put({ projectId: config.id, id: record.id, name: record.name, prototype: record.prototype, ...(record.variants ? { variants: record.variants } : {}), ...(record.pins ? { pins: record.pins } : {}) } satisfies PrototypeRow);
     await done(tx);
   }
 }

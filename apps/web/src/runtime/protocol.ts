@@ -1,5 +1,5 @@
 import { parseSnapshots, type FlatSpec, type PageType, type RenderedSnapshot, type View } from "@design-harness/core";
-import { MAX_FRAME_TAGS, MAX_OUTLINE_TAGS, MAX_TAG_LENGTH } from "./tags";
+import { MAX_FRAME_PLACES, MAX_FRAME_TAGS, MAX_OUTLINE_TAGS, MAX_TAG_LENGTH, type TagPlace } from "./tags";
 
 /**
  * The messages between the app and a frame. A frame is a sandboxed iframe
@@ -88,8 +88,13 @@ export type ParentMessage = RenderRequest | HighlightRequest | RedrawRequest;
 
 /** Frame → app: the boot script is listening. */
 export type ReadyMessage = { readonly protocol: typeof PROTOCOL; readonly type: "ready"; readonly channel: string };
-/** Frame → app: the page as it was painted, and the element tags it drew (sorted, each once; empty when asked for none). */
-export type SnapshotMessage = { readonly protocol: typeof PROTOCOL; readonly type: "snapshot"; readonly channel: string; readonly generation: number; readonly snapshot: RenderedSnapshot; readonly tags: readonly string[] };
+/**
+ * Frame → app: the page as it was painted, the element tags it drew (sorted,
+ * each once; empty when asked for none), and where each drew (`places`, in
+ * tree order; empty when asked for no tags). The places are beside the
+ * snapshot, never in it: no rule reads them and no report changes with them.
+ */
+export type SnapshotMessage = { readonly protocol: typeof PROTOCOL; readonly type: "snapshot"; readonly channel: string; readonly generation: number; readonly snapshot: RenderedSnapshot; readonly tags: readonly string[]; readonly places: readonly TagPlace[] };
 export type FrameStage = "load" | "render" | "measure";
 /** Frame → app: the page could not be loaded, rendered or measured. */
 export type ErrorMessage = { readonly protocol: typeof PROTOCOL; readonly type: "error"; readonly channel: string; readonly generation: number; readonly stage: FrameStage; readonly message: string };
@@ -183,6 +188,18 @@ function isTagList(value: unknown, max: number): value is readonly string[] {
   return Array.isArray(value) && value.length <= max && value.every(isTag);
 }
 
+/** A box in a page: finite, no further out than a page scrolls, and no negative size. */
+function isBox(value: unknown): value is TagPlace["rect"] {
+  if (!isObject(value) || !hasOnly(value, ["x", "y", "width", "height"])) return false;
+  const within = (n: unknown) => typeof n === "number" && Number.isFinite(n) && Math.abs(n) <= MAX_SCROLL;
+  return within(value.x) && within(value.y) && within(value.width) && within(value.height) && (value.width as number) >= 0 && (value.height as number) >= 0;
+}
+
+/** Where tags drew: a bounded list of a tag and its box, nothing else in each. */
+function isPlaceList(value: unknown): value is readonly TagPlace[] {
+  return Array.isArray(value) && value.length <= MAX_FRAME_PLACES && value.every((place) => isObject(place) && hasOnly(place, ["tag", "rect"]) && isTag(place.tag) && isBox(place.rect));
+}
+
 function isScenario(value: unknown): value is ScenarioRef {
   return isObject(value) && hasOnly(value, ["id", "state", "page"]) && isString(value.id) && isString(value.state) && isString(value.page);
 }
@@ -230,12 +247,15 @@ export function readFrameMessage(data: unknown, channel: string, expect: { reado
       return data as ErrorMessage;
     }
     case "snapshot": {
-      if (!hasOnly(data, ["protocol", "type", "channel", "generation", "snapshot", "tags"]) || !isGeneration(data.generation)) return null;
-      if (!isTagList(data.tags, MAX_FRAME_TAGS)) return null;
+      if (!hasOnly(data, ["protocol", "type", "channel", "generation", "snapshot", "tags", "places"]) || !isGeneration(data.generation)) return null;
+      // A frame asked for no tags may leave the places out; what it sends must be well formed.
+      if (!isTagList(data.tags, MAX_FRAME_TAGS) || (data.places !== undefined && !isPlaceList(data.places))) return null;
       const parsed = parseSnapshots([data.snapshot]);
       const snapshot = parsed.ok ? parsed.value[0] : undefined;
       if (!snapshot || snapshot.scenario !== expect.scenario || snapshot.view !== expect.view) return null;
-      return { protocol: PROTOCOL, type: "snapshot", channel, generation: data.generation, snapshot, tags: [...new Set(data.tags)].sort() };
+      // Copied field by field, so nothing a frame hung on a place travels further.
+      const places = (data.places ?? []).map((place) => ({ tag: place.tag, rect: { x: place.rect.x, y: place.rect.y, width: place.rect.width, height: place.rect.height } }));
+      return { protocol: PROTOCOL, type: "snapshot", channel, generation: data.generation, snapshot, tags: [...new Set(data.tags)].sort(), places };
     }
     case "scroll": {
       if (!hasOnly(data, ["protocol", "type", "channel", "generation", "x", "y"]) || !isGeneration(data.generation)) return null;

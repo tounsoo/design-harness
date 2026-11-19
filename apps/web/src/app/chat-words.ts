@@ -62,6 +62,8 @@ export function toolSummary(item: ToolItem): string {
       return running ? "Drafting a proposal…" : item.title.startsWith("Filed a request") ? "Asked for a new rule type" : "Drafted a proposal";
     case "revise_proposal":
       return running ? "Revising the proposal…" : "Revised the proposal";
+    case "address_note":
+      return running ? "Answering your note…" : item.title.replace(/^Addressed note (\d+)$/, "Answered your note $1");
     default:
       if (CHANGES.has(item.name)) return running ? `Changing ${thing ?? "the prototype"}…` : unchanged ? `Left ${thing ?? "the prototype"} as it was` : `Changed ${thing ?? "the prototype"}`;
       return item.title || humanize(item.name);

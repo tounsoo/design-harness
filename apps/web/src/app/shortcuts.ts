@@ -26,7 +26,9 @@ export const SHORTCUTS = {
   side: chord("B", true),
   /** Canvas only: every panel and the header out of the way. */
   canvasOnly: chord("."),
-  /** Leaves canvas only. */
+  /** "Pin a note" mode on the canvas, on and off. */
+  pin: chord("N", true),
+  /** Leaves canvas only, and "Pin a note" mode. */
   leave: { keys: ["Escape"], label: "Esc" },
 } as const satisfies Record<string, Shortcut>;
 

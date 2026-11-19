@@ -39,14 +39,14 @@ describe("the catalog's instructions", () => {
 
   it("are shorter than json-render's 25,576 characters for Nook, and the same bytes every time", () => {
     expect(prompt.length).toBeLessThan(10_000);
-    expect(SPEC_SYSTEM_PROMPT.length + prompt.length).toBeLessThan(13_000);
+    expect(SPEC_SYSTEM_PROMPT.length + prompt.length).toBeLessThan(13_500);
     expect(specCatalogPrompt(nook)).toBe(prompt);
   });
 });
 
 describe("the spec tools", () => {
   it("are the spec mode's tools, with write_spec and patch_spec in place of the file tools", () => {
-    expect(SPEC_TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual(["read_project", "list_files", "read_file", "list_layouts", "write_spec", "patch_spec", "insert_layout", "set_layout_params", "delete_file", "set_manifest", "run_checks", "draft_proposal", "revise_proposal", "propose_variants", "revise_variant", "list_variants"]);
+    expect(SPEC_TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual(["read_project", "list_files", "read_file", "list_layouts", "write_spec", "patch_spec", "insert_layout", "set_layout_params", "delete_file", "set_manifest", "run_checks", "draft_proposal", "revise_proposal", "propose_variants", "revise_variant", "list_variants", "address_note"]);
   });
 
   it("patch_spec applies JSON Patch lines through json-render, checks the result against the catalog, and makes a revision", async () => {

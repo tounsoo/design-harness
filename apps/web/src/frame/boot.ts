@@ -1,7 +1,7 @@
-import { OVERLAY_ATTRIBUTE, collectSnapshot } from "./collect";
+import { OVERLAY_ATTRIBUTE, collectSnapshot, round } from "./collect";
 import { installDeterminism } from "./determinism";
 import { PROTOCOL, clip, readParentMessage, type FrameMessage, type FrameStage, type HighlightRequest, type RedrawRequest, type RenderRequest } from "../runtime/protocol";
-import { MAX_FRAME_TAGS } from "../runtime/tags";
+import { MAX_FRAME_PLACES, MAX_FRAME_TAGS, type TagPlace } from "../runtime/tags";
 import { tagsIn } from "./tags";
 import type { PageProps } from "./kit";
 import type { SpecPage, specPage } from "./spec";
@@ -186,12 +186,31 @@ async function render(request: RenderRequest): Promise<void> {
     const collected = collectSnapshot(document, request.scenario.id, view.name);
     nodes = collected.nodes;
     // Read after measuring, and from React's tree, not the DOM: finding them changes nothing that was measured.
-    const tags = tagging ? [...tagsIn(container).keys()].sort().slice(0, MAX_FRAME_TAGS) : [];
-    post({ protocol: PROTOCOL, type: "snapshot", channel, generation, snapshot: collected.snapshot, tags });
+    const drawn = tagging ? tagsIn(container) : new Map<string, Element[]>();
+    const tags = [...drawn.keys()].sort().slice(0, MAX_FRAME_TAGS);
+    post({ protocol: PROTOCOL, type: "snapshot", channel, generation, snapshot: collected.snapshot, tags, places: placesOf(drawn) });
     reportScroll();
   } catch (error) {
     fail("measure", error);
   }
+}
+
+/**
+ * The box of every element a tag drew, in tree order, with the page at the
+ * top: read once, after measuring, and sent beside the snapshot. An element
+ * that paints nothing (no size) is left out.
+ */
+function placesOf(drawn: ReadonlyMap<string, readonly Element[]>): TagPlace[] {
+  const places: TagPlace[] = [];
+  for (const [tag, elements] of drawn) {
+    for (const element of elements) {
+      if (places.length >= MAX_FRAME_PLACES) return places;
+      const box = element.getBoundingClientRect();
+      if (box.width <= 0 || box.height <= 0) continue;
+      places.push({ tag, rect: { x: round(box.left + window.scrollX), y: round(box.top + window.scrollY), width: round(box.width), height: round(box.height) } });
+    }
+  }
+  return places;
 }
 
 /**
