@@ -1815,7 +1815,12 @@ test("the checks lead with plain words: a summary, each thing to fix with core's
   assert.equal(await target.getByTestId("fix-lead").textContent(), "Every control meets 24 px or the WCAG 2.5.8 spacing exception.", "a cap reads as its value");
   await target.getByRole("button", { name: "Show Lantern open — desktop" }).click();
   const frame = page.frameLocator('iframe[title="lantern-open at desktop"]');
-  await frame.locator("[data-design-harness-overlay]").waitFor({ state: "attached" });
+  // The two outlines Show me drew for the primary actions give way to this one finding's outline.
+  const overlays = frame.locator("[data-design-harness-overlay]");
+  for (let tries = 0; (await overlays.count()) !== 1; tries += 1) {
+    assert.ok(tries < 100, `the frame should end with one outline, not ${await overlays.count()}`);
+    await page.waitForTimeout(50);
+  }
   assert.equal(await page.locator('.frame-card[data-frame-key="lantern-open@desktop"]').getAttribute("data-selected"), "");
   const shown = value.findings.find((item) => item.rule === "target-size" && item.scenario === "lantern-open" && item.view === "desktop");
   assert.equal(await target.getByTestId("fix-message").textContent(), shown.message, "the message is the one of the place shown");
