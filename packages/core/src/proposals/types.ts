@@ -91,4 +91,26 @@ export type Proposal = ProposalContent & {
   readonly events?: readonly ProposalEvent[];
   /** Set by `adopt`: the classification against the config the proposal changed, kept since the config it was judged against is gone once adopted. */
   readonly classification?: Classification;
+  /**
+   * Set by `adopt` when it retires examples of earlier adopted proposals that
+   * this proposal's change contradicts (`supersededExamples`): each such
+   * example, the changed rules it goes against, and what they did to it.
+   * `rerunExamples` reads it, so a retirement stays recorded and visible.
+   */
+  readonly supersedes?: readonly SupersededExample[];
+};
+
+/**
+ * An example of an earlier adopted proposal that a proposal retires because
+ * it changes the rule, cap or step budget the example is about: a failing
+ * example its changed rule no longer flags (loosened past it), or a passing
+ * example only its changed rules now fail (tightened past it). `rules` are
+ * the changed rules involved; `detail` is what they did to the example.
+ */
+export type SupersededExample = {
+  readonly proposal: string;
+  readonly example: string;
+  readonly expect: "pass" | "fail";
+  readonly rules: readonly string[];
+  readonly detail: string;
 };

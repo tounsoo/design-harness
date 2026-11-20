@@ -10,7 +10,8 @@ import { run, type Result } from "../validate";
 import { applyProposal } from "./apply";
 import { classifyProposal, type Classification } from "./classify";
 import { proposalSchema } from "./schema";
-import type { FailingExample, PassingExample, Proposal, ProposalContent, ProposalStatus } from "./types";
+import { ruleBounds } from "../rules/bounds";
+import type { FailingExample, PassingExample, Proposal, ProposalContent, ProposalStatus, SupersededExample } from "./types";
 
 export type RefusalCode =
   | "invalid-proposal"
@@ -246,6 +247,12 @@ export type ExampleRun = {
    * is retired rather than broken, and `ok` is true.
    */
   readonly retiredBy?: string;
+  /**
+   * Set with `retiredBy` when that proposal superseded the example rather
+   * than removed its rule: the rules it changed that the example goes
+   * against (`supersededExamples`).
+   */
+  readonly changed?: readonly string[];
 };
 
 export type Adoption = {
@@ -254,9 +261,11 @@ export type Adoption = {
   /** Caller-supplied prototypes that fail a rule, or carry a finding, they did not before. */
   readonly newlyFailing: readonly NewlyFailing[];
   /**
-   * Failing examples of earlier adopted proposals that this proposal retires:
-   * it removes the rule they exist to prove. Any other earlier example that
-   * stops behaving as it did makes `adopt` refuse.
+   * Examples of earlier adopted proposals that this proposal retires: failing
+   * examples of a rule it removes, which have nothing left to prove, and the
+   * examples its change supersedes (`supersededExamples`), which the new
+   * config's own `supersedes` records. Any other earlier example that stops
+   * behaving as it did makes `adopt` refuse.
    */
   readonly retiredExamples: readonly ExampleRun[];
 };
@@ -386,8 +395,10 @@ export function onlyRemovesRules(proposal: Pick<ProposalContent, "inventory" | "
  * rule the proposal adds must be named by a failing example, so each is
  * shown to fire. Every example of an earlier adopted proposal must still
  * behave as it did, unless the proposal removes the rule a failing example
- * exists to prove, which retires that example. The adopted proposal keeps
- * its classification. Pure: time and who are the caller's.
+ * exists to prove, or its change supersedes the example
+ * (`supersededExamples`); either retires that example. The adopted proposal
+ * keeps its classification, and what it supersedes as `supersedes`. Pure:
+ * time and who are the caller's.
  */
 export function adopt(config: ProjectConfig, id: string, stamp: Stamp, existing: readonly ExistingPrototype[] = []): Result<Adoption, Refusal> {
   const proposal = config.proposals.find((item) => item.id === id);
@@ -424,7 +435,7 @@ export function adopt(config: ProjectConfig, id: string, stamp: Stamp, existing:
   if (misbehaving?.refusal) return { ok: false, error: misbehaving.refusal };
 
   const classification = classifyProposal(proposal, config);
-  const adopted = replace(candidate, { ...stamped(proposal, "adopted", stamp), classification });
+  const adopted = adoptedWith(config, candidate, { ...stamped(proposal, "adopted", stamp), classification });
   const earlier = rerunExamples(adopted).filter((item) => item.proposal !== id);
   const broken = earlier.find((item) => !item.ok);
   if (broken) {
@@ -531,10 +542,151 @@ export function proposalImpact(config: ProjectConfig, draft: ProposalDraft, exis
       removed: was.findings.filter((finding) => !kept.has(JSON.stringify(finding))),
     });
   }
-  // The earlier examples as they would re-run with the draft adopted.
+  // The earlier examples as they would re-run with the draft adopted, the ones its change supersedes retired.
   const adopted: Proposal = { ...proposal, status: "adopted", history: [...proposal.history, { status: "adopted", at: "" }] };
-  const earlier = rerunExamples({ ...candidate, proposals: [...candidate.proposals.filter((item) => item.id !== draft.id), adopted] }).filter((item) => item.proposal !== draft.id);
+  const withDraft: ProjectConfig = { ...candidate, proposals: [...candidate.proposals.filter((item) => item.id !== draft.id), adopted] };
+  const earlier = rerunExamples(adoptedWith(config, withDraft, adopted)).filter((item) => item.proposal !== draft.id);
   return { ok: true, value: { config: candidate, prototypes, retired: earlier.filter((item) => item.retiredBy === draft.id), broken: earlier.filter((item) => !item.ok) } };
+}
+
+/**
+ * The rules in force under `after` whose verdicts a proposal changes on
+ * purpose: a rule it removes and adds again under the same id (a changed
+ * rule), every rule with a limit on a cap it sets (`set-cap`), and every
+ * step-budget rule when it sets a task's step budget (`set-max-steps`). A
+ * rule it only adds is not here: nothing adopted before it was about it.
+ */
+function changedRuleIds(before: ProjectConfig, after: ProjectConfig, proposal: ProposalContent): Set<string> {
+  const ids = new Set<string>();
+  const inForceBefore = new Set(before.rules.map((rule) => rule.id));
+  const added = new Set(proposal.rules.add.map((rule) => rule.id));
+  for (const id of proposal.rules.remove) if (inForceBefore.has(id) && added.has(id)) ids.add(id);
+  const caps = new Set(proposal.inventory.flatMap((op) => (op.op === "set-cap" ? [op.name] : [])));
+  const budgets = proposal.inventory.some((op) => op.op === "set-max-steps");
+  for (const rule of after.rules) {
+    if (ruleBounds(rule).some((bound) => typeof bound.value === "object" && caps.has(bound.value.cap))) ids.add(rule.id);
+    if (budgets && rule.type === "flow" && rule.check === "step-budget") ids.add(rule.id);
+  }
+  return ids;
+}
+
+/** One earlier example's re-run, with what superseding reads: the rules a passing example fails, or how its rule judged a failing one. */
+type EarlierRun = { readonly run: ExampleRun; readonly failed: readonly string[]; readonly ran: boolean };
+
+function earlierRuns(config: ProjectConfig): EarlierRun[] {
+  const runs: EarlierRun[] = [];
+  const adopted = config.proposals.filter((proposal) => proposal.status === "adopted").sort((a, b) => compareStrings(a.id, b.id));
+  const inForce = new Set(config.rules.map((rule) => rule.id));
+  const removedBy = (rule: string, owner: string): string | undefined =>
+    inForce.has(rule) ? undefined : adopted.find((proposal) => proposal.id !== owner && proposal.rules.remove.includes(rule))?.id;
+  // Examples an adopted proposal superseded, by owner, name and side: recorded at adoption, so a retirement never depends on how the config moves later.
+  const superseded = new Map<string, { readonly by: string; readonly entry: SupersededExample }>();
+  for (const proposal of adopted) {
+    for (const entry of proposal.supersedes ?? []) {
+      const key = JSON.stringify([entry.proposal, entry.example, entry.expect]);
+      if (!superseded.has(key)) superseded.set(key, { by: proposal.id, entry });
+    }
+  }
+  const retired = (proposal: string, example: string, expect: "pass" | "fail"): ExampleRun | undefined => {
+    const found = superseded.get(JSON.stringify([proposal, example, expect]));
+    if (!found || found.by === proposal) return undefined;
+    const rules = found.entry.rules.map((rule) => `"${rule}"`).join(", ");
+    return { proposal, example, expect, ok: true, detail: `retired: proposal "${found.by}" changed ${rules} past it, so it ${expect === "fail" ? "no longer fails" : "no longer passes"} (${found.entry.detail})`, retiredBy: found.by, changed: found.entry.rules };
+  };
+  for (const proposal of adopted) {
+    for (const example of [...proposal.examples.pass].sort((a, b) => compareStrings(a.name, b.name))) {
+      const gone = retired(proposal.id, example.name, "pass");
+      if (gone) {
+        runs.push({ run: gone, failed: [], ran: true });
+        continue;
+      }
+      const failed = checkExample(config, example).rules.filter((rule) => rule.status === "fail");
+      runs.push({
+        run: { proposal: proposal.id, example: example.name, expect: "pass", ok: failed.length === 0, detail: failed.length === 0 ? "passes every rule" : `fails ${quote(failed.flatMap((rule) => rule.findings))}` },
+        failed: failed.map((rule) => rule.rule),
+        ran: true,
+      });
+    }
+    for (const example of [...proposal.examples.fail].sort((a, b) => compareStrings(a.name, b.name))) {
+      const retiredBy = removedBy(example.flaggedBy.rule, proposal.id);
+      if (retiredBy !== undefined) {
+        runs.push({ run: { proposal: proposal.id, example: example.name, expect: "fail", ok: true, detail: `retired: proposal "${retiredBy}" removed rule "${example.flaggedBy.rule}", which it proves`, retiredBy }, failed: [], ran: true });
+        continue;
+      }
+      const gone = retired(proposal.id, example.name, "fail");
+      if (gone) {
+        runs.push({ run: gone, failed: [], ran: true });
+        continue;
+      }
+      const report = checkExample(config, example);
+      const result = flagged(report, example);
+      const status = report.rules.find((rule) => rule.rule === example.flaggedBy.rule)?.status;
+      runs.push({
+        run: { proposal: proposal.id, example: example.name, expect: "fail", ok: result.ok, detail: result.ok ? `flagged by "${example.flaggedBy.rule}"` : result.detail },
+        failed: [],
+        ran: status === "pass" || status === "fail",
+      });
+    }
+  }
+  return runs;
+}
+
+/**
+ * Which earlier adopted examples `proposal` supersedes, given the config
+ * before it (`before`) and the config with it adopted and nothing yet
+ * superseded (`adopted`): each earlier example that stops behaving only
+ * because of a rule the proposal changes on purpose (`changedRuleIds`). A
+ * failing example qualifies when the rule it names is changed and, having
+ * run, no longer flags it as it must; a passing example when every rule it
+ * now fails is changed. One that stops behaving for any other reason, such
+ * as a rule the proposal only adds, or a changed rule that could not run,
+ * is not superseded: `adopt` refuses it as `breaks-adopted-example`.
+ */
+function supersededBy(before: ProjectConfig, adopted: ProjectConfig, proposal: Proposal): SupersededExample[] {
+  const changed = changedRuleIds(before, adopted, proposal);
+  if (changed.size === 0) return [];
+  const out: SupersededExample[] = [];
+  for (const { run, failed, ran } of earlierRuns(adopted)) {
+    if (run.proposal === proposal.id || run.ok) continue;
+    const owner = adopted.proposals.find((item) => item.id === run.proposal);
+    if (run.expect === "pass") {
+      if (failed.length > 0 && failed.every((rule) => changed.has(rule))) out.push({ proposal: run.proposal, example: run.example, expect: "pass", rules: [...failed].sort(compareStrings), detail: run.detail });
+      continue;
+    }
+    const rule = owner?.examples.fail.find((example) => example.name === run.example)?.flaggedBy.rule;
+    if (rule !== undefined && ran && changed.has(rule)) out.push({ proposal: run.proposal, example: run.example, expect: "fail", rules: [rule], detail: run.detail });
+  }
+  return out;
+}
+
+/** `adopted` with `proposal` in it, marked with the earlier examples it supersedes when there are any. */
+function adoptedWith(before: ProjectConfig, adopted: ProjectConfig, proposal: Proposal): ProjectConfig {
+  const { supersedes: _stale, ...plain } = proposal;
+  const bare = replace(adopted, plain);
+  const supersedes = supersededBy(before, bare, plain);
+  return supersedes.length === 0 ? bare : replace(bare, { ...plain, supersedes });
+}
+
+/**
+ * The examples of earlier adopted proposals that adopting an open or
+ * approved proposal would retire because its change contradicts them, and
+ * why: a failing example whose rule it loosens or otherwise changes so the
+ * rule no longer flags it, and a passing example that only rules it changes
+ * now fail, as when a limit is tightened past it. A rule changed is one the
+ * proposal removes and adds again under its id, one whose limit reads a cap
+ * the proposal sets, or a step-budget rule when it sets a task's budget.
+ * Examples a removal retires are not listed here; `adopt` reports both in
+ * `retiredExamples`. Changes nothing.
+ */
+export function supersededExamples(config: ProjectConfig, id: string): Result<readonly SupersededExample[], Refusal> {
+  const proposal = config.proposals.find((item) => item.id === id);
+  if (!proposal) return refuse("not-found", `there is no proposal "${id}"`);
+  if (proposal.status !== "open" && proposal.status !== "approved") return refuse("wrong-status", `proposal "${id}" is ${proposal.status}; only an open or approved proposal can be asked what it would supersede`);
+  if (proposal.needsRuleType) return requestRefusal(proposal, "adopted");
+  const candidate = candidateFor(config, proposal);
+  if (!candidate.ok) return candidate;
+  const adopted: Proposal = { ...proposal, status: "adopted", history: [...proposal.history, { status: "adopted", at: "" }] };
+  return { ok: true, value: supersededBy(config, replace(candidate.value, adopted), adopted) };
 }
 
 /**
@@ -543,34 +695,10 @@ export function proposalImpact(config: ProjectConfig, draft: ProposalDraft, exis
  * still be flagged by their rule. Later rules may add other reasons to fail,
  * so a failing example is not held to failing for its rule alone here. A
  * failing example whose rule is not in force because an adopted proposal
- * removed it is retired: `ok`, with `retiredBy` naming that proposal.
+ * removed it is retired: `ok`, with `retiredBy` naming that proposal. So is
+ * an example a later adopted proposal superseded (its `supersedes`): its
+ * change contradicts what the example showed, so it is retired, not broken.
  */
 export function rerunExamples(config: ProjectConfig): ExampleRun[] {
-  const runs: ExampleRun[] = [];
-  const adopted = config.proposals.filter((proposal) => proposal.status === "adopted").sort((a, b) => compareStrings(a.id, b.id));
-  const inForce = new Set(config.rules.map((rule) => rule.id));
-  const removedBy = (rule: string, owner: string): string | undefined =>
-    inForce.has(rule) ? undefined : adopted.find((proposal) => proposal.id !== owner && proposal.rules.remove.includes(rule))?.id;
-  for (const proposal of adopted) {
-    for (const example of [...proposal.examples.pass].sort((a, b) => compareStrings(a.name, b.name))) {
-      const failed = checkExample(config, example).rules.filter((rule) => rule.status === "fail");
-      runs.push({
-        proposal: proposal.id,
-        example: example.name,
-        expect: "pass",
-        ok: failed.length === 0,
-        detail: failed.length === 0 ? "passes every rule" : `fails ${quote(failed.flatMap((rule) => rule.findings))}`,
-      });
-    }
-    for (const example of [...proposal.examples.fail].sort((a, b) => compareStrings(a.name, b.name))) {
-      const retiredBy = removedBy(example.flaggedBy.rule, proposal.id);
-      if (retiredBy !== undefined) {
-        runs.push({ proposal: proposal.id, example: example.name, expect: "fail", ok: true, detail: `retired: proposal "${retiredBy}" removed rule "${example.flaggedBy.rule}", which it proves`, retiredBy });
-        continue;
-      }
-      const result = flagged(checkExample(config, example), example);
-      runs.push({ proposal: proposal.id, example: example.name, expect: "fail", ok: result.ok, detail: result.ok ? `flagged by "${example.flaggedBy.rule}"` : result.detail });
-    }
-  }
-  return runs;
+  return earlierRuns(config).map((item) => item.run);
 }

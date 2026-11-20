@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { nook } from "../../examples/nook/project";
-import { EXAMPLES, loadPrototype } from "../../test/fixtures";
+import { EXAMPLES, loadCases, loadPrototype } from "../../test/fixtures";
 import type { ProjectConfig } from "../config/types";
 import { checkPrototype } from "../engine/check";
 import { parseProjectConfig } from "../parse";
@@ -10,7 +10,7 @@ import type { RuleSpec } from "../rules/types";
 import type { Result } from "../validate";
 import { applyProposal } from "./apply";
 import { classifyProposal } from "./classify";
-import { adopt, approve, onlyRemovesRules, proposalImpact, propose, rerunExamples, type ProposalDraft, type Refusal } from "./lifecycle";
+import { adopt, approve, dryRunAdoption, onlyRemovesRules, proposalImpact, propose, rerunExamples, supersededExamples, type ProposalDraft, type Refusal } from "./lifecycle";
 import type { Proposal } from "./types";
 
 /**
@@ -175,15 +175,106 @@ describe("adopting a changed rule", () => {
     expect(refusal(adopt(approved(nook, unproven), "two", { at: "t2" }))).toMatchObject({ code: "unproven-rule", message: 'rule "one-primary-per-page" has no failing example that names it, so nothing shows it fires' });
   });
 
-  it("adopts a stricter limit, says which prototypes newly fail, and refuses one that breaks an example an adopted proposal keeps", () => {
+  it("adopts a stricter limit, says which prototypes newly fail, and retires the passing example of the same rule it tightens past", () => {
     const two: ProjectConfig = { ...nook, rules: nook.rules.map((rule) => (rule.id === onePrimary.id ? atMost(2) : rule)) };
     const tightened = change("one", atMost(1), { pass: [{ name: "one-primary", prototype: legal }], fail: [{ name: "two-primaries-fail", prototype: twoPrimaries, flaggedBy: { rule: onePrimary.id } }] });
     const adoption = ok(adopt(approved(two, tightened), "one", { at: "t2" }, [{ name: "Early", prototype: twoPrimaries }, { name: "Booking", prototype: legal }]));
     expect(adoption.classification.class).toBe("tightens");
     expect(adoption.newlyFailing.map((item) => [item.name, item.rules])).toEqual([["Early", ["one-primary-per-page"]]]);
-    // After the looser limit was adopted on "two primaries pass", tightening it again breaks that kept example.
+    // After the looser limit was adopted on "two primaries pass", tightening it again contradicts that kept example: the change supersedes it, and says so.
     const loose = ok(adopt(approved(nook, loosened), "two", { at: "t2" })).config;
-    expect(refusal(adopt(approved(loose, tightened), "one", { at: "t3" }))).toMatchObject({ code: "breaks-adopted-example", proposal: "two", example: "two-primaries" });
+    // Its failing example named the old limit's words ("more than 2"), which the rule no longer says, so it is superseded too.
+    const superseded = [
+      { proposal: "two", example: "two-primaries", expect: "pass", rules: ["one-primary-per-page"] },
+      { proposal: "two", example: "three-primaries", expect: "fail", rules: ["one-primary-per-page"] },
+    ];
+    expect(ok(supersededExamples(approved(loose, tightened), "one")).map(({ detail: _, ...rest }) => rest)).toEqual(superseded);
+    const again = ok(adopt(approved(loose, tightened), "one", { at: "t3" }));
+    expect(again.retiredExamples.map((run) => [run.proposal, run.example, run.expect, run.ok, run.retiredBy])).toEqual([
+      ["two", "two-primaries", "pass", true, "one"],
+      ["two", "three-primaries", "fail", true, "one"],
+    ]);
+    expect(again.config.proposals.find((item) => item.id === "one")?.supersedes?.map(({ detail: _, ...rest }) => rest)).toEqual(superseded);
+    expect(rerunExamples(again.config).every((run) => run.ok)).toBe(true);
+  });
+});
+
+describe("a change that supersedes earlier adopted examples", () => {
+  const two: ProjectConfig = { ...nook, rules: nook.rules.map((rule) => (rule.id === onePrimary.id ? atMost(2) : rule)) };
+  /** Adopted first: the limit tightened to one, proven by a passing example with one primary and a failing one with two. */
+  const tightened = change("one", atMost(1), { pass: [{ name: "one-primary", prototype: legal }], fail: [{ name: "two-primaries-fail", prototype: twoPrimaries, flaggedBy: { rule: onePrimary.id, message: "more than 1" } }] });
+  const strict = ok(adopt(approved(two, tightened), "one", { at: "t2" })).config;
+  const loosened = change("two", atMost(2), { pass: [{ name: "two-primaries", prototype: twoPrimaries }], fail: [{ name: "three-primaries", prototype: threePrimaries, flaggedBy: { rule: onePrimary.id } }] });
+
+  it("adopts a looser limit past an earlier failing example of the same rule, and retires that example by name", () => {
+    const listed = ok(supersededExamples(approved(strict, loosened), "two"));
+    expect(listed).toEqual([{ proposal: "one", example: "two-primaries-fail", expect: "fail", rules: ["one-primary-per-page"], detail: '"one-primary-per-page" passed it' }]);
+    const adoption = ok(adopt(approved(strict, loosened), "two", { at: "t3", by: "you" }));
+    expect(adoption.retiredExamples).toEqual([
+      { proposal: "one", example: "two-primaries-fail", expect: "fail", ok: true, detail: 'retired: proposal "two" changed "one-primary-per-page" past it, so it no longer fails ("one-primary-per-page" passed it)', retiredBy: "two", changed: ["one-primary-per-page"] },
+    ]);
+    expect(adoption.config.proposals.find((item) => item.id === "two")?.supersedes).toEqual(listed);
+    // dryRunAdoption says the same before anything changes.
+    expect(ok(dryRunAdoption(ok(propose(strict, loosened, { at: "t0" })), "two", { at: "t3" })).retiredExamples).toEqual(adoption.retiredExamples);
+  });
+
+  it("re-runs green and the same every time after adoption, through a round trip of the stored config too", () => {
+    const adopted = ok(adopt(approved(strict, loosened), "two", { at: "t3" })).config;
+    const runs = rerunExamples(adopted);
+    expect(runs.every((run) => run.ok)).toBe(true);
+    expect(runs.map((run) => [run.proposal, run.example, run.retiredBy ?? null])).toEqual([
+      ["one", "one-primary", null],
+      ["one", "two-primaries-fail", "two"],
+      ["two", "two-primaries", null],
+      ["two", "three-primaries", null],
+    ]);
+    expect(rerunExamples(adopted)).toEqual(runs);
+    const stored = parseProjectConfig(JSON.parse(JSON.stringify(adopted)));
+    if (!stored.ok) throw new Error("the adopted config does not parse");
+    expect(rerunExamples(stored.value)).toEqual(runs);
+    // Proposals in another order give the same runs.
+    expect(rerunExamples({ ...adopted, proposals: [...adopted.proposals].reverse() })).toEqual(runs);
+  });
+
+  it("keeps refusing a conflict the proposal does not own: an earlier example that also fails a rule it only adds", () => {
+    const loose = ok(adopt(approved(nook, loosened), "two", { at: "t2" })).config;
+    const strictPrimary = { ...atMost(1), id: "strict-primary" } as RuleSpec;
+    const both: ProposalDraft = { ...change("both", atMost(1)), rules: { remove: [onePrimary.id], add: [atMost(1), strictPrimary] } };
+    const impact = ok(proposalImpact(loose, both));
+    expect(impact.retired).toEqual([]);
+    expect(impact.broken.map((run) => [run.proposal, run.example, run.expect])).toEqual([["two", "two-primaries", "pass"]]);
+  });
+
+  it("supersedes through a cap the proposal sets, for every rule whose limit reads it", () => {
+    const capped = (value: number): ProjectConfig => ({ ...nook, inputs: { ...nook.inputs, caps: { ...nook.inputs.caps, MAX_VISIBLE_QUESTIONS: { ...nook.inputs.caps.MAX_VISIBLE_QUESTIONS!, value } } } });
+    const setCap = (id: string, value: number, examples: ProposalDraft["examples"]): ProposalDraft => ({ id, title: `Questions ${value}`, reason: "Why.", states: [], inventory: [{ op: "set-cap", name: "MAX_VISIBLE_QUESTIONS", value }], rules: { add: [], remove: [] }, examples });
+    const one = setCap("one-question", 1, { pass: [{ name: "one-question", prototype: legal }], fail: [{ name: "two-questions", prototype: twoQuestions, flaggedBy: { rule: "visible-questions" } }] });
+    const adopted = ok(adopt(approved(capped(2), one), "one-question", { at: "t1" })).config;
+    const back = setCap("two-questions-ok", 2, { pass: [{ name: "two-questions-pass", prototype: twoQuestions }], fail: [{ name: "two-primaries", prototype: twoPrimaries, flaggedBy: { rule: onePrimary.id } }] });
+    const adoption = ok(adopt(approved(adopted, back), "two-questions-ok", { at: "t2" }));
+    expect(adoption.retiredExamples.map((run) => [run.proposal, run.example, run.retiredBy])).toEqual([["one-question", "two-questions", "two-questions-ok"]]);
+    expect(rerunExamples(adoption.config).every((run) => run.ok)).toBe(true);
+  });
+
+  it("supersedes through a task's step budget the proposal sets", () => {
+    const overBudget = loadCases(legal, join(SPEC, "illegal")).find((item) => item.name === "route-over-budget")?.prototype;
+    if (!overBudget) throw new Error("no route-over-budget case");
+    expect(failing(nook, overBudget)).toEqual(["step-budget"]);
+    const budget = (value: number): ProjectConfig => ({ ...nook, inputs: { ...nook.inputs, tasks: nook.inputs.tasks.map((task) => (task.id === "hold-room" ? { ...task, maxSteps: value } : task)) } });
+    const setSteps = (id: string, value: number, examples: ProposalDraft["examples"]): ProposalDraft => ({ id, title: `Hold in ${value}`, reason: "Why.", states: [], inventory: [{ op: "set-max-steps", task: "hold-room", value }], rules: { add: [], remove: [] }, examples });
+    const lower = setSteps("hold-in-two", 2, { pass: [{ name: "short", prototype: legal }], fail: [{ name: "over-budget", prototype: overBudget, flaggedBy: { rule: "step-budget" } }] });
+    const adopted = ok(adopt(approved(budget(3), lower), "hold-in-two", { at: "t1" })).config;
+    const raise = setSteps("hold-in-three", 3, { pass: [{ name: "long-way", prototype: overBudget }], fail: [{ name: "two-primaries", prototype: twoPrimaries, flaggedBy: { rule: onePrimary.id } }] });
+    const adoption = ok(adopt(approved(adopted, raise), "hold-in-three", { at: "t2" }));
+    expect(adoption.retiredExamples.map((run) => [run.proposal, run.example, run.retiredBy])).toEqual([["hold-in-two", "over-budget", "hold-in-three"]]);
+    expect(rerunExamples(adoption.config).every((run) => run.ok)).toBe(true);
+  });
+
+  it("answers only for an open or approved proposal, and changes nothing", () => {
+    const before = JSON.stringify(strict);
+    expect(refusal(supersededExamples(strict, "one")).code).toBe("wrong-status");
+    expect(refusal(supersededExamples(strict, "nope")).code).toBe("not-found");
+    expect(JSON.stringify(strict)).toBe(before);
   });
 });
 
@@ -211,11 +302,18 @@ describe("what a draft would do, before it is a proposal", () => {
     const loosened = change("two", atMost(2), { pass: [{ name: "two-primaries", prototype: twoPrimaries }], fail: [{ name: "three-primaries", prototype: threePrimaries, flaggedBy: { rule: onePrimary.id } }] });
     const loose = ok(adopt(approved(nook, loosened), "two", { at: "t2" })).config;
     expect(ok(proposalImpact(loose, removal)).retired).toEqual([{ proposal: "two", example: "three-primaries", expect: "fail", ok: true, detail: 'retired: proposal "drop" removed rule "one-primary-per-page", which it proves', retiredBy: "drop" }]);
-    const broken = ok(proposalImpact(loose, change("one", atMost(1)))).broken;
-    expect(broken.map((run) => [run.proposal, run.example, run.expect])).toEqual([["two", "two-primaries", "pass"]]);
+    // A change to the rule an earlier example is about supersedes it, either way: it is retired by the change, not broken.
+    const one = ok(proposalImpact(loose, change("one", atMost(1))));
+    expect(one.broken).toEqual([]);
+    expect(one.retired.map((run) => [run.proposal, run.example, run.expect, run.retiredBy])).toEqual([["two", "two-primaries", "pass", "one"]]);
     const three = ok(proposalImpact(loose, change("three", atMost(3))));
-    expect(three.broken.map((run) => [run.example, run.detail])).toEqual([["three-primaries", '"one-primary-per-page" passed it']]);
-    expect(three.retired).toEqual([]);
+    expect(three.broken).toEqual([]);
+    expect(three.retired.map((run) => [run.example, run.detail])).toEqual([["three-primaries", 'retired: proposal "three" changed "one-primary-per-page" past it, so it no longer fails ("one-primary-per-page" passed it)']]);
+    // A rule the draft only adds is not one an earlier example was about: what it breaks stays broken.
+    const strict = { ...atMost(1), id: "strict-primary" } as RuleSpec;
+    const added = ok(proposalImpact(loose, { ...change("strict", strict), rules: { remove: [], add: [strict] } }));
+    expect(added.broken.map((run) => [run.example, run.expect])).toEqual([["two-primaries", "pass"]]);
+    expect(added.retired).toEqual([]);
   });
 
   it("says how a looser and a stricter limit change each prototype", () => {

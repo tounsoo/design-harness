@@ -240,8 +240,10 @@ export type ImpactView =
       readonly rows: readonly ImpactRow[];
       /** In a sentence: "2 of 3 prototypes have findings from this rule now; 1 would stop failing." At one prototype: "The one prototype has findings from this rule now". */
       readonly summary: string;
-      /** Failing examples adopted proposals keep that the draft retires. */
+      /** Failing examples adopted proposals keep that the draft retires because it removes their rule. */
       readonly retired: readonly string[];
+      /** Examples adopted proposals keep that the draft's change supersedes, which adopting it retires. */
+      readonly replaced: readonly string[];
       /** Kept examples that would stop behaving: core refuses to adopt until they do. */
       readonly broken: readonly string[];
       readonly impact: ProposalImpact;
@@ -301,7 +303,8 @@ export function impactOf(config: ProjectConfig, draft: ProposalDraft, existing: 
     ok: true,
     rows,
     summary: rows.length === 0 ? (parts[0] ?? "") : `${parts.join("; ")}.`,
-    retired: impact.value.retired.map((run) => `${run.example}, of ${run.proposal}`),
+    retired: impact.value.retired.filter((run) => run.changed === undefined).map((run) => `${run.example}, of ${run.proposal}`),
+    replaced: impact.value.retired.filter((run) => run.changed !== undefined).map((run) => `${run.example}, of ${run.proposal}`),
     broken: impact.value.broken.map((run) => `${run.expect === "pass" ? "passing" : "failing"} example ${run.example} of ${run.proposal}: ${run.detail}`),
     impact: impact.value,
   };

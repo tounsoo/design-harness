@@ -448,6 +448,11 @@ export function FlowShell({ name, testId, config, rule, subject, draft, why, onW
                           It retires {impact.retired.length === 1 ? "an example kept from a change you accepted earlier" : `${impact.retired.length} examples kept from changes you accepted earlier`}: {impact.retired.join("; ")}. With the rule gone {impact.retired.length === 1 ? "it has" : "they have"} nothing left to show.
                         </Text.Root>
                       )}
+                      {impact.replaced.length > 0 && (
+                        <Text.Root as="p" data-testid="rule-replaced">
+                          It replaces {impact.replaced.length === 1 ? "an example kept from a change you accepted earlier" : `${impact.replaced.length} examples kept from changes you accepted earlier`}: {impact.replaced.join("; ")}. {impact.replaced.length === 1 ? "It shows" : "They show"} the old limit, so accepting this retires {impact.replaced.length === 1 ? "it" : "them"}.
+                        </Text.Root>
+                      )}
                       {impact.broken.length > 0 && (
                         <Alert.Root tone="warning" data-testid="rule-broken">
                           <Alert.Title>This couldn&apos;t be accepted as it is</Alert.Title>
