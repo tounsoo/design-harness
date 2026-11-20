@@ -103,4 +103,31 @@ export const SHIPPED_LIBRARIES: readonly ShippedLibrary[] = [
     ],
     describe: async () => (await import("../../../../packages/core/libraries/mantine-core-9.7.4.json")).default as unknown as LibraryDescription,
   },
+  {
+    // Added by the library request workflow from issue #32. Its setup is 0.11.3's, checked against 0.11.2: the stylesheet switches on
+    // data-appearance, and Text.Root takes `as` with the same heading, paragraph and span values.
+    id: "tounsoo-todae-0-11-2",
+    name: "@tounsoo/todae",
+    package: "@tounsoo/todae",
+    version: "0.11.2",
+    about: "The design system this app is built with, one patch release behind the version the app ships. Parts are namespaced, such as Button.Root.",
+    setup: {
+      react: FRAME_REACT,
+      stylesheets: ["dist/todae.css"],
+      schemeAttribute: "data-appearance",
+      rules: [
+        {
+          type: "prop-values",
+          id: "text-as-heading-or-paragraph",
+          select: { component: "Text.Root" },
+          prop: "as",
+          allowed: ["h1", "h2", "h3", "p", "span"],
+          required: true,
+          description: "Text.Root says what it is: a heading level, a paragraph or a span.",
+        },
+      ],
+    },
+    notes: ["Light and dark come from the data-appearance attribute on the page.", "One rule of its own: a Text.Root says whether it is a heading, a paragraph or a span."],
+    describe: async () => (await import("../../../../packages/core/libraries/tounsoo-todae-0.11.2.json")).default as unknown as LibraryDescription,
+  },
 ];

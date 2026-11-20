@@ -2166,7 +2166,9 @@ test("a version this app does not serve: the canvas says what is missing and off
     const notice = page.getByTestId("packages-notice");
     await eventually(page, () => notice.getAttribute("data-state"), (value) => value === "unserved", "the notice says the version is not served");
     assert.ok((await notice.textContent()).includes("This app does not serve Todae 0.9.0"));
-    assert.equal(await page.getByTestId("packages-missing").textContent(), "The project is on @tounsoo/todae 0.9.0. This app serves 0.10.1, 0.11.3 of it, so no frame can render until the project loads 0.9.0 from somewhere, or moves.");
+    // The versions this deployment serves, as package.json lists them: a library request may add one.
+    const served = Object.keys(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).designHarness.libraries["@tounsoo/todae"]).sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
+    assert.equal(await page.getByTestId("packages-missing").textContent(), `The project is on @tounsoo/todae 0.9.0. This app serves ${served.join(", ")} of it, so no frame can render until the project loads 0.9.0 from somewhere, or moves.`);
     for (const name of ["Move the project to 0.11.3", "Move the project to 0.10.1", "Load 0.9.0 from esm.sh"]) assert.equal(await notice.getByRole("button", { name }).count(), 1, `the notice offers ${name}`);
     assert.equal(await page.locator(".frame-failure").count(), FRAMES, "every frame says it did not render");
     assert.equal(await page.getByTestId("frame-packages-hint").count(), FRAMES, "and points at the notice");
