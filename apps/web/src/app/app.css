@@ -340,7 +340,10 @@
   .history-previous { margin-block-start: var(--todae-space-1); }
 
   /* The Project view's layouts: parameters, then a preview frame under them. */
-  .layout-card-body { display: grid; gap: var(--todae-space-3); }
+  /* One column no wider than the card: a preview wider than a phone scrolls in its own box, and a parameter's long example wraps. */
+  .layout-card-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--todae-space-3); }
+  .layout-card-params .project-table { inline-size: 100%; }
+  .layout-card-params .project-table :is(th, td) { overflow-wrap: anywhere; }
   .layout-card-preview { display: grid; gap: var(--todae-space-1); justify-items: start; max-width: 100%; overflow-x: auto; padding: var(--todae-space-3); border-radius: var(--todae-radius-md); background-color: var(--todae-harness-canvas-bg); }
 
   /* Variants side by side: Todae's Card, Table, RadioGroup, Badge, Alert and EmptyState. This sheet places them, and adds what Todae has no part for: a grid of columns that hold scaled frames on the canvas colour, each source's views side by side as the board lays them out, with the scenarios not shown kept measuring out of sight. */
@@ -782,7 +785,7 @@
 
   .history-line { display: grid; gap: var(--todae-space-3); }
   .history-line > li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--todae-space-3); align-items: start; }
-  .history-line-body { display: grid; gap: var(--todae-space-1); }
+  .history-line-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--todae-space-1); }
   .track-dot { display: block; flex: none; inline-size: var(--todae-harness-figure-mark); block-size: var(--todae-harness-figure-mark); border-radius: var(--todae-radius-full); background: var(--todae-color-fg-default); box-sizing: border-box; }
   .history-line .track-dot { margin-block-start: var(--todae-space-2); }
   .history-line > li[data-waiting] .track-dot, .track-step[data-state="upcoming"] .track-dot { background: none; border: var(--todae-harness-annotation-stroke) solid var(--todae-color-fg-muted); }

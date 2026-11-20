@@ -1,4 +1,4 @@
-import { Badge, Button, Card, Code, DataList, Disclosure, Stack, Table, Text, ToggleGroup, VisuallyHidden } from "@tounsoo/todae";
+import { Badge, Button, Card, Code, DataList, Disclosure, Link, Stack, Table, Text, ToggleGroup, VisuallyHidden } from "@tounsoo/todae";
 import { Pencil, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ROLE_NAMES, describeRule, flowFacts, rerunExamples, type ConfirmedRole, type ExampleRun, type ProjectConfig, type RoleMapping, type RuleSpec, type Task } from "@design-harness/core";
@@ -525,9 +525,14 @@ function History({ config, onOpenProposal, onOpenProposals }: { readonly config:
                 <i className="track-dot" aria-hidden="true" />
                 <div className="history-line-body">
                   <Stack.Root direction="row" align="center" gap="condensed" wrap>
-                    <Button.Root variant="ghost" className="proposals-title" onClick={() => onOpenProposal(item.id)}>
+                    {/* As on the Proposals view's cards: a link in looks, a button in what it does, and a long title wraps. */}
+                    <Link.Root render={({ className, children }) => (
+                      <button type="button" className={`${className ?? ""} proposals-title`} onClick={() => onOpenProposal(item.id)}>
+                        {children}
+                      </button>
+                    )}>
                       {item.title}
-                    </Button.Root>
+                    </Link.Root>
                     <Text.Root as="span" tone="muted" className="proposal-standing" data-testid="history-standing">
                       <span className="standing" data-standing={item.waiting ? "waiting" : item.status}>
                         {standingWords(proposal)}
