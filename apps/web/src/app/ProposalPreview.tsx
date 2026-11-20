@@ -3,7 +3,7 @@ import { ArrowRight } from "lucide-react";
 import { useId } from "react";
 import { describeRule, type BoundChange, type Finding, type ProjectConfig, type Proposal, type RenderedSnapshot } from "@design-harness/core";
 import { CapChange, RuleFigure, SlotDiagram } from "../visual/project-figures";
-import { changeCount, previewLabel, proposalPreview, ruleBound, type BudgetLine, type ProposalPreview as Preview, type RuleLine } from "../visual/project-model";
+import { proposalPreview, ruleBound, ruleGlyph, type BudgetLine, type ProposalPreview as Preview, type RuleLine } from "../visual/project-model";
 import { SpecimenStage, useSpecimen } from "./Palette";
 import { humanize } from "./words";
 
@@ -165,23 +165,19 @@ export function BudgetLineView({ line }: { readonly line: BudgetLine }) {
   );
 }
 
-/** The top of a proposal's card: the kind of its first change, the picture of it, and how many more changes it has. */
+/**
+ * The small picture on a proposal's card, where there is something to draw:
+ * the part it adds or removes drawn live by the project's library, a new
+ * kind of page as its slots, or the glyph of a rule about how a page looks.
+ * Anything else reads whole in the card's sentence, so nothing is drawn.
+ */
 export function ProposalLead({ proposal, config }: { readonly proposal: Proposal; readonly config: ProjectConfig }) {
   const preview = proposalPreview(proposal, config);
-  const total = changeCount(proposal);
+  const drawn = preview.kind === "component" || preview.kind === "page-type" || (preview.kind === "rule" && ruleGlyph(preview.rule) !== null);
+  if (!drawn) return null;
   return (
     <div className="preview" data-preview={preview.kind} data-testid="proposal-preview">
-      <Text.Root as="span" tone="muted" className="preview-label">
-        {previewLabel(proposal)}
-      </Text.Root>
-      <div className="preview-figure">
-        <PreviewFigure preview={preview} config={config} />
-      </div>
-      {total > 1 && (
-        <Text.Root as="span" tone="muted" className="preview-more">
-          +{total - 1} more {total - 1 === 1 ? "change" : "changes"}
-        </Text.Root>
-      )}
+      <div className="preview-figure">{preview.kind === "rule" ? <RuleFigure rule={preview.rule} label={ruleBound(preview.rule, config)} /> : <PreviewFigure preview={preview} config={config} />}</div>
     </div>
   );
 }

@@ -88,7 +88,7 @@ export function ProjectView({
         </Text.Root>
         <Text.Root as="h1">{config.name}</Text.Root>
         <Text.Root as="p" tone="muted">
-          The parts and rules every prototype in {config.name} follows. It changes only through proposals you approve, and a library version move you confirm.
+          The parts and rules every prototype in {config.name} follows. It changes only through proposals you accept, and a library version move you confirm.
         </Text.Root>
       </div>
 
@@ -160,7 +160,7 @@ export function ProjectView({
       )}
 
       <section aria-labelledby="project-inputs">
-        <SectionHead id="project-inputs" title="Tasks and limits" text={`The numbers the rules read: how many steps each task may take, which action matters most, and the project's caps.${editable ? " To change a task's step budget, start from the task: that opens a proposal, and the budget stays as it is until you approve and adopt it." : ""}${prototype && flow ? ` Under each task is what ${prototype.name}'s longest route takes today.` : ""}`} />
+        <SectionHead id="project-inputs" title="Tasks and limits" text={`The numbers the rules read: how many steps each task may take, which action matters most, and the project's caps.${editable ? " To change a task's step budget, start from the task: that opens a proposal, and the budget stays as it is until you accept it." : ""}${prototype && flow ? ` Under each task is what ${prototype.name}'s longest route takes today.` : ""}`} />
         <div className="limits">
           <Card.Root className="figure-card" data-testid="project-tasks">
             <Text.Root as="h3" className="figure-title">
@@ -373,7 +373,7 @@ function Rules({ config, onOpenProposal, onFlow }: { readonly config: ProjectCon
       <SectionHead
         id="project-rules"
         title={`Rules in force (${config.rules.length})`}
-        text={`Each rule is checked on every change, by code, the same way every time. A rule about how a page looks carries a picture of what it measures, not a page of yours; open a rule for its id, type and data.${onFlow ? " To change or remove one, start from its card: that opens a proposal, and the rule stays as it is until you approve and adopt it." : ""}`}
+        text={`Each rule is checked on every change, by code, the same way every time. A rule about how a page looks carries a picture of what it measures, not a page of yours; open a rule for its id, type and data.${onFlow ? " To change or remove one, start from its card: that opens a proposal, and the rule stays as it is until you accept it." : ""}`}
       />
       <ToggleGroup.Root aria-label="Show rules" value={filter} onValueChange={(value) => setFilter((value ?? "all") as "all" | RuleGroupId)} className="proposals-filter rule-filter">
         <ToggleGroup.Item value="all">{`All (${config.rules.length})`}</ToggleGroup.Item>

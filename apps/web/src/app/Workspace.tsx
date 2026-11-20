@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExtern
 import { NO_VARIANTS, flowFacts, variantLabel, type Finding, type LayoutUse, type PickRecord, type ProjectConfig, type Prototype, type Variant, type VariantState } from "@design-harness/core";
 import { AgentController, type ChatRecord, type ChatStore } from "../agent/controller";
 import { SpecStreamPreview } from "../agent/spec-stream";
+import { plainSentence, standingWords, waitsForYou } from "../review/plain";
 import type { KeyVault } from "../agent/key-vault";
 import { latestMeasured, waitForMeasured } from "../agent/measure";
 import { detectPatterns, suggestion as suggestionOf, patternMessage } from "../agent/patterns";
@@ -688,7 +689,13 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     [initialConfig.id, setRecords, store],
   );
 
-  const openCount = config.proposals.filter((proposal) => proposal.status === "open").length;
+  // What waits for the person: open proposals, and any approved before accepting became one step.
+  const openCount = config.proposals.filter(waitsForYou).length;
+  const proposalWords = (id: string) => {
+    const proposal = config.proposals.find((item) => item.id === id);
+    if (!proposal) return undefined;
+    return { sentence: plainSentence(proposal, config), ...(waitsForYou(proposal) ? {} : { standing: standingWords(proposal) }) };
+  };
 
   const download = () => {
     const blob = new Blob([exportProject(configRef.current, recordsRef.current)], { type: "application/json" });
@@ -823,7 +830,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
           <ToggleGroup.Item value="proposals" onClick={() => center === "proposals" && setReviewing(null)}>
             Proposals
             {openCount > 0 && (
-              <Badge.Root tone="warning" data-testid="open-proposals" aria-label={`${openCount} open`}>
+              <Badge.Root tone="warning" data-testid="open-proposals" aria-label={`${openCount} waiting for you`}>
                 {openCount}
               </Badge.Root>
             )}
@@ -939,7 +946,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
 
       <Splitter.Root className="shell-body" show={canvasOnly ? "end" : panes === 1 ? (open.chat ? "start" : "end") : "both"} value={open.chat ? panels.chat.width : 0} onValueChange={(value) => resizePanel("chat", value)} min={PANEL_SIZES.chat.min} max={PANEL_SIZES.chat.max} collapsible>
         <Splitter.Panel id={chatId} className="shell-panel">
-          <ChatPanel controller={controller} vault={vault} settings={settings} {...(readOnly ? { readOnly: TSX_READ_ONLY } : {})} onSettings={changeSettings} onOpenProposal={openProposal} onOpenVariants={() => setCenter("variants")} prefill={prefill} onClose={() => showPanel("chat", false)} {...(offered ? { suggestion: { pattern: offered, onAccept: () => void answerSuggestion("accepted"), onDismiss: () => void answerSuggestion("dismissed") } } : {})} />
+          <ChatPanel controller={controller} vault={vault} settings={settings} {...(readOnly ? { readOnly: TSX_READ_ONLY } : {})} onSettings={changeSettings} onOpenProposal={openProposal} proposalWords={proposalWords} onOpenVariants={() => setCenter("variants")} prefill={prefill} onClose={() => showPanel("chat", false)} {...(offered ? { suggestion: { pattern: offered, onAccept: () => void answerSuggestion("accepted"), onDismiss: () => void answerSuggestion("dismissed") } } : {})} />
         </Splitter.Panel>
         <Splitter.Handle aria-label="Resize the chat" className="shell-handle" data-side="start" />
         <Splitter.Panel className="shell-panel">
