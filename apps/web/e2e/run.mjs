@@ -5458,7 +5458,7 @@ test("two notes on one spot: a count lists them, each opens by pointer and by ke
       (event) => {
         if (event.key !== "Escape" || window.__escapeBefore || !window.__watchEscape) return;
         window.__escapeBefore = {
-          open: [...document.querySelectorAll(":popover-open, dialog[open], [role='tooltip'], [role='menu']")].map((element) => `${element.tagName.toLowerCase()}[${element.getAttribute("role") ?? ""}|${element.getAttribute("data-testid") ?? ""}|${String(element.className).slice(0, 60)}]`),
+          open: [...document.querySelectorAll(":popover-open, dialog[open], [role='tooltip'], [role='menu']")].map((element) => `${element.tagName.toLowerCase()}[${element.getAttribute("role") ?? ""}|${element.getAttribute("data-testid") ?? ""}|${String(element.className).slice(0, 60)}|${element.checkVisibility() ? "visible" : "hidden"}|${element.textContent?.slice(0, 40) ?? ""}]`),
           active: document.activeElement ? `${document.activeElement.tagName.toLowerCase()}[${document.activeElement.getAttribute("data-testid") ?? ""}|${document.activeElement.getAttribute("data-pin") ?? ""}]` : null,
         };
         const prevent = event.preventDefault.bind(event);
@@ -5509,6 +5509,11 @@ test("two notes on one spot: a count lists them, each opens by pointer and by ke
   assert.ok(apart(boxes[0], boxes[1]) && apart(boxes[0], boxes[2]), `the count sits beside the markers, not on them: ${JSON.stringify(boxes)}`);
   assert.ok(boxes[0].height >= 24 && boxes[0].width >= 24, `the count is a target of at least 24 px: ${JSON.stringify(boxes[0])}`);
   // The upper marker takes the pointer over the lower one, which is why the count is there.
+  // Escape first closes a tooltip the pointer left open (WCAG 1.4.13), and the pointer still rests where Save was. A keyboard
+  // user's pointer hovers nothing, so it is parked in an empty corner of the board and the tooltips are let close first.
+  const area = await page.locator(".board-area").boundingBox();
+  await page.mouse.move(area.x + area.width - 4, area.y + area.height - 4);
+  await eventually(page, () => page.evaluate(() => [...document.querySelectorAll('[role="tooltip"]')].filter((element) => element.checkVisibility()).length), (count) => count === 0, "no tooltip is showing");
   await page.keyboard.press("Escape");
   await eventually(page, () => pinMode(page).getAttribute("aria-pressed"), (value) => value === "false", `Escape leaves pin mode (the key: ${JSON.stringify(await page.evaluate(() => ({ after: window.__escape, before: window.__escapeBefore })))})`);
   await marker(page, 2).evaluate((element) => element.blur());
