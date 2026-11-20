@@ -20,7 +20,7 @@ import {
   type LimitEdit,
   type LimitMove,
 } from "../review/rule-change";
-import { ClassBadge, RuleWords } from "./proposal-parts";
+import { RuleWords } from "./proposal-parts";
 import type { ChangeClass, ClassifiedChange, Proposal } from "@design-harness/core";
 import { exampleLabel } from "./words";
 
@@ -75,7 +75,7 @@ function RemoveFlow({ config, rule, existing, progress, agent, onClose, onPropos
       draft={draft}
       why={why}
       onWhy={setWhy}
-      whyHint="A reviewer reads this first, and the proposal's history keeps it."
+      whyHint="You read this first when you decide, and it is kept with the proposal."
       impact={impact}
       examples={examples}
       progress={progress}
@@ -87,7 +87,7 @@ function RemoveFlow({ config, rule, existing, progress, agent, onClose, onPropos
       onOpenProposal={onOpenProposal}
     >
       <Text.Root as="p" tone="muted">
-        Once it is adopted, nothing checks this any more, on any prototype in {config.name}.
+        Once you accept it, nothing checks this any more, on any prototype in {config.name}.
       </Text.Root>
     </FlowShell>
   );
@@ -145,7 +145,7 @@ function ChangeFlow({ config, rule, existing, progress, agent, onClose, onPropos
       draft={draft}
       why={why}
       onWhy={setWhy}
-      whyHint="A reviewer reads this first, and the proposal's history keeps it."
+      whyHint="You read this first when you decide, and it is kept with the proposal."
       impact={impact}
       examples={examples}
       progress={progress}
@@ -224,16 +224,20 @@ export function Moves({ moves }: { readonly moves: readonly LimitMove[] }) {
   );
 }
 
-/** Core's class for the draft, and its reason for each change. */
+/** Core's class for a draft, as a designer reads it. */
+const CLASS_PLAIN: Readonly<Record<ChangeClass, string>> = {
+  adds: "This only adds: nothing that passes today can be flagged.",
+  tightens: "This is stricter: more screens can be flagged, and none are let through.",
+  "loosens-or-removes": "This is looser: something that is flagged today stops being flagged.",
+};
+
+/** Core's class for the draft in plain words, and its reason for each change. */
 export function Classified({ value, changes }: { readonly value: ChangeClass; readonly changes: readonly ClassifiedChange[] }) {
   return (
     <>
-      <Stack.Root direction="row" align="center" gap="condensed" wrap>
-        <Text.Root as="span" tone="muted">
-          Core classifies it:
-        </Text.Root>
-        <ClassBadge value={value} />
-      </Stack.Root>
+      <Text.Root as="p" weight="medium" data-testid="proposal-class" data-class={value}>
+        {CLASS_PLAIN[value]}
+      </Text.Root>
       <Text.Root as="p" tone="muted" className="review-small" data-testid="rule-class-reason">
         {changes.map((change) => change.reason).join("; ")}.
       </Text.Root>
@@ -408,13 +412,13 @@ export function FlowShell({ name, testId, config, rule, subject, draft, why, onW
                     <Stack.Root direction="row" align="center" gap="condensed" data-testid="rule-measuring">
                       <Loader.Root aria-hidden="true" />
                       <Text.Root as="span" tone="muted">
-                        Measuring the project&apos;s prototypes, {progress.answered} of {progress.total} frames, so core reads each as it is drawn.
+                        Checking your prototypes: {progress.answered} of {progress.total} screens drawn.
                       </Text.Root>
                     </Stack.Root>
                   ) : impact && !impact.ok ? (
                     <Alert.Root tone="warning">
                       <Alert.Description>
-                        Core cannot apply it to the project as it is: [{impact.refusal.code}] {impact.refusal.message}
+                        This doesn&apos;t fit the project as it is: {impact.refusal.message}
                       </Alert.Description>
                     </Alert.Root>
                   ) : impact?.ok ? (
@@ -441,14 +445,14 @@ export function FlowShell({ name, testId, config, rule, subject, draft, why, onW
                       </ul>
                       {impact.retired.length > 0 && (
                         <Text.Root as="p" data-testid="rule-retired">
-                          It retires {impact.retired.length === 1 ? "a failing example an adopted proposal keeps as a test" : `${impact.retired.length} failing examples adopted proposals keep as tests`}: {impact.retired.join("; ")}. With the rule gone {impact.retired.length === 1 ? "it has" : "they have"} nothing left to prove.
+                          It retires {impact.retired.length === 1 ? "an example kept from a change you accepted earlier" : `${impact.retired.length} examples kept from changes you accepted earlier`}: {impact.retired.join("; ")}. With the rule gone {impact.retired.length === 1 ? "it has" : "they have"} nothing left to show.
                         </Text.Root>
                       )}
                       {impact.broken.length > 0 && (
                         <Alert.Root tone="warning" data-testid="rule-broken">
-                          <Alert.Title>Core would refuse to adopt it as it is</Alert.Title>
+                          <Alert.Title>This couldn&apos;t be accepted as it is</Alert.Title>
                           <Alert.Description>
-                            An adopted proposal keeps its examples as tests, and this breaks {impact.broken.length === 1 ? "one" : impact.broken.length}: {impact.broken.join("; ")}. {subject?.brokenAdvice ?? "Remove the rule instead, which retires them, or keep the limit within what they prove."}
+                            A change you accepted earlier keeps its examples, and this goes against {impact.broken.length === 1 ? "one" : impact.broken.length}: {impact.broken.join("; ")}. {subject?.brokenAdvice ?? "Remove the rule instead, which retires them, or keep the limit within what they prove."}
                           </Alert.Description>
                         </Alert.Root>
                       )}
@@ -460,21 +464,21 @@ export function FlowShell({ name, testId, config, rule, subject, draft, why, onW
               {draft !== null && examples && (
                 <section className="rule-flow-section" aria-labelledby="rule-flow-examples" data-testid="rule-examples">
                   <Text.Root as="h3" id="rule-flow-examples">
-                    Its examples
+                    Example screens
                   </Text.Root>
                   {onlyRemovesRules(draft) ? (
                     <Text.Root as="p" tone="muted" data-testid="rule-no-examples">
-                      A removal needs none: it adds nothing an example could show firing. What it does is the list above.
+                      A removal needs none: it adds nothing an example could show. What it does is the list above.
                     </Text.Root>
                   ) : (
                     <Text.Root as="p" tone="muted">
-                      Core adopts a proposal only on examples: one that passes{subject ? subject.examplesNeed : draft.rules.add.length > 0 ? ", and one the changed rule flags and no other rule does" : ", and one that a rule still in force flags"}. These are taken from the project as it is, never written for you.
+                      To be accepted, a proposal needs two example screens: one that is allowed{subject ? subject.examplesNeed : draft.rules.add.length > 0 ? ", and one the changed rule stops and no other rule does" : ", and one that a rule still in force stops"}. These are taken from your prototypes as they are, never written for you.
                     </Text.Root>
                   )}
                   {examples.picked.length > 0 && (
                     <ul className="rule-examples" aria-label="Examples from the project">
                       {examples.picked.map((item) => (
-                        <li key={item.name} data-example={item.name} data-expect={item.expect}>
+                        <li key={item.name} data-example={item.name} data-expect={item.expect} {...(item.expect === "fail" ? { "data-rule": item.rule } : {})}>
                           <span className="rule-impact-mark" aria-hidden="true">
                             {item.expect === "pass" ? <Check /> : <X />}
                           </span>
@@ -483,7 +487,7 @@ export function FlowShell({ name, testId, config, rule, subject, draft, why, onW
                               {exampleLabel(item.name)}
                             </Text.Root>{" "}
                             <Text.Root as="span" tone="muted">
-                              {item.expect === "pass" ? "must pass" : `must fail, flagged by ${item.rule}`}: {item.from}, as it is now.
+                              {item.expect === "pass" ? "allowed" : "not allowed"}: {item.from}, as it is now.
                             </Text.Root>
                           </span>
                         </li>
@@ -492,7 +496,7 @@ export function FlowShell({ name, testId, config, rule, subject, draft, why, onW
                   )}
                   {examples.needs.length > 0 && (
                     <Alert.Root tone="warning" data-testid="rule-needs">
-                      <Alert.Title>It cannot be adopted until it has {examples.needs.length === 1 ? "one more example" : "more examples"}</Alert.Title>
+                      <Alert.Title>It can&apos;t be accepted until it has {examples.needs.length === 1 ? "one more example" : "more examples"}</Alert.Title>
                       <Alert.Description>
                         The project has none of: {examples.needs.join("; ")}. You can open the proposal now and ask the agent to write {examples.needs.length === 1 ? "it" : "them"}; the message waits in the chat for you to send.{agent.ready ? "" : ` ${agent.why}`}
                       </Alert.Description>
@@ -508,14 +512,12 @@ export function FlowShell({ name, testId, config, rule, subject, draft, why, onW
 
               {refusal && (
                 <Alert.Root tone="critical" data-testid="rule-refusal">
-                  <Alert.Title>Core refused the proposal</Alert.Title>
-                  <Alert.Description>
-                    [{refusal.code}] {refusal.message}
-                  </Alert.Description>
+                  <Alert.Title>The proposal couldn&apos;t be opened</Alert.Title>
+                  <Alert.Description>{refusal.message}</Alert.Description>
                 </Alert.Root>
               )}
               <Text.Root as="p" tone="muted" className="review-small">
-                This opens a proposal by you. The {noun} stays as it is until you approve and adopt the proposal on its review page.
+                This opens a proposal. The {noun} stays as it is until you accept the proposal on its review page.
               </Text.Root>
             </>
           )}

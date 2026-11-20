@@ -1,6 +1,6 @@
 import { Alert, Badge, Button, Checkbox, Code, CodeBlock, Conversation, DataList, Disclosure, ErrorMessage, Field, Label, Loader, Message, Stack, Text } from "@tounsoo/todae";
 import { ArrowUp, Check, CircleAlert, CircleCheck, Columns2, FileCode2, KeyRound, Lightbulb, Pencil, Sparkles, Square, TriangleAlert, X } from "lucide-react";
-import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
 import type { AgentController, Turn, TurnItem } from "../agent/controller";
 import { KEY_DB, keyProblem, type KeyVault } from "../agent/key-vault";
 import { EFFORTS, MODELS, formatCost, isEffort, isModel, type AgentSettings } from "../agent/models";
@@ -27,6 +27,7 @@ export function ChatPanel({
   settings,
   onSettings,
   onOpenProposal,
+  proposalWords,
   onOpenVariants,
   prefill,
   onClose,
@@ -38,6 +39,8 @@ export function ChatPanel({
   readonly settings: AgentSettings;
   readonly onSettings: (next: AgentSettings) => void;
   readonly onOpenProposal: (id: string) => void;
+  /** A proposal as the person reads it now, by its id: what it changes in a sentence and where it stands. Undefined once it is gone. */
+  readonly proposalWords?: ProposalWords;
   /** Opens the Variants view, where the person compares and picks. */
   readonly onOpenVariants: () => void;
   /** A message put into the box for the person to edit and send, never sent on its own. */
@@ -140,6 +143,7 @@ export function ChatPanel({
                 </div>
               )
             )}
+            <ProposalWordsContext.Provider value={proposalWords ?? noWords}>
             {state.turns.map((turn, index) => (
               <TurnView
                 key={turn.id}
@@ -152,6 +156,7 @@ export function ChatPanel({
                 onRetry={() => void controller.retry()}
               />
             ))}
+            </ProposalWordsContext.Provider>
           </Conversation.Content>
         </Conversation.Viewport>
         <Conversation.ScrollButton />
@@ -471,6 +476,64 @@ function Step({ className, icon, summary, children, ...data }: { readonly classN
   );
 }
 
+/** A proposal by its id, as the person reads it: what it changes in one sentence, and where it stands when it no longer waits. */
+export type ProposalWords = (id: string) => { readonly sentence: string; readonly standing?: string } | undefined;
+const noWords: ProposalWords = () => undefined;
+const ProposalWordsContext = createContext<ProposalWords>(noWords);
+
+/**
+ * A proposal the agent drafted or revised, as a card in the chat: its title,
+ * what it changes in one plain sentence, and the way to its review page,
+ * where the person decides. Core's dry run, word for word, is in the tool
+ * call's details above the card and on the review page.
+ */
+function ProposalItem({ item, onOpenProposal }: { readonly item: Extract<TurnItem, { kind: "proposal" }>; readonly onOpenProposal: (id: string) => void }) {
+  const words = useContext(ProposalWordsContext)(item.id);
+  const revised = item.action === "revised";
+  const notReady = !item.adoptable && !item.needsMeasurement && !item.request;
+  return (
+    <div className="chat-proposal" data-proposal={item.id} data-action={item.action ?? "drafted"} data-request={item.request ? "" : undefined} data-tone={notReady ? "warning" : "info"}>
+      <Stack.Root gap="condensed">
+        <Stack.Root direction="row" align="center" gap="condensed" wrap>
+          <span className="chat-step-icon" aria-hidden="true">
+            {item.request ? <FileCode2 /> : <Pencil />}
+          </span>
+          <Text.Root as="span" variant="label">
+            {item.request ? (revised ? "Updated its request for a new kind of rule" : "Asked for a new kind of rule") : revised ? "Updated its suggestion" : "Suggested a change to the project"}
+          </Text.Root>
+        </Stack.Root>
+        <Text.Root as="p" weight="medium" className="chat-proposal-title">
+          {item.title}
+        </Text.Root>
+        {words && (
+          <Text.Root as="p" className="chat-small" data-testid="chat-proposal-plain">
+            {words.sentence}
+          </Text.Root>
+        )}
+        {words?.standing ? (
+          <Text.Root as="p" tone="muted" className="chat-small" data-testid="chat-proposal-standing">
+            {words.standing}
+          </Text.Root>
+        ) : (
+          notReady && (
+            <Text.Root as="p" tone="muted" className="chat-small" data-testid="chat-proposal-not-ready">
+              It isn&apos;t ready to accept yet. Its review page says why.
+            </Text.Root>
+          )
+        )}
+        <div>
+          <Button.Root type="button" variant="secondary" onClick={() => onOpenProposal(item.id)}>
+            <Button.Icon>
+              <CircleCheck />
+            </Button.Icon>
+            {item.request ? "Review the request" : "Review the proposal"}
+          </Button.Root>
+        </div>
+      </Stack.Root>
+    </div>
+  );
+}
+
 function Item({ item, onOpenProposal, onOpenVariants }: { readonly item: TurnItem; readonly onOpenProposal: (id: string) => void; readonly onOpenVariants: () => void }) {
   switch (item.kind) {
     case "text":
@@ -529,34 +592,7 @@ function Item({ item, onOpenProposal, onOpenVariants }: { readonly item: TurnIte
         </Step>
       );
     case "proposal":
-      return (
-        <div className="chat-proposal" data-proposal={item.id} data-action={item.action ?? "drafted"} data-request={item.request ? "" : undefined} data-tone={item.adoptable || item.needsMeasurement || item.request ? "info" : "warning"}>
-          <Stack.Root gap="condensed">
-            <Stack.Root direction="row" align="center" gap="condensed" wrap>
-              <span className="chat-step-icon" aria-hidden="true">
-                {item.request ? <FileCode2 /> : <Pencil />}
-              </span>
-              <Text.Root as="span" variant="label">
-                {item.request ? `Request for a new rule type ${item.action ?? "drafted"}` : `Proposal ${item.action ?? "drafted"}`}
-              </Text.Root>
-            </Stack.Root>
-            <Text.Root as="p" weight="medium" className="chat-proposal-title">
-              {item.title}
-            </Text.Root>
-            <Text.Root as="p" tone="muted" className="chat-small">
-              {item.request ? "Needs a new rule type: this is a code change. Its review page copies a request ready to file; it never becomes a check here." : `${item.verdict} Only you can approve, decline or adopt it.`}
-            </Text.Root>
-            <div>
-              <Button.Root type="button" variant="secondary" onClick={() => onOpenProposal(item.id)}>
-                <Button.Icon>
-                  <CircleCheck />
-                </Button.Icon>
-                {item.request ? "Review the request" : "Review the proposal"}
-              </Button.Root>
-            </div>
-          </Stack.Root>
-        </div>
-      );
+      return <ProposalItem item={item} onOpenProposal={onOpenProposal} />;
     case "variants":
       return (
         <div className="chat-proposal chat-variants" data-variants={item.ids.join(" ")} data-tone="info">

@@ -20,7 +20,7 @@ type Props = Omit<FlowContext, "onAsk"> & {
  * Changing a task's step budget starts here, from the task in the Project
  * view, and ends as an open proposal by the person on its review page, as
  * a rule's limit does (`RuleChange.tsx`, whose shell and parts this is
- * built from): the budget stays as it is until they approve and adopt it
+ * built from): the budget stays as it is until they accept it
  * there. The dialog shows the budget and the rule that reads it, takes the
  * new number, says it before and after with core's class and reason, and
  * says what core reads in every prototype's routes with it applied.
@@ -66,7 +66,7 @@ function BudgetChange({ config, task, meter, existing, progress, agent, onClose,
       </section>
     ),
     waitingWords: (proposal) => budgetWaitingWords(proposal, task.id),
-    examplesNeed: stricter && rules.length > 0 ? ", and one whose route the new budget flags and no other rule does" : ", and one that a rule still in force flags",
+    examplesNeed: stricter && rules.length > 0 ? ", and one whose route goes over the new budget and breaks no other rule" : ", and one that a rule still in force stops",
     brokenAdvice: "Keep the budget within what they prove.",
     data: { "data-task": task.id },
   };
@@ -79,7 +79,7 @@ function BudgetChange({ config, task, meter, existing, progress, agent, onClose,
       draft={draft}
       why={why}
       onWhy={setWhy}
-      whyHint="A reviewer reads this first, and the proposal's history keeps it."
+      whyHint="You read this first when you decide, and it is kept with the proposal."
       impact={impact}
       examples={examples}
       progress={progress}

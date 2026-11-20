@@ -68,3 +68,19 @@ export function adoptProposal(config: ProjectConfig, id: string, measurement: Ex
   if (!measured.ok) return measured;
   return adopt(measured.value, id, { at, by: REVIEWER }, existing);
 }
+
+/**
+ * Accepts a proposal in one deliberate step: core's `approve` and then its
+ * `adopt`, back to back with one stamp, so the history keeps both entries
+ * and every check of adoption runs. A proposal approved before accepting
+ * became one step is only adopted. Pure, and all or nothing: a refused
+ * adoption returns the refusal and no config, so the caller saves nothing
+ * and the proposal stays as it was.
+ */
+export function acceptProposal(config: ProjectConfig, id: string, measurement: ExampleMeasurement, existing: readonly ExistingPrototype[], at: string): Result<Adoption, Refusal> {
+  const proposal = config.proposals.find((item) => item.id === id);
+  if (proposal?.status !== "open") return adoptProposal(config, id, measurement, existing, at);
+  const approved = approveProposal(config, id, at);
+  if (!approved.ok) return approved;
+  return adoptProposal(approved.value, id, measurement, existing, at);
+}

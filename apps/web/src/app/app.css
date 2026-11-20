@@ -284,15 +284,32 @@
    * hold scaled frames, a before-and-after list of badges, a sticky action
    * bar, and a read-only code excerpt sized to its lines.
    */
-  .proposals-title { padding-inline: 0; text-align: start; font-weight: var(--todae-font-weight-bold); }
-  .proposals-id { font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); color: var(--todae-color-fg-muted); }
+  .proposals-title { appearance: none; background: none; border: 0; padding: 0; margin: 0; font: inherit; font-weight: var(--todae-font-weight-bold); text-align: start; text-decoration: underline; cursor: pointer; min-block-size: var(--todae-harness-size-target); overflow-wrap: anywhere; }
+  .proposals-about { max-inline-size: var(--todae-harness-measure-note); margin: 0; }
+  .proposal-plain { font-size: var(--todae-font-size-2); --todae-text-font-size: var(--todae-font-size-2); font-weight: var(--todae-font-weight-medium); overflow-wrap: anywhere; }
   .review-title { margin: 0; }
   .review-back { padding-inline: 0; }
   .review-small { font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); margin: 0; }
   .review-section { display: grid; gap: var(--todae-space-3); scroll-margin-top: var(--todae-harness-size-sticky-clearance); }
   .example, .review-refusal { scroll-margin-top: var(--todae-harness-size-sticky-clearance); }
   .review-section h2, .review-section h3 { margin: 0; }
-  .review-actions { position: sticky; top: calc(-1 * var(--todae-space-8)); z-index: 2; }
+  .review-standing { margin: 0; }
+  .standing { color: var(--todae-color-fg-default); font-weight: var(--todae-font-weight-medium); }
+  .review-summary { --todae-card-gap: var(--todae-space-3); display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; border-inline-start: var(--todae-harness-edge-status) solid var(--todae-color-status-warning-border); }
+  .review-summary[data-state="ready"] { border-inline-start-color: var(--todae-color-status-success-border); }
+  .review-summary-words { display: grid; gap: var(--todae-space-1); min-inline-size: 0; flex: 1 1 var(--todae-harness-size-column); }
+  .review-summary p, .review-why p, .review-actions p { margin: 0; }
+  .review-lead { margin: 0; font-size: var(--todae-font-size-3); --todae-text-font-size: var(--todae-font-size-3); font-weight: var(--todae-font-weight-medium); max-inline-size: var(--todae-harness-measure-note); overflow-wrap: anywhere; }
+  .review-lead-list { margin: 0; padding-inline-start: var(--todae-space-6); display: grid; gap: var(--todae-space-2); }
+  .review-why { display: grid; gap: var(--todae-space-2); max-inline-size: var(--todae-harness-measure-note); }
+  .review-states { margin: 0; padding-inline-start: var(--todae-space-5); display: grid; gap: var(--todae-space-1); }
+  .impact-found { min-inline-size: 0; }
+  .review-after { display: grid; gap: var(--todae-space-3); }
+  .review-looser { gap: var(--todae-space-2); }
+  .review-details { display: grid; gap: var(--todae-space-2); justify-items: start; padding-block-start: var(--todae-space-4); border-block-start: var(--todae-border-width) solid var(--todae-color-border-subtle); min-inline-size: 0; }
+  .review-details-toggle { padding-inline: 0; font-weight: var(--todae-font-weight-bold); }
+  .review-details-panel { inline-size: 100%; min-inline-size: 0; padding-block-start: var(--todae-space-4); }
+  .review-details-panel[inert] { block-size: 0; padding: 0; overflow: hidden; visibility: hidden; }
   .review-verdict[data-tone="success"] { color: var(--todae-color-status-success-fg); }
   .review-verdict[data-tone="warning"] { color: var(--todae-color-status-warning-fg); }
   .review-verdict[data-tone="critical"] { color: var(--todae-color-status-critical-fg); }
@@ -786,15 +803,13 @@
 
   .proposal-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--todae-harness-size-proposal-card)), 1fr)); gap: var(--todae-space-4); }
   .proposal-card { --todae-card-padding: 0; --todae-card-gap: 0; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
-  .proposal-card[data-waiting] { box-shadow: 0 0 0 var(--todae-focus-ring-width) var(--todae-color-status-warning-border), var(--todae-card-shadow); }
-  .proposal-card-body { display: grid; gap: var(--todae-space-2); align-content: start; justify-items: start; padding: var(--todae-space-3) var(--todae-space-4) var(--todae-space-4); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); min-width: 0; }
-  .proposal-card-body .proposals-title { font-size: var(--todae-font-size-2); --todae-button-font-size: var(--todae-font-size-2); white-space: normal; overflow-wrap: anywhere; block-size: auto; }
+  .proposal-card[data-waiting] { border-block-start: var(--todae-harness-edge-status) solid var(--todae-color-status-warning-border); }
+  .proposal-card-body { display: grid; gap: var(--todae-space-2); align-content: start; justify-items: start; padding: var(--todae-space-4); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); min-width: 0; }
+  .proposal-card-body .proposals-title { font-size: var(--todae-font-size-2); }
   .proposal-standing { overflow-wrap: anywhere; }
-  .proposal-examples { display: flex; flex-wrap: wrap; gap: var(--todae-space-1) var(--todae-space-3); }
-  .proposal-example { display: inline-flex; align-items: center; gap: var(--todae-space-1); }
-  .proposal-example svg, .proof-mark svg { inline-size: 1em; block-size: 1em; }
+  .proof-mark svg { inline-size: 1em; block-size: 1em; }
   .preview { display: grid; gap: var(--todae-space-2); align-content: start; padding: var(--todae-space-3); background: var(--todae-color-bg-subtle); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); min-width: 0; }
-  .proposal-card .preview { min-block-size: var(--todae-harness-size-preview); border-block-end: var(--todae-border-width) solid var(--todae-color-border-subtle); }
+  .proposal-card .preview { justify-self: stretch; border-radius: var(--todae-radius-md); }
   .preview p { margin: 0; }
   .preview-figure { display: grid; justify-items: center; align-content: center; gap: var(--todae-space-2); flex: 1; min-width: 0; }
   .preview-part { display: grid; gap: var(--todae-space-2); justify-items: center; inline-size: 100%; min-width: 0; }
@@ -813,6 +828,7 @@
   .rule-proof-rule:not(:has(.rule-glyph)) { grid-template-columns: minmax(0, 1fr); }
   .rule-proof-rule .rule-glyph { border: 0; border-radius: var(--todae-radius-md); inline-size: var(--todae-harness-size-picker); }
   .proof { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--todae-harness-size-column)), 1fr)); gap: var(--todae-space-4); align-items: start; }
+  .proof[data-flow] { grid-template-columns: minmax(0, 1fr); }
   .proof-example { margin: 0; display: grid; gap: var(--todae-space-2); min-width: 0; }
   .proof-example p { margin: 0; }
   .proof-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--todae-space-2); }
@@ -845,9 +861,7 @@
   /* The status filter is five buttons in a row; where they do not fit they take a second row. */
   .proposals-filter { flex-wrap: wrap; max-inline-size: 100%; }
   /* Todae's Button keeps its label on one line and cuts it short. A card's title is the proposal's name, so it wraps whole. */
-  .proposal-card-body .proposals-title > * { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
   /* A phone has no room to keep the actions in view: stuck, they cover close to half of it. They scroll with the page there. */
-  .shell[data-width="phone"] .review-actions { position: static; }
   /* What is pressed is 24 CSS px tall at least: a radio's or a checkbox's label and a disclosure's summary are as tall as their text otherwise. */
   :is(.variants, .wizard, .review, .proposals, .rule-flow) :is(label:has(> input), summary) { min-block-size: var(--todae-harness-size-target); }
 
