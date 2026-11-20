@@ -4628,7 +4628,7 @@ test("a person removes a rule from its card: the proposal needs no examples, and
   ]);
   assert.equal(await words(dialog.locator('.rule-impact > li[data-prototype="Booking"]')), "Booking Would start passing.");
   // Two questions fails another rule today, which this leaves alone.
-  assert.equal(await words(dialog.locator('.rule-impact > li[data-prototype="Two questions"]')), "Two questions No change.");
+  assert.equal(await words(dialog.locator('.rule-impact > li[data-prototype="Two questions"]')), "Two questions No change: it needs fixing today, and still would.");
   assert.doesNotMatch(await dialog.getByTestId("rule-impact").textContent(), /one-primary-per-page|finding/, "the impact names no rule id");
   assert.equal(await dialog.getByTestId("rule-retired").count(), 0, "no adopted proposal keeps an example of a built-in rule");
   // A removal takes no examples: it adds nothing an example could show firing, and the impact above is what it does.

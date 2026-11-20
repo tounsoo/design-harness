@@ -90,10 +90,19 @@ describe("removing a rule", () => {
     expect(view.rows).toEqual([
       { name: "Booking", now: 0, effect: "same", text: "No change." },
       { name: "Early booking", now: 1, effect: "clears", text: "Would start passing." },
-      { name: "Two questions", now: 0, effect: "same", text: "No change." },
+      // It fails another rule today, which the removal leaves alone: no change, and not "fine".
+      { name: "Two questions", now: 0, effect: "same", text: "No change: it needs fixing today, and still would." },
     ]);
     expect(view.retired).toEqual([]);
     expect(view.broken).toEqual([]);
+  });
+
+  it("says a prototype that stops failing the removed rule but fails another still needs fixing", () => {
+    const both: ExistingPrototype = { name: "Both", prototype: withTwoQuestions(withPrimaries(1)) };
+    const view = impactOf(nook, removalDraft(nook, onePrimary, ""), [both], [onePrimary.id]);
+    if (!view.ok) throw new Error(view.refusal.message);
+    expect(view.summary).toBe("Nothing that works today would stop working.");
+    expect(view.rows).toEqual([{ name: "Both", now: 1, effect: "still-fails", text: "Would stop failing this check, and still need fixing for other reasons." }]);
   });
 
   it("takes no examples, since a removal adds nothing an example could show firing, and core adopts it on none", () => {

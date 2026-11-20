@@ -285,9 +285,9 @@ export function impactOf(config: ProjectConfig, draft: ProposalDraft, existing: 
       const why = route ? routeSentence(route, candidate) : against.length > 0 ? `It would go against: ${against.join(" ")}` : "It would have more to fix than it does today.";
       return { name: item.name, now, effect: "fails", text: `Would need fixing. ${why}` };
     }
-    if (item.removed.length === 0 && item.added.length === 0) return { name: item.name, now, effect: "same", text: now > 0 ? "No change: it still needs fixing, as it does today." : "No change." };
+    if (item.removed.length === 0 && item.added.length === 0) return { name: item.name, now, effect: "same", text: effect.stillFails ? "No change: it needs fixing today, and still would." : "No change." };
     if (!effect.stillFails) return { name: item.name, now, effect: "clears", text: "Would start passing." };
-    return { name: item.name, now, effect: "still-fails", text: effect.fixes.length > 0 ? "Would no longer be stopped by this, but it still needs fixing for other reasons." : "Still needs fixing, as it does today." };
+    return { name: item.name, now, effect: "still-fails", text: effect.fixes.length > 0 ? "Would stop failing this check, and still need fixing for other reasons." : "Still needs fixing, as it does today." };
   });
   const clears = rows.filter((row) => row.effect === "clears").length;
   const fails = rows.filter((row) => row.effect === "fails").length;
