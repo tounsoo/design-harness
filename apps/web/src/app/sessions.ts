@@ -15,7 +15,8 @@ import { createSession } from "./runtime";
  * reported for new content.
  */
 
-export type MeasureItem = { readonly id: string; readonly config: ProjectConfig; readonly prototype: Prototype };
+/** `attempt` starts the measurement again from scratch when it changes, as "Check again" does; it is not part of what is measured. */
+export type MeasureItem = { readonly id: string; readonly config: ProjectConfig; readonly prototype: Prototype; readonly attempt?: number };
 
 /** What the frames of one prototype have reported so far. */
 export type Measurement =
@@ -62,7 +63,7 @@ export function measurementOf(state: SessionState): Measurement {
 export function useSessions(items: readonly MeasureItem[]): readonly Measured[] {
   const pool = useRef(new Map<string, Session>());
   const [, bump] = useReducer((count: number) => count + 1, 0);
-  const keyed = useMemo(() => items.map((item) => ({ ...item, key: `${item.id}:${renderKey(item.config, item.prototype)}` })), [items]);
+  const keyed = useMemo(() => items.map((item) => ({ ...item, key: `${item.id}:${item.attempt ?? 0}:${renderKey(item.config, item.prototype)}` })), [items]);
   const signature = keyed.map((item) => item.key).join("|");
 
   const sessions = useMemo(() => {

@@ -54,6 +54,18 @@ describe("the local package source", () => {
     await expect(resolvePackages({ ...acme, stylesheets: ["dist/other.css"] }, source)).rejects.toThrow("has no dist/other.css in @acme/ui");
   });
 
+  it("reads a file again, the manifest included, after a read that failed: a network glitch is not kept", async () => {
+    const { asked, fetchText } = fakeFetch();
+    let down = true;
+    const flaky = (url: string) => (down ? Promise.reject(new Error("offline")) : fetchText(url));
+    const source = localPackageSource("https://app.example/vendor", flaky);
+    await expect(resolvePackages(nook.library, source)).rejects.toThrow("offline");
+    down = false;
+    const packages = await resolvePackages(nook.library, source);
+    expect(packages.modules["@tounsoo/todae"]).toEqual({ code: "/* tounsoo-todae@0.11.3.js */" });
+    expect(asked.filter((url) => url.endsWith("manifest.json"))).toHaveLength(1);
+  });
+
   it("refuses a version it does not have, naming both", async () => {
     const source = localPackageSource("https://app.example/vendor/", fakeFetch().fetchText);
     await expect(resolvePackages({ ...nook.library, version: "0.12.0" }, source)).rejects.toThrow("the local package source has @tounsoo/todae 0.10.1, 0.11.3, but the project asks for 0.12.0");
