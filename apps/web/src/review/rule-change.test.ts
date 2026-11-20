@@ -86,11 +86,11 @@ describe("removing a rule", () => {
   it("says what core reads in every prototype with the rule gone", () => {
     const view = impactOf(nook, removalDraft(nook, onePrimary, ""), [questions, early, booking], [onePrimary.id]);
     if (!view.ok) throw new Error(view.refusal.message);
-    expect(view.summary).toBe("1 of 3 prototypes has findings from this rule now; 1 would stop failing.");
+    expect(view.summary).toBe("Nothing that works today would stop working. 1 of 3 prototypes would start passing.");
     expect(view.rows).toEqual([
-      { name: "Booking", now: 0, effect: "same", text: "No finding from this rule now. Nothing changes for it." },
-      { name: "Early booking", now: 1, effect: "clears", text: "1 finding from this rule now. It would stop failing." },
-      { name: "Two questions", now: 0, effect: "same", text: "No finding from this rule now. Nothing changes for it." },
+      { name: "Booking", now: 0, effect: "same", text: "No change." },
+      { name: "Early booking", now: 1, effect: "clears", text: "Would start passing." },
+      { name: "Two questions", now: 0, effect: "same", text: "No change." },
     ]);
     expect(view.retired).toEqual([]);
     expect(view.broken).toEqual([]);
@@ -164,22 +164,26 @@ describe("changing a rule's own limit", () => {
   it("reads each prototype under the changed rule: one stops failing, one still fails, one newly fails", () => {
     const looser = impactOf(nook, changed(previewChange(nook, onePrimary, { limits: { max: 2 } }, "")).draft, [early, earlier], [onePrimary.id]);
     if (!looser.ok) throw new Error(looser.refusal.message);
-    expect(looser.summary).toBe("2 of 2 prototypes have findings from this rule now; 1 would stop failing.");
-    expect(looser.rows.map((row) => [row.name, row.effect, row.text])).toEqual([
-      ["Early booking", "clears", "1 finding from this rule now. It would stop failing."],
-      ["Three ways to book", "still-fails", "1 finding from this rule now. It would still fail one-primary-per-page."],
+    expect(looser.summary).toBe("Nothing that works today would stop working. 1 of 2 prototypes would start passing.");
+    expect(looser.rows.map((row) => [row.name, row.now, row.effect, row.text])).toEqual([
+      ["Early booking", 1, "clears", "Would start passing."],
+      ["Three ways to book", 1, "still-fails", "Still needs fixing, as it does today."],
     ]);
     const two = withMax(2);
     const stricter = impactOf(two, changed(previewChange(two, ruleOf(two, onePrimary.id), { limits: { max: 1 } }, "")).draft, [booking, early], [onePrimary.id]);
     if (!stricter.ok) throw new Error(stricter.refusal.message);
-    expect(stricter.summary).toBe("None of the 2 prototypes has findings from this rule now; 1 would newly fail.");
-    // One prototype is not "0 of 1 prototype have": the sentence is about the one.
+    expect(stricter.summary).toBe("1 of 2 prototypes would need fixing.");
+    expect(stricter.rows.map((row) => [row.name, row.now])).toEqual([["Booking", 0], ["Early booking", 0]]);
+    // One prototype is not "1 of 1 prototypes": the sentence is about the one.
     const alone = impactOf(two, changed(previewChange(two, ruleOf(two, onePrimary.id), { limits: { max: 1 } }, "")).draft, [early], [onePrimary.id]);
-    expect(alone.ok && alone.summary).toBe("The one prototype has no findings from this rule now; it would newly fail.");
+    expect(alone.ok && alone.summary).toBe("1 prototype would need fixing.");
     const cleared = impactOf(nook, changed(previewChange(nook, onePrimary, { limits: { max: 2 } }, "")).draft, [early], [onePrimary.id]);
-    expect(cleared.ok && cleared.summary).toBe("The one prototype has findings from this rule now; it would stop failing.");
+    expect(cleared.ok && cleared.summary).toBe("Nothing that works today would stop working. 1 prototype would start passing.");
     expect(stricter.rows[1]).toMatchObject({ name: "Early booking", effect: "fails" });
-    expect(stricter.rows[1]?.text).toMatch(/^No finding from this rule now\. It would newly fail one-primary-per-page: Page "booking" has 2 primary actions, more than 1/);
+    // The rule it would break is said as its sentence under the new limit, never by its id; core's finding is in the impact itself.
+    expect(stricter.rows[1]?.text).toBe("Would need fixing. It would go against: Each page holds at most 1 primary action.");
+    expect(stricter.impact.prototypes[1]?.added[0]?.message).toMatch(/^Page "booking" has 2 primary actions, more than 1/);
+    for (const view of [looser, stricter]) expect([view.summary, ...view.rows.map((row) => row.text)].join(" ")).not.toMatch(/one-primary-per-page|finding/);
   });
 
   it("takes a changed rule's examples from the project: one that passes it, one it flags alone", () => {
@@ -217,12 +221,16 @@ describe("changing a rule's own limit", () => {
     // Three is still more than the kept failing example proves; it stands as the failing example again.
     const three = changed(previewChange(adopted, rule, { limits: { max: 3 } }, "Why."));
     const broken = impactOf(adopted, three.draft, [early], [rule.id]);
-    expect(broken.ok && broken.broken).toEqual(['failing example three-ways-to-book of change-one-primary-per-page: "one-primary-per-page" passed it']);
+    // In the dialog's words: the example by its name and its proposal by its title. Core's own words for it stay in the impact.
+    expect(broken.ok && broken.broken).toEqual(["the “Not allowed” example “Three ways to book”, from “Change “A page holds at most one primary action” to at most 2”"]);
+    expect(broken.ok && broken.impact.broken.map((run) => [run.expect, run.example, run.proposal, run.detail])).toEqual([["fail", "three-ways-to-book", "change-one-primary-per-page", '"one-primary-per-page" passed it']]);
     const back = changed(previewChange(adopted, rule, { limits: { max: 1 } }, "Why."));
     const view = impactOf(adopted, back.draft, [], [rule.id]);
-    expect(view.ok && view.broken.map((line) => line.split(":")[0])).toEqual(["passing example early-booking of change-one-primary-per-page"]);
+    expect(view.ok && view.broken).toEqual(["the “Allowed” example “Early booking”, from “Change “A page holds at most one primary action” to at most 2”"]);
+    expect(view.ok && view.impact.broken.map((run) => [run.expect, run.example, run.proposal])).toEqual([["pass", "early-booking", "change-one-primary-per-page"]]);
     const removal = impactOf(adopted, removalDraft(adopted, rule, ""), [], [rule.id]);
-    expect(removal.ok && removal.retired).toEqual(["three-ways-to-book, of change-one-primary-per-page"]);
+    expect(removal.ok && removal.retired).toEqual(["“Three ways to book”, from “Change “A page holds at most one primary action” to at most 2”"]);
+    expect(removal.ok && removal.impact.retired.map((run) => [run.example, run.proposal])).toEqual([["three-ways-to-book", "change-one-primary-per-page"]]);
     // A change still falls back to the examples adopted proposals keep: one the looser rule passes.
     const loosest = changed(previewChange(adopted, rule, { limits: { max: 4 } }, "Why."));
     expect(chooseExamples(adopted, loosest.draft, []).picked.filter((item) => item.expect === "pass").map((item) => item.from)).toEqual(["the example early-booking that change-one-primary-per-page keeps"]);

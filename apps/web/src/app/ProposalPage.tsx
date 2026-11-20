@@ -1,12 +1,12 @@
 import { Alert, Badge, Button, Card, Code, DataList, Disclosure, EmptyState, ErrorMessage, Field, Label, Stack, Steps, Table, Text } from "@tounsoo/todae";
-import { ArrowDown, Check, ChevronDown, ChevronRight, X } from "lucide-react";
+import { ArrowDown, Check, ChevronDown, ChevronRight, Minus, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import {
   applyProposal,
   checkPrototype,
   describeRule,
   dryRunAdoption,
-  newlyFailingOf,
+  proposalImpact,
   rerunExamples,
   ruleTypeIssue,
   tryExamples,
@@ -17,7 +17,6 @@ import {
   type ExistingPrototype,
   type FailingExample,
   type Finding,
-  type NewlyFailing,
   type PassingExample,
   type InventoryOp,
   type ProjectConfig,
@@ -29,13 +28,16 @@ import {
   type View,
 } from "@design-harness/core";
 import { frameKey, type Session, type SessionState } from "../runtime/session";
-import type { PrototypeRecord } from "../store/project-file";
+import { isSpecRecord, type PrototypeRecord } from "../store/project-file";
 import { acceptProposal, approveProposal, declineProposal, sendBackProposal, type ExampleMeasurement } from "../review/actions";
 import { inventoryDiff, type DiffSection } from "../review/diff";
-import { formatDay, fromWords, loosensWords, plainChanges, plainRefusal, ruleSentence, standingWords, waitsForYou } from "../review/plain";
+import { examplePlace } from "../review/example-place";
+import { prototypeEffect, type PrototypeEffect } from "../review/impact";
+import { formatDay, fromWords, loosensWords, plainChanges, plainRefusal, prototypesOf, routeSentence, ruleSentence, standingWords, waitsForYou } from "../review/plain";
 import { REVIEWER, draftedBy, formatTime, ownProposal, proposalTimeline, timelineTitle, type TimelineEntry } from "../review/timeline";
 import { FrameCard, FrameViewport } from "./Board";
 import { EvidenceFigure, drawsFigure } from "../visual/figures";
+import { VisualContext } from "../visual/parts";
 import { ClassScale, ProposalTrack, RuleFigure, SlotDiagram } from "../visual/project-figures";
 import { proofPair, proposalPreview, ruleBound, ruleGlyph, ruleLines } from "../visual/project-model";
 import { FindingButton } from "./ChecksPanel";
@@ -350,11 +352,12 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
     if (!judged || !("tried" in judged) || !existing) return null;
     return dryRunAdoption(judged.config, id, { at: "dry run", by: REVIEWER }, existing);
   }, [judged, existing, id]);
-  const impact: readonly NewlyFailing[] | null = useMemo(() => {
-    if (!dryRun || !judged || !("tried" in judged) || !existing) return null;
-    if (dryRun.ok) return dryRun.value.newlyFailing;
-    return newlyFailingOf(config, judged.tried.config, existing);
-  }, [dryRun, judged, existing, config]);
+  // What it does to each prototype, from core's check of every one before and after: needs fixing, stops failing, or no change.
+  const affected: Affected | null = useMemo(() => {
+    if (!live || !existing) return null;
+    const read = proposalImpact(config, proposal, existing);
+    return read.ok ? { effects: read.value.prototypes.map(prototypeEffect) } : { refusal: read.error };
+  }, [live, config, proposal, existing]);
 
   // An adopted proposal's examples are judged on the snapshots stored at adoption, with no frame: rerunExamples.
   const reruns = useMemo(() => (proposal.status === "adopted" ? rerunExamples(config).filter((run) => run.proposal === id) : []), [proposal.status, config, id]);
@@ -528,9 +531,9 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
         {proposal.status === "adopted" && <InForce proposal={proposal} config={config} adoption={adoption} onOpenPrototype={onOpenPrototype} prototypes={prototypes} />}
         {proposal.status === "declined" && <Closed proposal={proposal} />}
 
-        <WhatChanges proposal={proposal} config={config} renderConfig={renderConfig} views={views} onShowExample={showExample} />
+        <WhatChanges proposal={proposal} config={config} renderConfig={renderConfig} views={views} prototypes={prototypes} onShowExample={showExample} />
 
-        {live && <Impact proposal={proposal} config={config} renderConfig={renderConfig} impact={impact} measuring={existing === null} prototypes={prototypes} existing={existing} views={config.views} onOpenPrototype={onOpenPrototype} />}
+        {live && <Impact proposal={proposal} config={config} renderConfig={renderConfig} affected={affected} prototypes={prototypes} existing={existing} views={config.views} onOpenPrototype={onOpenPrototype} />}
         {live && <MeasureFrames items={otherFrames} />}
 
         {live && (
@@ -922,8 +925,15 @@ type Pair = { readonly rule: string; readonly spec: RuleSpec | undefined; readon
  * where the rule catches the second. They are the proposal's own examples:
  * nothing says they differ only by what is outlined.
  */
-function WhatChanges({ proposal, config, renderConfig, views, onShowExample }: { readonly proposal: Proposal; readonly config: ProjectConfig; /** The project with the proposal applied. */ readonly renderConfig: ProjectConfig; readonly views: readonly ExampleView[]; readonly onShowExample: (name: string) => void }) {
+function WhatChanges({ proposal, config, renderConfig, views, prototypes, onShowExample }: { readonly proposal: Proposal; readonly config: ProjectConfig; /** The project with the proposal applied. */ readonly renderConfig: ProjectConfig; readonly views: readonly ExampleView[]; /** The project's prototypes: what an example's files are compared with, to find the page it changes. */ readonly prototypes: readonly PrototypeRecord[]; readonly onShowExample: (name: string) => void }) {
   const changes = plainChanges(proposal, config);
+  const baselines = useMemo(() => prototypes.filter(isSpecRecord).map((record) => record.prototype.files), [prototypes]);
+  const states = useMemo(() => proposal.states.map((state) => state.state), [proposal.states]);
+  // Both screens of a pair open where the rule catches the second; when it catches nothing, where the example's own files changed.
+  const placeOf = (pair: Pair): Place | undefined => {
+    const shown = pair.fail ?? pair.pass;
+    return flaggedAt(pair.fail, pair.rule) ?? (shown ? examplePlace(shown.example.prototype, baselines, states) : undefined);
+  };
   const added = proposal.inventory.flatMap((op) => (op.op === "add-component" ? [op.name] : []));
   const dropped = proposal.inventory.flatMap((op) => (op.op === "remove-component" ? [op.name] : []));
   const pageTypes = proposal.inventory.flatMap((op) => (op.op === "add-page-type" ? [op.pageType] : []));
@@ -1030,9 +1040,9 @@ function WhatChanges({ proposal, config, renderConfig, views, onShowExample }: {
                     </div>
                   )}
                   <div className="proof" data-testid="rule-proof" data-flow={pair.spec?.type === "flow" ? "" : undefined}>
-                    {pair.pass ? <ProofExample view={pair.pass} config={renderConfig} at={flaggedAt(pair.fail, pair.rule)} drawn={pair.spec?.type !== "flow"} onShow={() => onShowExample(pair.pass?.name ?? "")} /> : <Text.Root as="p" tone="muted">No example of what is allowed.</Text.Root>}
+                    {pair.pass ? <ProofExample view={pair.pass} config={renderConfig} at={placeOf(pair)} drawn={pair.spec?.type !== "flow"} onShow={() => onShowExample(pair.pass?.name ?? "")} /> : <Text.Root as="p" tone="muted">No example of what is allowed.</Text.Root>}
                     {pair.fail ? (
-                      <ProofExample view={pair.fail} config={renderConfig} at={flaggedAt(pair.fail, pair.rule)} rule={pair.rule} drawn={pair.spec?.type !== "flow"} {...(pair.spec && pair.spec.type !== "flow" && !ruleGlyph(pair.spec) ? { why: ruleSentence(pair.spec, renderConfig) } : {})} onShow={() => onShowExample(pair.fail?.name ?? "")} />
+                      <ProofExample view={pair.fail} config={renderConfig} at={placeOf(pair)} rule={pair.rule} drawn={pair.spec?.type !== "flow"} {...(pair.spec && pair.spec.type !== "flow" && !ruleGlyph(pair.spec) ? { why: ruleSentence(pair.spec, renderConfig) } : {})} onShow={() => onShowExample(pair.fail?.name ?? "")} />
                     ) : pair.rule ? (
                       <Text.Root as="p" tone="muted" data-testid="proof-none">
                         No example shows what this rule stops, so it can&apos;t be accepted as it is.
@@ -1049,8 +1059,11 @@ function WhatChanges({ proposal, config, renderConfig, views, onShowExample }: {
   );
 }
 
+/** Where a pair's screens are drawn: a scenario, or a page to find one on, and a view when the rule is caught in one. */
+type Place = { readonly scenario?: string | undefined; readonly page?: string | undefined; readonly view?: string | undefined };
+
 /** Where a rule catches its "not allowed" example: both screens of a pair are drawn at that scenario and view. */
-function flaggedAt(fail: ExampleView | undefined, rule: string): Finding | undefined {
+function flaggedAt(fail: ExampleView | undefined, rule: string): Place | undefined {
   return fail?.findings.find((finding) => finding.rule === rule && finding.scenario !== undefined && finding.view !== undefined) ?? fail?.findings.find((finding) => finding.scenario !== undefined) ?? fail?.findings.find((finding) => finding.page !== undefined);
 }
 
@@ -1150,10 +1163,13 @@ function Changes({ proposal, config, renderConfig }: { readonly proposal: Propos
   );
 }
 
+/** On the main path a figure names things in words: a flow map's steps, not their ids. */
+const PLAIN_FIGURES = { plain: true } as const;
+
 const FIGURED_OPS: readonly InventoryOp["op"][] = ["add-cap", "set-cap", "set-max-steps", "add-task", "add-page-type"];
 
 /** One example screen of a pair, in a frame of its own at one scenario and view, with the part its rule catches outlined. */
-function ProofExample({ view, config, at, rule, why, drawn = true, onShow }: { readonly view: ExampleView; readonly config: ProjectConfig; readonly at: Finding | undefined; readonly rule?: string; /** The rule this screen goes against, in a sentence, where it is not said beside the pair. */ readonly why?: string; /** False for a rule about a whole flow: no one screen shows it, so no screen is drawn, and the route core walked is. */ readonly drawn?: boolean; readonly onShow: () => void }) {
+function ProofExample({ view, config, at, rule, why, drawn = true, onShow }: { readonly view: ExampleView; readonly config: ProjectConfig; readonly at: Place | undefined; readonly rule?: string; /** The rule this screen goes against, in a sentence, where it is not said beside the pair. */ readonly why?: string; /** False for a rule about a whole flow: no one screen shows it, so no screen is drawn, and the route core walked is. */ readonly drawn?: boolean; readonly onShow: () => void }) {
   const { prototype } = view.example;
   const scenario = prototype.scenarios.find((item) => item.id === at?.scenario) ?? prototype.scenarios.find((item) => item.page === at?.page) ?? prototype.scenarios[0];
   // The view core's finding is in, else the narrowest, where a page reads at close to its own size.
@@ -1180,6 +1196,22 @@ function ProofExample({ view, config, at, rule, why, drawn = true, onShow }: { r
   const badge: { readonly tone: "success" | "critical" | "info" | "warning"; readonly text: string } | null =
     state === "ok" ? { tone: "success", text: "Checked" } : state === "measuring" ? { tone: "info", text: "Checking…" } : state === "unmeasured" ? { tone: "warning", text: "Couldn't be drawn" } : state === "bad" ? { tone: "critical", text: view.expect === "pass" ? "Breaks a rule as it is" : "Nothing stops this yet" } : null;
   const scale = shownView ? Math.min(1, Math.max(0.08, (width - 4) / shownView.width)) : 1;
+  // An example that does not do its job says so in a sentence, not only in its badge.
+  const refused = view.verdict.state === "bad" ? view.verdict.refusal : undefined;
+  const missed =
+    state !== "bad"
+      ? null
+      : view.expect === "pass"
+        ? !refused || refused.code === "passing-example-fails"
+          ? "This screen breaks one of the project's rules as it is, so it can't show what is allowed."
+          : plainRefusal(refused)
+        : !refused || refused.code === "failing-example-passes"
+          ? "The check did not catch this screen: it counts as allowed as it is, so nothing shows the rule working yet."
+          : refused.code === "fails-for-another-reason"
+            ? "This screen breaks a different rule, not the one it is here to show."
+            : plainRefusal(refused);
+  // A route over its budget, said by the task's and the steps' own names; core's message is with the example in the details.
+  const route = finding?.evidence?.kind === "route-vs-budget" ? finding.evidence : undefined;
   return (
     <figure className="proof-example" data-proof={view.name} data-expect={view.expect} data-verdict={view.verdict.state}>
       <figcaption className="proof-head">
@@ -1211,12 +1243,19 @@ function ProofExample({ view, config, at, rule, why, drawn = true, onShow }: { r
       ) : (
         finding &&
         state !== "not-judged" && (
-          <EvidenceFigure finding={finding} findings={view.findings}>
-            <Text.Root as="p" className="fix-message" data-testid="proof-message">
-              {finding.message}
-            </Text.Root>
-          </EvidenceFigure>
+          <VisualContext value={PLAIN_FIGURES}>
+            <EvidenceFigure finding={finding} findings={view.findings}>
+              <Text.Root as="p" className="fix-message" data-testid="proof-message">
+                {route ? routeSentence(route, config) : finding.message}
+              </Text.Root>
+            </EvidenceFigure>
+          </VisualContext>
         )
+      )}
+      {missed !== null && (
+        <Text.Root as="p" className="proof-missed" data-testid="proof-missed">
+          {missed}
+        </Text.Root>
       )}
       {why !== undefined && (
         <Text.Root as="p" className="review-small" data-testid="proof-why">
@@ -1540,18 +1579,32 @@ function SourceLine({ view, finding }: { readonly view: ExampleView; readonly fi
   );
 }
 
+/** Core's reading of every prototype before and after, sorted into effects, or why the proposal cannot be applied to read them. */
+type Affected = { readonly effects: readonly PrototypeEffect[] } | { readonly refusal: Refusal };
+
 /**
- * What accepting it does to the project's prototypes, from core's adoption
- * check: every prototype is a tile, so it is plain each was checked. One
- * that would need fixing is outlined, shows a miniature of the page from its
- * measured boxes with what core flags hatched, says what core found, and
- * opens on the board. A proposal that removes a check or loosens a limit
- * says so first: no prototype breaks, and something stops being caught.
+ * What accepting it does to the project's prototypes, from core's check of
+ * each one before and after: every prototype is a tile, so it is plain each
+ * was checked, in one of three states. One that would need fixing is
+ * outlined, shows a miniature of the page from its measured boxes with what
+ * core flags hatched, says what it would go against, and opens on the board.
+ * One that fails a rule today and would not afterwards says which, in the
+ * rule's plain sentence, and whether it then passes or still fails something
+ * else. The rest say that nothing changes. A proposal that
+ * removes a check or loosens a limit says so first: something stops being
+ * caught.
  */
-function Impact({ proposal, config, renderConfig, impact, measuring, prototypes, existing, views, onOpenPrototype }: { readonly proposal: Proposal; readonly config: ProjectConfig; /** The project with the proposal applied. */ readonly renderConfig: ProjectConfig; readonly impact: readonly NewlyFailing[] | null; readonly measuring: boolean; readonly prototypes: readonly PrototypeRecord[]; readonly existing: readonly ExistingPrototype[] | null; readonly views: readonly View[]; readonly onOpenPrototype: (id: string, finding?: Finding) => void }) {
+function Impact({ proposal, config, renderConfig, affected, prototypes, existing, views, onOpenPrototype }: { readonly proposal: Proposal; readonly config: ProjectConfig; /** The project with the proposal applied. */ readonly renderConfig: ProjectConfig; readonly affected: Affected | null; readonly prototypes: readonly PrototypeRecord[]; readonly existing: readonly ExistingPrototype[] | null; readonly views: readonly View[]; readonly onOpenPrototype: (id: string, finding?: Finding) => void }) {
   const looser = loosensWords(proposal, config);
-  // The rules a prototype would newly break, each in a sentence: the proposal's own, or one in force that a moved limit makes stricter.
-  const broken = (failing: NewlyFailing) => failing.rules.flatMap((id) => proposal.rules.add.find((rule) => rule.id === id) ?? config.rules.find((rule) => rule.id === id) ?? []).map((rule) => ruleSentence(rule, renderConfig));
+  // A rule a prototype would newly break, in a sentence: the proposal's own, or one in force that a moved limit makes stricter.
+  const after = (id: string) => [proposal.rules.add.find((rule) => rule.id === id) ?? config.rules.find((rule) => rule.id === id) ?? []].flat().map((rule) => ruleSentence(rule, renderConfig));
+  // A rule it fails today, as the rule reads today.
+  const today = (id: string) => [config.rules.find((rule) => rule.id === id) ?? []].flat().map((rule) => ruleSentence(rule, config));
+  const effects = affected && "effects" in affected ? affected.effects : null;
+  const needs = effects?.filter((effect) => effect.state === "needs-fixing").length ?? 0;
+  // One that stops failing a check passes afterwards, unless it fails another check too.
+  const starts = effects?.filter((effect) => effect.state === "stops-failing" && !effect.stillFails).length ?? 0;
+  const partly = effects?.filter((effect) => effect.state === "stops-failing" && effect.stillFails).length ?? 0;
   return (
     <section aria-labelledby="review-impact" className="review-section" data-testid="review-impact">
       <Text.Root as="h2" id="review-impact">
@@ -1568,23 +1621,37 @@ function Impact({ proposal, config, renderConfig, impact, measuring, prototypes,
           ))}
         </ul>
       )}
-      {impact === null || existing === null ? (
+      {affected && "refusal" in affected ? (
+        <Text.Root as="p" tone="muted" data-testid="impact-unread">
+          {plainRefusal(affected.refusal)} Your prototypes can&apos;t be checked against it until it does.
+        </Text.Root>
+      ) : effects === null || existing === null ? (
         <Text.Root as="p" tone="muted" data-testid="impact-checking">
-          {measuring ? "Checking your prototypes against it…" : "Checking its examples first…"}
+          Checking your prototypes against it…
         </Text.Root>
       ) : (
         <>
-          <Text.Root as="p" className={looser.length > 0 ? undefined : "review-lead"} data-testid={impact.length === 0 ? "impact-none" : "impact-some"}>
-            {impact.length === 0 ? "Nothing that works today would stop working." : `${impact.length === existing.length ? "" : `${impact.length} of `}${existing.length} ${existing.length === 1 ? "prototype" : "prototypes"} would need fixing.`}
+          <Text.Root as="p" className={looser.length > 0 ? undefined : "review-lead"} data-testid={needs === 0 ? "impact-none" : "impact-some"}>
+            {needs === 0 ? "Nothing that works today would stop working." : `${prototypesOf(needs, existing.length)} would need fixing.`}
           </Text.Root>
+          {starts + partly > 0 && (
+            <Text.Root as="p" data-testid="impact-stops">
+              {[starts > 0 ? `${prototypesOf(starts, existing.length)} would start passing.` : "", partly > 0 ? `${prototypesOf(partly, existing.length)} would stop failing one check, and still need fixing for other reasons.` : ""].filter(Boolean).join(" ")}
+            </Text.Root>
+          )}
           <ul className="impact-grid" aria-label="Your prototypes, if you accept it">
             {existing.map((item) => {
-              const failing = impact.find((entry) => entry.name === item.name);
+              const effect = effects.find((entry) => entry.name === item.name);
+              const state = effect?.state ?? "no-change";
               const record = prototypes.find((entry) => entry.name === item.name);
-              const flagged = failing ? flaggedIn(failing.findings, item.snapshots ?? []) : null;
+              const failing = effect && state === "needs-fixing" ? effect : undefined;
+              const flagged = failing ? flaggedIn(failing.added, item.snapshots ?? []) : null;
               const view = flagged ? views.find((entry) => entry.name === flagged.snapshot.view) : undefined;
+              const route = failing?.added.flatMap((finding) => (finding.evidence?.kind === "route-vs-budget" ? [finding.evidence] : []))[0];
+              const against = failing ? failing.breaks.flatMap(after) : [];
+              const fixed = effect && state === "stops-failing" ? effect.fixes.flatMap(today) : [];
               return (
-                <li key={item.name} data-prototype={record?.id ?? item.name} data-impact={failing ? "fails" : "holds"}>
+                <li key={item.name} data-prototype={record?.id ?? item.name} data-impact={state === "needs-fixing" ? "fails" : state === "stops-failing" ? "fixed" : "holds"}>
                   <Card.Root className="impact-tile">
                     {failing && flagged && view && (
                       <figure className="impact-thumb">
@@ -1599,21 +1666,21 @@ function Impact({ proposal, config, renderConfig, impact, measuring, prototypes,
                     </Text.Root>
                     {failing ? (
                       <>
-                        <span className="vis-verdict" data-rules={failing.rules.join(" ")}>
+                        <span className="vis-verdict" data-rules={failing.breaks.join(" ")}>
                           <span className="vis-verdict-icon" aria-hidden="true">
                             <X />
                           </span>
                           Would need fixing
                         </span>
-                        {broken(failing).length > 0 && (
+                        {(route || against.length > 0) && (
                           <Text.Root as="p" data-testid="impact-why">
-                            It goes against: {broken(failing).join(" ")}
+                            {route ? routeSentence(route, renderConfig) : `It goes against: ${against.join(" ")}`}
                           </Text.Root>
                         )}
                         <Disclosure.Root className="impact-found">
                           <Disclosure.Summary>What was found, exactly</Disclosure.Summary>
                           <ul className="findings" aria-label={`What would need fixing in ${item.name}`}>
-                            {failing.findings.map((finding, index) => (
+                            {failing.added.map((finding, index) => (
                               <li key={index}>
                                 <FindingButton finding={finding} selected={false} onSelect={() => record && onOpenPrototype(record.id, finding)} />
                               </li>
@@ -1628,13 +1695,33 @@ function Impact({ proposal, config, renderConfig, impact, measuring, prototypes,
                           </div>
                         )}
                       </>
-                    ) : (
-                      <span className="vis-verdict" data-ok="">
-                        <span className="vis-verdict-icon" aria-hidden="true">
-                          <Check />
+                    ) : effect && state === "stops-failing" ? (
+                      <>
+                        <span className="vis-verdict" data-ok="" data-rules={effect.fixes.join(" ")}>
+                          <span className="vis-verdict-icon" aria-hidden="true">
+                            <Check />
+                          </span>
+                          {effect.stillFails ? "Would stop failing one check" : "Would start passing"}
                         </span>
-                        Still fine
-                      </span>
+                        <Text.Root as="p" data-testid="impact-fixed">
+                          {fixed.length > 0 ? `It goes against this today, and no longer would: ${fixed.join(" ")}` : "A check it fails today would no longer stop it."}
+                          {effect.stillFails ? " It would still need fixing for other reasons." : ""}
+                        </Text.Root>
+                      </>
+                    ) : (
+                      <>
+                        <span className="vis-verdict" data-same="">
+                          <span className="vis-verdict-icon" aria-hidden="true">
+                            <Minus />
+                          </span>
+                          No change
+                        </span>
+                        {effect?.stillFails && (
+                          <Text.Root as="p" tone="muted" className="review-small" data-testid="impact-same">
+                            It needs fixing today, and still would.
+                          </Text.Root>
+                        )}
+                      </>
                     )}
                   </Card.Root>
                 </li>

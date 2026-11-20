@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { type ProjectConfig, type ProposalDraft, type Refusal, type Result, type RuleSpec } from "@design-harness/core";
+import { describeRule, type ProjectConfig, type ProposalDraft, type Refusal, type Result, type RuleSpec } from "@design-harness/core";
 import { drafted, harborBelowFold as harborBelowFoldSnapshots, harborDraft, legalSnapshots, toastDraft } from "../../test/proposals";
 import { acceptProposal, approveProposal, declineProposal } from "./actions";
-import { fromWords, loosensWords, plainChanges, plainRefusal, plainSentence, standingWords, waitsForYou, withCapValues } from "./plain";
+import { fromWords, loosensWords, partName, plainChanges, plainRefusal, plainSentence, prototypesOf, routeSentence, ruleSentence, standingWords, waitsForYou, withCapValues, withPartNames } from "./plain";
 
 function ok<T>(result: Result<T, Refusal | string>): T {
   if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
@@ -23,7 +23,7 @@ describe("a proposal in plain words", () => {
     const config = drafted();
     expect(plainChanges(proposal(config), config).map((change) => [change.kind, change.sentence])).toEqual([
       ["inventory", "Add Toast to the parts screens can use."],
-      ["rule-added", "New rule: Each page holds at most 1 Toast.Root."],
+      ["rule-added", "New rule: Each page holds at most 1 Toast."],
     ]);
     expect(plainSentence(proposal(config), config)).toBe("Add Toast to the parts screens can use. And 1 more change.");
   });
@@ -53,6 +53,40 @@ describe("a proposal in plain words", () => {
     const config = drafted();
     expect(withCapValues("Each page holds at most 1 (MAX_DISCLOSURES_PER_PAGE) disclosure.", config)).toBe("Each page holds at most 1 disclosure.");
     expect(withCapValues("At most MAX_DISCLOSURES_PER_PAGE, or NOT_A_CAP (NOT_A_CAP).", config)).toBe(`At most ${config.inputs.caps.MAX_DISCLOSURES_PER_PAGE?.value}, or NOT_A_CAP (NOT_A_CAP).`);
+  });
+
+  it("names a library part as a designer does, and counts it as a noun", () => {
+    expect(["Toast.Root", "Toast", "Card.Header", "Disclosure.Summary", "<button>", "<a>", "RadioGroup.Item"].map(partName)).toEqual(["Toast", "Toast", "Card header", "Disclosure summary", "button", "link", "RadioGroup item"]);
+    expect(withPartNames("Each page holds at most 1 Toast.Root.")).toBe("Each page holds at most 1 Toast.");
+    expect(withPartNames("Each page holds at most 2 Toast.Root.")).toBe("Each page holds at most 2 Toasts.");
+    expect(withPartNames("Each page holds no Toast.Root.")).toBe("Each page holds no Toasts.");
+    expect(withPartNames("Every <button> or <a> is inside a Card.Root.")).toBe("Every button or link is inside a Card.");
+    // What a rule quotes is the project's own text, and stays as written.
+    expect(withPartNames('Every Button.Root reading "Open Card.Root" is inside a Card.Root.')).toBe('Every Button reading "Open Card.Root" is inside a Card.');
+  });
+
+  it("says a rule with its parts by plain name, and leaves core's exact words to the details", () => {
+    const config = drafted();
+    const rule = proposal(config).rules.add[0] as RuleSpec;
+    expect(describeRule(rule, config)).toBe("Each page holds at most 1 Toast.Root.");
+    expect(ruleSentence(rule, config)).toBe("Each page holds at most 1 Toast.");
+    expect(ruleSentence({ ...rule, max: 2 } as RuleSpec, config)).toBe("Each page holds at most 2 Toasts.");
+    for (const item of config.rules) expect(ruleSentence(item, config), item.id).not.toMatch(/\.Root\b|\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b/);
+  });
+
+  it("says a step budget and a route over it by the task's and the steps' own names, with no id", () => {
+    const config = drafted();
+    const budget = config.rules.find((rule) => rule.id === "step-budget") as RuleSpec;
+    const said = ruleSentence(budget, config);
+    expect(said).toMatch(/^Every way of finishing a task, not only the shortest, fits the steps the task allows \(“Pick a free room and book it” in 3 steps; /);
+    expect(said).not.toMatch(/book-room|hold-room|max steps/);
+    const route = [{ from: "rooms", event: "open-room", to: "room-open" }, { from: "room-open", event: "hold", to: "held" }, { from: "held", event: "book", to: "booked" }];
+    expect(routeSentence({ task: "book-room", route, steps: 3, budget: 2 }, config)).toBe("“Pick a free room and book it” can take 3 steps (Open room, then hold, then book), 1 more than the 2 allowed.");
+    expect(routeSentence({ task: "check-out", route: [], steps: 1, budget: 1 }, config)).toBe("“Check out” can take 1 step, within the 1 allowed.");
+  });
+
+  it("counts prototypes as a sentence starts", () => {
+    expect([prototypesOf(1, 2), prototypesOf(2, 2), prototypesOf(1, 1)]).toEqual(["1 of 2 prototypes", "2 prototypes", "1 prototype"]);
   });
 
   it("says where it stands and who it is from, with no status code", () => {
