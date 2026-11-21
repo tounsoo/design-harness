@@ -6624,6 +6624,11 @@ for (const item of selected) {
   } catch (error) {
     failed += 1;
     console.log(`FAIL ${item.name} (${Date.now() - started} ms)\n     ${error instanceof Error ? (error.stack ?? error.message).split("\n").slice(0, 30).join("\n     ") : String(error)}`);
+  } finally {
+    // Every context a test opened closes with it, failed or not. One left open keeps its app, its worker and its live
+    // frames in memory and running for the rest of the suite: on CI's runner, a few dozen of them starve later tests'
+    // frames past their settle time and run the machine out of memory.
+    await Promise.all(browser.contexts().map((context) => context.close().catch(() => undefined)));
   }
 }
 await browser.close();
