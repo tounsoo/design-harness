@@ -64,8 +64,8 @@ export function useProjectExisting({ config, prototypes, openPrototypeId, board,
     return { answered: sum.answered + (state.state === "measuring" ? state.answered : total), total: sum.total + total };
   }, { answered: 0, total: 0 });
   const items: ProjectMeasurement[] = [
-    ...(openRecord && openMeasurement ? [{ name: openRecord.name, board: true, measurement: openMeasurement }] : []),
-    ...others.map((record, index) => ({ name: record.name, board: false, measurement: frames[index]?.measurement ?? ({ state: "measuring", answered: 0, total: 0 } as const) })),
+    ...(openRecord && openMeasurement ? [{ name: openRecord.name, board: true, measurement: openMeasurement, screens: board.state.frames.length }] : []),
+    ...others.map((record, index) => ({ name: record.name, board: false, measurement: frames[index]?.measurement ?? ({ state: "measuring", answered: 0, total: 0 } as const), screens: frames[index]?.state.frames.length ?? 0 })),
   ];
   const checkAgain = useCallback(() => {
     setAttempts((was) => {
@@ -83,7 +83,7 @@ export function useProjectExisting({ config, prototypes, openPrototypeId, board,
 }
 
 /** Where one of the project's prototypes stands in being measured, by its name; `board` for the open one, which the board measures. */
-export type ProjectMeasurement = { readonly name: string; readonly board: boolean; readonly measurement: Measurement };
+export type ProjectMeasurement = { readonly name: string; readonly board: boolean; readonly measurement: Measurement; /** How many screens it has in all: one for each scenario in each view. */ readonly screens: number };
 
 /**
  * The frames that measure the project's other prototypes: laid out at their

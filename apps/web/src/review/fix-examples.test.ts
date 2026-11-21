@@ -4,7 +4,7 @@ import { nook } from "../../../../packages/core/examples/nook/project";
 import { seedSpec } from "../../test/nook";
 import { drafted, toastDraft, withSpecToasts } from "../../test/proposals";
 import { proposalTimeline, timelineTitle } from "./timeline";
-import { applyExampleFix, exampleFixes, fixNote, prototypeChoices } from "./fix-examples";
+import { applyExampleFix, choiceFindings, exampleFixes, fixNote, prototypeChoices } from "./fix-examples";
 import { replacedWords } from "./replaced";
 import { waitingWords } from "./waiting";
 
@@ -109,19 +109,42 @@ describe("what a change replaces, in words", () => {
   });
 });
 
+describe("where the rule catches a prototype offered as an example", () => {
+  it("is core's own findings for that rule with the proposal applied, naming the elements to outline, and nothing for a prototype it passes", () => {
+    const config = drafted(toastDraft(1));
+    const two = existing.find((item) => item.name === "Two toasts");
+    const one = existing.find((item) => item.name === "One toast");
+    if (!two || !one) throw new Error("the fixtures have a prototype with two toasts and one with one");
+    const findings = choiceFindings(config, proposalOf(config), "one-toast-per-page", two);
+    expect(findings.map((finding) => [finding.rule, finding.page])).toEqual([["one-toast-per-page", "booking"]]);
+    expect(findings[0]?.targets?.map((target) => target.key)).toEqual(["toast-1", "toast-2"]);
+    expect(choiceFindings(config, proposalOf(config), "one-toast-per-page", one)).toEqual([]);
+    expect(choiceFindings(config, proposalOf(config), "no-such-rule", two)).toEqual([]);
+  });
+});
+
 describe("what drawing still waits for, in words", () => {
   it("says what is still being drawn and what could not be, by name", () => {
-    expect(
-      waitingWords([
-        { kind: "example", name: "two-toasts", measurement: { state: "measuring", answered: 3, total: 8 } },
-        { kind: "board", name: "Booking", measurement: { state: "measuring", answered: 0, total: 0 } },
-        { kind: "prototype", name: "Early", measurement: { state: "failed", problems: [{ frame: "f", stage: "timeout", message: "The frame did not answer within 20 s." }] } },
-        { kind: "example", name: "fine", measurement: { state: "measured", snapshots: [] } },
-      ]),
-    ).toEqual({
-      waiting: ["The example “Two toasts”: 3 of 8 views drawn.", "Your open prototype “Booking”: not started yet."],
-      failed: ["Your prototype “Early” couldn't be drawn in one of its views: The frame did not answer within 20 s."],
-    });
+    const words = waitingWords([
+      { kind: "example", name: "two-toasts", measurement: { state: "measuring", answered: 3, total: 8 } },
+      { kind: "board", name: "Booking", measurement: { state: "measuring", answered: 0, total: 0 } },
+      { kind: "prototype", name: "Early", measurement: { state: "failed", problems: [{ frame: "f", stage: "timeout", message: "The frame did not answer within 20 s." }] } },
+      { kind: "example", name: "fine", measurement: { state: "measured", snapshots: [] } },
+    ]);
+    expect(words.waiting).toEqual(["The example “Two toasts”: 3 of 8 screens drawn.", "Your open prototype “Booking”: not started yet."]);
+    expect(words.failed).toEqual(["Your prototype “Early” couldn't be drawn in one of its screens: The frame did not answer within 20 s."]);
+    // The same lines, what failed first, with the thing's name apart from what is said of it.
+    expect(words.rows.map((row) => [row.state, `${row.subject}${row.rest}`])).toEqual([["failed", words.failed[0]], ["waiting", words.waiting[0]], ["waiting", words.waiting[1]]]);
+    expect(words.rows[0]?.subject).toBe("Your prototype “Early”");
+  });
+
+  it("counts screens, a scenario in a view, and never calls them views: 16 failed of 16 is every scenario in every view", () => {
+    const problems = Array.from({ length: 16 }, (_, index) => ({ frame: `f${index}`, stage: "setup" as const, message: "Packages could not load" }));
+    const failed = (screens: number | undefined, count: number) => waitingWords([{ kind: "example", name: "one-toast", measurement: { state: "failed", problems: problems.slice(0, count) }, ...(screens !== undefined ? { screens } : {}) }]).failed[0];
+    expect(failed(16, 16)).toBe("The example “One toast” couldn't be drawn in 16 of its 16 screens: Packages could not load.");
+    expect(failed(16, 1)).toBe("The example “One toast” couldn't be drawn in one of its 16 screens: Packages could not load.");
+    expect(failed(undefined, 3)).toBe("The example “One toast” couldn't be drawn in 3 of its screens: Packages could not load.");
+    expect(waitingWords([{ kind: "example", name: "one-toast", measurement: { state: "measuring", answered: 0, total: 1 } }]).waiting).toEqual(["The example “One toast”: 0 of 1 screen drawn."]);
   });
 });
 

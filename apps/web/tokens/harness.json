@@ -306,6 +306,22 @@
           "unit": "rem"
         }
       },
+      "proof-max": {
+        "$description": "The most an example screen's frame takes on a review page before it scrolls: a phone view drawn at a column's width fits whole.",
+        "$type": "dimension",
+        "$value": {
+          "value": 48,
+          "unit": "rem"
+        }
+      },
+      "thumb": {
+        "$description": "The width of the small screen drawn beside a choice, such as a prototype offered as an example.",
+        "$type": "dimension",
+        "$value": {
+          "value": 8,
+          "unit": "rem"
+        }
+      },
       "diagram": {
         "$type": "dimension",
         "$value": {

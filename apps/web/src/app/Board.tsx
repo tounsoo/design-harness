@@ -610,10 +610,7 @@ export function FrameViewport({ session, spec, revision, frameState, scale, hidd
     [session, spec.key, doc],
   );
   const { width } = spec.view;
-  // The lowest thing the page painted, with the room the shell leaves above the first.
-  const filled = fit && frameState.state === "measured" ? frameState.snapshot.elements.filter((element) => element.visible).reduce((bottom, element) => Math.max(bottom, element.rect.y + element.rect.height), 0) : 0;
-  const top = fit && frameState.state === "measured" ? frameState.snapshot.elements.filter((element) => element.visible).reduce((least, element) => Math.min(least, element.rect.y), Number.POSITIVE_INFINITY) : 0;
-  const height = filled > 0 && Number.isFinite(top) ? Math.min(spec.view.height, Math.ceil(filled + Math.max(top, 0))) : spec.view.height;
+  const height = fit && frameState.state === "measured" ? fittedHeight(frameState.snapshot, spec.view) : spec.view.height;
   return (
     <div ref={box} className="frame-viewport" data-frame-name={name} data-live={doc ? "" : undefined} data-drawn={doc && drawn ? "" : undefined} style={{ width: width * scale, height: height * scale, background: spec.view.scheme === "dark" ? "#121212" : "#ffffff" }}>
       {doc ? (
@@ -650,6 +647,19 @@ export function FrameViewport({ session, spec, revision, frameState, scale, hidd
       )}
     </div>
   );
+}
+
+/**
+ * How much of a view a measured page fills, in the page's CSS px: down to
+ * the lowest thing it painted, with the room the shell leaves above the
+ * first, and never more than the view. A page that painted nothing takes
+ * the whole view.
+ */
+export function fittedHeight(snapshot: RenderedSnapshot, view: { readonly height: number }): number {
+  const painted = snapshot.elements.filter((element) => element.visible);
+  const filled = painted.reduce((bottom, element) => Math.max(bottom, element.rect.y + element.rect.height), 0);
+  const top = painted.reduce((least, element) => Math.min(least, element.rect.y), Number.POSITIVE_INFINITY);
+  return filled > 0 && Number.isFinite(top) ? Math.min(view.height, Math.ceil(filled + Math.max(top, 0))) : view.height;
 }
 
 /**

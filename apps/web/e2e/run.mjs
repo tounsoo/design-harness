@@ -1118,6 +1118,30 @@ async function approveAndAdopt(page) {
 const example = (page, name) => page.locator(`.review .example[data-example="${name}"]`);
 const reviewStatus = (page) => page.locator(".review").getAttribute("data-status");
 
+/**
+ * Where an example screen's stage is on the review page, and where the
+ * parts `inFrame` finds in its frame are drawn on that page: each part's
+ * box inside the frame, at the frame's own scale and place. Every size is
+ * read from the page, so nothing here depends on a font.
+ */
+async function proofStage(page, example, title, inFrame) {
+  const iframe = page.locator(`iframe[title="${title}"]`);
+  await iframe.waitFor({ timeout: 60000 });
+  const frame = await iframe.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return { top: box.top, scale: box.height / element.offsetHeight };
+  });
+  const parts = await inFrame(page.frameLocator(`iframe[title="${title}"]`)).evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect()).map((box) => ({ top: box.top, bottom: box.bottom })));
+  const stage = await page.locator(`.proof-example[data-proof="${example}"] [data-testid="proof-stage"]`).evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return { top: box.top, bottom: box.bottom, height: box.height, scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, clientHeight: element.clientHeight, tabIndex: element.getAttribute("tabindex") };
+  });
+  return { stage, parts: parts.map((part) => ({ top: frame.top + part.top * frame.scale, bottom: frame.top + part.bottom * frame.scale })) };
+}
+
+/** Whether every part is inside what its stage shows, and there is at least one. */
+const stageShows = ({ stage, parts }) => parts.length > 0 && parts.every((part) => part.top >= stage.top - 0.5 && part.bottom <= stage.bottom + 0.5);
+
 test("a drafted proposal opens to its review page: what changes in plain words with allowed and not-allowed screens, what it affects, then the decision; core's detail is one step away", async ({ browser, base, api }) => {
   const { page, errors } = await openApp(browser, base);
   await measured(page, 1);
@@ -1169,6 +1193,22 @@ test("a drafted proposal opens to its review page: what changes in plain words w
   await proofFrame.locator("text=Booked").nth(1).waitFor({ timeout: 60000 });
   assert.equal(await proofFrame.locator("text=Booked").count(), 2, "the not-allowed screen renders the example's two toasts");
   assert.equal(await page.locator('iframe[title="two-toasts, as proof: lantern-open at phone"]').getAttribute("sandbox"), "allow-scripts");
+  // Each screen shows the part it is about, and the page under it: the two toasts the rule catches and the page's last button are inside what the frame shows, with nothing cut off, and both frames are the same height so they compare side by side.
+  const toasts = (frame) => frame.locator("text=Booked");
+  const lastButton = (frame) => frame.getByRole("button", { name: "Book room" });
+  const stages = () => Promise.all([proofStage(page, "two-toasts", "two-toasts, as proof: lantern-open at phone", toasts), proofStage(page, "two-toasts", "two-toasts, as proof: lantern-open at phone", lastButton), proofStage(page, "one-toast", "one-toast, as proof: lantern-open at phone", toasts), proofStage(page, "one-toast", "one-toast, as proof: lantern-open at phone", lastButton)]);
+  const whole = await eventually(page, stages, (all) => all.every(stageShows) && all.every(({ stage }) => stage.scrollHeight <= stage.clientHeight + 1) && Math.abs(all[0].stage.height - all[2].stage.height) < 1, "each example frame shows the flagged toasts and the whole page, at the same height");
+  assert.equal(whole[0].parts.length, 2, "both toasts the rule catches are in view");
+  assert.equal(whole[0].stage.tabIndex, null, "a frame that shows its whole page is not a scroller");
+  assert.match(await proof.locator('.proof-example[data-proof="two-toasts"] .proof-frame + p').textContent(), /The outlined part is what isn't allowed\.$/);
+  // A page taller than a frame may be: both frames scroll to the same place, where the toasts are in view, the frame can be scrolled by keyboard, and scrolling it reaches the page's last button.
+  await page.locator(".review").evaluate((element) => element.style.setProperty("--todae-harness-size-proof-max", "10rem"));
+  await eventually(page, stages, (all) => stageShows(all[0]) && stageShows(all[2]) && all[0].stage.scrollHeight > all[0].stage.clientHeight + 1 && all[0].stage.scrollTop === all[2].stage.scrollTop && all[0].stage.tabIndex === "0", "frames too short for the page scroll to the flagged toasts, both the same");
+  assert.equal(await proof.getByTestId("proof-scrolls").count(), 2, "each frame says it scrolls");
+  await proof.locator('.proof-example[data-proof="two-toasts"] [data-testid="proof-stage"]').evaluate((element) => element.scrollTo(0, element.scrollHeight));
+  await eventually(page, stages, (all) => stageShows(all[1]), "scrolled to its end, the frame shows the page's last button");
+  await page.locator(".review").evaluate((element) => element.style.removeProperty("--todae-harness-size-proof-max"));
+  await eventually(page, stages, (all) => all.every(stageShows) && all.every(({ stage }) => stage.scrollHeight <= stage.clientHeight + 1 && stage.tabIndex === null), "at their full height the frames show the whole page again");
   // What it affects: every prototype in the project is a tile; none would need fixing.
   await page.getByTestId("impact-none").waitFor({ timeout: 60000 });
   assert.equal(await page.getByTestId("impact-none").textContent(), "Nothing that works today would stop working.");
@@ -1408,6 +1448,13 @@ test("a proposal whose not-allowed example is not caught cannot be accepted: the
   const uncaughtFrame = page.frameLocator('iframe[title="only-one, as proof: lantern-booked at phone"]');
   await uncaughtFrame.locator("h1").waitFor({ timeout: 60000 });
   assert.notEqual((await uncaughtFrame.locator("h1").textContent()).trim(), "Rooms", "the screen shown is the booking page the example changes, not the rooms list");
+  // Neither screen is cut short: the toast each example adds and the page's last button are inside what its frame shows.
+  await eventually(
+    page,
+    () => Promise.all(["one-toast", "only-one"].flatMap((name) => [(frame) => frame.getByText("Booked", { exact: true }), (frame) => frame.getByRole("button", { name: "Book room" })].map((part) => proofStage(page, name, `${name}, as proof: lantern-booked at phone`, part)))),
+    (all) => all.every(stageShows) && all.every(({ stage }) => stage.scrollHeight <= stage.clientHeight + 1),
+    "each example frame shows the toast the example adds and the whole page",
+  );
   await shotOf(uncaught, "review-not-caught-light");
   await page.emulateMedia({ colorScheme: "dark" });
   await page.waitForTimeout(400);
@@ -5087,6 +5134,24 @@ test("a proposal whose Not allowed example is not caught: the person puts in a p
   assert.equal(await fix.getByTestId("example-fix-lead").textContent(), "You can fix this yourself: put one of your prototypes in place of the “Not allowed” example “Only one”.");
   // Only the project's prototype the rule catches, and no other rule does, is offered: not Booking.
   assert.deepEqual(await fix.locator(".review-fix-choices > li").evaluateAll((items) => items.map((item) => item.dataset.prototype)), ["Two toasts"]);
+  // The choice is a row of its own: the prototype's screen where the rule catches it, drawn small with the change in place and both toasts on it, which screen that is, and its button. The screen is a picture: it takes no focus.
+  const choice = fix.locator('.review-fix-choices > li[data-prototype="Two toasts"]');
+  const choiceFrame = 'iframe[title^="Two toasts, as an example: "]';
+  // Off screen, a measured frame is parked and its iframe leaves the DOM, so the choice is brought on screen first, as liveFrame does.
+  await choice.evaluate((element) => element.scrollIntoView({ block: "center" }));
+  await choice.locator(choiceFrame).waitFor({ timeout: 60000 });
+  assert.equal(await choice.locator(choiceFrame).getAttribute("sandbox"), "allow-scripts");
+  await page.frameLocator(choiceFrame).locator("text=Booked").nth(1).waitFor({ timeout: 60000 });
+  await eventually(page, () => choice.getByTestId("fix-where").getAttribute("data-outlined"), (value) => value === "", "the choice's screen outlines what the rule catches");
+  assert.match(await choice.getByTestId("fix-where").textContent(), /^Booking, .+, with this change in place\. The outlined part is what the rule catches\.$/);
+  assert.equal(await choice.getByTestId("fix-thumb").evaluate((element) => element.inert && element.getAttribute("aria-hidden") === "true"), true, "the screen is a picture only");
+  const thumb = await choice.getByTestId("fix-thumb").boundingBox();
+  const frameBox = await choice.locator(".frame-viewport").boundingBox();
+  assert.ok(Math.abs(thumb.width - frameBox.width) < 1 && frameBox.height > 24, "the screen fills its place beside the choice");
+  // Why it can't be accepted leads, the fix is under it, and the decision is last, in a row of its own.
+  const tops = await actions.evaluate((root) => ['[data-testid="review-refusal"]', '[data-testid="example-fix"]', '[data-testid="review-decision"]'].map((part) => root.querySelector(part).getBoundingClientRect()).map((box) => [box.top, box.bottom]));
+  assert.ok(tops[0][1] <= tops[1][0] && tops[1][1] <= tops[2][0], "the reason, then the fix, then the decision");
+  assert.deepEqual(await actions.getByTestId("review-decision").getByRole("button").allTextContents(), ["Accept", "Ask the agent for changes", "Decline"]);
   assert.equal(await page.getByTestId("review-accept-note").textContent(), "Accept is unavailable until that is fixed. You can fix the example here, ask the agent for changes, or decline.");
   // Asking the agent is still there, its note started with the reason and the example.
   await actions.getByRole("button", { name: "Ask the agent for changes" }).click();
@@ -5130,7 +5195,15 @@ test("examples that could not be drawn are drawn again: the review page says wha
   const waiting = page.getByTestId("review-waiting");
   await waiting.waitFor({ timeout: 90000 });
   assert.equal(await waiting.getAttribute("data-state"), "failed");
-  assert.match(await waiting.textContent(), /Some of it couldn't be drawn, so core can't check it yet\..*The example “One toast” couldn't be drawn in \d+ of its views: Packages could not load/s);
+  // It counts screens, a scenario in a view, and says how many there are: every one of this example's failed.
+  const failedScreens = (await waiting.textContent()).match(/Some of it couldn't be drawn, so core can't check it yet\..*The example “One toast” couldn't be drawn in (\d+) of its (\d+) screens: Packages could not load/s);
+  assert.deepEqual(failedScreens?.slice(1), [String(FRAMES), String(FRAMES)], "every screen of the example failed, counted as screens");
+  assert.doesNotMatch(await waiting.textContent(), /of its views/);
+  // What it waits for is the card's state, with Check again its own; the decision stays apart, under it.
+  assert.equal(await waiting.getAttribute("role"), "status");
+  assert.equal(await waiting.getByRole("button").count(), 1, "Check again is the status's only button");
+  assert.deepEqual(await page.getByTestId("review-decision").getByRole("button").allTextContents(), ["Accept", "Ask the agent for changes", "Decline"]);
+  assert.ok((await waiting.boundingBox()).y + (await waiting.boundingBox()).height <= (await page.getByTestId("review-decision").boundingBox()).y, "the status is above the decision");
   assert.equal(await page.getByTestId("review-ready").getAttribute("data-state"), "unmeasured");
   const acceptButton = page.getByTestId("review-actions").getByRole("button", { name: "Accept", exact: true });
   assert.equal(await acceptButton.isDisabled(), true);

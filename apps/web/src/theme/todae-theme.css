@@ -118,12 +118,14 @@
   --todae-harness-size-picker-compact: var(--_todae-harness-size-picker-compact, 5rem);
   --todae-harness-size-picker-wide: var(--_todae-harness-size-picker-wide, 12rem);
   --todae-harness-size-preview: var(--_todae-harness-size-preview, 9rem);
+  --todae-harness-size-proof-max: var(--_todae-harness-size-proof-max, 48rem);
   --todae-harness-size-proposal-card: var(--_todae-harness-size-proposal-card, 19rem);
   --todae-harness-size-role-card: var(--_todae-harness-size-role-card, 24rem);
   --todae-harness-size-stage: var(--_todae-harness-size-stage, 6rem);
   --todae-harness-size-stage-max: var(--_todae-harness-size-stage-max, 20rem);
   --todae-harness-size-sticky-clearance: var(--_todae-harness-size-sticky-clearance, 10rem);
   --todae-harness-size-target: var(--_todae-harness-size-target, 24px);
+  --todae-harness-size-thumb: var(--_todae-harness-size-thumb, 8rem);
   --todae-harness-size-tile: var(--_todae-harness-size-tile, 19rem);
   --todae-harness-size-views-row: var(--_todae-harness-size-views-row, 34rem);
   --todae-harness-size-wizard-rail: var(--_todae-harness-size-wizard-rail, 11rem);
