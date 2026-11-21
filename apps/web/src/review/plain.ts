@@ -1,4 +1,4 @@
-import { classifyProposal, describeRule, type ChangeClass, type InventoryOp, type ProjectConfig, type Proposal, type Refusal, type RuleSpec } from "@design-harness/core";
+import { classifyProposal, describeRule, type ChangeClass, type InventoryOp, type ProjectConfig, type Proposal, type Refusal, type RouteVsBudgetEvidence, type RuleSpec } from "@design-harness/core";
 import { budgetLines, capMeter, ruleLines } from "../visual/project-model";
 import { draftedBy } from "./timeline";
 
@@ -30,9 +30,70 @@ export function withCapValues(text: string, config: ProjectConfig): string {
     });
 }
 
-/** A rule as one sentence, from its data in core's words, with caps as their values. */
+/** An HTML element as people say it; any other is its own name. */
+const ELEMENT_WORDS: Readonly<Record<string, string>> = { a: "link", img: "image", input: "field", select: "dropdown", textarea: "text box" };
+
+/** A library part's name as a designer says it: "Toast.Root" is "Toast", "Card.Header" is "Card header", "<button>" is "button". */
+export function partName(name: string): string {
+  const element = /^<?([a-z][a-z0-9]*)>?$/.exec(name);
+  if (element?.[1]) return ELEMENT_WORDS[element[1]] ?? element[1];
+  const [part = name, ...rest] = name.split(".");
+  const sub = rest.filter((item) => item !== "Root").map((item) => item.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase());
+  return [part, ...sub].join(" ");
+}
+
+const pluralOf = (noun: string) => (/(?:s|x|ch|sh)$/.test(noun) ? `${noun}es` : `${noun}s`);
+
+/**
+ * Core's words for a rule with each part by its plain name, counted as a
+ * noun: "at most 1 Toast.Root" reads "at most 1 Toast", "at most 2
+ * Toast.Root" reads "at most 2 Toasts". Text a rule quotes is left as it is.
+ */
+export function withPartNames(text: string): string {
+  return text
+    .split(/("[^"]*")/)
+    .map((piece, index) =>
+      index % 2 === 1
+        ? piece
+        : piece.replace(/(?:\b(\d+|no|any number of) )?(\b[A-Z][A-Za-z0-9]*(?:\.[A-Z][A-Za-z0-9]*)+\b|<[a-z][a-z0-9]*>)/g, (_, count: string | undefined, name: string) => {
+            const said = partName(name);
+            return count === undefined ? said : `${count} ${count === "1" ? said : pluralOf(said)}`;
+          }),
+    )
+    .join("");
+}
+
+const taskWords = (task: { readonly id: string; readonly description?: string | undefined }) => task.description ?? words(task.id);
+
+/**
+ * A rule as one sentence a designer reads, from its data: core's words, with
+ * caps as their values and parts by their plain names. A step budget is said
+ * by its tasks' own names. Core's exact words stay in the details.
+ */
 export function ruleSentence(rule: RuleSpec, config: ProjectConfig): string {
-  return withCapValues(describeRule(rule, config), config);
+  if (rule.type === "flow" && rule.check === "step-budget") {
+    const tasks = config.inputs.tasks.map((task) => `“${taskWords(task)}” in ${plural(task.maxSteps, "step")}`);
+    return `Every way of finishing a task, not only the shortest, fits the steps the task allows${tasks.length > 0 ? ` (${tasks.join("; ")})` : ""}.`;
+  }
+  return withPartNames(withCapValues(describeRule(rule, config), config));
+}
+
+/**
+ * A route that is over its step budget, as a sentence: the task by its own
+ * name, the steps by theirs in order, and how far over. Core's message, with
+ * its ids, stays in the details.
+ */
+export function routeSentence(evidence: Pick<RouteVsBudgetEvidence, "task" | "route" | "steps" | "budget">, config: ProjectConfig): string {
+  const task = config.inputs.tasks.find((item) => item.id === evidence.task);
+  const name = task ? taskWords(task) : words(evidence.task);
+  const steps = evidence.route.map((step, index) => (index === 0 ? words(step.event) : words(step.event).toLowerCase()));
+  const over = evidence.steps - evidence.budget;
+  return `“${name}” can take ${plural(evidence.steps, "step")}${steps.length > 0 ? ` (${steps.join(", then ")})` : ""}${over > 0 ? `, ${over} more than the ${evidence.budget} allowed` : `, within the ${evidence.budget} allowed`}.`;
+}
+
+/** How many of the project's prototypes, as a sentence starts: "1 of 2 prototypes", "2 prototypes", "1 prototype". */
+export function prototypesOf(some: number, all: number): string {
+  return `${some === all ? "" : `${some} of `}${plural(all, "prototype")}`;
 }
 
 const unstopped = (text: string) => text.replace(/[.\s]+$/, "");
@@ -82,7 +143,7 @@ function opSentence(op: InventoryOp, proposal: Proposal, config: ProjectConfig):
     case "set-ranking":
       return `Change which actions matter most: ${[...op.ranking].sort((a, b) => a.rank - b.rank).map((item) => item.action).join(", then ")}.`;
     case "set-role":
-      return `Change which parts count as the ${words(op.role).toLowerCase()}: ${op.mapping.components.join(", ") || "none"}.`;
+      return `Change which parts count as the ${words(op.role).toLowerCase()}: ${op.mapping.components.map(partName).join(", ") || "none"}.`;
   }
 }
 
@@ -113,7 +174,7 @@ export function plainChanges(proposal: Proposal, config: ProjectConfig): readonl
   for (const line of lines) {
     if (line.kind !== "removes") continue;
     const inForce = proposal.status === "adopted" ? undefined : config.rules.find((rule) => rule.id === line.rule);
-    const said = inForce ? ruleSentence(inForce, config) : line.was !== undefined ? withCapValues(line.was, config) : `${words(line.rule)}.`;
+    const said = inForce ? ruleSentence(inForce, config) : line.was !== undefined ? withPartNames(withCapValues(line.was, config)) : `${words(line.rule)}.`;
     out.push({ kind: "rule-removed", sentence: `Stop checking: ${said}`, rule: line.rule });
   }
   return out;

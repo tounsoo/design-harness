@@ -27,8 +27,9 @@ const clip = (text: string, most: number) => (text.length > most ? `${text.slice
  * same route is the ordered list under it, which is what a screen reader
  * reads, and each state there opens its artboard when it has one.
  */
-export function FlowMap({ task, scenarios, onOpenState }: { readonly task: FlowTask; /** State → the scenarios that show it. */ readonly scenarios?: Readonly<Record<string, readonly string[]>> | undefined; readonly onOpenState?: ((state: string) => void) | undefined }) {
+export function FlowMap({ task, scenarios, onOpenState, plain = false }: { readonly task: FlowTask; /** State → the scenarios that show it. */ readonly scenarios?: Readonly<Record<string, readonly string[]>> | undefined; readonly onOpenState?: ((state: string) => void) | undefined; /** Names each step in words, "Open room" for `open-room`, where a designer reads the map; the ids stay wherever it is drawn without this. */ readonly plain?: boolean | undefined }) {
   const id = useId();
+  const eventName = (event: string) => (plain ? humanize(event) : event);
   const longest = task.longest ?? [];
   const layout = task.start !== undefined ? flowMap({ start: task.start, success: task.success, budget: task.budget, transitions: task.transitions, ...(longest.length > 0 ? { longest } : {}) }) : null;
   const steps = routeSteps({ route: longest, budget: task.budget });
@@ -63,7 +64,7 @@ export function FlowMap({ task, scenarios, onOpenState }: { readonly task: FlowT
                 <g key={`${edge.from} ${edge.event} ${edge.to}`} data-testid="flow-other">
                   <path className="flow-edge flow-edge-other" d={edge.path} markerEnd={`url(#${id}arrow-quiet)`} />
                   <text className="vis-text vis-text-muted vis-text-halo" x={edge.label.x} y={edge.label.y} textAnchor={edge.label.anchor}>
-                    {clip(edge.event, 11)}
+                    {clip(eventName(edge.event), 11)}
                   </text>
                 </g>
               ))}
@@ -93,7 +94,7 @@ export function FlowMap({ task, scenarios, onOpenState }: { readonly task: FlowT
                     {edge.step}
                   </text>
                   <text className="vis-text vis-text-muted vis-text-halo" x={edge.label.x} y={edge.label.y} textAnchor={edge.label.anchor}>
-                    {clip(edge.event, 11)}
+                    {clip(eventName(edge.event), 11)}
                   </text>
                 </g>
               ))}
@@ -118,14 +119,16 @@ export function FlowMap({ task, scenarios, onOpenState }: { readonly task: FlowT
           <p className="flow-count" data-over={task.status === "over" ? "" : undefined} data-testid="flow-count">
             {longest.length} {longest.length === 1 ? "step" : "steps"} on the longest route, budget {task.budget}
           </p>
-          <ol className="flow-steps" aria-label={`The longest route of ${task.id}, step by step`} data-testid="flow-steps">
+          <ol className="flow-steps" aria-label={`The longest route of ${plain ? humanize(task.id).toLowerCase() : task.id}, step by step`} data-testid="flow-steps">
             {steps.map((step) => (
               <li key={step.number} className="flow-step" data-over={step.over ? "" : undefined}>
                 <span className="flow-step-number" aria-hidden="true">
                   {step.number}
                 </span>
                 {step.number === 1 && <>{stateName(step.from)} </>}
-                <span className="flow-step-event">{step.event}</span> <span aria-hidden="true">→</span> {stateName(step.to)}
+                <span className="flow-step-event" data-plain={plain ? "" : undefined}>
+                  {eventName(step.event)}
+                </span> <span aria-hidden="true">→</span> {stateName(step.to)}
                 {step.over && <span className="flow-step-over"> ✕ past the budget of {task.budget}</span>}
               </li>
             ))}

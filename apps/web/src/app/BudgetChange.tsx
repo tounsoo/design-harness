@@ -37,8 +37,7 @@ function BudgetChange({ config, task, meter, existing, progress, agent, onClose,
   const preview = useMemo(() => previewBudget(config, task, value, ""), [config, task, value]);
   const draft = preview.state === "changed" ? preview.draft : null;
   const rules = useMemo(() => stepBudgetRules(config), [config]);
-  const said = rules.length === 1 ? `the rule ${rules[0]?.id ?? ""}` : "the rules that read step budgets";
-  const impact = useMemo(() => (existing && draft ? impactOf(config, draft, existing, rules.map((rule) => rule.id), said) : null), [config, draft, existing, rules, said]);
+  const impact = useMemo(() => (existing && draft ? impactOf(config, draft, existing, rules.map((rule) => rule.id)) : null), [config, draft, existing, rules]);
   const examples = useMemo(() => (existing && draft ? chooseExamples(config, draft, existing) : null), [config, draft, existing]);
   const stricter = preview.state === "changed" && preview.move.direction === "stricter";
   const subject: FlowSubject = {

@@ -446,14 +446,14 @@ export function sortProposals(proposals: readonly Proposal[], statuses: readonly
   return [...proposals].sort((a, b) => statuses.indexOf(a.status) - statuses.indexOf(b.status) || (drafted(b) < drafted(a) ? -1 : drafted(b) > drafted(a) ? 1 : 0));
 }
 
-export type HistoryItem = { readonly id: string; readonly title: string; readonly status: ProposalStatus; readonly at: string; readonly what: string; readonly waiting: boolean };
+export type HistoryItem = { readonly id: string; readonly title: string; readonly status: ProposalStatus; readonly at: string; readonly waiting: boolean };
 
 /** The project's history in a few lines: the newest proposals by their last status change, open ones marked as waiting. */
 export function projectTimeline(config: ProjectConfig, most = 5): { readonly items: readonly HistoryItem[]; readonly more: number } {
   const all = config.proposals
     .map((proposal, index) => ({ proposal, index, at: proposal.history.at(-1)?.at ?? "" }))
     .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : a.index - b.index))
-    .map(({ proposal, at }) => ({ id: proposal.id, title: proposal.title, status: proposal.status, at, what: changeLine(proposal), waiting: proposal.status === "open" || proposal.status === "approved" }));
+    .map(({ proposal, at }) => ({ id: proposal.id, title: proposal.title, status: proposal.status, at, waiting: proposal.status === "open" || proposal.status === "approved" }));
   return { items: all.slice(0, most), more: Math.max(0, all.length - most) };
 }
 

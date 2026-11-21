@@ -321,6 +321,6 @@ function RegionLine({ evidence }: FigureProps<"region-line">) {
 }
 
 function RouteVsBudget({ evidence }: FigureProps<"route-vs-budget">) {
-  const { scenarios, onOpenState } = useContext(VisualContext);
-  return <FlowMap scenarios={scenarios} onOpenState={onOpenState} task={{ id: evidence.task, start: evidence.start, success: evidence.success, budget: evidence.budget, transitions: evidence.transitions, longest: evidence.route, status: evidence.steps > evidence.budget ? "over" : "fits" }} />;
+  const { scenarios, onOpenState, plain } = useContext(VisualContext);
+  return <FlowMap scenarios={scenarios} onOpenState={onOpenState} plain={plain} task={{ id: evidence.task, start: evidence.start, success: evidence.success, budget: evidence.budget, transitions: evidence.transitions, longest: evidence.route, status: evidence.steps > evidence.budget ? "over" : "fits" }} />;
 }
