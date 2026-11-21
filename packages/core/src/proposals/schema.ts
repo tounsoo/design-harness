@@ -76,6 +76,7 @@ const proposalShape = obj(
     ...contentExtra,
     events: arr(proposalEvent),
     classification: obj({ class: changeClass, changes: arr(obj({ change: str(), class: changeClass, reason: str() }, { rule: slug, was: str(), bounds: arr(boundChange) })) }),
+    supersedes: arr(obj({ proposal: slug, example: slug, expect: oneOf(["pass", "fail"] as const), rules: arr(slug, { min: 1 }), detail: str() })),
   },
 );
 

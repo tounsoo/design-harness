@@ -246,6 +246,8 @@ export type ImpactView =
       readonly summary: string;
       /** Failing examples adopted proposals keep that the draft retires, each by its name and its proposal's title. */
       readonly retired: readonly string[];
+      /** Examples adopted proposals keep that the draft's change supersedes, which adopting it retires, named the same way; core's own words are in `impact.retired`, with `changed` set. */
+      readonly replaced: readonly string[];
       /** Kept examples that would stop behaving, named the same way: core refuses to adopt until they do, and its own words for each are in `impact.broken`. */
       readonly broken: readonly string[];
       readonly impact: ProposalImpact;
@@ -296,7 +298,8 @@ export function impactOf(config: ProjectConfig, draft: ProposalDraft, existing: 
     ok: true,
     rows,
     summary: rows.length === 0 ? "The project has no prototype to read." : parts.join(" "),
-    retired: impact.value.retired.map((run) => `“${humanize(run.example)}”, from ${from(run.proposal)}`),
+    retired: impact.value.retired.filter((run) => run.changed === undefined).map((run) => `“${humanize(run.example)}”, from ${from(run.proposal)}`),
+    replaced: impact.value.retired.filter((run) => run.changed !== undefined).map((run) => `“${humanize(run.example)}”, from ${from(run.proposal)}`),
     broken: impact.value.broken.map((run) => `the ${run.expect === "pass" ? "“Allowed”" : "“Not allowed”"} example “${humanize(run.example)}”, from ${from(run.proposal)}`),
     impact: impact.value,
   };

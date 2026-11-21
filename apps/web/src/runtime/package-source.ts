@@ -118,9 +118,19 @@ export function localPackageSource(base: string, fetchText: Fetch = (url) => fet
     return text;
   };
   let manifest: Promise<VendorManifest> | undefined;
+  // A manifest that could not be read is read again next time, as every other file is: a failed read is never kept.
+  const readManifest = (): Promise<VendorManifest> => {
+    if (!manifest) {
+      const reading = get("manifest.json").then((text) => JSON.parse(text) as VendorManifest);
+      manifest = reading;
+      reading.catch(() => {
+        if (manifest === reading) manifest = undefined;
+      });
+    }
+    return manifest;
+  };
   const entry = async (request: PackageRequest) => {
-    manifest ??= get("manifest.json").then((text) => JSON.parse(text) as VendorManifest);
-    const versions = (await manifest).packages[request.package]?.versions;
+    const versions = (await readManifest()).packages[request.package]?.versions;
     if (!versions) throw new Error(`the local package source has no ${request.package}; it serves only the packages this app was built with (open the app with ?packages=esm.sh to load any package from esm.sh)`);
     const found = Object.hasOwn(versions, request.version) ? versions[request.version] : undefined;
     if (!found) {
@@ -132,8 +142,7 @@ export function localPackageSource(base: string, fetchText: Fetch = (url) => fet
     name: "local",
     origins: [],
     async versions(name) {
-      manifest ??= get("manifest.json").then((text) => JSON.parse(text) as VendorManifest);
-      return sortVersions(Object.keys((await manifest).packages[name]?.versions ?? {}));
+      return sortVersions(Object.keys((await readManifest()).packages[name]?.versions ?? {}));
     },
     async module(specifier, request) {
       const found = await entry(request);

@@ -319,7 +319,8 @@ export class Session {
     );
 
     const libraryKey = JSON.stringify([config.library.package, config.library.version, config.library.react, config.library.stylesheets ?? [], config.library.source ?? null]);
-    if (this.packages?.key !== libraryKey) {
+    // Packages that failed to load are asked for again on a new revision, so drawing again can get past a network glitch.
+    if (this.packages?.key !== libraryKey || this.state.packages.state === "failed") {
       this.resolved = null;
       const source = sourceFor(config.library, { page: this.options.source, esm: this.options.esm ?? null });
       this.source = source;
@@ -340,8 +341,6 @@ export class Session {
           this.failAll(message);
         },
       );
-    } else if (this.state.packages.state === "failed") {
-      this.failAll(this.state.packages.message);
     }
     this.scheduleAll();
     this.finishIfDone();

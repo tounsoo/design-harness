@@ -189,6 +189,19 @@ describe("a session", () => {
     expect(state.report?.findings.filter((finding) => finding.rule === "target-size").map((finding) => finding.message)).toContain('No snapshot of scenario "rooms-list" at view "desktop", so it was not measured.');
   });
 
+  it("asks for packages that failed again on a new revision, and draws once they load", async () => {
+    let down = true;
+    const source: PackageSource = { ...fakeSource(), module: (specifier) => (down ? Promise.reject(new Error("offline")) : Promise.resolve({ code: `/* ${specifier} */` })) };
+    const { session } = harness(source);
+    session.update(nook, legal);
+    await flush();
+    expect(session.getState().packages).toMatchObject({ state: "failed" });
+    down = false;
+    session.update(nook, legal);
+    await flush();
+    expect(session.getState().packages).toEqual({ state: "ready", source: "fake" });
+  });
+
   it("loads a project's library from esm.sh only when the project chose it and the deployment allows it, and only its frames may reach esm.sh", async () => {
     const asked: string[] = [];
     const cdn: PackageSource = { name: "esm.sh", origins: ["https://cdn.example"], module: (specifier, request) => (asked.push(`${specifier}@${request.version}`), Promise.resolve({ url: `https://cdn.example/${specifier}` })), stylesheet: () => Promise.resolve({ url: "https://cdn.example/s.css" }) };

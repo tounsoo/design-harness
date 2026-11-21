@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { ExistingPrototype, ProjectConfig } from "@design-harness/core";
 import type { Session, SessionState } from "../runtime/session";
 import { isSpecRecord, type PrototypeRecord, type SpecRecord } from "../store/project-file";
@@ -18,18 +18,30 @@ export type BoardSession = { readonly session: Session; readonly state: SessionS
  * on it rather than run on part of it. `frames` must be mounted
  * (`MeasureFrames`) or the other prototypes' sessions wait forever. With
  * `live` false nothing is measured.
+ *
+ * `items` says where each prototype's measurement stands, by name, for a
+ * page to say what it still waits for; the open one is marked `board`.
+ * `checkAgain` measures again, from scratch, every prototype whose frames
+ * are not all measured: a new session for each other one, and a new
+ * revision on the board for the open one when the board has not measured
+ * the record as it is.
  */
 export function useProjectExisting({ config, prototypes, openPrototypeId, board, live }: { readonly config: ProjectConfig; readonly prototypes: readonly PrototypeRecord[]; readonly openPrototypeId: string; readonly board: BoardSession; readonly live: boolean }): {
   readonly existing: readonly ExistingPrototype[] | null;
   readonly frames: readonly Measured[];
   readonly progress: { readonly answered: number; readonly total: number };
+  readonly items: readonly ProjectMeasurement[];
+  readonly checkAgain: () => void;
 } {
   const others = useMemo(() => (live ? prototypes.filter(isSpecRecord).filter((record) => record.id !== openPrototypeId) : []), [live, prototypes, openPrototypeId]);
-  const otherItems = useMemo(() => others.map((record) => ({ id: `prototype-${record.id}`, config, prototype: record.prototype })), [others, config]);
+  const [attempts, setAttempts] = useState<Readonly<Record<string, number>>>({});
+  const otherItems = useMemo(() => others.map((record) => ({ id: `prototype-${record.id}`, config, prototype: record.prototype, attempt: attempts[record.id] ?? 0 })), [others, config, attempts]);
   const frames = useSessions(otherItems);
   const openRecord = prototypes.filter(isSpecRecord).find((record) => record.id === openPrototypeId);
   const boardCurrent = board.session.current();
-  const openMeasurement: Measurement | null = !live || !openRecord ? null : boardCurrent?.prototype === openRecord.prototype && board.state.revision === boardCurrent.revision ? measurementOf(board.state) : { state: "measuring", answered: 0, total: board.state.frames.length };
+  // The board measures the open prototype; until it has drawn the record as it is now, its measurement is not this prototype's.
+  const boardMatches = boardCurrent !== null && boardCurrent.prototype === openRecord?.prototype && board.state.revision === boardCurrent.revision;
+  const openMeasurement: Measurement | null = !live || !openRecord ? null : boardMatches ? measurementOf(board.state) : { state: "measuring", answered: 0, total: board.state.frames.length };
   const existing: readonly ExistingPrototype[] | null = useMemo(() => {
     if (!live) return null;
     const out: ExistingPrototype[] = [];
@@ -51,8 +63,27 @@ export function useProjectExisting({ config, prototypes, openPrototypeId, board,
     const total = state.state === "measuring" ? state.total : index === 0 && openMeasurement ? board.state.frames.length : (frames[index - (openMeasurement ? 1 : 0)]?.state.frames.length ?? 0);
     return { answered: sum.answered + (state.state === "measuring" ? state.answered : total), total: sum.total + total };
   }, { answered: 0, total: 0 });
-  return { existing, frames, progress };
+  const items: ProjectMeasurement[] = [
+    ...(openRecord && openMeasurement ? [{ name: openRecord.name, board: true, measurement: openMeasurement }] : []),
+    ...others.map((record, index) => ({ name: record.name, board: false, measurement: frames[index]?.measurement ?? ({ state: "measuring", answered: 0, total: 0 } as const) })),
+  ];
+  const checkAgain = useCallback(() => {
+    setAttempts((was) => {
+      const next = { ...was };
+      others.forEach((record, index) => {
+        if (frames[index]?.measurement.state !== "measured") next[record.id] = (was[record.id] ?? 0) + 1;
+      });
+      return next;
+    });
+    // The board's own revision of the open prototype, drawn again, or drawn for the first time as the record is now.
+    const running = board.session.current();
+    if (running && openRecord && (!boardMatches || measurementOf(board.state).state !== "measured")) board.session.update(running.config, openRecord.prototype);
+  }, [others, frames, board, openRecord, boardMatches]);
+  return { existing, frames, progress, items, checkAgain };
 }
+
+/** Where one of the project's prototypes stands in being measured, by its name; `board` for the open one, which the board measures. */
+export type ProjectMeasurement = { readonly name: string; readonly board: boolean; readonly measurement: Measurement };
 
 /**
  * The frames that measure the project's other prototypes: laid out at their

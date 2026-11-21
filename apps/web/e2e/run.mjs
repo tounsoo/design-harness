@@ -4808,13 +4808,14 @@ test("a person changes a count limit from 1 to 2: live before and after, classif
   await mainView(page, "Project").click();
   assert.match(await ruleCard(page, "one-primary-per-page").textContent(), /Each page holds at most 2 primary actions\./);
   assert.match(await page.getByTestId("project-rules").textContent(), /Rules in force \(29\)/);
-  // Tightening it back would break the example this proposal keeps as a test: the flow says core would refuse.
+  // Tightening it back goes against the example this proposal keeps as a test: the change replaces it, and the flow says so; nothing is refused.
   const back = await openRuleFlow(page, "one-primary-per-page", "Change");
   await setLimit(back, "max", 1);
-  await back.getByTestId("rule-broken").waitFor({ timeout: 60000 });
-  // The example it would break is named as the review page names it, with the change that keeps it by its title, never its id.
-  assert.match(await back.getByTestId("rule-broken").textContent(), /This couldn't be accepted as it is.*the “Allowed” example “Booking”, from “Change “A page holds at most one primary action” to at most 2”/s);
-  assert.doesNotMatch(await back.getByTestId("rule-broken").textContent(), /change-one-primary-per-page/);
+  await back.getByTestId("rule-replaced").waitFor({ timeout: 60000 });
+  // The example it replaces is named as the review page names it, with the change that keeps it by its title, never its id.
+  assert.match(await back.getByTestId("rule-replaced").textContent(), /It replaces an example kept from a change you accepted earlier: “Booking”, from “Change “A page holds at most one primary action” to at most 2”\./);
+  assert.doesNotMatch(await back.getByTestId("rule-replaced").textContent(), /change-one-primary-per-page/);
+  assert.equal(await back.getByTestId("rule-broken").count(), 0, "a change to the rule an earlier example is about does not break it");
   assert.equal(await back.getByTestId("rule-preview").getAttribute("data-class"), "tightens");
   assert.equal(api.requests.length, 0);
   assert.deepEqual(errors, []);
@@ -4996,6 +4997,135 @@ test("the agent drafts a change to a rule, and it reads as a change wherever pro
   await mainView(page, "Project").click();
   assert.match(await ruleCard(page, "one-primary-per-page").getByTestId("rule-waiting-proposal").textContent(), /A proposal waiting for you changes this rule\./);
   assert.deepEqual(errors, []);
+});
+
+/** A change to one-primary-per-page the agent drafts: at most `max`, proven on the booking page with `pass` and `fail` primary actions. */
+const allowPrimaries = (max, pass, fail) => ({
+  id: `allow-${max}`,
+  title: `Allow ${max} primary actions on a page`,
+  reason: "Booking offers to book early, and then earlier.",
+  rules: { remove: ["one-primary-per-page"], add: [{ type: "count", id: "one-primary-per-page", scope: "page", select: { role: "primary-action" }, max }] },
+  examples: {
+    pass: [{ name: pass.name, files: { "pages/booking.json": MORE_PRIMARIES(pass.count - 1)(SPEC_BOOKING) } }],
+    fail: [{ name: fail.name, files: { "pages/booking.json": MORE_PRIMARIES(fail.count - 1)(SPEC_BOOKING) }, flagged_by: { rule: "one-primary-per-page" } }],
+  },
+});
+
+test("a loosened rule replaces an example an earlier accepted change keeps: it can be accepted, and the review page names the example it replaces", async ({ browser, base, api }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  await draftByAgent(page, api, allowPrimaries(2, { name: "two-ways", count: 2 }, { name: "three-ways", count: 3 }));
+  await openReview(page, "allow-2");
+  await judged(page);
+  await approveAndAdopt(page);
+  // Loosening it again, past the "Not allowed" example the first change keeps: core retires that example instead of refusing for ever.
+  await draftByAgent(page, api, allowPrimaries(3, { name: "three-ways-ok", count: 3 }, { name: "four-ways", count: 4 }), { key: false });
+  assert.match(lastMessage(api.requests.at(-1).body), /Core's adoption dry run passes/);
+  await openReview(page, "allow-3");
+  const replaced = page.locator('.review[data-proposal="allow-3"]').getByTestId("review-impact").getByTestId("review-replaced");
+  await replaced.waitFor();
+  assert.equal(await replaced.textContent(), "This replaces 1 example from an earlier change: “Three ways” (from “Allow 2 primary actions on a page”). It shows the rule as it was, so accepting this retires it.");
+  await judged(page);
+  // Core's own words for it are in the details.
+  await openDetails(page);
+  assert.match(await page.getByTestId("review-superseded").textContent(), /Core retires failing example three-ways of adopted proposal allow-2, superseded on "one-primary-per-page": "one-primary-per-page" passed it/);
+  await page.getByTestId("review-impact").evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await page.waitForTimeout(300);
+  await shot(page, "review-replaces-light");
+  await shotDark(page, "review-replaces-dark");
+  await approveAndAdopt(page);
+  assert.equal(await page.getByTestId("review-in-force").getByTestId("review-replaced").textContent(), "This replaced 1 example from an earlier change: “Three ways” (from “Allow 2 primary actions on a page”). It showed the rule as it was, so it was retired.");
+  // The earlier change's example reads retired, by the change that replaced it, and the rest still behave.
+  await page.getByRole("button", { name: "← All proposals" }).click();
+  await page.getByRole("button", { name: /^Accepted \(2\)/ }).click();
+  await page.locator('.proposal-cards [data-proposal="allow-2"]').getByRole("button", { name: "Allow 2 primary actions on a page" }).click();
+  await page.locator('.review[data-proposal="allow-2"][data-status="adopted"]').waitFor();
+  await openDetails(page);
+  assert.equal(await example(page, "three-ways").getAttribute("data-verdict"), "ok");
+  assert.match(await example(page, "three-ways").getByTestId("example-detail").textContent(), /^retired: proposal "allow-3" changed "one-primary-per-page" past it, so it no longer fails/);
+  assert.equal(await example(page, "two-ways").getAttribute("data-verdict"), "ok");
+  assert.deepEqual(errors, []);
+});
+
+test("a proposal whose Not allowed example is not caught: the person puts in a prototype the rule catches, and accepts it", async ({ browser, base, api }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  await importNook(page, [
+    { id: "booking-spec", name: "Booking" },
+    { id: "two-toasts", name: "Two toasts", change: SPEC_TOASTS(2) },
+  ]);
+  await draftByAgent(page, api, toastDraft({ failing: 1 }));
+  const asked = api.requests.length;
+  await openReview(page, "booking-toast");
+  await judged(page);
+  const actions = page.getByTestId("review-actions");
+  const fix = actions.getByTestId("example-fix");
+  await fix.waitFor({ timeout: 60000 });
+  assert.equal(await actions.getByTestId("review-refusal").getAttribute("data-code"), "failing-example-passes");
+  assert.equal(await fix.getAttribute("data-example"), "only-one");
+  // The reason names the way out: the fix just below, the agent, or declining.
+  assert.match(await actions.getByTestId("review-refusal-plain").textContent(), /The example is “Only one”\. Nothing has changed\. Fix the example below, ask the agent for changes, or decline it\.$/);
+  assert.equal(await fix.getByTestId("example-fix-lead").textContent(), "You can fix this yourself: put one of your prototypes in place of the “Not allowed” example “Only one”.");
+  // Only the project's prototype the rule catches, and no other rule does, is offered: not Booking.
+  assert.deepEqual(await fix.locator(".review-fix-choices > li").evaluateAll((items) => items.map((item) => item.dataset.prototype)), ["Two toasts"]);
+  assert.equal(await page.getByTestId("review-accept-note").textContent(), "Accept is unavailable until that is fixed. You can fix the example here, ask the agent for changes, or decline.");
+  // Asking the agent is still there, its note started with the reason and the example.
+  await actions.getByRole("button", { name: "Ask the agent for changes" }).click();
+  assert.equal(await actions.getByLabel("What should the agent change?").inputValue(), "Its “Not allowed” example isn't caught by the rule, so nothing shows the rule working. The example is “Only one”. Please change the proposal so it can be accepted.");
+  await actions.getByRole("button", { name: "Cancel" }).click();
+  await actions.evaluate((element) => element.scrollIntoView({ block: "center" }));
+  await page.waitForTimeout(300);
+  await shot(page, "review-fix-light");
+  await shotDark(page, "review-fix-dark");
+  // On a phone the choice is whole and in reach.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await narrowIsUsable(page, actions, "fixing an example on a phone");
+  await reachable(page, fix.getByRole("button", { name: "Use “Two toasts” instead" }), "Use “Two toasts” instead");
+  await shot(page, "review-fix-phone-light");
+  await shotDark(page, "review-fix-phone-dark");
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await fix.getByRole("button", { name: "Use “Two toasts” instead" }).click();
+  // The proposal now has the prototype as its Not allowed example, judged again by core, and Accept opens up.
+  await page.locator('.review .example[data-example="two-toasts"]').waitFor({ state: "attached" });
+  await judged(page);
+  await approveAndAdopt(page);
+  // The history says who changed the example, and what the version before said.
+  await openDetails(page);
+  assert.match(await page.getByTestId("review-history").textContent(), /Revised by you.*Put the prototype “Two toasts” in place of the “Not allowed” example “Only one”\./s);
+  await reportWhen(page, (value) => value.rules.some((rule) => rule.rule === "one-toast-per-page"), "the rule is in force");
+  assert.equal(api.requests.length, asked, "the agent was not needed");
+  assert.deepEqual(errors, []);
+});
+
+test("examples that could not be drawn are drawn again: the review page says what failed, and Check again draws it", async ({ browser, base, api }) => {
+  const { page, context, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  await draftByAgent(page, api, toastDraft());
+  // From here the library's files cannot be read, as on a network that drops out: the page is opened again, so nothing is read yet.
+  let offline = true;
+  await context.route("**/vendor/**", (route) => (offline && !route.request().url().endsWith("manifest.json") ? route.abort("internetdisconnected") : route.continue()));
+  await page.reload();
+  await mainView(page, "Proposals").click();
+  await page.locator('.proposal-cards [data-proposal="booking-toast"]').getByRole("button", { name: "A toast that confirms a booking" }).click();
+  await page.locator('.review[data-proposal="booking-toast"]').waitFor();
+  const waiting = page.getByTestId("review-waiting");
+  await waiting.waitFor({ timeout: 90000 });
+  assert.equal(await waiting.getAttribute("data-state"), "failed");
+  assert.match(await waiting.textContent(), /Some of it couldn't be drawn, so core can't check it yet\..*The example “One toast” couldn't be drawn in \d+ of its views: Packages could not load/s);
+  assert.equal(await page.getByTestId("review-ready").getAttribute("data-state"), "unmeasured");
+  const acceptButton = page.getByTestId("review-actions").getByRole("button", { name: "Accept", exact: true });
+  assert.equal(await acceptButton.isDisabled(), true);
+  assert.equal(await page.getByTestId("review-accept-note").textContent(), "Accept is unavailable until every example is drawn. You can check again, ask the agent for changes, or decline.");
+  await waiting.evaluate((element) => element.scrollIntoView({ block: "center" }));
+  await page.waitForTimeout(300);
+  await shot(page, "review-check-again-light");
+  // Back online, Check again draws everything that failed from scratch, and the proposal can be accepted.
+  offline = false;
+  await waiting.getByRole("button", { name: "Check again" }).click();
+  await waiting.waitFor({ state: "detached", timeout: 60000 });
+  await judged(page);
+  await approveAndAdopt(page);
+  assert.ok(errors.every((message) => !/is not defined|Cannot read/.test(message)), `no script error: ${errors.join("; ")}`);
 });
 
 test("the rule flows at phone width: the dialog fits the screen, and its actions are reachable by keyboard", async ({ browser, base, api }) => {

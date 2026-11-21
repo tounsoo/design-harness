@@ -9,6 +9,7 @@ import {
   proposalImpact,
   rerunExamples,
   ruleTypeIssue,
+  supersededExamples,
   tryExamples,
   withExampleSnapshots,
   type Adoption,
@@ -33,6 +34,11 @@ import { acceptProposal, approveProposal, declineProposal, sendBackProposal, typ
 import { inventoryDiff, type DiffSection } from "../review/diff";
 import { examplePlace } from "../review/example-place";
 import { prototypeEffect, type PrototypeEffect } from "../review/impact";
+import { applyExampleFix, exampleFixes, type ExampleFix } from "../review/fix-examples";
+import { replacedWords } from "../review/replaced";
+import { waitingWords, type MeasuredThing } from "../review/waiting";
+import { ExampleFixCard } from "./ExampleFix";
+import { useStalled } from "./stall";
 import { formatDay, fromWords, loosensWords, plainChanges, plainRefusal, prototypesOf, routeSentence, ruleSentence, standingWords, waitsForYou } from "../review/plain";
 import { REVIEWER, draftedBy, formatTime, ownProposal, proposalTimeline, timelineTitle, type TimelineEntry } from "../review/timeline";
 import { FrameCard, FrameViewport } from "./Board";
@@ -326,11 +332,13 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
     () => [...proposal.examples.pass.map((example) => ({ example, expect: "pass" as const })), ...proposal.examples.fail.map((example) => ({ example, expect: "fail" as const }))],
     [proposal.examples],
   );
-  const exampleItems = useMemo(() => all.map(({ example }) => ({ id: example.name, config: renderConfig, prototype: example.prototype })), [all, renderConfig]);
+  // "Check again" measures an example again from scratch: a new attempt is a new session.
+  const [attempts, setAttempts] = useState<Readonly<Record<string, number>>>({});
+  const exampleItems = useMemo(() => all.map(({ example }) => ({ id: example.name, config: renderConfig, prototype: example.prototype, attempt: attempts[example.name] ?? 0 })), [all, renderConfig, attempts]);
   const exampleFrames = useSessions(exampleItems);
 
   // Every prototype in the project, measured, for the impact. The open one is the board's.
-  const { existing, frames: otherFrames } = useProjectExisting({ config, prototypes, openPrototypeId, board, live });
+  const { existing, frames: otherFrames, items: projectItems, checkAgain: checkProjectAgain } = useProjectExisting({ config, prototypes, openPrototypeId, board, live });
 
   const exampleMeasurement: ExampleMeasurement | null = exampleFrames.every((item) => item.measurement.state === "measured")
     ? Object.fromEntries(exampleFrames.map((item) => [item.id, item.measurement.state === "measured" ? item.measurement.snapshots : []]))
@@ -393,6 +401,25 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
     { answered: 0, total: 0, failed: 0 },
   );
 
+  // What drawing still waits for, and whether it has stopped moving: said plainly beside "Check again", never left as an endless "checking".
+  const things: MeasuredThing[] = [
+    ...exampleFrames.map((item): MeasuredThing => ({ kind: "example", name: item.id, measurement: item.measurement })),
+    ...projectItems.map((item): MeasuredThing => ({ kind: item.board ? "board" : "prototype", name: item.name, measurement: item.measurement })),
+  ];
+  const waits = waitingWords(things);
+  const progressKey = JSON.stringify(things.map((thing) => (thing.measurement.state === "measuring" ? [thing.measurement.answered, thing.measurement.total] : thing.measurement.state)));
+  const stalled = useStalled(progressKey, live && (exampleMeasurement === null || existing === null) && waits.waiting.length > 0);
+  const checkAgain = () => {
+    setAttempts((was) => Object.fromEntries([...Object.entries(was), ...exampleFrames.filter((item) => item.measurement.state !== "measured").map((item) => [item.id, (was[item.id] ?? 0) + 1] as const)]));
+    checkProjectAgain();
+  };
+  // Earlier adopted examples this change replaces: core retires them on adoption, and the page says so before anyone accepts.
+  const superseded = useMemo(() => {
+    if (!live) return [];
+    const listed = supersededExamples(config, id);
+    return listed.ok ? listed.value : [];
+  }, [live, config, id]);
+
   const [refusal, setRefusal] = useState<{ readonly action: string; readonly refusal: Refusal } | null>(null);
   const [adoption, setAdoption] = useState<Adoption | null>(null);
   const [focusExample, setFocusExample] = useState<string | null>(null);
@@ -435,11 +462,13 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
   // What core says would stop it, before anyone clicks: it could not judge the examples, or its dry run of adopting refuses.
   const blocked: Refusal | null = judged && "refusal" in judged ? judged.refusal : dryRun && !dryRun.ok ? dryRun.error : null;
   const canAccept = ready && dryRun?.ok === true;
-  const readiness: { readonly state: "blocked" | "unmeasured" | "checking" | "ready"; readonly text: string } = blocked
+  const readiness: { readonly state: "blocked" | "unmeasured" | "stalled" | "checking" | "ready"; readonly text: string } = blocked
     ? { state: "blocked", text: "It can't be accepted as it is. The reason is under Decide." }
     : !examplesMeasured && measuring.failed > 0
-      ? { state: "unmeasured", text: `${measuring.failed === 1 ? "An example" : `${measuring.failed} examples`} couldn't be drawn in every view, so this can't be accepted as it is.` }
-      : !examplesMeasured
+      ? { state: "unmeasured", text: `${measuring.failed === 1 ? "An example" : `${measuring.failed} examples`} couldn't be drawn in every view, so this can't be accepted as it is. Check again is under Decide.` }
+      : stalled
+        ? { state: "stalled", text: "Drawing has stopped making progress, so this can't be checked yet. What it still waits for, and Check again, are under Decide." }
+        : !examplesMeasured
         ? { state: "checking", text: `Checking its examples: ${measuring.answered} of ${measuring.total} drawn. You can accept once they are checked.` }
         : !canAccept
           ? { state: "checking", text: "Checking your prototypes against it. You can accept in a moment." }
@@ -504,6 +533,20 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
     </section>
   );
   const shownRefusal = refusal ?? (blocked ? { action: "accept", refusal: blocked } : null);
+  // When the proposal's own examples are why, the person can fix them here, with core's revise, by them.
+  const acceptRefusal = shownRefusal?.action === "accept" ? shownRefusal.refusal : null;
+  const fixes = live && acceptRefusal ? exampleFixes(config, proposal, acceptRefusal, existing) : null;
+  const fixExamples = async (fix: ExampleFix): Promise<string | null> => {
+    if (!existing) return "your prototypes are still being checked.";
+    const revised = applyExampleFix(config, id, fix, existing, now());
+    if (!revised.ok) return revised.error.message;
+    setRefusal(null);
+    await onSave(revised.value);
+    return null;
+  };
+  const from = acceptRefusal?.proposal !== undefined ? config.proposals.find((item) => item.id === acceptRefusal.proposal)?.title : undefined;
+  const askDraft = acceptRefusal ? `${plainRefusal(acceptRefusal)}${acceptRefusal.example ? ` The example is “${exampleLabel(acceptRefusal.example)}”${from ? `, kept from “${from}”` : ""}.` : ""} Please change the proposal so it can be accepted.` : undefined;
+  const showWaiting = live && (measuring.failed > 0 || stalled);
 
   return (
     <div className="review" data-proposal={id} data-status={proposal.status}>
@@ -533,7 +576,7 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
 
         <WhatChanges proposal={proposal} config={config} renderConfig={renderConfig} views={views} prototypes={prototypes} onShowExample={showExample} />
 
-        {live && <Impact proposal={proposal} config={config} renderConfig={renderConfig} affected={affected} prototypes={prototypes} existing={existing} views={config.views} onOpenPrototype={onOpenPrototype} />}
+        {live && <Impact proposal={proposal} config={config} renderConfig={renderConfig} affected={affected} prototypes={prototypes} existing={existing} views={config.views} replaced={replacedWords(config, superseded)} onOpenPrototype={onOpenPrototype} />}
         {live && <MeasureFrames items={otherFrames} />}
 
         {live && (
@@ -550,7 +593,36 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
               refusal={
                 shownRefusal && (
                   <div ref={refusalRef} className="review-refusal">
-                    <CantAlert action={shownRefusal.action} refusal={shownRefusal.refusal} onShowTechnical={showTechnical} />
+                    <CantAlert action={shownRefusal.action} refusal={shownRefusal.refusal} from={from} canFix={fixes !== null && (fixes.canRemove || fixes.choices.length > 0)} onShowTechnical={showTechnical} />
+                  </div>
+                )
+              }
+              fix={fixes && <ExampleFixCard key={JSON.stringify(proposal.examples.fail.map((item) => item.name).concat(proposal.examples.pass.map((item) => item.name)))} fixes={fixes} onFix={fixExamples} />}
+              canFix={fixes !== null && (fixes.canRemove || fixes.choices.length > 0)}
+              askDraft={askDraft}
+              waiting={
+                showWaiting && (
+                  <div className="review-waiting" data-testid="review-waiting" data-state={measuring.failed > 0 ? "failed" : "stalled"} role="status">
+                    <Text.Root as="p" weight="medium">
+                      {measuring.failed > 0 ? "Some of it couldn't be drawn, so core can't check it yet." : "Drawing has stopped making progress, so core can't check it yet."}
+                    </Text.Root>
+                    <ul aria-label="What is still waiting">
+                      {[...waits.failed, ...(stalled ? waits.waiting : [])].map((line, index) => (
+                        <li key={index}>
+                          <Text.Root as="span" className="review-small">
+                            {line}
+                          </Text.Root>
+                        </li>
+                      ))}
+                    </ul>
+                    <Text.Root as="p" tone="muted" className="review-small">
+                      Check again draws {waits.failed.length + (stalled ? waits.waiting.length : 0) === 1 ? "it" : "them"} from scratch. If it keeps happening, ask the agent for changes, or decline it.
+                    </Text.Root>
+                    <div>
+                      <Button.Root variant="secondary" onClick={checkAgain}>
+                        Check again
+                      </Button.Root>
+                    </div>
                   </div>
                 )
               }
@@ -582,6 +654,17 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
                 <Text.Root as="p" className="review-small review-verdict" data-tone={verdict.tone} data-testid="review-verdict">
                   {verdict.text}
                 </Text.Root>
+              )}
+              {superseded.length > 0 && (
+                <ul className="findings" aria-label="Earlier examples core would retire" data-testid="review-superseded">
+                  {superseded.map((entry) => (
+                    <li key={`${entry.proposal}/${entry.expect}/${entry.example}`}>
+                      <Text.Root as="span" className="review-small">
+                        Core retires {entry.expect === "pass" ? "passing" : "failing"} example <Code.Root>{entry.example}</Code.Root> of adopted proposal <Code.Root>{entry.proposal}</Code.Root>, superseded on {entry.rules.map((rule) => `"${rule}"`).join(", ")}: {entry.detail}
+                      </Text.Root>
+                    </li>
+                  ))}
+                </ul>
               )}
               {shownRefusal && <RefusalAlert action={shownRefusal.action} refusal={shownRefusal.refusal} onShowExample={showExample} onOpenProposal={onOpenProposal} />}
             </section>
@@ -699,6 +782,14 @@ type DecideProps = {
   readonly measured: boolean;
   /** Why it cannot be accepted, when core says so. */
   readonly refusal: ReactNode;
+  /** The person's own fix for the examples, when they are why. */
+  readonly fix: ReactNode;
+  /** Whether that fix offers something to do. */
+  readonly canFix: boolean;
+  /** What the note to the agent starts as when it can't be accepted: the reason, and the example. */
+  readonly askDraft: string | undefined;
+  /** What drawing still waits for, with Check again. */
+  readonly waiting: ReactNode;
   readonly onAccept: () => void;
   readonly onDecline: (note: string) => Promise<void> | void;
   readonly onSendBack: (note: string) => Promise<void> | void;
@@ -711,7 +802,7 @@ type DecideProps = {
  * waits until the examples and the project's prototypes are checked, and is
  * unavailable while core would refuse it; the reason is said beside it.
  */
-function Decide({ proposal, agent, canAccept, readiness, measured, refusal, onAccept, onDecline, onSendBack }: DecideProps) {
+function Decide({ proposal, agent, canAccept, readiness, measured, refusal, fix, canFix, askDraft, waiting, onAccept, onDecline, onSendBack }: DecideProps) {
   const [form, setForm] = useState<"decline" | "send-back" | null>(null);
   const { status } = proposal;
   return (
@@ -719,6 +810,8 @@ function Decide({ proposal, agent, canAccept, readiness, measured, refusal, onAc
       <Card.Body>
         <Stack.Root gap="normal">
           {refusal}
+          {fix}
+          {waiting}
           <Stack.Root direction="row" align="center" gap="condensed" wrap>
             <Button.Root variant="primary" onClick={onAccept} disabled={!canAccept} aria-describedby="review-accept-note">
               Accept
@@ -733,7 +826,7 @@ function Decide({ proposal, agent, canAccept, readiness, measured, refusal, onAc
             </Button.Root>
           </Stack.Root>
           <Text.Root as="p" tone="muted" id="review-accept-note" className="review-small" aria-live="polite" data-testid="review-accept-note" data-state={readiness.state} data-measured={measured ? "" : undefined}>
-            {canAccept ? "Accepting puts it in force for every prototype in this project, straight away. Only you can accept or decline; the agent can't." : readiness.state === "blocked" ? "Accept is unavailable until that is fixed. You can ask the agent for changes, or decline." : `Accept is unavailable for now. ${readiness.text}`}
+            {canAccept ? "Accepting puts it in force for every prototype in this project, straight away. Only you can accept or decline; the agent can't." : readiness.state === "blocked" ? (canFix ? "Accept is unavailable until that is fixed. You can fix the example here, ask the agent for changes, or decline." : "Accept is unavailable until that is fixed. You can ask the agent for changes, or decline.") : readiness.state === "unmeasured" || readiness.state === "stalled" ? "Accept is unavailable until every example is drawn. You can check again, ask the agent for changes, or decline." : `Accept is unavailable for now. ${readiness.text}`}
           </Text.Root>
           {form === "decline" && <NoteForm key="decline" label="Why decline it?" hint="Declining is final. Your note is kept with the proposal." submit="Decline proposal" required="Say why you decline it." onCancel={() => setForm(null)} onSubmit={async (note) => {
             await onDecline(note);
@@ -741,7 +834,7 @@ function Decide({ proposal, agent, canAccept, readiness, measured, refusal, onAc
           }} />}
           {form === "send-back" &&
             (agent.ready ? (
-              <NoteForm key="send-back" label="What should the agent change?" hint="Your note goes to the agent as a chat message. The proposal stays open until you decide." submit="Send to the agent" required="Say what the agent should change." onCancel={() => setForm(null)} onSubmit={async (note) => {
+              <NoteForm key="send-back" label="What should the agent change?" hint="Your note goes to the agent as a chat message. The proposal stays open until you decide." submit="Send to the agent" required="Say what the agent should change." initial={askDraft} onCancel={() => setForm(null)} onSubmit={async (note) => {
                 await onSendBack(note);
                 setForm(null);
               }} />
@@ -757,8 +850,8 @@ function Decide({ proposal, agent, canAccept, readiness, measured, refusal, onAc
 }
 
 /** A note the action needs, which it refuses to go without. */
-function NoteForm({ label, hint, submit, required, onSubmit, onCancel }: { readonly label: string; readonly hint: string; readonly submit: string; readonly required: string; readonly onSubmit: (note: string) => Promise<void> | void; readonly onCancel: () => void }) {
-  const [note, setNote] = useState("");
+function NoteForm({ label, hint, submit, required, initial, onSubmit, onCancel }: { readonly label: string; readonly hint: string; readonly submit: string; readonly required: string; /** What the note starts as, for the person to change. */ readonly initial?: string | undefined; readonly onSubmit: (note: string) => Promise<void> | void; readonly onCancel: () => void }) {
+  const [note, setNote] = useState(initial ?? "");
   const [problem, setProblem] = useState<string | null>(null);
   const fieldId = useMemo(() => `note-${submit.toLowerCase().replace(/[^a-z]+/g, "-")}`, [submit]);
   return (
@@ -798,7 +891,7 @@ function NoteForm({ label, hint, submit, required, onSubmit, onCancel }: { reado
 }
 
 /** Why something could not be done, as a designer reads it. Core's own words for it are in the details. */
-function CantAlert({ action, refusal, onShowTechnical }: { readonly action: string; readonly refusal: Refusal; readonly onShowTechnical?: () => void }) {
+function CantAlert({ action, refusal, from, canFix = false, onShowTechnical }: { readonly action: string; readonly refusal: Refusal; /** The title of the earlier proposal whose example the refusal names. */ readonly from?: string | undefined; /** The person can fix the examples themselves, just below. */ readonly canFix?: boolean; readonly onShowTechnical?: () => void }) {
   const accepting = action === "accept";
   return (
     <Alert.Root tone="warning" data-testid="review-refusal" data-code={refusal.code} data-action={action}>
@@ -808,7 +901,8 @@ function CantAlert({ action, refusal, onShowTechnical }: { readonly action: stri
           <Text.Root as="p" data-testid="review-refusal-plain">
             {accepting ? plainRefusal(refusal) : refusal.message}
             {accepting && refusal.example && !refusal.proposal ? ` The example is “${exampleLabel(refusal.example)}”.` : ""}
-            {accepting ? " Nothing has changed. Ask the agent for changes, or decline it." : ""}
+            {accepting && refusal.example && refusal.proposal ? ` The example is “${exampleLabel(refusal.example)}”, kept from “${from ?? refusal.proposal}”.` : ""}
+            {accepting ? (canFix ? " Nothing has changed. Fix the example below, ask the agent for changes, or decline it." : " Nothing has changed. Ask the agent for changes, or decline it.") : ""}
           </Text.Root>
           {accepting && onShowTechnical && (
             <div>
@@ -892,6 +986,11 @@ function InForce({ proposal, config, adoption, prototypes, onOpenPrototype }: { 
             </Text.Root>
           ) : (
             <Text.Root as="p">It is part of the project now{proposal.rules.remove.length > 0 ? `, and ${proposal.rules.remove.length === 1 ? "the check it removed no longer runs" : "the checks it removed no longer run"}` : ""}.</Text.Root>
+          )}
+          {proposal.supersedes && proposal.supersedes.length > 0 && (
+            <Text.Root as="p" data-testid="review-replaced">
+              {replacedWords(config, proposal.supersedes, true)}
+            </Text.Root>
           )}
           {adoption && (
             <Text.Root as="p" data-testid="review-rechecked">
@@ -1594,7 +1693,7 @@ type Affected = { readonly effects: readonly PrototypeEffect[] } | { readonly re
  * removes a check or loosens a limit says so first: something stops being
  * caught.
  */
-function Impact({ proposal, config, renderConfig, affected, prototypes, existing, views, onOpenPrototype }: { readonly proposal: Proposal; readonly config: ProjectConfig; /** The project with the proposal applied. */ readonly renderConfig: ProjectConfig; readonly affected: Affected | null; readonly prototypes: readonly PrototypeRecord[]; readonly existing: readonly ExistingPrototype[] | null; readonly views: readonly View[]; readonly onOpenPrototype: (id: string, finding?: Finding) => void }) {
+function Impact({ proposal, config, renderConfig, affected, prototypes, existing, views, replaced, onOpenPrototype }: { readonly proposal: Proposal; readonly config: ProjectConfig; /** The project with the proposal applied. */ readonly renderConfig: ProjectConfig; readonly affected: Affected | null; readonly prototypes: readonly PrototypeRecord[]; readonly existing: readonly ExistingPrototype[] | null; readonly views: readonly View[]; /** The earlier examples it replaces, in a sentence; empty for none. */ readonly replaced: string; readonly onOpenPrototype: (id: string, finding?: Finding) => void }) {
   const looser = loosensWords(proposal, config);
   // A rule a prototype would newly break, in a sentence: the proposal's own, or one in force that a moved limit makes stricter.
   const after = (id: string) => [proposal.rules.add.find((rule) => rule.id === id) ?? config.rules.find((rule) => rule.id === id) ?? []].flat().map((rule) => ruleSentence(rule, renderConfig));
@@ -1620,6 +1719,11 @@ function Impact({ proposal, config, renderConfig, affected, prototypes, existing
             </li>
           ))}
         </ul>
+      )}
+      {replaced !== "" && (
+        <Text.Root as="p" className="review-lead" data-testid="review-replaced">
+          {replaced}
+        </Text.Root>
       )}
       {affected && "refusal" in affected ? (
         <Text.Root as="p" tone="muted" data-testid="impact-unread">
