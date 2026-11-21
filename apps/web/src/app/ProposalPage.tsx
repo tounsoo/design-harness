@@ -1,6 +1,6 @@
 import { Alert, Badge, Button, Card, Code, DataList, Disclosure, EmptyState, ErrorMessage, Field, Label, Stack, Steps, Table, Text } from "@tounsoo/todae";
 import { ArrowDown, Check, ChevronDown, ChevronRight, Minus, X } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import {
   applyProposal,
   checkPrototype,
@@ -33,15 +33,17 @@ import { isSpecRecord, type PrototypeRecord } from "../store/project-file";
 import { acceptProposal, approveProposal, declineProposal, sendBackProposal, type ExampleMeasurement } from "../review/actions";
 import { inventoryDiff, type DiffSection } from "../review/diff";
 import { examplePlace } from "../review/example-place";
+import { bandOf, changedElements, joinBands, stageScroll, tagWithin, type Band } from "../review/proof-focus";
+import { tagOf } from "../runtime/tags";
 import { prototypeEffect, type PrototypeEffect } from "../review/impact";
-import { applyExampleFix, exampleFixes, type ExampleFix } from "../review/fix-examples";
+import { applyExampleFix, choiceFindings, exampleFixes, type ExampleFix } from "../review/fix-examples";
 import { replacedWords } from "../review/replaced";
 import { waitingWords, type MeasuredThing } from "../review/waiting";
-import { ExampleFixCard } from "./ExampleFix";
+import { ExampleFixCard, type ChoiceScreen } from "./ExampleFix";
 import { useStalled } from "./stall";
 import { formatDay, fromWords, loosensWords, plainChanges, plainRefusal, prototypesOf, routeSentence, ruleSentence, standingWords, waitsForYou } from "../review/plain";
 import { REVIEWER, draftedBy, formatTime, ownProposal, proposalTimeline, timelineTitle, type TimelineEntry } from "../review/timeline";
-import { FrameCard, FrameViewport } from "./Board";
+import { FrameCard, FrameViewport, fittedHeight } from "./Board";
 import { EvidenceFigure, drawsFigure } from "../visual/figures";
 import { VisualContext } from "../visual/parts";
 import { ClassScale, ProposalTrack, RuleFigure, SlotDiagram } from "../visual/project-figures";
@@ -403,8 +405,8 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
 
   // What drawing still waits for, and whether it has stopped moving: said plainly beside "Check again", never left as an endless "checking".
   const things: MeasuredThing[] = [
-    ...exampleFrames.map((item): MeasuredThing => ({ kind: "example", name: item.id, measurement: item.measurement })),
-    ...projectItems.map((item): MeasuredThing => ({ kind: item.board ? "board" : "prototype", name: item.name, measurement: item.measurement })),
+    ...exampleFrames.map((item): MeasuredThing => ({ kind: "example", name: item.id, measurement: item.measurement, screens: item.state.frames.length })),
+    ...projectItems.map((item): MeasuredThing => ({ kind: item.board ? "board" : "prototype", name: item.name, measurement: item.measurement, screens: item.screens })),
   ];
   const waits = waitingWords(things);
   const progressKey = JSON.stringify(things.map((thing) => (thing.measurement.state === "measuring" ? [thing.measurement.answered, thing.measurement.total] : thing.measurement.state)));
@@ -536,6 +538,15 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
   // When the proposal's own examples are why, the person can fix them here, with core's revise, by them.
   const acceptRefusal = shownRefusal?.action === "accept" ? shownRefusal.refusal : null;
   const fixes = live && acceptRefusal ? exampleFixes(config, proposal, acceptRefusal, existing) : null;
+  // What the rule catches in each prototype offered as a "Not allowed" example, for the small screen drawn beside the choice.
+  const fixKey = fixes && fixes.side === "fail" && fixes.rule !== undefined ? JSON.stringify([fixes.rule, fixes.choices.map((choice) => choice.name)]) : null;
+  const fixScreens = useMemo(() => {
+    const out: Record<string, ChoiceScreen> = {};
+    const [rule, names] = fixKey === null ? [undefined, []] : (JSON.parse(fixKey) as [string, string[]]);
+    if (rule === undefined || !existing) return out;
+    for (const item of existing) if (names.includes(item.name)) out[item.name] = { prototype: item.prototype, findings: choiceFindings(config, proposal, rule, item) };
+    return out;
+  }, [fixKey, existing, config, proposal]);
   const fixExamples = async (fix: ExampleFix): Promise<string | null> => {
     if (!existing) return "your prototypes are still being checked.";
     const revised = applyExampleFix(config, id, fix, existing, now());
@@ -597,33 +608,36 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
                   </div>
                 )
               }
-              fix={fixes && <ExampleFixCard key={JSON.stringify(proposal.examples.fail.map((item) => item.name).concat(proposal.examples.pass.map((item) => item.name)))} fixes={fixes} onFix={fixExamples} />}
+              fix={fixes && <ExampleFixCard key={JSON.stringify(proposal.examples.fail.map((item) => item.name).concat(proposal.examples.pass.map((item) => item.name)))} fixes={fixes} config={renderConfig} screens={fixScreens} onFix={fixExamples} />}
               canFix={fixes !== null && (fixes.canRemove || fixes.choices.length > 0)}
               askDraft={askDraft}
               waiting={
                 showWaiting && (
-                  <div className="review-waiting" data-testid="review-waiting" data-state={measuring.failed > 0 ? "failed" : "stalled"} role="status">
-                    <Text.Root as="p" weight="medium">
-                      {measuring.failed > 0 ? "Some of it couldn't be drawn, so core can't check it yet." : "Drawing has stopped making progress, so core can't check it yet."}
-                    </Text.Root>
-                    <ul aria-label="What is still waiting">
-                      {[...waits.failed, ...(stalled ? waits.waiting : [])].map((line, index) => (
-                        <li key={index}>
-                          <Text.Root as="span" className="review-small">
-                            {line}
-                          </Text.Root>
-                        </li>
-                      ))}
-                    </ul>
-                    <Text.Root as="p" tone="muted" className="review-small">
-                      Check again draws {waits.failed.length + (stalled ? waits.waiting.length : 0) === 1 ? "it" : "them"} from scratch. If it keeps happening, ask the agent for changes, or decline it.
-                    </Text.Root>
-                    <div>
+                  <Alert.Root tone="warning" role="status" className="review-waiting" data-testid="review-waiting" data-state={measuring.failed > 0 ? "failed" : "stalled"}>
+                    <Alert.Title>{measuring.failed > 0 ? "Some of it couldn't be drawn, so core can't check it yet." : "Drawing has stopped making progress, so core can't check it yet."}</Alert.Title>
+                    <Alert.Description>
+                      <ul className="waiting-list" aria-label="What is still waiting">
+                        {waits.rows
+                          .filter((row) => row.state === "failed" || stalled)
+                          .map((row, index) => (
+                            <li key={index} data-state={row.state}>
+                              <Text.Root as="span" weight="medium">
+                                {row.subject}
+                              </Text.Root>
+                              {row.rest}
+                            </li>
+                          ))}
+                      </ul>
+                      <Text.Root as="p" className="review-small">
+                        Check again draws {waits.failed.length + (stalled ? waits.waiting.length : 0) === 1 ? "it" : "them"} from scratch. If it keeps happening, ask the agent for changes, or decline it.
+                      </Text.Root>
+                    </Alert.Description>
+                    <Alert.Actions>
                       <Button.Root variant="secondary" onClick={checkAgain}>
                         Check again
                       </Button.Root>
-                    </div>
-                  </div>
+                    </Alert.Actions>
+                  </Alert.Root>
                 )
               }
               onAccept={accept}
@@ -812,37 +826,39 @@ function Decide({ proposal, agent, canAccept, readiness, measured, refusal, fix,
           {refusal}
           {fix}
           {waiting}
-          <Stack.Root direction="row" align="center" gap="condensed" wrap>
-            <Button.Root variant="primary" onClick={onAccept} disabled={!canAccept} aria-describedby="review-accept-note">
-              Accept
-            </Button.Root>
-            {status === "open" && (
-              <Button.Root variant="secondary" onClick={() => setForm(form === "send-back" ? null : "send-back")} aria-expanded={form === "send-back"}>
-                {SEND_BACK}
+          <div className="review-decision" data-testid="review-decision">
+            <Stack.Root direction="row" align="center" gap="condensed" wrap>
+              <Button.Root variant="primary" onClick={onAccept} disabled={!canAccept} aria-describedby="review-accept-note">
+                Accept
               </Button.Root>
-            )}
-            <Button.Root variant="ghost" onClick={() => setForm(form === "decline" ? null : "decline")} aria-expanded={form === "decline"}>
-              Decline
-            </Button.Root>
-          </Stack.Root>
-          <Text.Root as="p" tone="muted" id="review-accept-note" className="review-small" aria-live="polite" data-testid="review-accept-note" data-state={readiness.state} data-measured={measured ? "" : undefined}>
-            {canAccept ? "Accepting puts it in force for every prototype in this project, straight away. Only you can accept or decline; the agent can't." : readiness.state === "blocked" ? (canFix ? "Accept is unavailable until that is fixed. You can fix the example here, ask the agent for changes, or decline." : "Accept is unavailable until that is fixed. You can ask the agent for changes, or decline.") : readiness.state === "unmeasured" || readiness.state === "stalled" ? "Accept is unavailable until every example is drawn. You can check again, ask the agent for changes, or decline." : `Accept is unavailable for now. ${readiness.text}`}
-          </Text.Root>
-          {form === "decline" && <NoteForm key="decline" label="Why decline it?" hint="Declining is final. Your note is kept with the proposal." submit="Decline proposal" required="Say why you decline it." onCancel={() => setForm(null)} onSubmit={async (note) => {
-            await onDecline(note);
-            setForm(null);
-          }} />}
-          {form === "send-back" &&
-            (agent.ready ? (
-              <NoteForm key="send-back" label="What should the agent change?" hint="Your note goes to the agent as a chat message. The proposal stays open until you decide." submit="Send to the agent" required="Say what the agent should change." initial={askDraft} onCancel={() => setForm(null)} onSubmit={async (note) => {
-                await onSendBack(note);
-                setForm(null);
-              }} />
-            ) : (
-              <Alert.Root tone="info">
-                <Alert.Description>{agent.why}</Alert.Description>
-              </Alert.Root>
-            ))}
+              {status === "open" && (
+                <Button.Root variant="secondary" onClick={() => setForm(form === "send-back" ? null : "send-back")} aria-expanded={form === "send-back"}>
+                  {SEND_BACK}
+                </Button.Root>
+              )}
+              <Button.Root variant="ghost" onClick={() => setForm(form === "decline" ? null : "decline")} aria-expanded={form === "decline"}>
+                Decline
+              </Button.Root>
+            </Stack.Root>
+            <Text.Root as="p" tone="muted" id="review-accept-note" className="review-small" aria-live="polite" data-testid="review-accept-note" data-state={readiness.state} data-measured={measured ? "" : undefined}>
+              {canAccept ? "Accepting puts it in force for every prototype in this project, straight away. Only you can accept or decline; the agent can't." : readiness.state === "blocked" ? (canFix ? "Accept is unavailable until that is fixed. You can fix the example here, ask the agent for changes, or decline." : "Accept is unavailable until that is fixed. You can ask the agent for changes, or decline.") : readiness.state === "unmeasured" || readiness.state === "stalled" ? "Accept is unavailable until every example is drawn. You can check again, ask the agent for changes, or decline." : `Accept is unavailable for now. ${readiness.text}`}
+            </Text.Root>
+            {form === "decline" && <NoteForm key="decline" label="Why decline it?" hint="Declining is final. Your note is kept with the proposal." submit="Decline proposal" required="Say why you decline it." onCancel={() => setForm(null)} onSubmit={async (note) => {
+              await onDecline(note);
+              setForm(null);
+            }} />}
+            {form === "send-back" &&
+              (agent.ready ? (
+                <NoteForm key="send-back" label="What should the agent change?" hint="Your note goes to the agent as a chat message. The proposal stays open until you decide." submit="Send to the agent" required="Say what the agent should change." initial={askDraft} onCancel={() => setForm(null)} onSubmit={async (note) => {
+                  await onSendBack(note);
+                  setForm(null);
+                }} />
+              ) : (
+                <Alert.Root tone="info">
+                  <Alert.Description>{agent.why}</Alert.Description>
+                </Alert.Root>
+              ))}
+          </div>
         </Stack.Root>
       </Card.Body>
     </Card.Root>
@@ -1138,16 +1154,7 @@ function WhatChanges({ proposal, config, renderConfig, views, prototypes, onShow
                       </Text.Root>
                     </div>
                   )}
-                  <div className="proof" data-testid="rule-proof" data-flow={pair.spec?.type === "flow" ? "" : undefined}>
-                    {pair.pass ? <ProofExample view={pair.pass} config={renderConfig} at={placeOf(pair)} drawn={pair.spec?.type !== "flow"} onShow={() => onShowExample(pair.pass?.name ?? "")} /> : <Text.Root as="p" tone="muted">No example of what is allowed.</Text.Root>}
-                    {pair.fail ? (
-                      <ProofExample view={pair.fail} config={renderConfig} at={placeOf(pair)} rule={pair.rule} drawn={pair.spec?.type !== "flow"} {...(pair.spec && pair.spec.type !== "flow" && !ruleGlyph(pair.spec) ? { why: ruleSentence(pair.spec, renderConfig) } : {})} onShow={() => onShowExample(pair.fail?.name ?? "")} />
-                    ) : pair.rule ? (
-                      <Text.Root as="p" tone="muted" data-testid="proof-none">
-                        No example shows what this rule stops, so it can&apos;t be accepted as it is.
-                      </Text.Root>
-                    ) : null}
-                  </div>
+                  <ProofPair pair={pair} at={placeOf(pair)} config={renderConfig} baselines={baselines} onShowExample={onShowExample} />
                 </Card.Root>
               </li>
             ))}
@@ -1267,8 +1274,45 @@ const PLAIN_FIGURES = { plain: true } as const;
 
 const FIGURED_OPS: readonly InventoryOp["op"][] = ["add-cap", "set-cap", "set-max-steps", "add-task", "add-page-type"];
 
-/** One example screen of a pair, in a frame of its own at one scenario and view, with the part its rule catches outlined. */
-function ProofExample({ view, config, at, rule, why, drawn = true, onShow }: { readonly view: ExampleView; readonly config: ProjectConfig; readonly at: Place | undefined; readonly rule?: string; /** The rule this screen goes against, in a sentence, where it is not said beside the pair. */ readonly why?: string; /** False for a rule about a whole flow: no one screen shows it, so no screen is drawn, and the route core walked is. */ readonly drawn?: boolean; readonly onShow: () => void }) {
+/** What one screen of a pair measured, for the pair to place both by: how much of the view its page fills, and the part it is about. */
+type ProofMeasure = { readonly filled: number; readonly focus: Band | undefined; /** The part is what the rule catches, not only what the example changes. */ readonly caught: boolean };
+
+/** How both screens of a pair are drawn: as tall as the taller page, and scrolled to the same part. */
+type ProofStage = { readonly filled: number | undefined; readonly focus: Band | undefined };
+
+/**
+ * A rule's two example screens, side by side. Both frames are as tall as
+ * the taller of the two pages, so neither is cut short, and when a page is
+ * taller than a frame may be, both are scrolled to the same place: the part
+ * the rule catches in the second, or, with nothing caught, the parts the
+ * examples change. Only the frames' place on this page moves; nothing
+ * inside a frame does, so what was measured is untouched.
+ */
+function ProofPair({ pair, at, config, baselines, onShowExample }: { readonly pair: Pair; readonly at: Place | undefined; /** The project with the proposal applied. */ readonly config: ProjectConfig; readonly baselines: readonly Readonly<Record<string, string>>[]; readonly onShowExample: (name: string) => void }) {
+  const [measures, setMeasures] = useState<{ readonly pass?: ProofMeasure | undefined; readonly fail?: ProofMeasure | undefined }>({});
+  const onMeasured = useCallback((expect: "pass" | "fail", next: ProofMeasure | undefined) => setMeasures((was) => (JSON.stringify(was[expect] ?? null) === JSON.stringify(next ?? null) ? was : { ...was, [expect]: next })), []);
+  const { pass, fail } = measures;
+  const stage: ProofStage = useMemo(
+    () => ({ filled: pass || fail ? Math.max(pass?.filled ?? 0, fail?.filled ?? 0) : undefined, focus: fail?.caught ? fail.focus : joinBands(pass?.focus, fail?.focus) }),
+    [pass, fail],
+  );
+  const drawn = pair.spec?.type !== "flow";
+  return (
+    <div className="proof" data-testid="rule-proof" data-flow={pair.spec?.type === "flow" ? "" : undefined}>
+      {pair.pass ? <ProofExample view={pair.pass} config={config} at={at} baselines={baselines} stage={stage} onMeasured={onMeasured} drawn={drawn} onShow={() => onShowExample(pair.pass?.name ?? "")} /> : <Text.Root as="p" tone="muted">No example of what is allowed.</Text.Root>}
+      {pair.fail ? (
+        <ProofExample view={pair.fail} config={config} at={at} rule={pair.rule} baselines={baselines} stage={stage} onMeasured={onMeasured} drawn={drawn} {...(pair.spec && pair.spec.type !== "flow" && !ruleGlyph(pair.spec) ? { why: ruleSentence(pair.spec, config) } : {})} onShow={() => onShowExample(pair.fail?.name ?? "")} />
+      ) : pair.rule ? (
+        <Text.Root as="p" tone="muted" data-testid="proof-none">
+          No example shows what this rule stops, so it can&apos;t be accepted as it is.
+        </Text.Root>
+      ) : null}
+    </div>
+  );
+}
+
+/** One example screen of a pair, in a frame of its own at one scenario and view, with the part its rule catches outlined and in view. */
+function ProofExample({ view, config, at, rule, why, drawn = true, baselines, stage, onMeasured, onShow }: { readonly view: ExampleView; readonly config: ProjectConfig; readonly at: Place | undefined; readonly rule?: string; /** The rule this screen goes against, in a sentence, where it is not said beside the pair. */ readonly why?: string; /** False for a rule about a whole flow: no one screen shows it, so no screen is drawn, and the route core walked is. */ readonly drawn?: boolean; /** The project's prototypes' files, to find what the example changes. */ readonly baselines: readonly Readonly<Record<string, string>>[]; readonly stage: ProofStage; readonly onMeasured: (expect: "pass" | "fail", measure: ProofMeasure | undefined) => void; readonly onShow: () => void }) {
   const { prototype } = view.example;
   const scenario = prototype.scenarios.find((item) => item.id === at?.scenario) ?? prototype.scenarios.find((item) => item.page === at?.page) ?? prototype.scenarios[0];
   // The view core's finding is in, else the narrowest, where a page reads at close to its own size.
@@ -1286,15 +1330,52 @@ function ProofExample({ view, config, at, rule, why, drawn = true, onShow }: { r
   const finding = rule ? (view.findings.find((item) => item.rule === rule && item.scenario === scenario?.id && item.view === shownView?.name) ?? view.findings.find((item) => item.rule === rule) ?? view.findings[0]) : undefined;
   const element = finding && finding.scenario === scenario?.id && finding.view === shownView?.name ? finding.element : undefined;
   const measuredNow = frameState?.state === "measured";
+  const shot = frameState?.state === "measured" ? frameState : undefined;
+  // A finding about spec elements names them by key, and the frame says which of them it drew: the board outlines a finding the same way.
+  const here = finding !== undefined && (finding.scenario === undefined || finding.scenario === scenario?.id) && (finding.view === undefined || finding.view === shownView?.name);
+  const tags = useMemo(() => {
+    if (!here || element !== undefined || !shot) return [];
+    const wanted = new Set((finding?.targets ?? []).filter((target) => target.page === undefined || target.page === scenario?.page).flatMap((target) => tagOf(target) ?? []));
+    return shot.tags.filter((tag) => wanted.has(tag));
+  }, [here, element, shot, finding, scenario?.page]);
   useEffect(() => {
     if (!measured || !frame || !measuredNow) return;
-    measured.session.highlight(frame.key, element ?? null);
-  }, [measured?.session, frame?.key, measuredNow, element]);
+    if (element === undefined && tags.length > 0) measured.session.outline(frame.key, tags);
+    else measured.session.highlight(frame.key, element ?? null);
+  }, [measured?.session, frame?.key, measuredNow, element, tags]);
+  // The part this screen is about, from boxes the frame already measured: what the rule catches, else what the example changes.
+  const changed = useMemo(() => (scenario ? changedElements(prototype, baselines, scenario.page) : []), [prototype, baselines, scenario]);
+  const own = useMemo((): ProofMeasure | undefined => {
+    if (!shot || !shownView) return undefined;
+    const places = shot.places ?? [];
+    const flagged = element !== undefined ? [shot.snapshot.elements[element]?.rect ?? []].flat() : places.filter((place) => tags.includes(place.tag)).map((place) => place.rect);
+    const boxes = flagged.length > 0 ? flagged : places.filter((place) => changed.some((key) => tagWithin(place.tag, key))).map((place) => place.rect);
+    return { filled: fittedHeight(shot.snapshot, shownView), focus: bandOf(boxes), caught: flagged.length > 0 };
+  }, [shot, shownView, element, tags, changed]);
+  useEffect(() => onMeasured(view.expect, own), [onMeasured, view.expect, own]);
+  const scale = shownView ? Math.min(1, Math.max(0.08, (width - 4) / shownView.width)) : 1;
+  // The stage is scrolled so that part is in view, the same for both screens; a person who scrolls it afterwards is left alone.
+  const [stageHeight, setStageHeight] = useState(0);
+  const [scrolls, setScrolls] = useState(false);
+  useEffect(() => {
+    const element = area.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() => setStageHeight(element.clientHeight));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [area]);
+  useLayoutEffect(() => {
+    const element = area.current;
+    if (!element) return;
+    // Only a drawn page is said to scroll: a frame that failed says so itself.
+    setScrolls(measuredNow && element.scrollHeight > element.clientHeight + 1);
+    if (!measuredNow) return;
+    element.scrollTop = stageScroll(stage.focus, scale, { height: element.clientHeight, padding: Number.parseFloat(getComputedStyle(element).paddingTop) || 0 });
+  }, [area, measuredNow, stage.focus?.top, stage.focus?.bottom, stage.filled, scale, stageHeight]);
   const state = view.verdict.state;
   // The picture's own word on whether it shows what it says: quiet when it does, plain when it does not.
   const badge: { readonly tone: "success" | "critical" | "info" | "warning"; readonly text: string } | null =
     state === "ok" ? { tone: "success", text: "Checked" } : state === "measuring" ? { tone: "info", text: "Checking…" } : state === "unmeasured" ? { tone: "warning", text: "Couldn't be drawn" } : state === "bad" ? { tone: "critical", text: view.expect === "pass" ? "Breaks a rule as it is" : "Nothing stops this yet" } : null;
-  const scale = shownView ? Math.min(1, Math.max(0.08, (width - 4) / shownView.width)) : 1;
   // An example that does not do its job says so in a sentence, not only in its badge.
   const refused = view.verdict.state === "bad" ? view.verdict.refusal : undefined;
   const missed =
@@ -1331,13 +1412,24 @@ function ProofExample({ view, config, at, rule, why, drawn = true, onShow }: { r
       </figcaption>
       {drawn ? (
         <>
-          <div className="example-frames proof-frame" ref={area}>
+          <div
+            className="example-frames proof-frame"
+            ref={area}
+            data-testid="proof-stage"
+            style={stage.filled !== undefined ? ({ "--proof-page": `${Math.ceil(stage.filled * scale)}px` } as CSSProperties) : undefined}
+            {...(scrolls ? { tabIndex: 0, role: "group", "aria-label": `${view.expect === "pass" ? "Allowed" : "Not allowed"} example ${exampleLabel(view.name)}: the page is taller than this frame, which scrolls` } : {})}
+          >
             {measured && frame && frameState && <FrameViewport session={measured.session} spec={frame} revision={measured.state.revision} frameState={frameState} scale={scale} hidden={false} name={`${view.name}, as proof: ${frame.scenario.id} at ${frame.view.name}`} fit />}
           </div>
           <Text.Root as="p" tone="muted" className="review-small">
             {scenario ? scenarioName(scenario) : "No scenario"}
-            {shownView ? `, ${viewLabel(shownView.name).toLowerCase()}` : ""}.{element !== undefined && state === "ok" ? " The outlined part is what isn't allowed." : ""}
+            {shownView ? `, ${viewLabel(shownView.name).toLowerCase()}` : ""}.{(element !== undefined || tags.length > 0) && state === "ok" ? " The outlined part is what isn't allowed." : ""}
           </Text.Root>
+          {scrolls && (
+            <Text.Root as="p" tone="muted" className="review-small" data-testid="proof-scrolls">
+              The page is taller than this frame. Scroll the frame to see the rest.
+            </Text.Root>
+          )}
         </>
       ) : (
         finding &&

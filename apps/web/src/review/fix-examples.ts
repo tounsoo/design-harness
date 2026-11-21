@@ -1,4 +1,4 @@
-import { applyProposal, checkPrototype, contentOf, onlyRemovesRules, revise, type ExistingPrototype, type FailingExample, type PassingExample, type ProjectConfig, type Proposal, type ProposalDraft, type Refusal, type Result } from "@design-harness/core";
+import { applyProposal, checkPrototype, contentOf, onlyRemovesRules, revise, type ExistingPrototype, type FailingExample, type Finding, type PassingExample, type ProjectConfig, type Proposal, type ProposalDraft, type Refusal, type Result } from "@design-harness/core";
 import { exampleLabel } from "../app/words";
 import { REVIEWER } from "./timeline";
 
@@ -100,6 +100,19 @@ export function prototypeChoices(config: ProjectConfig, proposal: Proposal, side
     if (fits) out.push({ name: item.name });
   }
   return out;
+}
+
+/**
+ * What the rule catches in one of the project's prototypes, with the
+ * proposal applied: core's own findings for that rule, on the prototype's
+ * measured snapshots. They are what makes it a "Not allowed" example, so a
+ * page can show where on the prototype that is. Nothing here decides.
+ */
+export function choiceFindings(config: ProjectConfig, proposal: Proposal, rule: string, item: ExistingPrototype): readonly Finding[] {
+  const applied = applyProposal(config, proposal);
+  if (!applied.ok) return [];
+  const report = checkPrototype({ config: applied.value, prototype: item.prototype, ...(item.snapshots ? { snapshots: item.snapshots } : {}) });
+  return report.rules.find((entry) => entry.rule === rule)?.findings ?? [];
 }
 
 /** What the person can fix themselves about why core refuses the proposal, or null when it is not its own examples. */
