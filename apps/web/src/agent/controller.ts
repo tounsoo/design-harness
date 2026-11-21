@@ -35,7 +35,8 @@ export type TurnItem =
   | { readonly kind: "checks"; readonly revision: number; readonly status: CheckStatus; readonly title: string; readonly text: string; readonly failing?: readonly string[]; readonly notRun?: readonly string[] }
   /** A proposal the agent drafted or revised; `action` is absent on chats saved before revisions existed, which only drafted. `request`: it asks for a new rule type. */
   | { readonly kind: "proposal"; readonly id: string; readonly title: string; readonly adoptable: boolean; readonly verdict: string; readonly action?: "drafted" | "revised"; readonly needsMeasurement?: true; readonly request?: true }
-  | { readonly kind: "notice"; readonly text: string }
+  /** `about: "docs"` marks the line that says which docs a message went with, so the chat can put the way to the docs beside it. */
+  | { readonly kind: "notice"; readonly text: string; readonly about?: "docs" }
   /** Variants the agent offered or revised, beside the prototype: a card that opens the comparison. */
   | { readonly kind: "variants"; readonly page: string; readonly ids: readonly string[]; readonly action: "offered" | "revised" }
   /**
@@ -274,7 +275,7 @@ export class AgentController {
     this.history.appendUser(message, [...this.pending, ...(docs.note ? [docs.note] : []), ...(notes ? [notes] : [])]);
     this.pending = [];
     const notices: TurnItem[] = [
-      ...(docs.notice ? [{ kind: "notice" as const, text: docs.notice }] : []),
+      ...(docs.notice ? [{ kind: "notice" as const, text: docs.notice, about: "docs" as const }] : []),
       ...(notes ? [{ kind: "notice" as const, text: `Sent with ${open === 1 ? "your open note" : `your ${open} open notes`} from the canvas.` }] : []),
     ];
     this.set({ turns: [...this.state.turns, { ...turn, items: notices }] });

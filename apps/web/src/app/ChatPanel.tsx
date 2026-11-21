@@ -1,5 +1,5 @@
 import { Alert, Badge, Button, Checkbox, Code, CodeBlock, Conversation, DataList, Disclosure, ErrorMessage, Field, Label, Loader, Message, Stack, Text } from "@tounsoo/todae";
-import { ArrowUp, Check, CircleAlert, CircleCheck, Columns2, FileCode2, KeyRound, Lightbulb, Pencil, Sparkles, Square, TriangleAlert, X } from "lucide-react";
+import { ArrowUp, BookOpen, Check, CircleAlert, CircleCheck, Columns2, FileCode2, KeyRound, Lightbulb, Pencil, Sparkles, Square, TriangleAlert, X } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
 import type { AgentController, Turn, TurnItem } from "../agent/controller";
 import { KEY_DB, keyProblem, type KeyVault } from "../agent/key-vault";
@@ -9,6 +9,7 @@ import { fetchedUrl, sourceSummary } from "../agent/source-words";
 import { formatTime } from "../review/timeline";
 import { DB_NAME } from "../store/db";
 import { checksSummary, toolSummary } from "./chat-words";
+import { DocsDialog, type DocsProps } from "./DocsSection";
 
 /** Starting points shown before the first message: each fills the box, for the person to change before sending. */
 const SUGGESTIONS = ["Make the rooms page friendlier to scan", "Add a way to cancel a held room", "Fix what the checks found"] as const;
@@ -34,6 +35,7 @@ export function ChatPanel({
   onClose,
   suggestion,
   readOnly,
+  docs,
 }: {
   readonly controller: AgentController;
   readonly vault: KeyVault;
@@ -52,6 +54,8 @@ export function ChatPanel({
   readonly suggestion?: { readonly pattern: Pattern; readonly onAccept: () => void; readonly onDismiss: () => void };
   /** Why the agent cannot work on the open prototype (a TSX one is read-only): the box is disabled and this is said instead. */
   readonly readOnly?: string;
+  /** The project's docs, the same list the Project view shows: the chat counts them and opens them in a dialog. Without it the chat has no docs entry. */
+  readonly docs?: (DocsProps & { readonly projectId: string }) | undefined;
 }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getState);
   const key = useSyncExternalStore(vault.subscribe, vault.getState);
@@ -65,6 +69,22 @@ export function ChatPanel({
     (field.current && !field.current.disabled ? field.current : keyField.current)?.focus();
   }, [prefill]);
   const undoable = controller.undoable();
+  // The docs dialog, opened from the entry beside Settings, the empty chat's hint or a reply's docs line. Closing
+  // it puts focus back on whatever opened it, or on the entry when that is gone (the hint leaves once docs exist).
+  const [docsOpen, setDocsOpen] = useState(false);
+  const docsEntry = useRef<HTMLButtonElement>(null);
+  const docsOpener = useRef<HTMLElement | null>(null);
+  const openDocs = (event: { readonly currentTarget: HTMLElement }) => {
+    docsOpener.current = event.currentTarget;
+    setDocsOpen(true);
+  };
+  const closeDocs = () => setDocsOpen(false);
+  const docsWereOpen = useRef(false);
+  useEffect(() => {
+    if (docsWereOpen.current && !docsOpen) (docsOpener.current?.isConnected ? docsOpener.current : docsEntry.current)?.focus();
+    docsWereOpen.current = docsOpen;
+  }, [docsOpen]);
+  const docsCount = docs?.sources.length ?? 0;
   const model = MODELS.find((item) => item.id === settings.model)?.name ?? settings.model;
 
   const send = (event?: FormEvent) => {
@@ -97,11 +117,23 @@ export function ChatPanel({
           </Button.Root>
         )}
       </div>
-      {key.present && (
-        <Disclosure.Root className="chat-settings">
-          <Disclosure.Summary>Settings and key</Disclosure.Summary>
-          <Settings vault={vault} settings={settings} model={model} onSettings={onSettings} disabled={state.running} />
-        </Disclosure.Root>
+      {(key.present || docs) && (
+        <div className="chat-tools">
+          {key.present && (
+            <Disclosure.Root className="chat-settings">
+              <Disclosure.Summary>Settings and key</Disclosure.Summary>
+              <Settings vault={vault} settings={settings} model={model} onSettings={onSettings} disabled={state.running} />
+            </Disclosure.Root>
+          )}
+          {docs && (
+            <Button.Root ref={docsEntry} type="button" variant="ghost" className="chat-docs-entry" data-testid="chat-docs-entry" data-count={docsCount} aria-haspopup="dialog" aria-label={docsCount === 0 ? "Add docs for the agent to read" : `Docs the agent reads, ${docsCount}`} tooltip={false} onClick={openDocs}>
+              <Button.Icon>
+                <BookOpen />
+              </Button.Icon>
+              {docsCount === 0 ? "Add docs" : `Docs (${docsCount})`}
+            </Button.Root>
+          )}
+        </div>
       )}
 
       {readOnly !== undefined && (
@@ -141,9 +173,20 @@ export function ChatPanel({
                       </li>
                     ))}
                   </Stack.Root>
+                  {docs && docsCount === 0 && (
+                    <p className="chat-small chat-docs-line chat-docs-hint" data-testid="chat-docs-hint">
+                      <Text.Root as="span" tone="muted">
+                        Using a design system?
+                      </Text.Root>
+                      <Button.Root type="button" variant="ghost" aria-haspopup="dialog" onClick={openDocs}>
+                        Give the agent its docs
+                      </Button.Root>
+                    </p>
+                  )}
                 </div>
               )
             )}
+            <DocsOpenContext.Provider value={docs ? openDocs : null}>
             <ProposalWordsContext.Provider value={proposalWords ?? noWords}>
             {state.turns.map((turn, index) => (
               <TurnView
@@ -158,6 +201,7 @@ export function ChatPanel({
               />
             ))}
             </ProposalWordsContext.Provider>
+            </DocsOpenContext.Provider>
           </Conversation.Content>
         </Conversation.Viewport>
         <Conversation.ScrollButton />
@@ -189,6 +233,7 @@ export function ChatPanel({
           </Field.Row>
         </Field.Root>
       </form>
+      {docs && docsOpen && <DocsDialog {...docs} onClose={closeDocs} />}
     </aside>
   );
 }
@@ -481,6 +526,25 @@ function Step({ className, icon, summary, children, ...data }: { readonly classN
 export type ProposalWords = (id: string) => { readonly sentence: string; readonly standing?: string } | undefined;
 const noWords: ProposalWords = () => undefined;
 const ProposalWordsContext = createContext<ProposalWords>(noWords);
+/** Opens the project's docs from a line in a reply; null when the chat has no docs entry. */
+const DocsOpenContext = createContext<((event: { readonly currentTarget: HTMLElement }) => void) | null>(null);
+
+/** The line that says which docs a message went with, and the way to them. */
+function DocsNotice({ text }: { readonly text: string }) {
+  const open = useContext(DocsOpenContext);
+  return (
+    <p className="chat-small chat-docs-line chat-docs-sent" data-testid="chat-docs-sent">
+      <Text.Root as="span" tone="muted" className="chat-notice">
+        {text}
+      </Text.Root>
+      {open && (
+        <Button.Root type="button" variant="ghost" aria-haspopup="dialog" aria-label="See or change the docs the agent reads" tooltip={false} onClick={open}>
+          See docs
+        </Button.Root>
+      )}
+    </p>
+  );
+}
 
 /**
  * A proposal the agent drafted or revised, as a card in the chat: its title,
@@ -684,6 +748,7 @@ function Item({ item, finished, onOpenProposal, onOpenVariants }: { readonly ite
         </div>
       );
     case "notice":
+      if (item.about === "docs") return <DocsNotice text={item.text} />;
       return (
         <Text.Root as="p" tone="muted" className="chat-small chat-notice">
           {item.text}

@@ -220,7 +220,21 @@
   .chat { display: flex; flex-direction: column; block-size: 100%; background: var(--todae-harness-panel-bg); min-height: 0; min-width: 0; }
   .chat-busy { margin-inline-start: var(--todae-space-1); }
   .chat-small { font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); margin: 0; }
-  .chat-settings { padding: var(--todae-space-2) var(--todae-harness-panel-padding); border-block-end: var(--todae-border-width) solid var(--todae-color-border-subtle); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  /* Under the chat's head: Settings and key, which opens in place across the whole row, and the docs entry at the row's end, on the summary's line. */
+  .chat-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; padding: var(--todae-space-2) var(--todae-harness-panel-padding); border-block-end: var(--todae-border-width) solid var(--todae-color-border-subtle); font-size: var(--todae-font-size-1); --todae-text-font-size: var(--todae-font-size-1); }
+  .chat-settings { grid-column: 1 / -1; grid-row: 1; min-width: 0; }
+  /* Both are one height, the summary's words centred in it as the button's are. */
+  .chat-docs-entry { block-size: var(--todae-space-7); min-block-size: 0; box-sizing: border-box; }
+  .chat-settings > summary { padding-block: calc((var(--todae-space-7) - 1lh) / 2); }
+  .chat-docs-entry { grid-column: 2; grid-row: 1; --todae-button-font-size: var(--todae-font-size-1); --todae-button-padding-y: 0; --todae-button-padding-x: var(--todae-space-2); font-variant-numeric: tabular-nums; }
+  /* A quiet line about the docs with its one action: the empty chat's hint, and what a message was sent with. */
+  .chat-docs-line { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--todae-space-2); min-width: 0; --todae-button-font-size: var(--todae-font-size-1); --todae-button-padding-y: 0; --todae-button-padding-x: var(--todae-space-1); }
+  /* The action reads as a link in the line: underlined, and flush with the text when it wraps under it. */
+  .chat-docs-line button { min-block-size: var(--todae-harness-size-target); margin-inline: calc(-1 * var(--todae-space-1)); }
+  .chat-docs-line button > span { text-decoration: underline; }
+  .chat-docs-line > span { overflow-wrap: anywhere; min-width: 0; }
+  .chat-docs-sent { padding-inline-start: var(--todae-space-7); }
+  .chat-docs-sent .chat-notice { padding-inline-start: 0; }
   .chat-settings-body { padding-block: var(--todae-space-2); }
   .chat-setting { flex: 1; min-width: 0; }
   .chat-problem { margin: var(--todae-space-2) var(--todae-harness-panel-padding) 0; }
@@ -291,6 +305,10 @@
   .docs-form { display: grid; gap: var(--todae-space-3); min-width: 0; }
   .docs-form p { margin: 0; }
   .docs-form-title { margin: 0; font-size: var(--todae-font-size-2); }
+  /* The same docs in the chat's dialog: Todae's Dialog at the measure of the rule dialogs. */
+  .docs-dialog { --todae-dialog-max-width: var(--todae-harness-measure-note); }
+  .docs-dialog-body { display: grid; gap: var(--todae-space-4); min-width: 0; }
+  .docs-dialog-body > p { margin: 0; color: var(--todae-color-fg-muted); }
   .shell[data-width="phone"] .docs-row { grid-template-columns: auto minmax(0, 1fr); }
   .shell[data-width="phone"] .docs-actions { grid-column: 1 / -1; justify-content: start; }
 
@@ -922,7 +940,7 @@
   /* Todae's Button keeps its label on one line and cuts it short. A card's title is the proposal's name, so it wraps whole. */
   /* A phone has no room to keep the actions in view: stuck, they cover close to half of it. They scroll with the page there. */
   /* What is pressed is 24 CSS px tall at least: a radio's or a checkbox's label and a disclosure's summary are as tall as their text otherwise. */
-  :is(.variants, .wizard, .review, .proposals, .rule-flow) :is(label:has(> input), summary) { min-block-size: var(--todae-harness-size-target); }
+  :is(.variants, .wizard, .review, .proposals, .rule-flow, .docs-dialog) :is(label:has(> input), summary) { min-block-size: var(--todae-harness-size-target); }
 
   @media (max-width: 52rem) {
     .wizard-body { grid-template-columns: minmax(0, 1fr); }

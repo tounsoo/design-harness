@@ -320,7 +320,7 @@ describe("a turn that reads the project's docs", () => {
     expect(first?.body.mcp_servers).toEqual([{ type: "url", url: "https://mcp.example.com/mcp", name: "design-docs", authorization_token: TOKEN }]);
     expect((first?.body.tools as Array<{ type?: string }>).slice(-2).map((item) => item.type)).toEqual(["web_fetch_20260209", "mcp_toolset"]);
     expect((first?.body.messages[0]?.content as Array<{ text: string }>)[0]?.text).toMatch(/^This project's documentation sources, from the person:\n- Website, Todae docs: https:\/\/todae\.design\/docs\n/);
-    expect(turn().items[0]).toEqual({ kind: "notice", text: "Sent with the project's docs: Todae docs, design-docs." });
+    expect(turn().items[0]).toEqual({ kind: "notice", text: "Sent with the project's docs: Todae docs, design-docs.", about: "docs" });
     const read = turn().items.filter((item) => item.kind === "source");
     expect(read).toEqual([
       { kind: "source", id: "srvtoolu_page", via: "web", name: "web_fetch", status: "done", input: '{"url":"https://todae.design/docs/button"}', url: "https://todae.design/docs/button", pageTitle: "Button", result: "Use one primary Button per view." },
