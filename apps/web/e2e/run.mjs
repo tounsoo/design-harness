@@ -3256,8 +3256,16 @@ test("a finding about a whole page outlines nothing, and opens its code at once"
 });
 
 /** Opens the app with every frame's snapshot message recorded as it reaches the app, tags on or off. */
-async function recording(browser, base, tags) {
+async function recording(browser, base, tags, late = 1) {
   const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, acceptDownloads: true });
+  if (late > 1) {
+    // A frame starved of its thread, as on a loaded CI runner: every timer of 50 ms or more in a frame fires `late` times later.
+    await context.addInitScript((factor) => {
+      if (window.top === window) return;
+      const setTimeoutAt = window.setTimeout;
+      window.setTimeout = (callback, ms, ...rest) => setTimeoutAt(callback, (ms ?? 0) >= 50 ? ms * factor : ms, ...rest);
+    }, late);
+  }
   await context.addInitScript(() => {
     if (window.top !== window) return;
     window.__frameMessages = [];
@@ -3269,9 +3277,10 @@ async function recording(browser, base, tags) {
   await page.goto(tags ? base : `${base}?frame-tags=off`);
   await measured(page, 1);
   const spec = await page.evaluate(() => window.__frameMessages.splice(0));
+  const measuredReport = await report(page);
   await context.close();
   const by = (messages) => Object.fromEntries(messages.filter((item) => item.generation === 1).map((item) => [`${item.snapshot.scenario}@${item.snapshot.view}`, item]));
-  return { spec: by(spec) };
+  return { spec: by(spec), report: measuredReport };
 }
 
 /**
@@ -3355,6 +3364,16 @@ test("element tags change nothing a rule measures: Nook's snapshots are identica
     }
   }
   assert.ok(tagged.spec["lantern-open@desktop"].tags.includes("details/summary"), "a spec frame draws tags at expanded keys, scoped by instance");
+});
+
+test("a frame starved of its thread measures the same: with every frame's timers forty times late, so its quiet checks outlast the settle time, Nook's snapshots and report are identical", async ({ browser, base }) => {
+  // Two checks 2 s apart outlast the 3000 ms a frame waits for a changing page, though nothing on the page changes.
+  const starved = await recording(browser, base, true, 40);
+  const plain = await recording(browser, base, true);
+  const keys = SCENARIOS.flatMap((scenario) => VIEWS.map((view) => `${scenario}@${view}`));
+  assert.deepEqual(Object.keys(starved.spec).sort(), [...keys].sort(), "every starved frame measured, none failed as still changing");
+  for (const key of keys) assert.deepEqual(starved.spec[key].snapshot, plain.spec[key].snapshot, `${key}: the same snapshot starved or not`);
+  assert.deepEqual(starved.report, plain.report, "and the same report, byte for byte");
 });
 
 test("code export writes no element tags, for a spec or a stored TSX prototype", async ({ browser, base }) => {
@@ -6605,6 +6624,11 @@ for (const item of selected) {
   } catch (error) {
     failed += 1;
     console.log(`FAIL ${item.name} (${Date.now() - started} ms)\n     ${error instanceof Error ? (error.stack ?? error.message).split("\n").slice(0, 30).join("\n     ") : String(error)}`);
+  } finally {
+    // Every context a test opened closes with it, failed or not. One left open keeps its app, its worker and its live
+    // frames in memory and running for the rest of the suite: on CI's runner, a few dozen of them starve later tests'
+    // frames past their settle time and run the machine out of memory.
+    await Promise.all(browser.contexts().map((context) => context.close().catch(() => undefined)));
   }
 }
 await browser.close();

@@ -56,7 +56,7 @@ export type RenderRequest = {
   readonly scenario: ScenarioRef;
   readonly pageType: PageType;
   readonly view: View;
-  /** The longest the frame waits for the page to stop changing before it measures. */
+  /** How long the frame lets its page keep changing before it gives up on measuring it (`frame/settle.ts`): a page seen changing after this, or still loading fonts or images at it, fails to measure. */
   readonly settleMs: number;
   /** The library part the page renders inside, when the library needs one. */
   readonly root?: RootRef;
