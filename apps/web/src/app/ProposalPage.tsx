@@ -462,7 +462,7 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
   const readiness: { readonly state: "blocked" | "unmeasured" | "stalled" | "checking" | "ready"; readonly text: string } = blocked
     ? { state: "blocked", text: "It can't be accepted as it is. The reason is under Decide." }
     : !examplesMeasured && measuring.failed > 0
-      ? { state: "unmeasured", text: `${measuring.failed === 1 ? "An example" : `${measuring.failed} examples`} couldn't be drawn in every view, so this can't be accepted as it is. You can check again under Decide.` }
+      ? { state: "unmeasured", text: `${measuring.failed === 1 ? "An example" : `${measuring.failed} examples`} couldn't be drawn in every view, so this can't be accepted as it is. Check again is under Decide.` }
       : stalled
         ? { state: "stalled", text: "Drawing has stopped making progress, so this can't be checked yet. What it still waits for, and Check again, are under Decide." }
         : !examplesMeasured
@@ -590,7 +590,7 @@ function Review({ config, proposal, prototypes, openPrototypeId, board, agent, o
               refusal={
                 shownRefusal && (
                   <div ref={refusalRef} className="review-refusal">
-                    <CantAlert action={shownRefusal.action} refusal={shownRefusal.refusal} from={from} onShowTechnical={showTechnical} />
+                    <CantAlert action={shownRefusal.action} refusal={shownRefusal.refusal} from={from} canFix={fixes !== null && (fixes.canRemove || fixes.choices.length > 0)} onShowTechnical={showTechnical} />
                   </div>
                 )
               }
@@ -823,7 +823,7 @@ function Decide({ proposal, agent, canAccept, readiness, measured, refusal, fix,
             </Button.Root>
           </Stack.Root>
           <Text.Root as="p" tone="muted" id="review-accept-note" className="review-small" aria-live="polite" data-testid="review-accept-note" data-state={readiness.state} data-measured={measured ? "" : undefined}>
-            {canAccept ? "Accepting puts it in force for every prototype in this project, straight away. Only you can accept or decline; the agent can't." : readiness.state === "blocked" ? (canFix ? "Accept is unavailable until that is fixed. You can fix the example here, ask the agent for changes, or decline." : "Accept is unavailable until that is fixed. You can ask the agent for changes, or decline.") : `Accept is unavailable for now. ${readiness.text}`}
+            {canAccept ? "Accepting puts it in force for every prototype in this project, straight away. Only you can accept or decline; the agent can't." : readiness.state === "blocked" ? (canFix ? "Accept is unavailable until that is fixed. You can fix the example here, ask the agent for changes, or decline." : "Accept is unavailable until that is fixed. You can ask the agent for changes, or decline.") : readiness.state === "unmeasured" || readiness.state === "stalled" ? "Accept is unavailable until every example is drawn. You can check again, ask the agent for changes, or decline." : `Accept is unavailable for now. ${readiness.text}`}
           </Text.Root>
           {form === "decline" && <NoteForm key="decline" label="Why decline it?" hint="Declining is final. Your note is kept with the proposal." submit="Decline proposal" required="Say why you decline it." onCancel={() => setForm(null)} onSubmit={async (note) => {
             await onDecline(note);
@@ -888,7 +888,7 @@ function NoteForm({ label, hint, submit, required, initial, onSubmit, onCancel }
 }
 
 /** Why something could not be done, as a designer reads it. Core's own words for it are in the details. */
-function CantAlert({ action, refusal, from, onShowTechnical }: { readonly action: string; readonly refusal: Refusal; /** The title of the earlier proposal whose example the refusal names. */ readonly from?: string | undefined; readonly onShowTechnical?: () => void }) {
+function CantAlert({ action, refusal, from, canFix = false, onShowTechnical }: { readonly action: string; readonly refusal: Refusal; /** The title of the earlier proposal whose example the refusal names. */ readonly from?: string | undefined; /** The person can fix the examples themselves, just below. */ readonly canFix?: boolean; readonly onShowTechnical?: () => void }) {
   const accepting = action === "accept";
   return (
     <Alert.Root tone="warning" data-testid="review-refusal" data-code={refusal.code} data-action={action}>
@@ -899,7 +899,7 @@ function CantAlert({ action, refusal, from, onShowTechnical }: { readonly action
             {accepting ? plainRefusal(refusal) : refusal.message}
             {accepting && refusal.example && !refusal.proposal ? ` The example is “${exampleLabel(refusal.example)}”.` : ""}
             {accepting && refusal.example && refusal.proposal ? ` The example is “${exampleLabel(refusal.example)}”, kept from “${from ?? refusal.proposal}”.` : ""}
-            {accepting ? " Nothing has changed. Ask the agent for changes, or decline it." : ""}
+            {accepting ? (canFix ? " Nothing has changed. Fix the example below, ask the agent for changes, or decline it." : " Nothing has changed. Ask the agent for changes, or decline it.") : ""}
           </Text.Root>
           {accepting && onShowTechnical && (
             <div>
