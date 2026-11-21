@@ -973,7 +973,7 @@ export function Workspace({ store, vault, tokens, docs: initialDocs, config: ini
 
       <Splitter.Root className="shell-body" show={canvasOnly ? "end" : panes === 1 ? (open.chat ? "start" : "end") : "both"} value={open.chat ? panels.chat.width : 0} onValueChange={(value) => resizePanel("chat", value)} min={PANEL_SIZES.chat.min} max={PANEL_SIZES.chat.max} collapsible>
         <Splitter.Panel id={chatId} className="shell-panel">
-          <ChatPanel controller={controller} vault={vault} settings={settings} {...(readOnly ? { readOnly: TSX_READ_ONLY } : {})} onSettings={changeSettings} onOpenProposal={openProposal} proposalWords={proposalWords} onOpenVariants={() => setCenter("variants")} prefill={prefill} onClose={() => showPanel("chat", false)} {...(offered ? { suggestion: { pattern: offered, onAccept: () => void answerSuggestion("accepted"), onDismiss: () => void answerSuggestion("dismissed") } } : {})} />
+          <ChatPanel controller={controller} vault={vault} settings={settings} docs={{ projectId: initialConfig.id, sources: docs, tokens, onSave: saveDocs }} {...(readOnly ? { readOnly: TSX_READ_ONLY } : {})} onSettings={changeSettings} onOpenProposal={openProposal} proposalWords={proposalWords} onOpenVariants={() => setCenter("variants")} prefill={prefill} onClose={() => showPanel("chat", false)} {...(offered ? { suggestion: { pattern: offered, onAccept: () => void answerSuggestion("accepted"), onDismiss: () => void answerSuggestion("dismissed") } } : {})} />
         </Splitter.Panel>
         <Splitter.Handle aria-label="Resize the chat" className="shell-handle" data-side="start" />
         <Splitter.Panel className="shell-panel">

@@ -1222,6 +1222,147 @@ test("an old project and an old project file load with no docs, and an imported 
   assert.deepEqual(errors, []);
 });
 
+test("docs beside the chat: a site and a docs server are added from the chat panel, by keyboard on a phone too, the count and the Project view follow, the next request carries them, and the empty chat's hint leaves", async ({ browser, base, api }) => {
+  const { page, errors, logs } = await openApp(browser, base);
+  await measured(page, 1);
+  const chat = page.getByRole("complementary", { name: "Agent chat" });
+  const entry = chat.getByTestId("chat-docs-entry");
+  const hint = chat.getByTestId("chat-docs-hint");
+  const dialog = page.getByTestId("chat-docs");
+  const rows = dialog.getByTestId("doc-source");
+  // Before the key the entry is already there, and the hint waits for the empty chat.
+  assert.equal(await entry.textContent(), "Add docs");
+  assert.equal(await hint.count(), 0, "the key comes first: no hint beside the key form");
+  await enterKey(page);
+  assert.deepEqual([await hint.locator("span").first().textContent(), await hint.getByRole("button").textContent()], ["Using a design system?", "Give the agent its docs"]);
+  assert.equal(await entry.getAttribute("data-count"), "0");
+  await shot(page, "chat-docs-empty-light");
+  await shotDark(page, "chat-docs-empty-dark");
+
+  // The hint's action opens the docs, the same list and forms the Project view has, in a dialog.
+  await hint.getByRole("button", { name: "Give the agent its docs" }).click();
+  await dialog.getByTestId("docs-empty").waitFor();
+  assert.match(await dialog.getByTestId("docs-privacy").textContent(), /Anthropic makes those requests for it, not this browser/);
+  await dialog.getByRole("button", { name: "Add a docs site" }).click();
+  const siteForm = dialog.getByRole("form", { name: "Add a docs site" });
+  await becomesFocused(page, siteForm.getByLabel("Site address"), "the form opens with focus in its address");
+  // An address that is not https is refused in the same words, and nothing is saved.
+  await siteForm.getByLabel("Site address").fill("http://todae.design/docs");
+  await siteForm.getByRole("button", { name: "Add the site" }).click();
+  assert.equal(await siteForm.getByTestId("doc-url-problem").textContent(), "Use an https:// address.");
+  assert.equal(await entry.getAttribute("data-count"), "0");
+  await siteForm.getByLabel("Site address").fill("https://todae.design/docs");
+  await siteForm.getByLabel("Name shown to you (optional)").fill("Todae docs");
+  await siteForm.getByRole("button", { name: "Add the site" }).click();
+  await siteForm.waitFor({ state: "detached" });
+  assert.equal(await rows.count(), 1);
+  await becomesFocused(page, dialog.getByRole("button", { name: "Add a docs site" }), "after adding, focus is back on Add a docs site");
+  // The count follows at once, and the hint is gone though the chat is still empty.
+  assert.equal(await entry.textContent(), "Docs (1)");
+  assert.equal(await hint.count(), 0, "the hint leaves once the project has docs");
+  await shot(page, "chat-docs-dialog-light");
+  await shotDark(page, "chat-docs-dialog-dark");
+  // Closing puts focus on the entry: the hint that opened the dialog is gone.
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "detached" });
+  await becomesFocused(page, entry, "closing the docs returns focus to the docs entry");
+
+  // On a phone, by keyboard alone: the entry opens the dialog, and a docs server is added with its token.
+  await page.setViewportSize(PHONE);
+  await page.locator('.shell[data-width="phone"]').waitFor();
+  if (!(await chat.isVisible())) await page.getByRole("button", { name: /^Chat \(/ }).click();
+  await entry.waitFor();
+  await narrowIsUsable(page, chat, "the chat with its docs entry on a phone");
+  await entry.focus();
+  await page.keyboard.press("Enter");
+  await dialog.waitFor();
+  const addServer = dialog.getByRole("button", { name: "Add a docs server" });
+  for (let stops = 0; stops < 12 && !(await focused(addServer)); stops += 1) await page.keyboard.press("Tab");
+  assert.ok(await focused(addServer), "Tab reaches Add a docs server");
+  await page.keyboard.press("Enter");
+  const serverForm = dialog.getByRole("form", { name: "Add a docs server" });
+  await becomesFocused(page, serverForm.getByLabel("Server address"), "the server form opens with focus in its address");
+  await page.keyboard.type("https://mcp.example.com/mcp");
+  await page.keyboard.press("Tab");
+  assert.ok(await focused(serverForm.getByLabel("Short name")), "Tab moves to the short name");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("Design docs");
+  await page.keyboard.press("Tab");
+  assert.ok(await focused(serverForm.getByLabel("Token (optional)")), "Tab moves to the token");
+  await page.keyboard.type(DOC_TOKEN);
+  await narrowIsUsable(page, dialog, "the docs server form in the chat's dialog on a phone");
+  await shot(page, "narrow-chat-docs-form-phone-light");
+  await shotDark(page, "narrow-chat-docs-form-phone-dark");
+  await page.keyboard.press("Enter");
+  await serverForm.waitFor({ state: "detached" });
+  assert.equal(await rows.count(), 2);
+  assert.equal(await rows.nth(1).getByTestId("doc-source-reach").textContent(), 'The agent can call this server\'s tools, as "design-docs". Token mcp-e2e…ghij: in this tab\'s memory only.');
+  await narrowIsUsable(page, dialog, "the docs list in the chat's dialog on a phone");
+  for (const [name, button] of [["Done", dialog.getByRole("button", { name: "Done" })], ["Edit Design docs", dialog.getByRole("button", { name: "Edit Design docs" })]]) await reachable(page, button, `${name} in the docs dialog on a phone`);
+  await shot(page, "narrow-chat-docs-list-phone-light");
+  await shotDark(page, "narrow-chat-docs-list-phone-dark");
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "detached" });
+  await becomesFocused(page, entry, "on a phone, closing the docs returns focus to the docs entry");
+  assert.equal(await entry.textContent(), "Docs (2)");
+  await noSidewaysScroll(page, "the chat on a phone, with docs");
+  await shot(page, "narrow-chat-docs-entry-phone-light");
+  await shotDark(page, "narrow-chat-docs-entry-phone-dark");
+
+  // The Project view shows the same two, and a change there shows in the chat's count at once.
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.locator('.shell[data-width="desktop"]').waitFor();
+  await mainView(page, "Project").click();
+  const section = page.getByTestId("project-docs");
+  assert.deepEqual(await section.getByTestId("doc-source").locator(".docs-title").allTextContents(), ["Todae docs", "Design docs"]);
+  assert.equal(await section.getByTestId("doc-source").nth(1).getByTestId("doc-source-reach").textContent(), 'The agent can call this server\'s tools, as "design-docs". Token mcp-e2e…ghij: in this tab\'s memory only.');
+  await section.getByRole("button", { name: "Remove Todae docs" }).click();
+  await eventually(page, () => entry.textContent(), (text) => text === "Docs (1)", "removing a source in the Project view lowers the chat's count");
+  await addDocSite(page, { url: "https://todae.design/docs", label: "Todae docs" });
+  await eventually(page, () => entry.textContent(), (text) => text === "Docs (2)", "adding one in the Project view raises it");
+  // And the other way: the dialog open over the Project view lists what the section lists.
+  await entry.click();
+  assert.deepEqual(await rows.locator(".docs-title").allTextContents(), ["Design docs", "Todae docs"]);
+  await dialog.getByRole("button", { name: "Done" }).click();
+  await dialog.waitFor({ state: "detached" });
+  await becomesFocused(page, entry, "Done returns focus to the docs entry");
+
+  // The next request carries both, added from the chat: web fetch on the site's domain, and the server with its token.
+  api.script([
+    (body) => {
+      assert.deepEqual(body.tools.slice(-2), [
+        { type: "web_fetch_20260209", name: "web_fetch", allowed_domains: ["todae.design"], allowed_callers: ["direct"], max_uses: 10, max_content_tokens: 20000 },
+        { type: "mcp_toolset", mcp_server_name: "design-docs" },
+      ]);
+      assert.deepEqual(body.mcp_servers, [{ type: "url", url: "https://mcp.example.com/mcp", name: "design-docs", authorization_token: DOC_TOKEN }]);
+      assert.equal(body.system.length, 3);
+      assert.match(body.system[2].text, /- Todae docs: https:\/\/todae\.design\/docs/);
+      assert.match(body.messages[0].content[0].text, /^This project's documentation sources, from the person:/);
+      return textReply("Hold room stays secondary, as Todae's Button docs say.");
+    },
+  ]);
+  await mainView(page, "Canvas").click();
+  await ask(page, "Make Hold room stand out");
+  assert.equal(await turnEnded(page), "done");
+  assert.equal(api.left(), 0);
+  assert.equal(api.requests[0].headers["anthropic-beta"], "server-side-fallback-2026-07-01,mcp-client-2025-11-20");
+  // The reply's line names the docs, and its action opens them; closing returns to that action.
+  const sent = chat.getByTestId("chat-docs-sent");
+  assert.equal(await sent.locator(".chat-notice").textContent(), "Sent with the project's docs: Design docs, Todae docs.");
+  const see = sent.getByRole("button", { name: "See or change the docs the agent reads" });
+  await see.click();
+  assert.equal(await rows.count(), 2);
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "detached" });
+  await becomesFocused(page, see, "closing returns focus to the line's action");
+  assert.equal(await hint.count(), 0);
+  assert.ok(!(await chat.textContent()).includes(DOC_TOKEN), "the chat never shows the token");
+  await shot(page, "chat-docs-sent-light");
+  await shotDark(page, "chat-docs-sent-dark");
+  assert.ok(logs.every((line) => !line.includes(DOC_TOKEN)), "the token is never logged");
+  assert.deepEqual(errors, []);
+});
+
 test("screenshots of the chat in use, light and dark", async ({ browser, base, api }) => {
   if (!shots) return;
   for (const colorScheme of ["light", "dark"]) {

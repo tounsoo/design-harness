@@ -1,18 +1,19 @@
-import { Badge, Button, Checkbox, ErrorMessage, Field, Label, Stack, Text } from "@tounsoo/todae";
+import { Badge, Button, Checkbox, Dialog, ErrorMessage, Field, Label, Stack, Text } from "@tounsoo/todae";
 import { BookOpen, Globe, Pencil, Plus, Server, Trash2 } from "lucide-react";
-import { useId, useState, useSyncExternalStore, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import { MAX_SOURCES, cleanSource, nameProblem, sourceProblems, sourceTitle, suggestName, urlProblem, websiteDomain, type DocSource } from "../docs/sources";
 import { tokenProblem, type DocTokens } from "../docs/token-vault";
 import { KEY_DB } from "../agent/key-vault";
 
 /**
- * The project's docs, in the Project view: websites, such as the design
- * system's docs site, and docs servers (remote MCP servers) the agent reads
- * when it designs, proposes or answers. A person adds, edits and removes
- * them here; the agent never does. They are context for the agent, never a
- * rule: no check reads them. A docs server's token is kept as the API key
- * is, in this tab's memory and, if the person asks, on this device, and
- * never with the project.
+ * The project's docs: websites, such as the design system's docs site, and
+ * docs servers (remote MCP servers) the agent reads when it designs,
+ * proposes or answers. A person adds, edits and removes them, in the Project
+ * view's section or in the dialog the chat opens, both drawing the same
+ * `DocsManager` over the workspace's one list; the agent never does. They
+ * are context for the agent, never a rule: no check reads them. A docs
+ * server's token is kept as the API key is, in this tab's memory and, if the
+ * person asks, on this device, and never with the project.
  */
 export type DocsProps = {
   readonly sources: readonly DocSource[];
@@ -23,10 +24,69 @@ export type DocsProps = {
 /** Which source the form edits: a new one of a kind, or the one at an index. */
 type Editing = { readonly kind: DocSource["kind"]; readonly index: number | null };
 
-export function DocsSection({ projectId, sources, tokens, onSave }: DocsProps & { readonly projectId: string }) {
+const DOCS_TITLE = "Docs the agent reads";
+const DOCS_LEAD = "Add your design system's docs site, or a docs server, and the agent reads them when it designs, proposes or answers: a component's documented usage before it uses or proposes one. Docs are context, not rules: the checks still decide.";
+
+/** The Project view's section. */
+export function DocsSection({ projectId, ...docs }: DocsProps & { readonly projectId: string }) {
+  return (
+    <section aria-labelledby="project-docs" data-testid="project-docs" className="docs">
+      <div className="section-head">
+        <Text.Root as="h2" id="project-docs">
+          {DOCS_TITLE}
+        </Text.Root>
+        <Text.Root as="p" tone="muted">
+          {DOCS_LEAD}
+        </Text.Root>
+      </div>
+      <DocsManager projectId={projectId} {...docs} />
+    </section>
+  );
+}
+
+/**
+ * The same docs beside the chat, in a dialog: the list and its forms have
+ * the room a narrow chat panel lacks, a phone included. The chat puts focus
+ * back where it was when the dialog closes.
+ */
+export function DocsDialog({ projectId, onClose, ...docs }: DocsProps & { readonly projectId: string; readonly onClose: () => void }) {
+  return (
+    <Dialog.Root open onOpenChange={(next) => !next && onClose()} className="docs-dialog" data-testid="chat-docs">
+      <Dialog.Header>
+        <Dialog.Title>{DOCS_TITLE}</Dialog.Title>
+      </Dialog.Header>
+      <Dialog.Body className="docs-dialog-body">
+        <Dialog.Description>{DOCS_LEAD}</Dialog.Description>
+        <DocsManager projectId={projectId} {...docs} />
+      </Dialog.Body>
+      <Dialog.Footer>
+        <Dialog.Close variant="primary">Done</Dialog.Close>
+      </Dialog.Footer>
+    </Dialog.Root>
+  );
+}
+
+/** The list of sources, the form that adds or edits one, and how they are kept. */
+function DocsManager({ projectId, sources, tokens, onSave }: DocsProps & { readonly projectId: string }) {
   useSyncExternalStore(tokens.subscribe, tokens.getVersion);
-  const [editing, setEditing] = useState<Editing | null>(null);
+  const [editing, setEditingState] = useState<Editing | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  // A form takes focus when it opens (its address field). When it closes, focus goes back to what opened it:
+  // the row's Edit button, or the Add button of its kind, or the first Add button when that row is gone.
+  const root = useRef<HTMLDivElement>(null);
+  const [back, setBack] = useState<Editing | null>(null);
+  const setEditing = (next: Editing | null) => {
+    if (next === null) setBack(editing);
+    setEditingState(next);
+  };
+  useEffect(() => {
+    if (!back) return;
+    setBack(null);
+    const within = root.current;
+    if (!within || (within.contains(document.activeElement) && document.activeElement !== within)) return;
+    const row = back.index === null ? null : within.querySelectorAll<HTMLElement>("[data-docs-edit]")[back.index];
+    (row ?? within.querySelector<HTMLElement>(`[data-docs-add="${back.kind}"]:not(:disabled)`) ?? within.querySelector<HTMLElement>("[data-docs-add]:not(:disabled)"))?.focus();
+  }, [back]);
   const full = sources.length >= MAX_SOURCES;
 
   const save = async (next: readonly DocSource[]) => {
@@ -45,20 +105,13 @@ export function DocsSection({ projectId, sources, tokens, onSave }: DocsProps & 
     if (await save(sources.filter((_, at) => at !== index))) {
       if (source.kind === "mcp") await tokens.forget(projectId, source.name);
       setEditing(null);
+      // The row and its buttons are gone: focus goes to adding one of its kind.
+      setBack({ kind: source.kind, index: null });
     }
   };
 
   return (
-    <section aria-labelledby="project-docs" data-testid="project-docs" className="docs">
-      <div className="section-head">
-        <Text.Root as="h2" id="project-docs">
-          Docs the agent reads
-        </Text.Root>
-        <Text.Root as="p" tone="muted">
-          Add your design system&apos;s docs site, or a docs server, and the agent reads them when it designs, proposes or answers: a component&apos;s documented usage before it uses or proposes one. Docs are context, not rules: the checks still decide.
-        </Text.Root>
-      </div>
-
+    <div className="docs" ref={root}>
       {sources.length === 0 ? (
         <Text.Root as="p" tone="muted" className="docs-empty" data-testid="docs-empty">
           No docs yet. The agent works from the project&apos;s parts and rules alone.
@@ -106,13 +159,13 @@ export function DocsSection({ projectId, sources, tokens, onSave }: DocsProps & 
         </div>
       ) : (
         <Stack.Root direction="row" gap="condensed" wrap className="docs-add">
-          <Button.Root type="button" variant="secondary" disabled={full} onClick={() => setEditing({ kind: "website", index: null })}>
+          <Button.Root type="button" variant="secondary" disabled={full} data-docs-add="website" onClick={() => setEditing({ kind: "website", index: null })}>
             <Button.Icon>
               <Plus />
             </Button.Icon>
             Add a docs site
           </Button.Root>
-          <Button.Root type="button" variant="secondary" disabled={full} onClick={() => setEditing({ kind: "mcp", index: null })}>
+          <Button.Root type="button" variant="secondary" disabled={full} data-docs-add="mcp" onClick={() => setEditing({ kind: "mcp", index: null })}>
             <Button.Icon>
               <Plus />
             </Button.Icon>
@@ -134,7 +187,7 @@ export function DocsSection({ projectId, sources, tokens, onSave }: DocsProps & 
       <Text.Root as="p" tone="muted" className="chat-small docs-privacy" data-testid="docs-privacy">
         The agent opens pages only on these sites, and calls only these servers. Anthropic makes those requests for it, not this browser, and what comes back goes into the chat. A docs server&apos;s token is kept like your API key: in this tab&apos;s memory, and on this device only if you ask, never in the project, an export or the chat.
       </Text.Root>
-    </section>
+    </div>
   );
 }
 
@@ -165,7 +218,7 @@ function SourceRow({ projectId, source, tokens, onEdit, onRemove }: { readonly p
         </Text.Root>
       </div>
       <div className="docs-actions">
-        <Button.Root type="button" variant="ghost" onClick={onEdit} aria-label={`Edit ${title}`}>
+        <Button.Root type="button" variant="ghost" onClick={onEdit} aria-label={`Edit ${title}`} data-docs-edit="">
           <Button.Icon>
             <Pencil />
           </Button.Icon>
@@ -212,6 +265,8 @@ function DocForm({
   const [forgetToken, setForgetToken] = useState(false);
   const [problems, setProblems] = useState<{ url?: string; name?: string; label?: string; token?: string }>({});
   const server = kind === "mcp";
+  const address = useRef<HTMLInputElement>(null);
+  useEffect(() => address.current?.focus(), []);
   const shownName = nameTouched ? name : url.trim() || label.trim() ? suggestName(label.trim() || url) : "";
 
   const submit = async (event: FormEvent) => {
@@ -276,7 +331,7 @@ function DocForm({
       <Stack.Root gap="condensed">
         <Label.Root htmlFor={`${id}-url`}>{server ? "Server address" : "Site address"}</Label.Root>
         <Field.Root {...field("url")}>
-          <Field.TextInput type="url" inputMode="url" value={url} onValueChange={setUrl} autoComplete="off" spellCheck={false} placeholder={server ? "https://docs.example.com/mcp" : "https://design.example.com/docs"} />
+          <Field.TextInput ref={address} type="url" inputMode="url" value={url} onValueChange={setUrl} autoComplete="off" spellCheck={false} placeholder={server ? "https://docs.example.com/mcp" : "https://design.example.com/docs"} />
         </Field.Root>
         {why("url")}
       </Stack.Root>
