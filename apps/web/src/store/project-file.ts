@@ -1,4 +1,5 @@
 import { formatIssues, parseProjectConfig, parsePrototype, parseVariantState, type ProjectConfig, type Prototype, type TsxPrototype, type VariantState } from "@design-harness/core";
+import { cleanSource, parseDocSources, type DocSource } from "../docs/sources";
 import { parsePinState, type PinState } from "../pins/model";
 import { withoutTsxRules } from "./migrate";
 
@@ -37,15 +38,22 @@ export type SpecRecord = PrototypeRecord & { readonly prototype: Prototype };
 
 export const isSpecRecord = (record: PrototypeRecord): record is SpecRecord => record.prototype.format === "spec";
 
+/**
+ * The file. `docs` is the project's doc sources, beside the config and not
+ * in it, since no check reads them; absent when it has none. It never holds
+ * a docs server's token: a source has no field for one, and import refuses
+ * a source with any field it does not know.
+ */
 export type ProjectFile = {
   readonly format: typeof PROJECT_FILE_FORMAT;
   readonly version: typeof PROJECT_FILE_VERSION;
   readonly project: ProjectConfig;
+  readonly docs?: readonly DocSource[];
   readonly prototypes: readonly { readonly id: string; readonly name: string; readonly prototype: StoredPrototype; readonly variants?: VariantState; readonly pins?: PinState }[];
 };
 
 /** An imported project. `removed` lists the rules only TSX had, which the import took out of the config (`store/migrate.ts`); empty when there were none. */
-export type Imported = { readonly config: ProjectConfig; readonly prototypes: readonly PrototypeRecord[]; readonly removed: readonly string[] };
+export type Imported = { readonly config: ProjectConfig; readonly prototypes: readonly PrototypeRecord[]; readonly removed: readonly string[]; readonly docs: readonly DocSource[] };
 
 /** A stored prototype read back: a spec; a TSX one core refused but handed back whole; or the issues, as text. */
 export function readStoredPrototype(json: unknown): { readonly ok: true; readonly value: StoredPrototype } | { readonly ok: false; readonly error: string } {
@@ -58,11 +66,13 @@ export function readStoredPrototype(json: unknown): { readonly ok: true; readonl
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /** The file's text: stable, indented JSON, prototypes in id order. */
-export function exportProject(config: ProjectConfig, prototypes: readonly PrototypeRecord[]): string {
+export function exportProject(config: ProjectConfig, prototypes: readonly PrototypeRecord[], docs: readonly DocSource[] = []): string {
   const file: ProjectFile = {
     format: PROJECT_FILE_FORMAT,
     version: PROJECT_FILE_VERSION,
     project: config,
+    // Each source is written field by field, so nothing else, a token least of all, can ride along.
+    ...(docs.length > 0 ? { docs: docs.map(cleanSource) } : {}),
     prototypes: [...prototypes].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).map(({ id, name, prototype, variants, pins }) => ({ id, name, prototype, ...(variants && (variants.variants.length > 0 || variants.picks.length > 0) ? { variants } : {}), ...(pins && pins.pins.length > 0 ? { pins } : {}) })),
   };
   return `${JSON.stringify(file, null, 2)}\n`;
@@ -88,8 +98,11 @@ export function importProject(text: string): { ok: true; value: Imported } | { o
   if (!isObject(json) || json.format !== PROJECT_FILE_FORMAT) return { ok: false, error: [`The file is not a design-harness project: its "format" is not "${PROJECT_FILE_FORMAT}".`] };
   if (json.version !== PROJECT_FILE_VERSION) return { ok: false, error: [`The file is version ${JSON.stringify(json.version)}; this app reads version ${PROJECT_FILE_VERSION}.`] };
   const errors: string[] = [];
-  const unknownKeys = Object.keys(json).filter((key) => !["format", "version", "project", "prototypes"].includes(key));
+  const unknownKeys = Object.keys(json).filter((key) => !["format", "version", "project", "docs", "prototypes"].includes(key));
   if (unknownKeys.length > 0) errors.push(`$: has unknown fields ${unknownKeys.map((key) => `"${key}"`).join(", ")}`);
+  // A file from before doc sources has none.
+  const docs = parseDocSources(json.docs);
+  if (!docs.ok) errors.push(...docs.error.map((line) => line.replace(/^\$/, "$.docs")));
   const { json: project, removed } = withoutTsxRules(json.project);
   const config = parseProjectConfig(project);
   if (!config.ok) errors.push(...formatIssues(config.error).split("\n").map((line) => `project: ${line.replace(/^\$/, "$.project")}`));
@@ -119,6 +132,6 @@ export function importProject(text: string): { ok: true; value: Imported } | { o
       return undefined;
     });
   }
-  if (errors.length > 0 || !config.ok) return { ok: false, error: errors };
-  return { ok: true, value: { config: config.value, prototypes: records, removed } };
+  if (errors.length > 0 || !config.ok || !docs.ok) return { ok: false, error: errors };
+  return { ok: true, value: { config: config.value, prototypes: records, removed, docs: docs.value } };
 }

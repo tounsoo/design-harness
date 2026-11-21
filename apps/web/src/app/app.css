@@ -276,6 +276,23 @@
   .section-head { display: grid; gap: var(--todae-space-1); }
   .section-head h2 { margin: 0; }
   .section-head p { margin: 0; }
+  /* The docs the agent reads, in the Project view: one row per source, and the form that adds or edits one. */
+  .docs { display: grid; gap: var(--todae-space-3); min-width: 0; }
+  .docs-empty, .docs-privacy { margin: 0; }
+  .docs-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--todae-space-2); }
+  .docs-item { padding: var(--todae-space-3) var(--todae-space-4); border: var(--todae-border-width) solid var(--todae-color-border-subtle); border-radius: var(--todae-radius-lg); background: var(--todae-color-bg-canvas); min-width: 0; }
+  .docs-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--todae-space-3); align-items: start; }
+  .docs-icon { display: inline-flex; color: var(--todae-color-fg-muted); }
+  .docs-icon svg { inline-size: var(--todae-harness-size-target); block-size: var(--todae-harness-size-target); }
+  .docs-text { display: grid; gap: var(--todae-space-1); min-width: 0; }
+  .docs-text p { margin: 0; }
+  .docs-title, .docs-url, .chat-source-url { overflow-wrap: anywhere; }
+  .docs-actions { display: flex; flex-wrap: wrap; gap: var(--todae-space-1); justify-content: end; }
+  .docs-form { display: grid; gap: var(--todae-space-3); min-width: 0; }
+  .docs-form p { margin: 0; }
+  .docs-form-title { margin: 0; font-size: var(--todae-font-size-2); }
+  .shell[data-width="phone"] .docs-row { grid-template-columns: auto minmax(0, 1fr); }
+  .shell[data-width="phone"] .docs-actions { grid-column: 1 / -1; justify-content: start; }
 
   /*
    * Proposals and a proposal's review page: Todae's Card, Table, Badge, Steps,

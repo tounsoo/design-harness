@@ -119,4 +119,44 @@ describe("the browser store", () => {
     expect(loaded.items.map((item) => [item.id, item.prototype])).toEqual([["old", tsx], ["older", tsx]]);
     reopened.close();
   });
+
+  it("keeps a project's doc sources beside its config: none for an older project, kept when the config is saved, replaced by an import", async () => {
+    const store = await open();
+    const site = { kind: "website" as const, url: "https://todae.design/docs" };
+    await store.replaceProject(nook, []);
+    expect(await store.docs("nook")).toEqual({ sources: [], problem: null });
+    await store.putDocs("nook", [site]);
+    expect(await store.docs("nook")).toEqual({ sources: [site], problem: null });
+    // Saving the config, as a proposal or a library move does, keeps the docs.
+    await store.putProject({ ...nook, name: "Nook 2" });
+    expect(await store.docs("nook")).toEqual({ sources: [site], problem: null });
+    expect((await store.projects()).items.map((item) => item.name)).toEqual(["Nook 2"]);
+    await store.replaceProject(nook, [], []);
+    expect(await store.docs("nook")).toEqual({ sources: [], problem: null });
+    await expect(store.putDocs("nook", [{ kind: "website", url: "http://todae.design" }])).rejects.toThrow("Use an https:// address.");
+    store.close();
+  });
+
+  it("reports stored doc sources that no longer read, and still loads the project", async () => {
+    const name = `test-${(count += 1)}`;
+    const store = await Store.open(indexedDB, name);
+    await store.replaceProject(nook, []);
+    store.close();
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open(name);
+      request.onsuccess = () => {
+        const tx = request.result.transaction("projects", "readwrite");
+        tx.objectStore("projects").put({ id: "nook", config: nook, docs: [{ kind: "website", url: "https://todae.design", token: "x" }] });
+        tx.oncomplete = () => {
+          request.result.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+    const reopened = await Store.open(indexedDB, name);
+    expect((await reopened.projects()).items).toEqual([nook]);
+    expect(await reopened.docs("nook")).toEqual({ sources: [], problem: 'The docs stored with project "nook" could not be read and were not loaded:\n$[0]: has unknown fields "token"' });
+    reopened.close();
+  });
 });

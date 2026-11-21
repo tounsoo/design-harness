@@ -24,7 +24,11 @@ function pieces(text, parts) {
 
 /**
  * The events of one assistant message.
- * @param {{ id?: string, model?: string, blocks: Array<{ type: "text", text: string } | { type: "thinking", thinking: string, signature?: string } | { type: "tool_use", id: string, name: string, input: unknown } | { type: "fallback", from: string, to: string }>, stopReason: string, stopDetails?: unknown, usage?: { input?: number, output?: number, cacheWrite?: number, cacheRead?: number } }} script
+ * Server tools run at the API, so their call and result come in the same
+ * message: `web_fetch` and `web_fetch_result` (a page read, or an error
+ * code), `mcp_tool_use` and `mcp_tool_result` (a docs server's tool through
+ * the MCP connector).
+ * @param {{ id?: string, model?: string, blocks: Array<{ type: "text", text: string } | { type: "thinking", thinking: string, signature?: string } | { type: "tool_use", id: string, name: string, input: unknown } | { type: "fallback", from: string, to: string } | { type: "web_fetch", id: string, url: string } | { type: "web_fetch_result", id: string, url: string, text?: string, title?: string, error?: string } | { type: "mcp_tool_use", id: string, name: string, server: string, input: unknown } | { type: "mcp_tool_result", id: string, text: string, isError?: boolean }>, stopReason: string, stopDetails?: unknown, usage?: { input?: number, output?: number, cacheWrite?: number, cacheRead?: number } }} script
  */
 export function streamEvents({ id = "msg_fake", model = "claude-opus-5-5", blocks, stopReason, stopDetails = null, usage = {} }) {
   const events = [];
@@ -56,6 +60,20 @@ export function streamEvents({ id = "msg_fake", model = "claude-opus-5-5", block
       for (const partial_json of pieces(JSON.stringify(block.input), 4)) push({ type: "content_block_delta", index, delta: { type: "input_json_delta", partial_json } });
     } else if (block.type === "fallback") {
       push({ type: "content_block_start", index, content_block: { type: "fallback", from: { model: block.from }, to: { model: block.to } } });
+    } else if (block.type === "web_fetch") {
+      // A server tool call: Anthropic's web fetch, which runs at the API. Its input streams as JSON; its result arrives whole in the next block.
+      push({ type: "content_block_start", index, content_block: { type: "server_tool_use", id: block.id, name: "web_fetch", input: {}, caller: { type: "direct" } } });
+      for (const partial_json of pieces(JSON.stringify({ url: block.url }), 2)) push({ type: "content_block_delta", index, delta: { type: "input_json_delta", partial_json } });
+    } else if (block.type === "web_fetch_result") {
+      const content = block.error
+        ? { type: "web_fetch_tool_result_error", error_code: block.error }
+        : { type: "web_fetch_result", url: block.url, retrieved_at: "2026-11-21T09:00:00Z", content: { type: "document", source: { type: "text", media_type: "text/plain", data: block.text }, title: block.title ?? null, citations: null } };
+      push({ type: "content_block_start", index, content_block: { type: "web_fetch_tool_result", tool_use_id: block.id, content, caller: { type: "direct" } } });
+    } else if (block.type === "mcp_tool_use") {
+      push({ type: "content_block_start", index, content_block: { type: "mcp_tool_use", id: block.id, name: block.name, server_name: block.server, input: {} } });
+      for (const partial_json of pieces(JSON.stringify(block.input), 2)) push({ type: "content_block_delta", index, delta: { type: "input_json_delta", partial_json } });
+    } else if (block.type === "mcp_tool_result") {
+      push({ type: "content_block_start", index, content_block: { type: "mcp_tool_result", tool_use_id: block.id, is_error: block.isError ?? false, content: [{ type: "text", text: block.text, citations: null }] } });
     }
     push({ type: "content_block_stop", index });
   });

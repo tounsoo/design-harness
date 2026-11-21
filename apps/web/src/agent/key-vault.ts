@@ -9,7 +9,9 @@
  */
 
 export const KEY_DB = "design-harness-key";
-const STORE = "keys";
+/** The one store in the key database. Docs servers' remembered tokens share it, under ids that start with `mcp:` (`docs/token-vault.ts`). */
+export const KEY_STORE = "keys";
+const STORE = KEY_STORE;
 const ID = "anthropic";
 
 export type KeyState = {
@@ -19,7 +21,7 @@ export type KeyState = {
   readonly hint: string | null;
 };
 
-function request<T>(req: IDBRequest<T>): Promise<T> {
+export function request<T>(req: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error ?? new Error("IndexedDB request failed"));
@@ -36,6 +38,23 @@ export function keyProblem(key: string): string | null {
   if (/\s/.test(key)) return "An API key has no spaces or line breaks.";
   if (key.length < 20) return "That is too short to be an API key.";
   return null;
+}
+
+/** Opens the key database, creating its store on first use. */
+export function openKeyDb(factory: IDBFactory): Promise<IDBDatabase> {
+  const req = factory.open(KEY_DB, 1);
+  req.onupgradeneeded = () => {
+    if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE, { keyPath: "id" });
+  };
+  return request(req);
+}
+
+/** Waits for a write to the key database to finish. */
+export function finished(tx: IDBTransaction): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error("IndexedDB transaction failed"));
+  });
 }
 
 export class KeyVault {
@@ -81,11 +100,7 @@ export class KeyVault {
 
   private async db(): Promise<IDBDatabase | null> {
     if (!this.factory) return null;
-    const req = this.factory.open(KEY_DB, 1);
-    req.onupgradeneeded = () => {
-      if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE, { keyPath: "id" });
-    };
-    return request(req);
+    return openKeyDb(this.factory);
   }
 
   private async read(): Promise<string | null> {
@@ -106,10 +121,7 @@ export class KeyVault {
       const tx = db.transaction(STORE, "readwrite");
       if (key === null) tx.objectStore(STORE).delete(ID);
       else tx.objectStore(STORE).put({ id: ID, key });
-      await new Promise<void>((resolve, reject) => {
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error ?? new Error("IndexedDB transaction failed"));
-      });
+      await finished(tx);
     } finally {
       db.close();
     }

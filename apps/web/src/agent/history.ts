@@ -28,8 +28,14 @@ function copy<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-/** Block types an assistant turn may carry that this app sends back as they are. */
-const KNOWN = new Set(["text", "thinking", "redacted_thinking", "tool_use", "fallback"]);
+/**
+ * Block types an assistant turn may carry that this app sends back as they
+ * are. The server tools' calls and results, a page web fetch read and a docs
+ * server's MCP tool call and its answer, are part of the turn: they go back
+ * whole, so the conversation stays the one the API produced and a turn
+ * paused mid-tool (`pause_turn`) can continue.
+ */
+const KNOWN = new Set(["text", "thinking", "redacted_thinking", "tool_use", "fallback", "server_tool_use", "web_fetch_tool_result", "web_search_tool_result", "mcp_tool_use", "mcp_tool_result"]);
 
 /** The blocks of an assistant turn that go back to the API, in their order. */
 export function echoable(content: readonly BetaContentBlock[]): BetaContentBlockParam[] {

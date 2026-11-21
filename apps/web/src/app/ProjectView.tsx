@@ -10,6 +10,7 @@ import { isSpecRecord, type PrototypeRecord } from "../store/project-file";
 import { BudgetFigure, CapMeterView, PageTypeFigure, RuleFigure, SlotLegend } from "../visual/project-figures";
 import { RULE_GROUPS, budgetMeter, capReaders, capsRead, groupRules, projectTimeline, ruleBound, ruleGroup, ruleSource, type BudgetMeter, type RuleGroupId } from "../visual/project-model";
 import { BudgetFlowDialog, type BudgetFlow } from "./BudgetChange";
+import { DocsSection, type DocsProps } from "./DocsSection";
 import { TaskMaps } from "./ChecksPanel";
 import { LayoutsView } from "./LayoutsView";
 import { LibraryVersionSection } from "./LibraryVersion";
@@ -45,6 +46,7 @@ export function ProjectView({
   agent,
   onStartProposal,
   onAskAgent,
+  docs,
 }: {
   readonly config: ProjectConfig;
   readonly onOpenProposal: (id: string) => void;
@@ -66,6 +68,8 @@ export function ProjectView({
   readonly onStartProposal?: ((next: ProjectConfig, id: string, ask?: string) => void) | undefined;
   /** Puts a message in the chat for the person to edit and send. */
   readonly onAskAgent?: ((message: string) => void) | undefined;
+  /** The docs the agent reads, which the person adds, edits and removes here; without it the section is not shown. */
+  readonly docs?: DocsProps | undefined;
 }) {
   /** The rule a person is removing or changing, from its card, or the task whose step budget they are changing. The flow ends in a proposal; nothing here edits a rule or a task. */
   const [ruleFlow, setRuleFlow] = useState<RuleFlow | BudgetFlow | null>(null);
@@ -100,6 +104,8 @@ export function ProjectView({
       </ul>
 
       {onSave && <LibraryVersionSection config={config} prototypes={prototypes} onSave={onSave} target={libraryTarget} />}
+
+      {docs && <DocsSection projectId={config.id} {...docs} />}
 
       {spec && <LayoutsView config={config} record={spec} />}
 

@@ -5,6 +5,7 @@ import type { AgentController, Turn, TurnItem } from "../agent/controller";
 import { KEY_DB, keyProblem, type KeyVault } from "../agent/key-vault";
 import { EFFORTS, MODELS, formatCost, isEffort, isModel, type AgentSettings } from "../agent/models";
 import { evidenceLines, patternSummary, type Pattern } from "../agent/patterns";
+import { fetchedUrl, sourceSummary } from "../agent/source-words";
 import { formatTime } from "../review/timeline";
 import { DB_NAME } from "../store/db";
 import { checksSummary, toolSummary } from "./chat-words";
@@ -356,7 +357,7 @@ function TurnView({ turn, running, canUndo, onUndo, onRetry, onOpenProposal, onO
       </Message.Root>
       <Message.Root streaming={running} data-turn={turn.id} data-end={turn.end.status} className="chat-reply" aria-label="Agent">
         {turn.items.map((item, index) => (
-          <Item key={index} item={item} onOpenProposal={onOpenProposal} onOpenVariants={onOpenVariants} />
+          <Item key={index} item={item} finished={turn.end.status !== "running"} onOpenProposal={onOpenProposal} onOpenVariants={onOpenVariants} />
         ))}
         {running && turn.items.every((item) => item.kind === "thinking") && (
           <Stack.Root direction="row" align="center" gap="condensed" className="chat-thinking-now">
@@ -534,8 +535,71 @@ function ProposalItem({ item, onOpenProposal }: { readonly item: Extract<TurnIte
   );
 }
 
-function Item({ item, onOpenProposal, onOpenVariants }: { readonly item: TurnItem; readonly onOpenProposal: (id: string) => void; readonly onOpenVariants: () => void }) {
+/**
+ * The agent reading the project's docs: a page it fetched or a docs
+ * server's tool it called, both run at Anthropic. One line in plain words,
+ * opening to where it went, what it asked and the start of what came back.
+ */
+function SourceStep({ item, finished }: { readonly item: Extract<TurnItem, { kind: "source" }>; readonly finished: boolean }) {
+  const unanswered = item.status === "running" && finished;
+  const status = item.status === "running" ? (finished ? "problem" : "working") : item.status === "error" ? "problem" : "done";
+  const url = item.via === "web" ? fetchedUrl(item) : null;
+  return (
+    <Step className="chat-source" data-source={item.via} data-status={unanswered ? "unanswered" : item.status} icon={<StepIcon status={status} />} summary={<span className="chat-tool-title">{sourceSummary(item, finished)}</span>}>
+      <DataList.Root orientation="vertical" className="chat-step-data">
+        <DataList.Item>
+          <DataList.Term>{item.via === "web" ? "Read by" : "Docs server"}</DataList.Term>
+          <DataList.Details>
+            {item.via === "web" ? (
+              "Anthropic's web fetch tool, for the agent"
+            ) : (
+              <>
+                <Code.Root>{item.server ?? ""}</Code.Root> <span className="chat-tool-name">through Anthropic&apos;s MCP connector, tool {item.name}</span>
+              </>
+            )}
+          </DataList.Details>
+        </DataList.Item>
+        {url && (
+          <DataList.Item>
+            <DataList.Term>Address</DataList.Term>
+            <DataList.Details className="chat-source-url">{url}</DataList.Details>
+          </DataList.Item>
+        )}
+        {item.via === "mcp" && (
+          <DataList.Item>
+            <DataList.Term>Input</DataList.Term>
+            <DataList.Details>
+              <CodeBlock.Root className="chat-pre" tabIndex={0} role="region" aria-label={`${item.name} input`}>
+                {item.input || "{}"}
+              </CodeBlock.Root>
+            </DataList.Details>
+          </DataList.Item>
+        )}
+        {(item.problem || unanswered) && (
+          <DataList.Item>
+            <DataList.Term>What went wrong</DataList.Term>
+            <DataList.Details data-testid="source-problem">{item.problem ?? "No answer came back before the turn ended."}</DataList.Details>
+          </DataList.Item>
+        )}
+        {item.result !== undefined && item.result !== "" && (
+          <DataList.Item>
+            <DataList.Term>{item.via === "web" ? "The page begins" : "The answer begins"}</DataList.Term>
+            <DataList.Details>
+              <CodeBlock.Root className="chat-pre" tabIndex={0} role="region" aria-label={item.via === "web" ? "The page" : `${item.name} answer`}>
+                {item.result}
+              </CodeBlock.Root>
+            </DataList.Details>
+          </DataList.Item>
+        )}
+      </DataList.Root>
+    </Step>
+  );
+}
+
+function Item({ item, finished, onOpenProposal, onOpenVariants }: { readonly item: TurnItem; readonly finished: boolean; readonly onOpenProposal: (id: string) => void; readonly onOpenVariants: () => void }) {
   switch (item.kind) {
+    case "source":
+      return <SourceStep item={item} finished={finished} />;
     case "text":
       return item.text ? (
         <Message.Content>
