@@ -922,11 +922,23 @@ test("undo puts the prototype back as it was before the turn, and the agent is t
 test("the key is in no frame, export, project storage, page storage or log; remember and forget work", async ({ browser, base, api }) => {
   const { page, logs } = await openApp(browser, base);
   await measured(page, 1);
-  api.script([toolReply("rename", "patch_spec", RENAME_ROOMS), textReply("Renamed.")]);
+  // A docs server's token is a secret like the key: remembered, it is checked everywhere the key is.
+  await mainView(page, "Project").click();
+  await addDocServer(page, { url: "https://mcp.example.com/mcp", label: "Design docs", token: DOC_TOKEN, remember: true });
+  await mainView(page, "Canvas").click();
+  api.script([
+    (body) => {
+      assert.deepEqual(body.mcp_servers, [{ type: "url", url: "https://mcp.example.com/mcp", name: "design-docs", authorization_token: DOC_TOKEN }], "the token goes only into its server's authorization_token");
+      return toolReply("rename", "patch_spec", RENAME_ROOMS);
+    },
+    textReply("Renamed."),
+  ]);
   await enterKey(page, { remember: true });
   await ask(page, "Call the rooms page Spaces");
   assert.equal(await turnEnded(page), "done");
   await measured(page, 2);
+  assert.equal(api.requests.filter((request) => JSON.stringify(request.body).includes(DOC_TOKEN)).length, 2, "every request carries it, to api.anthropic.com");
+  assert.ok(api.requests.every((request) => !JSON.stringify(request.body.messages).includes(DOC_TOKEN) && !JSON.stringify(request.body.system).includes(DOC_TOKEN)), "never in the chat history or the system prompt");
   await page.getByText("Settings and key").click();
   assert.match(await page.getByTestId("key-status").textContent(), /^Key sk-ant-…mnop: in this tab's memory, and stored on this device in IndexedDB database "design-harness-key"/);
 
@@ -957,12 +969,24 @@ test("the key is in no frame, export, project storage, page storage or log; reme
       };
     }, KEY);
     assert.deepEqual(seen, { dom: "not found", globals: "not found", parent: "SecurityError", storage: "SecurityError" });
+    const token = await frame.evaluate((secret) => document.documentElement.outerHTML.includes(secret) || Object.keys(window).some((name) => {
+      try {
+        return typeof window[name] === "string" && window[name].includes(secret);
+      } catch {
+        return false;
+      }
+    }), DOC_TOKEN);
+    assert.equal(token, false, "no frame holds the docs server's token");
   }
   assert.equal(srcdocs.length, FRAMES, "every frame was visited live");
   assert.ok(srcdocs.every((html) => !html.includes(KEY)), "no frame document carries the key");
+  assert.ok(srcdocs.every((html) => !html.includes(DOC_TOKEN)), "no frame document carries the docs server's token");
 
   const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export", exact: true }).click()]);
-  assert.ok(!readFileSync(await download.path(), "utf8").includes(KEY), "the export does not carry the key");
+  const exported = readFileSync(await download.path(), "utf8");
+  assert.ok(!exported.includes(KEY), "the export does not carry the key");
+  assert.ok(!exported.includes(DOC_TOKEN), "the export does not carry the docs server's token");
+  assert.deepEqual(JSON.parse(exported).docs, [{ kind: "mcp", url: "https://mcp.example.com/mcp", name: "design-docs", label: "Design docs" }], "the export carries the server without its token");
 
   const stored = await page.evaluate(async () => {
     const dump = async (name) => {
@@ -982,10 +1006,21 @@ test("the key is in no frame, export, project storage, page storage or log; reme
   assert.ok(!stored.project.includes(KEY), "the project database never holds the key");
   assert.ok(!stored.local.includes(KEY) && !stored.session.includes(KEY), "page storage never holds the key");
   assert.ok(stored.key.includes(KEY), "remembered, the key is in its own database");
+  assert.ok(!stored.project.includes(DOC_TOKEN), "the project database, chat included, never holds the docs server's token");
+  assert.ok(stored.project.includes("https://mcp.example.com/mcp"), "the docs server itself is kept with the project");
+  assert.ok(!stored.local.includes(DOC_TOKEN) && !stored.session.includes(DOC_TOKEN), "page storage never holds the docs server's token");
+  assert.ok(stored.key.includes(DOC_TOKEN), "remembered, the docs server's token is in the key's database");
   assert.deepEqual(stored.names, ["design-harness", "design-harness-key"]);
   assert.ok(logs.every((line) => !line.includes(KEY)), "the key is never logged");
+  assert.ok(logs.every((line) => !line.includes(DOC_TOKEN)), "the docs server's token is never logged");
 
   await page.reload();
+  // Remembered, the token is back after a reload; removing its server forgets it from the device.
+  await mainView(page, "Project").click();
+  assert.match(await page.getByTestId("doc-source-reach").textContent(), /Token mcp-e2e…ghij: remembered on this device\./);
+  await page.getByRole("button", { name: "Remove Design docs" }).click();
+  await page.getByTestId("docs-empty").waitFor();
+  await mainView(page, "Canvas").click();
   await page.getByText("Settings and key").click();
   assert.match(await page.getByTestId("key-status").textContent(), /stored on this device/);
   await page.getByRole("button", { name: "Forget the key" }).click();
@@ -1006,6 +1041,185 @@ test("the key is in no frame, export, project storage, page storage or log; reme
   assert.equal(forgotten, 0, "forget deletes the key from the device");
   await page.reload();
   await page.getByLabel("Your Anthropic API key").waitFor();
+});
+
+// ---- the project's docs ------------------------------------------------------
+
+/** A docs server's token that only the fake API ever sees. */
+const DOC_TOKEN = "mcp-e2e-token-0123456789abcdefghij";
+
+/** Adds a docs site from the Project view's Docs section, which must be open. */
+async function addDocSite(page, { url, label }) {
+  const docs = page.getByTestId("project-docs");
+  await docs.getByRole("button", { name: "Add a docs site" }).click();
+  const form = docs.getByRole("form", { name: "Add a docs site" });
+  await form.getByLabel("Site address").fill(url);
+  if (label) await form.getByLabel("Name shown to you (optional)").fill(label);
+  await form.getByRole("button", { name: "Add the site" }).click();
+}
+
+/** Adds a docs server, with its token when given, from the Project view's Docs section. */
+async function addDocServer(page, { url, label, name, token, remember = false }) {
+  const docs = page.getByTestId("project-docs");
+  await docs.getByRole("button", { name: "Add a docs server" }).click();
+  const form = docs.getByRole("form", { name: "Add a docs server" });
+  await form.getByLabel("Server address").fill(url);
+  if (label) await form.getByLabel("Name shown to you (optional)").fill(label);
+  if (name) await form.getByLabel("Short name").fill(name);
+  if (token) await form.getByLabel("Token (optional)").fill(token);
+  if (remember) await form.getByRole("checkbox", { name: "Remember the token on this device" }).check();
+  await form.getByRole("button", { name: "Add the server" }).click();
+  await form.waitFor({ state: "detached" });
+}
+
+/** A reply that reads a docs page with web fetch and asks a docs server, both run at the API, then answers. */
+const docsReply = () => ({
+  events: streamEvents({
+    id: "msg_docs",
+    blocks: [
+      { type: "thinking", thinking: "Checking Button's documented usage first." },
+      { type: "web_fetch", id: "srvtoolu_button", url: "https://todae.design/docs/components/button" },
+      { type: "web_fetch_result", id: "srvtoolu_button", url: "https://todae.design/docs/components/button", title: "Button", text: "Use one primary Button per view. Secondary actions use the secondary variant." },
+      { type: "mcp_tool_use", id: "mcptoolu_search", name: "search_docs", server: "design-docs", input: { query: "hold a room" } },
+      { type: "mcp_tool_result", id: "mcptoolu_search", text: "Holding is a secondary action beside Book room." },
+      { type: "web_fetch", id: "srvtoolu_away", url: "https://elsewhere.example.com/" },
+      { type: "web_fetch_result", id: "srvtoolu_away", url: "https://elsewhere.example.com/", error: "url_not_allowed" },
+      { type: "text", text: "Todae's Button docs say one primary action per view, so Hold room stays secondary." },
+    ],
+    stopReason: "end_turn",
+  }),
+  delayMs: 5,
+});
+
+test("a project's docs: a site and a docs server are added, the request carries web fetch and the server, and what the agent read shows in the chat", async ({ browser, base, api }) => {
+  const { page, errors, logs } = await openApp(browser, base);
+  await measured(page, 1);
+  await mainView(page, "Project").click();
+  const docs = page.getByTestId("project-docs");
+  await docs.getByTestId("docs-empty").waitFor();
+  assert.match(await docs.getByTestId("docs-privacy").textContent(), /Anthropic makes those requests for it, not this browser/);
+
+  // An address that is not https is refused in plain words, next to its field, and nothing is saved.
+  await docs.getByRole("button", { name: "Add a docs site" }).click();
+  const form = docs.getByRole("form", { name: "Add a docs site" });
+  await form.getByLabel("Site address").fill("http://todae.design/docs");
+  await form.getByRole("button", { name: "Add the site" }).click();
+  assert.equal(await form.getByTestId("doc-url-problem").textContent(), "Use an https:// address.");
+  assert.equal(await form.getByLabel("Site address").getAttribute("aria-invalid"), "true");
+  await form.getByRole("button", { name: "Cancel" }).click();
+  await addDocSite(page, { url: "https://todae.design/docs", label: "Todae docs" });
+  await addDocServer(page, { url: "https://mcp.example.com/mcp", label: "Design docs", token: DOC_TOKEN });
+  const rows = docs.getByTestId("doc-source");
+  assert.equal(await rows.count(), 2);
+  assert.equal(await rows.nth(0).getByTestId("doc-source-reach").textContent(), "The agent can read pages on todae.design.");
+  assert.equal(await rows.nth(1).getByTestId("doc-source-reach").textContent(), 'The agent can call this server\'s tools, as "design-docs". Token mcp-e2e…ghij: in this tab\'s memory only.');
+  await shotOf(docs, "project-docs-light");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.waitForTimeout(400);
+  await shotOf(docs, "project-docs-dark");
+  await page.emulateMedia({ colorScheme: "light" });
+
+  api.script([
+    (body) => {
+      // Both run at Anthropic: web fetch limited to the docs site's domain, and the docs server through the MCP connector, its token in its definition alone.
+      assert.deepEqual(body.tools.slice(-2), [
+        { type: "web_fetch_20260209", name: "web_fetch", allowed_domains: ["todae.design"], allowed_callers: ["direct"], max_uses: 10, max_content_tokens: 20000 },
+        { type: "mcp_toolset", mcp_server_name: "design-docs" },
+      ]);
+      assert.deepEqual(body.mcp_servers, [{ type: "url", url: "https://mcp.example.com/mcp", name: "design-docs", authorization_token: DOC_TOKEN }]);
+      assert.equal(body.system.length, 3);
+      assert.match(body.system[2].text, /^Documentation the person added for this project/);
+      assert.match(body.system[2].text, /- Todae docs: https:\/\/todae\.design\/docs/);
+      assert.match(body.messages[0].content[0].text, /^This project's documentation sources, from the person:\n- Website, Todae docs: https:\/\/todae\.design\/docs\n- Docs server "design-docs", Design docs: https:\/\/mcp\.example\.com\/mcp/);
+      return docsReply();
+    },
+    (body) => {
+      // The reads go back as the API returned them, and the request extends the last.
+      assert.deepEqual(body.messages[1].content.map((block) => block.type), ["thinking", "server_tool_use", "web_fetch_tool_result", "mcp_tool_use", "mcp_tool_result", "server_tool_use", "web_fetch_tool_result", "text"]);
+      return textReply("Glad to help.");
+    },
+  ]);
+  await mainView(page, "Canvas").click();
+  await enterKey(page);
+  await ask(page, "Make Hold room stand out");
+  assert.equal(await turnEnded(page), "done");
+  const first = api.requests[0];
+  assert.equal(first.headers["anthropic-beta"], "server-side-fallback-2026-07-01,mcp-client-2025-11-20");
+  assert.equal(first.headers["anthropic-dangerous-direct-browser-access"], "true");
+  const reply = page.locator(".chat-reply").last();
+  assert.equal(await reply.locator(".chat-notice").first().textContent(), "Sent with the project's docs: Todae docs, Design docs.");
+  const reads = reply.locator(".chat-source");
+  assert.deepEqual(await reads.evaluateAll((items) => items.map((item) => [item.getAttribute("data-source"), item.getAttribute("data-status"), item.querySelector(".chat-tool-title")?.textContent])), [
+    ["web", "done", "Read Button"],
+    ["mcp", "done", "Asked design-docs: search_docs"],
+    ["web", "error", "Could not read https://elsewhere.example.com/"],
+  ]);
+  await reads.nth(2).locator("summary").click();
+  assert.equal(await reads.nth(2).getByTestId("source-problem").textContent(), "That address is not on one of the project's docs sites, or the site does not allow it to be read.");
+  await reads.nth(0).locator("summary").click();
+  assert.match(await reads.nth(0).textContent(), /Use one primary Button per view/);
+  assert.ok(!(await page.locator(".chat").textContent()).includes(DOC_TOKEN), "the chat never shows the token");
+  await shot(page, "chat-docs-light");
+  await shotDark(page, "chat-docs-dark");
+
+  // A later message continues the same conversation, with the same docs, told once.
+  await ask(page, "Thanks");
+  assert.equal(await turnEnded(page), "done");
+  assert.equal(api.left(), 0);
+  assert.deepEqual(api.requests[1].body.tools, api.requests[0].body.tools, "the same tools while the docs stay the same");
+  assert.equal(lastMessage(api.requests[1].body), "Thanks");
+
+  // The sources are kept with the project; the token was not remembered, so a reload drops it.
+  await page.reload();
+  await mainView(page, "Project").click();
+  assert.equal(await docs.getByTestId("doc-source").count(), 2);
+  assert.match(await docs.getByTestId("doc-source").nth(1).getByTestId("doc-source-reach").textContent(), /No token\.$/);
+  // At phone width the section and its form are whole and in reach.
+  await shotNarrow(page, "project-docs", () => docs.scrollIntoViewIfNeeded());
+  await docs.scrollIntoViewIfNeeded();
+  await narrowIsUsable(page, docs, "the Docs section on a phone");
+  await docs.getByRole("button", { name: "Edit Design docs" }).click();
+  const edit = docs.getByRole("form", { name: "Edit Design docs" });
+  await edit.waitFor();
+  await narrowIsUsable(page, docs, "the docs server form on a phone");
+  await edit.getByLabel("Token (optional)").scrollIntoViewIfNeeded();
+  await shot(page, "narrow-project-docs-form-phone-light");
+  await shotDark(page, "narrow-project-docs-form-phone-dark");
+  assert.ok(logs.every((line) => !line.includes(DOC_TOKEN)), "the token is never logged");
+  assert.deepEqual(errors, []);
+});
+
+test("an old project and an old project file load with no docs, and an imported file brings its docs", async ({ browser, base }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  await mainView(page, "Project").click();
+  // The seeded project was stored the way the app always stored it: no docs beside the config.
+  await page.getByTestId("project-docs").getByTestId("docs-empty").waitFor();
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export", exact: true }).click()]);
+  const file = JSON.parse(readFileSync(await download.path(), "utf8"));
+  assert.equal("docs" in file, false, "a project without docs exports as it did before them");
+  const withDocs = { ...file, docs: [{ kind: "website", url: "https://todae.design/docs", label: "Todae docs" }] };
+  const dir = mkdtempSync(join(tmpdir(), "docs-import-"));
+  writeFileSync(join(dir, "nook.design-harness.json"), JSON.stringify(withDocs));
+  await page.locator('[data-testid="import-file"]').setInputFiles(join(dir, "nook.design-harness.json"));
+  // The import opens the project again, in a new workspace.
+  await eventually(
+    page,
+    async () => {
+      await mainView(page, "Project").click();
+      return page.getByTestId("project-docs").getByTestId("doc-source").count();
+    },
+    (count) => count === 1,
+    "the imported project shows its docs",
+  );
+  assert.equal(await page.getByTestId("doc-source").getByTestId("doc-source-reach").textContent(), "The agent can read pages on todae.design.");
+  // A file whose docs carry a token is refused whole, saying where.
+  const leaky = { ...file, docs: [{ kind: "mcp", url: "https://mcp.example.com/mcp", name: "design-docs", authorization_token: DOC_TOKEN }] };
+  writeFileSync(join(dir, "leaky.design-harness.json"), JSON.stringify(leaky));
+  await page.locator('[data-testid="import-file"]').setInputFiles(join(dir, "leaky.design-harness.json"));
+  await page.getByText('$.docs[0]: has unknown fields "authorization_token"').waitFor();
+  assert.equal(await page.getByTestId("project-docs").getByTestId("doc-source").count(), 1, "nothing of the refused file was imported");
+  assert.deepEqual(errors, []);
 });
 
 test("screenshots of the chat in use, light and dark", async ({ browser, base, api }) => {
