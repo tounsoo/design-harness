@@ -12,7 +12,7 @@ describe("a project file", () => {
     const text = exportProject(nook, records);
     expect(JSON.parse(text)).toMatchObject({ format: PROJECT_FILE_FORMAT, version: 1, project: { id: "nook" } });
     const imported = importProject(text);
-    expect(imported).toEqual({ ok: true, value: { config: nook, prototypes: records, removed: [] } });
+    expect(imported).toEqual({ ok: true, value: { config: nook, prototypes: records, removed: [], docs: [] } });
     expect(exportProject(nook, [...records].reverse())).toBe(text);
     expect(exportFileName(nook)).toBe("nook.design-harness.json");
   });
@@ -47,7 +47,7 @@ describe("a project file", () => {
     const variants = { variants: [{ id: "b", page: "booking", note: "Asks for how long first", spec: seedSpec().files["pages/booking.json"] as string, like: "a" }], picks: [{ at: "2026-11-18T12:00:00.000Z", page: "booking", slots: { body: "b" }, notes: { b: "Asks for how long first" }, before: "{}", after: "{}" }] };
     const withVariants: PrototypeRecord[] = [{ projectId: "nook", id: "booking-spec", name: "Booking (spec)", prototype: seedSpec(), variants }];
     const text = exportProject(nook, withVariants);
-    expect(importProject(text)).toEqual({ ok: true, value: { config: nook, prototypes: withVariants, removed: [] } });
+    expect(importProject(text)).toEqual({ ok: true, value: { config: nook, prototypes: withVariants, removed: [], docs: [] } });
     const file = JSON.parse(text) as { prototypes: { variants: { variants: Record<string, unknown>[] } }[] };
     (file.prototypes[0] as { variants: { variants: Record<string, unknown>[] } }).variants.variants[0] = { id: "B!", page: "booking", note: "", spec: "{}" };
     expect(importProject(JSON.stringify(file))).toEqual({ ok: false, error: ['$.prototypes[0].variants.variants[0].id: expected a variant id such as "b", got "B!"', "$.prototypes[0].variants.variants[0].note: expected a non-empty string"] });
@@ -65,7 +65,7 @@ describe("a project file", () => {
     const pinned: PrototypeRecord[] = [{ ...(records[0] as PrototypeRecord), pins }];
     const text = exportProject(nook, pinned);
     expect((JSON.parse(text) as { prototypes: { pins: unknown }[] }).prototypes[0]?.pins).toEqual(pins);
-    expect(importProject(text)).toEqual({ ok: true, value: { config: nook, prototypes: pinned, removed: [] } });
+    expect(importProject(text)).toEqual({ ok: true, value: { config: nook, prototypes: pinned, removed: [], docs: [] } });
     // A second trip gives the same file.
     const again = importProject(text);
     expect(again.ok && JSON.parse(exportProject(again.value.config, again.value.prototypes))).toEqual(JSON.parse(text));
@@ -89,7 +89,7 @@ describe("a project file", () => {
     for (const pins of [moved, back]) {
       const kept: PrototypeRecord[] = [{ ...(records[0] as PrototypeRecord), pins }];
       const text = exportProject(nook, kept);
-      expect(importProject(text)).toEqual({ ok: true, value: { config: nook, prototypes: kept, removed: [] } });
+      expect(importProject(text)).toEqual({ ok: true, value: { config: nook, prototypes: kept, removed: [], docs: [] } });
     }
     // A moved note that says it is still on its variant is refused, with where.
     const file = JSON.parse(exportProject(nook, [{ ...(records[0] as PrototypeRecord), pins: moved }])) as { prototypes: { pins: { pins: { anchor: Record<string, unknown> }[] } }[] };
@@ -115,5 +115,29 @@ describe("a project file", () => {
     // A TSX prototype that is not whole is refused, with core's words for why.
     const broken = importProject(JSON.stringify({ ...file, prototypes: [{ id: "old", name: "Old", prototype: { ...tsx, pages: "none" } }] }));
     expect(broken).toMatchObject({ ok: false, error: [expect.stringContaining("$.prototypes[0].prototype.format: says the prototype is TSX"), "$.prototypes[0].prototype.pages: expected an array, got a string"] });
+  });
+
+  it("keeps the project's doc sources beside its config through export and import, and never a token", () => {
+    const docs = [
+      { kind: "website" as const, url: "https://todae.design/docs", label: "Todae docs" },
+      { kind: "mcp" as const, url: "https://mcp.example.com/mcp", name: "design-docs" },
+    ];
+    // A source that somehow carried a token is written field by field, so the token stays behind.
+    const leaky = [docs[0], { ...docs[1], authorization_token: "mcp-secret-token-0123456789" }] as unknown as typeof docs;
+    const text = exportProject(nook, records, leaky);
+    expect(text).not.toContain("mcp-secret-token-0123456789");
+    expect(Object.keys(JSON.parse(text) as object)).toEqual(["format", "version", "project", "docs", "prototypes"]);
+    expect(JSON.parse(text).project).toEqual(nook);
+    expect(importProject(text)).toEqual({ ok: true, value: { config: nook, prototypes: records, removed: [], docs } });
+    // No sources, no key: a project without docs exports as it did before them.
+    expect(exportProject(nook, records, [])).toBe(exportProject(nook, records));
+  });
+
+  it("refuses a file whose doc sources carry a token or do not read, saying where", () => {
+    const file = JSON.parse(exportProject(nook, records)) as Record<string, unknown>;
+    const withToken = importProject(JSON.stringify({ ...file, docs: [{ kind: "mcp", url: "https://mcp.example.com/mcp", name: "design-docs", authorization_token: "x" }] }));
+    expect(withToken).toEqual({ ok: false, error: ['$.docs[0]: has unknown fields "authorization_token"'] });
+    const insecure = importProject(JSON.stringify({ ...file, docs: [{ kind: "website", url: "http://todae.design" }] }));
+    expect(insecure).toEqual({ ok: false, error: ["$.docs[0].url: Use an https:// address."] });
   });
 });

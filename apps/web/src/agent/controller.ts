@@ -1,7 +1,10 @@
 import { APIError, AnthropicError } from "@anthropic-ai/sdk/core/error";
 import type { BetaMessage, BetaMessageParam, BetaRawMessageStreamEvent, BetaToolResultBlockParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import type { CheckStatus, Prototype } from "@design-harness/core";
+import { docSignature, sourceTitle, type DocSource } from "../docs/sources";
+import { docsNote } from "./doc-request";
 import { describeError, isAbort, redact } from "./errors";
+import { fetchProblem, mcpExcerpt, pageExcerpt } from "./source-words";
 import { History, toolCalls } from "./history";
 import { NO_USAGE, addUsage, requestCost, type AgentSettings, type Usage } from "./models";
 import { createClient, requestBody, type MessagesApi } from "./request";
@@ -34,7 +37,15 @@ export type TurnItem =
   | { readonly kind: "proposal"; readonly id: string; readonly title: string; readonly adoptable: boolean; readonly verdict: string; readonly action?: "drafted" | "revised"; readonly needsMeasurement?: true; readonly request?: true }
   | { readonly kind: "notice"; readonly text: string }
   /** Variants the agent offered or revised, beside the prototype: a card that opens the comparison. */
-  | { readonly kind: "variants"; readonly page: string; readonly ids: readonly string[]; readonly action: "offered" | "revised" };
+  | { readonly kind: "variants"; readonly page: string; readonly ids: readonly string[]; readonly action: "offered" | "revised" }
+  /**
+   * The agent read the project's documentation: a page it fetched (`web`,
+   * Anthropic's web fetch tool) or a docs server's tool it called (`mcp`,
+   * through the MCP connector). Both run at Anthropic; the app only shows
+   * them. `result` is a short excerpt, never the whole page; `problem` is
+   * what went wrong, in plain words.
+   */
+  | { readonly kind: "source"; readonly id: string; readonly via: "web" | "mcp"; readonly name: string; readonly server?: string; readonly status: "running" | "done" | "error"; readonly input: string; readonly url?: string; readonly pageTitle?: string; readonly result?: string; readonly problem?: string };
 
 export type TurnEnd =
   | { readonly status: "running" }
@@ -64,8 +75,21 @@ export type Turn = {
   readonly failingAtStart?: readonly string[];
 };
 
-/** What is saved per prototype. It never holds the API key. `log` is what the person did that the loop reads (patterns.ts); absent on older chats. */
-export type ChatRecord = { readonly version: 1; readonly history: readonly BetaMessageParam[]; readonly turns: readonly Turn[]; readonly pending: readonly string[]; readonly log?: readonly LoopEvent[] };
+/**
+ * What is saved per prototype. It never holds the API key or a docs
+ * server's token. `log` is what the person did that the loop reads
+ * (patterns.ts); absent on older chats. `docs` is the doc sources the agent
+ * was last told about (`docSignature`), absent when it was told of none;
+ * `rebound` is set once they changed after the conversation began
+ * (`RequestDocs.rebound`).
+ */
+export type ChatRecord = { readonly version: 1; readonly history: readonly BetaMessageParam[]; readonly turns: readonly Turn[]; readonly pending: readonly string[]; readonly log?: readonly LoopEvent[]; readonly docs?: string; readonly rebound?: true };
+
+/** The project's doc sources as the agent reads them, and each docs server's token at request time. */
+export type DocContext = { readonly sources: readonly DocSource[]; readonly token: (name: string) => string | null; readonly tokens: () => readonly string[] };
+
+const NO_DOC_CONTEXT: DocContext = { sources: [], token: () => null, tokens: () => [] };
+const NO_SOURCES = docSignature([]);
 
 export type ChatStore = { load(): Promise<ChatRecord | null>; save(record: ChatRecord): Promise<void> };
 
@@ -82,6 +106,8 @@ export type AgentOptions = {
   readonly newId?: () => string;
   /** Follows a spec prototype's patch_spec input as it streams, to draw the draft on the canvas. */
   readonly preview?: SpecStreamPreview;
+  /** The project's doc sources and their tokens; absent where the app has none. */
+  readonly docs?: () => DocContext;
 };
 
 /** Tool rounds per message from the person, after which the agent stops and says so. */
@@ -99,6 +125,8 @@ export function isChatRecord(value: unknown): value is ChatRecord {
     Array.isArray(record.turns) &&
     record.turns.every((turn) => typeof turn === "object" && turn !== null && typeof (turn as { id?: unknown }).id === "string" && Array.isArray((turn as { items?: unknown }).items)) &&
     Array.isArray(record.pending) &&
+    (record.docs === undefined || typeof record.docs === "string") &&
+    (record.rebound === undefined || record.rebound === true) &&
     (record.log === undefined || (Array.isArray(record.log) && record.log.every((event) => typeof event === "object" && event !== null && typeof (event as { kind?: unknown }).kind === "string" && typeof (event as { at?: unknown }).at === "string")))
   );
 }
@@ -118,6 +146,12 @@ export class AgentController {
   private abort: AbortController | null = null;
   private saving: Promise<void> = Promise.resolve();
   private loading: Promise<void> | null = null;
+  /** The doc sources the agent was last told about, as `docSignature` writes them. */
+  private docsTold = NO_SOURCES;
+  /** Set for good once the doc sources changed after the conversation began. */
+  private rebound = false;
+  /** The doc sources of the running turn: a turn keeps the sources it started with, even if the person edits them while it runs. */
+  private turnSources: readonly DocSource[] | null = null;
 
   constructor(private readonly options: AgentOptions) {}
 
@@ -175,6 +209,8 @@ export class AgentController {
       if (record) {
         this.history = new History(record.history);
         this.pending = [...record.pending];
+        this.docsTold = record.docs ?? NO_SOURCES;
+        this.rebound = record.rebound === true;
         // Calls the page closed on before they ran are answered, so the history stays valid; nothing is removed.
         const unanswered = this.history.unansweredCalls();
         if (unanswered.length > 0) this.history.appendToolResults(unanswered.map((id) => ({ type: "tool_result", tool_use_id: id, content: "Not run: the page closed before this ran.", is_error: true })));
@@ -190,7 +226,15 @@ export class AgentController {
   }
 
   private save(): Promise<void> {
-    const record: ChatRecord = { version: 1, history: this.history.toJSON(), turns: this.state.turns, pending: this.pending, ...(this.state.log.length > 0 ? { log: this.state.log } : {}) };
+    const record: ChatRecord = {
+      version: 1,
+      history: this.history.toJSON(),
+      turns: this.state.turns,
+      pending: this.pending,
+      ...(this.state.log.length > 0 ? { log: this.state.log } : {}),
+      ...(this.docsTold !== NO_SOURCES ? { docs: this.docsTold } : {}),
+      ...(this.rebound ? { rebound: true as const } : {}),
+    };
     this.saving = this.saving.then(() => this.options.store.save(record)).catch(() => undefined);
     return this.saving;
   }
@@ -226,16 +270,44 @@ export class AgentController {
     const pins = this.options.host.pins?.();
     const notes = pins ? describePins(pins, new Set(this.options.host.variants().variants.map((variant) => variant.id))) : null;
     const open = pins ? openPins(pins).length : 0;
-    this.history.appendUser(message, [...this.pending, ...(notes ? [notes] : [])]);
+    const docs = this.takeDocs();
+    this.history.appendUser(message, [...this.pending, ...(docs.note ? [docs.note] : []), ...(notes ? [notes] : [])]);
     this.pending = [];
-    this.set({ turns: [...this.state.turns, notes ? { ...turn, items: [{ kind: "notice", text: `Sent with ${open === 1 ? "your open note" : `your ${open} open notes`} from the canvas.` }] } : turn] });
+    const notices: TurnItem[] = [
+      ...(docs.notice ? [{ kind: "notice" as const, text: docs.notice }] : []),
+      ...(notes ? [{ kind: "notice" as const, text: `Sent with ${open === 1 ? "your open note" : `your ${open} open notes`} from the canvas.` }] : []),
+    ];
+    this.set({ turns: [...this.state.turns, { ...turn, items: notices }] });
     await this.run(turn.id);
+  }
+
+  /**
+   * The doc sources for a turn that starts now. When they are not the ones
+   * the agent was last told about, it is told in this message, which also
+   * puts the websites' addresses where web fetch accepts them; and if the
+   * conversation had begun, the request's system prompt and tools change
+   * with them, so the conversation is marked `rebound` for good.
+   */
+  private takeDocs(): { readonly note: string | null; readonly notice: string | null } {
+    const sources = this.options.docs?.().sources ?? [];
+    this.turnSources = sources;
+    const signature = docSignature(sources);
+    if (signature === this.docsTold) return { note: null, notice: null };
+    if (this.history.messages.some((message) => message.role === "assistant")) this.rebound = true;
+    this.docsTold = signature;
+    const notice = sources.length === 0 ? "The agent was told the project has no docs to read now." : `Sent with the project's docs: ${sources.map(sourceTitle).join(", ")}.`;
+    return { note: docsNote(sources), notice };
   }
 
   /** Runs the last turn again from where it failed, when its error allows a retry. */
   async retry(): Promise<void> {
     const last = this.state.turns.at(-1);
     if (!last || this.state.running || last.end.status !== "error" || !last.end.retry || this.options.host.tsx?.()) return;
+    // After a reload the turn's sources are gone: it continues with the project's, and a change since is told with the next message, since a retry adds nothing to the history.
+    if (this.turnSources === null) {
+      const docs = this.takeDocs();
+      if (docs.note) this.pending.push(docs.note);
+    }
     this.patchTurn(last.id, () => ({ end: { status: "running" } }));
     await this.run(last.id);
   }
@@ -329,6 +401,10 @@ export class AgentController {
     this.abort = abort;
     this.set({ running: true });
     const maxRounds = this.options.maxRounds ?? MAX_ROUNDS;
+    const context = this.options.docs?.() ?? NO_DOC_CONTEXT;
+    const sources = this.turnSources ?? [];
+    // Every token held is redacted from what the chat shows, not only this project's.
+    const tokens = () => context.tokens();
     let parseFailures = 0;
     try {
       for (;;) {
@@ -338,9 +414,10 @@ export class AgentController {
         const blocks = new Map<number, number>();
         let message: BetaMessage;
         try {
-          // The agent writes specs, with the catalog's instructions.
-          const stream = client.stream(requestBody(settings, this.history.messages, specCatalogPrompt(this.options.host.config())), { signal: abort.signal });
-          for await (const event of stream) this.onEvent(id, event, blocks);
+          // The agent writes specs, with the catalog's instructions, and reads the project's docs when it has any. Tokens are read for each request, so one the person just entered is used.
+          const docs = { sources, token: (name: string) => this.options.docs?.().token(name) ?? null, rebound: this.rebound };
+          const stream = client.stream(requestBody(settings, this.history.messages, specCatalogPrompt(this.options.host.config()), docs), { signal: abort.signal });
+          for await (const event of stream) this.onEvent(id, event, blocks, (text) => redact(text, key, tokens()));
           message = await stream.finalMessage();
           parseFailures = 0;
         } catch (error) {
@@ -364,7 +441,7 @@ export class AgentController {
         if (message.stop_reason === "refusal") {
           this.dropItems(id, startItems);
           const details = message.stop_details;
-          return this.end(id, { status: "refused", category: details?.category ?? null, explanation: details?.explanation ? redact(details.explanation, key) : null });
+          return this.end(id, { status: "refused", category: details?.category ?? null, explanation: details?.explanation ? redact(details.explanation, key, tokens()) : null });
         }
         if (message.stop_reason === "max_tokens" && calls.length > 0) {
           this.dropItems(id, startItems);
@@ -388,8 +465,10 @@ export class AgentController {
         if (!this.nextRound(id, maxRounds)) return;
       }
     } catch (error) {
-      this.end(id, { status: "error", ...describeError(error, key) });
+      const servers = sources.flatMap((source) => (source.kind === "mcp" ? [sourceTitle(source)] : []));
+      this.end(id, { status: "error", ...describeError(error, key, { tokens: tokens(), servers }) });
     } finally {
+      this.turnSources = null;
       this.options.preview?.finish();
       if (this.abort === abort) this.abort = null;
       this.set({ running: false });
@@ -411,9 +490,36 @@ export class AgentController {
   }
 
   /** Shows a streamed event as it arrives. */
-  private onEvent(id: string, event: BetaRawMessageStreamEvent, blocks: Map<number, number>): void {
+  private onEvent(id: string, event: BetaRawMessageStreamEvent, blocks: Map<number, number>, clean: (text: string) => string): void {
     if (event.type === "content_block_start") {
       const block = event.content_block;
+      if (block.type === "server_tool_use" || block.type === "mcp_tool_use") {
+        // A server tool runs at Anthropic: the app shows the call, and its result block follows in the same reply.
+        const input = block.input && typeof block.input === "object" && Object.keys(block.input).length > 0 ? JSON.stringify(block.input) : "";
+        const item: TurnItem =
+          block.type === "mcp_tool_use"
+            ? { kind: "source", id: block.id, via: "mcp", name: block.name, server: block.server_name, status: "running", input }
+            : { kind: "source", id: block.id, via: "web", name: block.name, status: "running", input };
+        blocks.set(event.index, this.addItem(id, item));
+        return;
+      }
+      if (block.type === "web_fetch_tool_result" || block.type === "mcp_tool_result") {
+        const index = this.turn(id)?.items.findIndex((item) => item.kind === "source" && item.id === block.tool_use_id) ?? -1;
+        const item = index >= 0 ? this.turn(id)?.items[index] : undefined;
+        if (item?.kind !== "source") return;
+        if (block.type === "web_fetch_tool_result") {
+          const content = block.content;
+          if (content.type === "web_fetch_tool_result_error") this.setItem(id, index, { ...item, status: "error", problem: fetchProblem(content.error_code) });
+          else {
+            const page = pageExcerpt(content);
+            this.setItem(id, index, { ...item, status: "done", url: content.url, ...(page.title ? { pageTitle: clean(page.title) } : {}), result: clean(page.text) });
+          }
+        } else {
+          const text = clean(mcpExcerpt(block.content));
+          this.setItem(id, index, { ...item, status: block.is_error ? "error" : "done", result: text, ...(block.is_error ? { problem: "The docs server answered with an error." } : {}) });
+        }
+        return;
+      }
       if (block.type === "text") blocks.set(event.index, this.addItem(id, { kind: "text", text: block.text }));
       else if (block.type === "thinking") blocks.set(event.index, this.addItem(id, { kind: "thinking", text: block.thinking }));
       else if (block.type === "tool_use") {
@@ -433,7 +539,7 @@ export class AgentController {
     else if (delta.type === "input_json_delta" && item.kind === "tool") {
       this.options.preview?.delta(delta.partial_json);
       this.setItem(id, index, { ...item, input: item.input + delta.partial_json });
-    }
+    } else if (delta.type === "input_json_delta" && item.kind === "source") this.setItem(id, index, { ...item, input: item.input + delta.partial_json });
   }
 
   private toolIndex(id: string, callId: string): number {

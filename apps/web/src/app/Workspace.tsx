@@ -6,6 +6,8 @@ import { AgentController, type ChatRecord, type ChatStore } from "../agent/contr
 import { SpecStreamPreview } from "../agent/spec-stream";
 import { plainSentence, standingWords, waitsForYou } from "../review/plain";
 import type { KeyVault } from "../agent/key-vault";
+import type { DocSource } from "../docs/sources";
+import type { DocTokens } from "../docs/token-vault";
 import { latestMeasured, waitForMeasured } from "../agent/measure";
 import { detectPatterns, suggestion as suggestionOf, patternMessage } from "../agent/patterns";
 import type { AgentSettings } from "../agent/models";
@@ -46,6 +48,10 @@ const EDIT_DEBOUNCE_MS = 300;
 type Props = {
   readonly store: Store;
   readonly vault: KeyVault;
+  /** Docs servers' tokens, kept as the key is. */
+  readonly tokens: DocTokens;
+  /** The project's doc sources, beside its config. */
+  readonly docs: readonly DocSource[];
   readonly config: ProjectConfig;
   readonly prototypes: readonly PrototypeRecord[];
   readonly problems: readonly string[];
@@ -76,7 +82,7 @@ function chatStore(store: Store, projectId: string, prototypeId: string): ChatSt
   };
 }
 
-export function Workspace({ store, vault, config: initialConfig, prototypes: initial, problems, notes: loadNotes = [], onImported, projects, onOpenProject, onNewProject }: Props) {
+export function Workspace({ store, vault, tokens, docs: initialDocs, config: initialConfig, prototypes: initial, problems, notes: loadNotes = [], onImported, projects, onOpenProject, onNewProject }: Props) {
   const session = useMemo(() => createSession(), []);
   useEffect(() => () => session.dispose(), [session]);
   const state = useSyncExternalStore(session.subscribe, session.getState);
@@ -294,6 +300,18 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     [store],
   );
 
+  /** The project's doc sources: context the agent reads, kept beside the config. No check reads them, so nothing re-renders or re-checks. */
+  const [docs, setDocsState] = useState(initialDocs);
+  const docsRef = useRef(docs);
+  const saveDocs = useCallback(
+    async (next: readonly DocSource[]) => {
+      await store.putDocs(initialConfig.id, next);
+      docsRef.current = next;
+      setDocsState(next);
+    },
+    [store, initialConfig.id],
+  );
+
   const recordOf = useCallback(() => recordsRef.current.find((record) => record.id === currentId) ?? recordsRef.current[0], [currentId]);
   /** Changes the open prototype's variants and picks, and saves the record at once. */
   const updateVariants = useCallback(
@@ -368,6 +386,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
       saveVariants: (next: readonly Variant[]) => updateVariants((state) => ({ ...state, variants: next })),
       pins: () => recordOf()?.pins ?? NO_PINS,
       savePins: (next: PinState) => updatePins(() => next),
+      docs: () => docsRef.current,
     };
   }, [currentId, session, setRecords, saveConfig, checked, recordOf, updateVariants, updatePins]);
 
@@ -390,8 +409,16 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
     [host, session, checked],
   );
   const controller = useMemo(
-    () => new AgentController({ host, store: chatStore(store, initialConfig.id, currentId), key: () => vault.get(), settings: () => settingsRef.current, preview }),
-    [host, store, vault, initialConfig.id, currentId, preview],
+    () =>
+      new AgentController({
+        host,
+        store: chatStore(store, initialConfig.id, currentId),
+        key: () => vault.get(),
+        settings: () => settingsRef.current,
+        preview,
+        docs: () => ({ sources: docsRef.current, token: (name) => tokens.get(initialConfig.id, name), tokens: () => tokens.all() }),
+      }),
+    [host, store, vault, tokens, initialConfig.id, currentId, preview],
   );
   useEffect(() => {
     void controller.load();
@@ -698,7 +725,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
   };
 
   const download = () => {
-    const blob = new Blob([exportProject(configRef.current, recordsRef.current)], { type: "application/json" });
+    const blob = new Blob([exportProject(configRef.current, recordsRef.current, docsRef.current)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -1039,6 +1066,7 @@ export function Workspace({ store, vault, config: initialConfig, prototypes: ini
                         });
                       }}
                       onAskAgent={prefillChat}
+                      docs={{ sources: docs, tokens, onSave: saveDocs }}
                     />
                   </div>
                 )}

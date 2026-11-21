@@ -3,7 +3,11 @@ export type FakeBlock =
   | { type: "text"; text: string }
   | { type: "thinking"; thinking: string; signature?: string }
   | { type: "tool_use"; id: string; name: string; input: unknown }
-  | { type: "fallback"; from: string; to: string };
+  | { type: "fallback"; from: string; to: string }
+  | { type: "web_fetch"; id: string; url: string }
+  | { type: "web_fetch_result"; id: string; url: string; text?: string; title?: string; error?: string }
+  | { type: "mcp_tool_use"; id: string; name: string; server: string; input: unknown }
+  | { type: "mcp_tool_result"; id: string; text: string; isError?: boolean };
 
 export type FakeEvent = { event: string; data: unknown };
 

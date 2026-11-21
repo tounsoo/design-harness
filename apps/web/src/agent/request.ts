@@ -1,5 +1,7 @@
 import { BaseAnthropic } from "@anthropic-ai/sdk/client";
 import { Messages, type BetaMessageParam, type MessageCreateParamsBase } from "@anthropic-ai/sdk/resources/beta/messages/messages";
+import type { DocSource } from "../docs/sources";
+import { MCP_BETA, docsPrompt, mcpParts, webFetchTool } from "./doc-request";
 import type { AgentSettings } from "./models";
 import { TOOL_DEFINITIONS } from "./tools";
 
@@ -7,7 +9,10 @@ import { TOOL_DEFINITIONS } from "./tools";
  * The client and every request the chat sends. The system prompt and the
  * tools are fixed text, the same in every request of every conversation, so
  * they form a stable cached prefix and never invalidate replayed thinking.
- * The project itself reaches the agent through read_project.
+ * The project itself reaches the agent through read_project. The one part
+ * that follows the project is its doc sources, when it has any: a third
+ * system block, the web fetch tool and the MCP servers, which stay the same
+ * for as long as the sources do.
  */
 
 /**
@@ -67,8 +72,25 @@ export function createClient(apiKey: string, options: { readonly fetch?: typeof 
 
 export type RequestBody = MessageCreateParamsBase & { readonly stream?: never };
 
-/** One streamed request: everything but `messages` is the same for every turn of a conversation at the same settings. */
-export function requestBody(settings: AgentSettings, messages: readonly BetaMessageParam[], catalogPrompt: string): RequestBody {
+/** The beta that lets a request say what to do with replayed thinking whose conversation prefix changed. */
+export const BINDING_BETA = "thinking-binding-controls-2026-08-01";
+
+/**
+ * The project's doc sources for a request (`doc-request.ts`). `token` gives a
+ * docs server's token at request time. `rebound` is set once the sources
+ * changed in the middle of this conversation: the system prompt and the
+ * tools changed with them, which invalidates the thinking replayed from
+ * before, so from then on every request asks the API to drop those blocks
+ * (`prefix_mismatch_behavior: "drop_block"`) instead of refusing them.
+ */
+export type RequestDocs = { readonly sources: readonly DocSource[]; readonly token: (name: string) => string | null; readonly rebound: boolean };
+
+export const NO_DOCS: RequestDocs = { sources: [], token: () => null, rebound: false };
+
+/** One streamed request: everything but `messages` is the same for every turn of a conversation at the same settings and doc sources. */
+export function requestBody(settings: AgentSettings, messages: readonly BetaMessageParam[], catalogPrompt: string, docs: RequestDocs = NO_DOCS): RequestBody {
+  const web = webFetchTool(docs.sources);
+  const mcp = mcpParts(docs.sources, docs.token);
   return {
     model: settings.model,
     max_tokens: MAX_TOKENS,
@@ -76,17 +98,20 @@ export function requestBody(settings: AgentSettings, messages: readonly BetaMess
       { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
       // The catalog's prompt changes only when a proposal changes the catalog, so it is a cached prefix of its own.
       { type: "text", text: catalogPrompt, cache_control: { type: "ephemeral" } },
+      // The doc sources, when there are any. No breakpoint of its own: the request's own one caches it with the conversation, and four is the most a request takes.
+      ...(docs.sources.length > 0 ? [{ type: "text" as const, text: docsPrompt(docs.sources) }] : []),
     ],
-    tools: [...TOOL_DEFINITIONS],
+    tools: [...TOOL_DEFINITIONS, ...(web ? [web] : []), ...mcp.toolsets],
+    ...(mcp.servers.length > 0 ? { mcp_servers: mcp.servers } : {}),
     // Forced tool choice is refused by these models; the prompt steers instead.
     tool_choice: { type: "auto" },
     // Adaptive thinking is these models' default; summaries make the agent's reasoning and progress readable in the chat.
-    thinking: { type: "adaptive", display: "summarized" },
+    thinking: { type: "adaptive", display: "summarized", ...(docs.rebound ? { block_binding: { prefix_mismatch_behavior: "drop_block" as const } } : {}) },
     output_config: { effort: settings.effort },
     // Caches the conversation up to its newest block, on top of the system prompt's breakpoint.
     cache_control: { type: "ephemeral" },
     fallbacks: "default",
-    betas: [FALLBACK_BETA],
+    betas: [FALLBACK_BETA, ...(mcp.servers.length > 0 ? [MCP_BETA] : []), ...(docs.rebound ? [BINDING_BETA] : [])],
     messages: [...messages],
   };
 }

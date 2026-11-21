@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { errorBody, scriptedFetch, streamEvents, type FakeReply } from "../../e2e/fake-anthropic.mjs";
 import { fakeHost } from "../../test/agent-host";
 import { seedSpec } from "../../test/nook";
-import { AgentController, type ChatRecord, type Turn } from "./controller";
+import type { DocSource } from "../docs/sources";
+import { AgentController, type ChatRecord, type DocContext, type Turn } from "./controller";
 import { DEFAULT_SETTINGS } from "./models";
 import { createClient, FALLBACK_BETA, SYSTEM_PROMPT } from "./request";
 import { specCatalogPrompt } from "./spec-prompt";
@@ -26,7 +27,7 @@ function lastText(body: Body): string {
   return (content as Array<{ type: string; text?: string; content?: unknown }>).map((block) => (block.type === "text" ? block.text : block.type === "tool_result" ? String(block.content) : "")).join("\n");
 }
 
-function setup(replies: readonly Reply[], options: { host?: AgentHost; maxRounds?: number } = {}) {
+function setup(replies: readonly Reply[], options: { host?: AgentHost; maxRounds?: number; docs?: () => DocContext } = {}) {
   const fake = scriptedFetch(replies);
   const hostParts = fakeHost();
   const host = options.host ?? hostParts.host;
@@ -40,6 +41,7 @@ function setup(replies: readonly Reply[], options: { host?: AgentHost; maxRounds
     client: (key) => createClient(key, { fetch: fake.fetch, maxRetries: 0 }),
     newId: () => `turn-${(id += 1)}`,
     ...(options.maxRounds !== undefined ? { maxRounds: options.maxRounds } : {}),
+    ...(options.docs ? { docs: options.docs } : {}),
   });
   return { controller, fake, host, hostParts, saved, turn: (): Turn => controller.getState().turns.at(-1) as Turn };
 }
@@ -285,5 +287,114 @@ describe("an agent turn", () => {
     const reopened = new AgentController({ host: fakeHost().host, store: { load: async () => last, save: async () => undefined }, key: () => KEY, settings: () => DEFAULT_SETTINGS });
     await reopened.load();
     expect(reopened.getState().log).toEqual(last.log);
+  });
+});
+
+describe("a turn that reads the project's docs", () => {
+  const SITE: DocSource = { kind: "website", url: "https://todae.design/docs", label: "Todae docs" };
+  const SERVER: DocSource = { kind: "mcp", url: "https://mcp.example.com/mcp", name: "design-docs" };
+  const TOKEN = "mcp-secret-token-0123456789";
+  const docsOf = (sources: { current: readonly DocSource[] }): (() => DocContext) => () => ({ sources: sources.current, token: (name) => (name === "design-docs" ? TOKEN : null), tokens: () => [TOKEN] });
+  const reading = {
+    events: streamEvents({
+      id: "msg_read",
+      blocks: [
+        { type: "thinking", thinking: "Checking Button's documented usage." },
+        { type: "web_fetch", id: "srvtoolu_page", url: "https://todae.design/docs/button" },
+        { type: "web_fetch_result", id: "srvtoolu_page", url: "https://todae.design/docs/button", title: "Button", text: "Use one primary Button per view." },
+        { type: "mcp_tool_use", id: "mcptoolu_search", name: "search_docs", server: "design-docs", input: { query: "secondary button" } },
+        { type: "mcp_tool_result", id: "mcptoolu_search", text: "Secondary buttons sit beside the primary one." },
+        { type: "tool_use", id: "toolu_edit", name: "patch_spec", input: SECOND_PRIMARY },
+      ],
+      stopReason: "tool_use",
+    }),
+  };
+
+  it("names the sources in the first message, sends web fetch and the docs server, shows each read, and replays the server tool blocks as they came", async () => {
+    const sources = { current: [SITE, SERVER] as readonly DocSource[] };
+    const { controller, fake, turn, saved } = setup([reading, done("Per the docs, Hold room stays secondary.")], { docs: docsOf(sources) });
+    await controller.send("Make Hold room stand out");
+    expect(turn().end).toEqual({ status: "done" });
+    const [first, second] = fake.requests;
+    expect(first?.headers.get("anthropic-beta")).toBe(`${FALLBACK_BETA},mcp-client-2025-11-20`);
+    expect(first?.body.mcp_servers).toEqual([{ type: "url", url: "https://mcp.example.com/mcp", name: "design-docs", authorization_token: TOKEN }]);
+    expect((first?.body.tools as Array<{ type?: string }>).slice(-2).map((item) => item.type)).toEqual(["web_fetch_20260209", "mcp_toolset"]);
+    expect((first?.body.messages[0]?.content as Array<{ text: string }>)[0]?.text).toMatch(/^This project's documentation sources, from the person:\n- Website, Todae docs: https:\/\/todae\.design\/docs\n/);
+    expect(turn().items[0]).toEqual({ kind: "notice", text: "Sent with the project's docs: Todae docs, design-docs." });
+    const read = turn().items.filter((item) => item.kind === "source");
+    expect(read).toEqual([
+      { kind: "source", id: "srvtoolu_page", via: "web", name: "web_fetch", status: "done", input: '{"url":"https://todae.design/docs/button"}', url: "https://todae.design/docs/button", pageTitle: "Button", result: "Use one primary Button per view." },
+      { kind: "source", id: "mcptoolu_search", via: "mcp", name: "search_docs", server: "design-docs", status: "done", input: '{"query":"secondary button"}', result: "Secondary buttons sit beside the primary one." },
+    ]);
+    // The assistant turn goes back whole: thinking, the fetch and its result, the MCP call and its result, and the app's own tool call, which alone gets a tool result.
+    const assistant = second?.body.messages[1]?.content as Array<{ type: string }>;
+    expect(assistant.map((block) => block.type)).toEqual(["thinking", "server_tool_use", "web_fetch_tool_result", "mcp_tool_use", "mcp_tool_result", "tool_use"]);
+    expect((second?.body.messages[2]?.content as Array<{ type: string; tool_use_id?: string }>)[0]).toMatchObject({ type: "tool_result", tool_use_id: "toolu_edit" });
+    expect(second?.body.messages.slice(0, first?.body.messages.length)).toEqual(first?.body.messages);
+    expect(second?.body.thinking).toEqual({ type: "adaptive", display: "summarized" });
+    expect(JSON.stringify(saved)).not.toContain(TOKEN);
+    // Undo still takes the turn back, whatever the agent read during it.
+    expect(controller.undoable()?.id).toBe(turn().id);
+    await controller.undo(turn().id);
+    expect(turn().undone).toBe(true);
+  });
+
+  it("tells the agent when the sources change, and from then on asks the API to drop the thinking from before", async () => {
+    const sources = { current: [] as readonly DocSource[] };
+    const { controller, fake, saved } = setup([done("Hello."), done("Read it."), done("Thanks.")], { docs: docsOf(sources) });
+    await controller.send("Hi");
+    expect(fake.requests[0]?.body.system).toHaveLength(2);
+    expect(fake.requests[0]?.body.thinking).toEqual({ type: "adaptive", display: "summarized" });
+    sources.current = [SITE];
+    await controller.send("Look at the docs");
+    const changed = fake.requests[1];
+    expect(lastText(changed?.body as Body)).toContain("- Website, Todae docs: https://todae.design/docs");
+    expect(changed?.body.thinking).toEqual({ type: "adaptive", display: "summarized", block_binding: { prefix_mismatch_behavior: "drop_block" } });
+    expect(changed?.headers.get("anthropic-beta")).toBe(`${FALLBACK_BETA},thinking-binding-controls-2026-08-01`);
+    expect(saved.at(-1)).toMatchObject({ docs: JSON.stringify([SITE]), rebound: true });
+    await controller.send("Thanks");
+    expect(lastText(fake.requests[2]?.body as Body)).toBe("Thanks");
+    expect(fake.requests[2]?.body.thinking).toMatchObject({ block_binding: { prefix_mismatch_behavior: "drop_block" } });
+  });
+
+  it("opens a saved conversation with the sources it was told about, and tells nothing again", async () => {
+    const sources = { current: [SITE] as readonly DocSource[] };
+    const first = setup([done("Hello.")], { docs: docsOf(sources) });
+    await first.controller.send("Hi");
+    const record = first.saved.at(-1) as ChatRecord;
+    expect(record.docs).toBe(JSON.stringify([SITE]));
+    expect(record.rebound).toBeUndefined();
+    const fake = scriptedFetch([done("Again.")]);
+    const reopened = new AgentController({ host: fakeHost().host, store: { load: async () => record, save: async () => undefined }, key: () => KEY, settings: () => DEFAULT_SETTINGS, client: (key) => createClient(key, { fetch: fake.fetch, maxRetries: 0 }), docs: docsOf(sources) });
+    await reopened.load();
+    await reopened.send("Hi again");
+    expect(lastText(fake.requests[0]?.body as Body)).toBe("Hi again");
+    expect(fake.requests[0]?.body.thinking).toEqual({ type: "adaptive", display: "summarized" });
+  });
+
+  it("says a page it could not read in plain words, and a refused request names the docs server without its token", async () => {
+    const failing = {
+      events: streamEvents({
+        id: "msg_fail",
+        blocks: [
+          { type: "web_fetch", id: "srvtoolu_x", url: "https://elsewhere.example.com/" },
+          { type: "web_fetch_result", id: "srvtoolu_x", url: "https://elsewhere.example.com/", error: "url_not_allowed" },
+          { type: "text", text: "That page is outside the project's docs." },
+        ],
+        stopReason: "end_turn",
+      }),
+    };
+    const sources = { current: [SITE, SERVER] as readonly DocSource[] };
+    const { controller, turn } = setup([failing, { status: 400, body: errorBody("invalid_request_error", `MCP server design-docs rejected authorization_token ${TOKEN}`) }], { docs: docsOf(sources) });
+    await controller.send("Read elsewhere");
+    expect(turn().items.find((item) => item.kind === "source")).toMatchObject({ status: "error", problem: "That address is not on one of the project's docs sites, or the site does not allow it to be read." });
+    await controller.send("Ask the docs server");
+    const end = turn().end;
+    expect(end.status).toBe("error");
+    if (end.status !== "error") return;
+    expect(end.detail).not.toContain(TOKEN);
+    expect(end.detail).toContain("[a docs server token]");
+    expect(end.detail).toContain("This request used the docs server design-docs.");
+    expect(end.detail).toContain("check the address and the token under Docs in the Project view");
   });
 });

@@ -1,4 +1,5 @@
 import { formatIssues, parseProjectConfig, parseVariantState, type ProjectConfig } from "@design-harness/core";
+import { parseDocSources, type DocSource } from "../docs/sources";
 import { parsePinState } from "../pins/model";
 import { withoutTsxRules } from "./migrate";
 import { readStoredPrototype, type PrototypeRecord } from "./project-file";
@@ -19,7 +20,8 @@ const PROTOTYPES = "prototypes";
 /** The agent chat of each prototype: what was said, and the API history. Never the API key, which has its own database. */
 const CHATS = "chats";
 
-type ProjectRow = { readonly id: string; readonly config: unknown };
+/** A project and, beside its config, its doc sources (`docs/sources.ts`): no check reads them. A row from before doc sources has none. */
+type ProjectRow = { readonly id: string; readonly config: unknown; readonly docs?: unknown };
 type PrototypeRow = { readonly projectId: string; readonly id: string; readonly name: string; readonly prototype: unknown; readonly variants?: unknown; readonly pins?: unknown };
 
 export type Loaded<T> = { readonly items: readonly T[]; readonly problems: readonly string[] };
@@ -103,9 +105,35 @@ export class Store {
     await done(tx);
   }
 
+  /** Saves a project's config, keeping the doc sources stored beside it. */
   async putProject(config: ProjectConfig): Promise<void> {
     const tx = this.db.transaction(PROJECTS, "readwrite");
-    tx.objectStore(PROJECTS).put({ id: config.id, config } satisfies ProjectRow);
+    const store = tx.objectStore(PROJECTS);
+    const row = (await request(store.get(config.id))) as ProjectRow | undefined;
+    store.put({ id: config.id, config, ...(row?.docs !== undefined ? { docs: row.docs } : {}) } satisfies ProjectRow);
+    await done(tx);
+  }
+
+  /**
+   * A project's doc sources. A project stored before there were any has
+   * none; stored ones that no longer read are reported and left out, and the
+   * project still loads.
+   */
+  async docs(projectId: string): Promise<{ readonly sources: readonly DocSource[]; readonly problem: string | null }> {
+    const row = (await request(this.db.transaction(PROJECTS).objectStore(PROJECTS).get(projectId))) as ProjectRow | undefined;
+    const parsed = parseDocSources(row?.docs);
+    return parsed.ok ? { sources: parsed.value, problem: null } : { sources: [], problem: `The docs stored with project "${projectId}" could not be read and were not loaded:\n${parsed.error.join("\n")}` };
+  }
+
+  /** Saves a project's doc sources beside its config. They hold no token: a source cannot carry one (`parseDocSources`). */
+  async putDocs(projectId: string, sources: readonly DocSource[]): Promise<void> {
+    const parsed = parseDocSources(sources);
+    if (!parsed.ok) throw new Error(parsed.error.join("\n"));
+    const tx = this.db.transaction(PROJECTS, "readwrite");
+    const store = tx.objectStore(PROJECTS);
+    const row = (await request(store.get(projectId))) as ProjectRow | undefined;
+    if (!row) throw new Error(`No stored project "${projectId}"`);
+    store.put({ id: row.id, config: row.config, ...(parsed.value.length > 0 ? { docs: parsed.value } : {}) } satisfies ProjectRow);
     await done(tx);
   }
 
@@ -121,10 +149,12 @@ export class Store {
     await done(tx);
   }
 
-  /** Writes a project with exactly these prototypes, in one transaction: an import replaces the stored project of the same id whole. */
-  async replaceProject(config: ProjectConfig, prototypes: readonly PrototypeRecord[]): Promise<void> {
+  /** Writes a project with exactly these prototypes and doc sources, in one transaction: an import replaces the stored project of the same id whole. */
+  async replaceProject(config: ProjectConfig, prototypes: readonly PrototypeRecord[], docs: readonly DocSource[] = []): Promise<void> {
+    const parsed = parseDocSources(docs);
+    if (!parsed.ok) throw new Error(parsed.error.join("\n"));
     const tx = this.db.transaction([PROJECTS, PROTOTYPES], "readwrite");
-    tx.objectStore(PROJECTS).put({ id: config.id, config } satisfies ProjectRow);
+    tx.objectStore(PROJECTS).put({ id: config.id, config, ...(parsed.value.length > 0 ? { docs: parsed.value } : {}) } satisfies ProjectRow);
     const store = tx.objectStore(PROTOTYPES);
     const keys = await request(store.index("projectId").getAllKeys(IDBKeyRange.only(config.id)));
     for (const key of keys) store.delete(key);

@@ -1,5 +1,6 @@
 import type { BetaTool } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { ROLE_NAMES, dryRunAdoption, formatIssues, parsePrototype, propose, revise, type CheckReport, type JsonValue, type Variant, type VariantState, type FailingExample, type PassingExample, type ProjectConfig, type Proposal, type Prototype, type ProposalDraft } from "@design-harness/core";
+import { cleanSource, type DocSource } from "../docs/sources";
 import { MAX_REPLY_LENGTH, addressPin, openPins, type PinState } from "../pins/model";
 import { validateInput, type JsonSchema } from "./schema";
 import { SPEC_TOOL_DESCRIPTIONS, SPEC_TOOL_SCHEMAS, insertLayout, listLayouts, patchSpec, setLayoutParams, writeSpec } from "./spec-tools";
@@ -51,6 +52,8 @@ export interface AgentHost {
    * Nothing else of the agent's reaches them: `address_note` is the one tool that calls it.
    */
   savePins?(next: PinState): void;
+  /** The project's doc sources, which read_project lists; absent where the app keeps none. */
+  docs?(): readonly DocSource[];
 }
 
 type Tool = { readonly definition: BetaTool; readonly schema: JsonSchema };
@@ -155,7 +158,7 @@ const tool = (name: string, description: string, schema: JsonSchema): Tool => ({
 const TOOLS: readonly Tool[] = [
   tool(
     "read_project",
-    "Read the project: the component library and which parts are which roles, the inventories (components, layouts, page types and their slots, flow states), the rule inputs (tasks, ranking, disclosed sections, caps), the views, every rule in force as JSON, and every proposal with its status. Call it before building anything, and again after drafting a proposal.",
+    "Read the project: the component library and which parts are which roles, the inventories (components, layouts, page types and their slots, flow states), the rule inputs (tasks, ranking, disclosed sections, caps), the views, every rule in force as JSON, every proposal with its status, and the documentation sources the person added, when there are any. Call it before building anything, and again after drafting a proposal.",
     NOTHING,
   ),
   tool("list_files", "List the prototype's files with their line counts, and show its manifest (pages, layouts, scenarios, flow). Call it to see what exists before reading or writing.", NOTHING),
@@ -259,7 +262,7 @@ export async function runTool(call: ToolCall, host: AgentHost, signal: AbortSign
   const input = call.input as Record<string, unknown>;
   switch (call.name) {
     case "read_project":
-      return { content: projectText(host.config()), isError: false, changed: false, title: "Read the project" };
+      return { content: projectText(host.config(), host.docs?.() ?? []), isError: false, changed: false, title: "Read the project" };
     case "list_files":
       return listFiles(host.prototype());
     case "read_file":
@@ -319,7 +322,7 @@ function manifestOf(prototype: Prototype): Omit<Prototype, "files"> {
   return manifest;
 }
 
-function projectText(config: ProjectConfig): string {
+function projectText(config: ProjectConfig, docs: readonly DocSource[] = []): string {
   const { library, inventories, inputs, views, rules, proposals } = config;
   return JSON.stringify(
     {
@@ -340,6 +343,8 @@ function projectText(config: ProjectConfig): string {
         // What happened to it, notes included, so a send-back's note can be read again; earlier versions stay out.
         history: [...proposal.history.map((entry) => ({ ...entry })), ...(proposal.events ?? []).map(({ kind, at, by, note }) => ({ event: kind, at, by, note }))],
       })),
+      // The documentation the person added, which the system prompt says when to read; never a token. Absent when there is none.
+      ...(docs.length > 0 ? { docs: docs.map(cleanSource) } : {}),
     },
     null,
     1,

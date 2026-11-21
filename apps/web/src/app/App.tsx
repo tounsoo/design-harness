@@ -3,6 +3,8 @@ import { Suspense, lazy, useEffect, useState } from "react";
 import type { ProjectConfig } from "@design-harness/core";
 import { SEED_PROTOTYPE_ID, seedProject } from "../seed/nook";
 import { KeyVault } from "../agent/key-vault";
+import type { DocSource } from "../docs/sources";
+import { DocTokens } from "../docs/token-vault";
 import { Store } from "../store/db";
 import { tsxRulesNote, withLibraryParts, type LoadNote } from "../store/migrate";
 import type { Imported, PrototypeRecord } from "../store/project-file";
@@ -14,8 +16,8 @@ import { Workspace } from "./Workspace";
 const ProjectWizard = lazy(() => import("./ProjectWizard").then((module) => ({ default: module.ProjectWizard })));
 
 /** The open project. `opened` counts every opening, so a project opens in a fresh workspace even when its id is the same. */
-type Open = { readonly config: ProjectConfig; readonly prototypes: readonly PrototypeRecord[]; readonly problems: readonly string[]; readonly notes: readonly LoadNote[] };
-type Loaded = Open & { readonly store: Store; readonly vault: KeyVault; readonly projects: readonly ProjectEntry[]; readonly opened: number };
+type Open = { readonly config: ProjectConfig; readonly prototypes: readonly PrototypeRecord[]; readonly docs: readonly DocSource[]; readonly problems: readonly string[]; readonly notes: readonly LoadNote[] };
+type Loaded = Open & { readonly store: Store; readonly vault: KeyVault; readonly tokens: DocTokens; readonly projects: readonly ProjectEntry[]; readonly opened: number };
 
 /**
  * Reads one stored project and its prototypes, bringing an older one up to
@@ -32,14 +34,16 @@ async function open(store: Store, config: ProjectConfig, problems: readonly stri
     notes.push({ tone: "info", title: "The project was brought up to date", text: migration.note });
   } else if (migration.kind === "no-parts") notes.push({ tone: "warning", title: "Spec prototypes cannot be checked in this project", text: migration.note });
   const prototypes = await store.prototypes(migration.config.id);
-  return { config: migration.config, prototypes: prototypes.items, problems: [...problems, ...prototypes.problems], notes };
+  // Doc sources are kept beside the config; a project from before them has none, and stored ones that no longer read are reported.
+  const docs = await store.docs(migration.config.id);
+  return { config: migration.config, prototypes: prototypes.items, docs: docs.sources, problems: [...problems, ...prototypes.problems, ...(docs.problem ? [docs.problem] : [])], notes };
 }
 
 const entries = (configs: readonly ProjectConfig[]): ProjectEntry[] => configs.map((config) => ({ id: config.id, name: config.name }));
 
 /** Opens the browser's store, seeding it with the Nook example on first run, and shows the project last open here, or the first. */
 async function load(): Promise<Loaded> {
-  const [store, vault] = await Promise.all([Store.open(), KeyVault.open()]);
+  const [store, vault, tokens] = await Promise.all([Store.open(), KeyVault.open(), DocTokens.open()]);
   let projects = await store.projects();
   if (projects.items.length === 0) {
     const seed = seedProject();
@@ -48,7 +52,7 @@ async function load(): Promise<Loaded> {
   }
   const stored = projects.items.find((config) => config.id === recallProject()) ?? projects.items[0];
   if (!stored) throw new Error(`No stored project validates.\n${projects.problems.join("\n")}`);
-  return { store, vault, projects: entries(projects.items), opened: 0, ...(await open(store, stored, projects.problems, projects.removed[stored.id])) };
+  return { store, vault, tokens, projects: entries(projects.items), opened: 0, ...(await open(store, stored, projects.problems, projects.removed[stored.id])) };
 }
 
 export function App() {
@@ -97,7 +101,7 @@ export function App() {
     setState({ loaded: { ...loaded, ...opened, notes: [...notes, ...opened.notes], projects: entries(projects.items), opened: loaded.opened + 1 } });
   };
   const onImported = async (imported: Imported) => {
-    await store.replaceProject(imported.config, imported.prototypes);
+    await store.replaceProject(imported.config, imported.prototypes, imported.docs);
     await show(imported.config.id, imported.removed.length > 0 ? [tsxRulesNote(imported.config.name, imported.removed)] : []);
   };
   const onCreated = async (created: CreatedProject) => {
@@ -130,6 +134,8 @@ export function App() {
       key={loaded.opened}
       store={store}
       vault={loaded.vault}
+      tokens={loaded.tokens}
+      docs={loaded.docs}
       config={loaded.config}
       prototypes={loaded.prototypes}
       problems={loaded.problems}
