@@ -1,5 +1,6 @@
 import { OVERLAY_ATTRIBUTE, collectSnapshot, round } from "./collect";
 import { installDeterminism } from "./determinism";
+import { settle, type SettlePage } from "./settle";
 import { PROTOCOL, clip, readParentMessage, type FrameMessage, type FrameStage, type HighlightRequest, type RedrawRequest, type RenderRequest } from "../runtime/protocol";
 import { MAX_FRAME_PLACES, MAX_FRAME_TAGS, type TagPlace } from "../runtime/tags";
 import { tagsIn } from "./tags";
@@ -93,32 +94,30 @@ function addImportMap(request: RenderRequest): void {
   document.head.append(map);
 }
 
-/**
- * Waits until the page stops changing: web fonts loaded, images decoded, and
- * no DOM mutation for three checks in a row 50 ms apart. Timers, not
- * animation frames, since a browser may throttle frames in an iframe that is
- * off screen. Returns false when the page was still changing at `maxMs`.
- */
-async function settle(maxMs: number): Promise<boolean> {
-  const deadline = now() + maxMs;
-  const left = () => Math.max(0, deadline - now());
-  await Promise.race([document.fonts.ready, wait(left())]);
-  const images = [...document.images].map((image) => (image.complete ? Promise.resolve() : image.decode().catch(() => undefined)));
-  await Promise.race([Promise.all(images), wait(left())]);
-  let changed = false;
-  const observer = new MutationObserver(() => {
-    changed = true;
-  });
-  observer.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
-  let quiet = 0;
-  while (quiet < 3 && now() < deadline) {
-    changed = false;
-    await wait(50);
-    quiet = changed ? 0 : quiet + 1;
-  }
-  observer.disconnect();
-  return quiet >= 3;
-}
+/** The frame's own document, as `settle` reads it. */
+const framePage: SettlePage = {
+  get fonts() {
+    return document.fonts.ready;
+  },
+  fontsLoaded: () => document.fonts.status === "loaded",
+  images: () => [...document.images].map((image) => (image.complete ? Promise.resolve() : image.decode().catch(() => undefined))),
+  imagesLoaded: () => [...document.images].every((image) => image.complete),
+  watch: () => {
+    let changed = false;
+    const observer = new MutationObserver(() => {
+      changed = true;
+    });
+    observer.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+    return {
+      changed: () => {
+        const was = changed;
+        changed = false;
+        return was;
+      },
+      stop: () => observer.disconnect(),
+    };
+  },
+};
 
 async function render(request: RenderRequest): Promise<void> {
   generation = request.generation;
@@ -172,9 +171,9 @@ async function render(request: RenderRequest): Promise<void> {
     return;
   }
   redraw = pendingRedraw;
-  const settled = await settle(request.settleMs);
+  const settled = await settle(framePage, request.settleMs, { now, wait });
   if (runtimeError) return fail("render", runtimeError);
-  if (!settled) return fail("measure", new Error(`the page was still changing after ${request.settleMs} ms, so it cannot be measured the same way twice`));
+  if (!settled.settled) return fail("measure", new Error(settled.reason));
   try {
     window.scrollTo(0, 0);
     const collected = collectSnapshot(document, request.scenario.id, view.name);
