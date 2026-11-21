@@ -5118,6 +5118,8 @@ test("a proposal whose Not allowed example is not caught: the person puts in a p
   // The choice is a row of its own: the prototype's screen where the rule catches it, drawn small with the change in place and both toasts on it, which screen that is, and its button. The screen is a picture: it takes no focus.
   const choice = fix.locator('.review-fix-choices > li[data-prototype="Two toasts"]');
   const choiceFrame = 'iframe[title^="Two toasts, as an example: "]';
+  // Off screen, a measured frame is parked and its iframe leaves the DOM, so the choice is brought on screen first, as liveFrame does.
+  await choice.evaluate((element) => element.scrollIntoView({ block: "center" }));
   await choice.locator(choiceFrame).waitFor({ timeout: 60000 });
   assert.equal(await choice.locator(choiceFrame).getAttribute("sandbox"), "allow-scripts");
   await page.frameLocator(choiceFrame).locator("text=Booked").nth(1).waitFor({ timeout: 60000 });
