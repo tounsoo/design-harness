@@ -124,6 +124,11 @@ async function shot(page, name) {
   if (shots) await page.screenshot({ path: join(shots, `${name}.png`) });
 }
 
+/** One part of the page, scrolled into view, only when screenshots are being saved. */
+async function shotOf(locator, name) {
+  if (shots) await locator.screenshot({ path: join(shots, `${name}.png`) });
+}
+
 /** The page as it is now in dark as well, only when screenshots are being saved. */
 async function shotDark(page, name) {
   if (!shots) return;
@@ -831,7 +836,15 @@ test("a drafted proposal is saved as open, and its chat card says what it change
   assert.doesNotMatch(await card.textContent(), /dry run|classified|tightens|booking-toast/);
   await mainView(page, "Project").click();
   await page.getByText("Proposals (1)").waitFor();
-  assert.match(await page.locator('.project [data-testid="project-history"] [data-proposal="booking-toast"]').textContent(), /^A toast that confirms a booking.*open.*Waiting for you.*Adds 1 component and 1 rule\./);
+  // The Project view's history reads as the Proposals list does: where it stands in words, the change in a plain sentence, and who it is from. No status chip, no count of operations.
+  const listed = page.locator('.project [data-testid="project-history"] [data-proposal="booking-toast"]');
+  assert.match(await listed.textContent(), /^A toast that confirms a bookingWaiting for youAdd Toast to the parts screens can use\. And 1 more change\.Suggested by the agent, /);
+  assert.equal(await listed.getByTestId("history-standing").textContent(), "Waiting for you");
+  assert.equal(await listed.getByTestId("history-plain").textContent(), await card.getByTestId("chat-proposal-plain").textContent(), "the same sentence as the chat card and the Proposals list");
+  assert.equal(await listed.getAttribute("data-status"), "open", "core's status stays on the row as data");
+  assert.equal(await listed.locator('[data-testid="proposal-status"]').count(), 0, "no status chip");
+  assert.doesNotMatch(await listed.textContent(), /\bopen\b|Adds 1 component|1 rule\b|booking-toast/);
+  await shotOf(page.getByTestId("project-history"), "project-history-light");
   assert.equal((await report(page)).rules.some((rule) => rule.rule === "one-toast-per-page"), false, "an open proposal puts no rule in force");
   await shot(page, "chat-proposal-light");
   await page.reload();
@@ -1121,7 +1134,7 @@ test("a drafted proposal opens to its review page: what changes in plain words w
   // The top says what is asked of the person, and its button goes to the decision.
   assert.match(await page.getByTestId("review-summary").textContent(), /^You decide whether this goes into the project\. Nothing changes until you accept it\./);
   // What changes: one plain sentence for each change, then why.
-  assert.deepEqual(await page.locator('[data-testid="review-plain"] li').allTextContents(), ["Add Toast to the parts screens can use.", "New rule: Each page holds at most 1 Toast.Root."]);
+  assert.deepEqual(await page.locator('[data-testid="review-plain"] li').allTextContents(), ["Add Toast to the parts screens can use.", "New rule: Each page holds at most 1 Toast."]);
   assert.match(await page.getByTestId("proposal-reason").textContent(), /Toast is not in the inventory/);
   assert.match(await page.getByTestId("proposal-states").textContent(), /Booked.*the toast says the room is booked/);
   // The main path carries no engineering words: they are all inside the closed details.
@@ -1265,7 +1278,7 @@ test("accept approves and adopts in one click: both steps are in the history, th
   await approveAndAdopt(page);
   assert.equal(await page.getByTestId("open-proposals").count(), 0, "an accepted proposal no longer waits");
   assert.match(await page.getByTestId("review-standing").textContent(), /^Accepted /);
-  assert.match(await page.getByTestId("review-in-force").textContent(), /Accepted by you.*It is part of the project now\. Checked on every prototype: Each page holds at most 1 Toast\.Root\./);
+  assert.match(await page.getByTestId("review-in-force").textContent(), /Accepted by you.*It is part of the project now\. Checked on every prototype: Each page holds at most 1 Toast\. /);
   assert.match(await page.getByTestId("review-rechecked").textContent(), /Every prototype was checked again: all still fine\./);
   assert.equal(await page.getByTestId("review-actions").count(), 0, "an accepted proposal offers no action");
   // Core recorded both of its steps, approved and then adopted, each by the person.
@@ -1282,6 +1295,83 @@ test("accept approves and adopts in one click: both steps are in the history, th
   const value = await report(page);
   assert.deepEqual(failing(value), ["one-toast-per-page"], "Toast is in the inventory now, and two of them break the new rule alone");
   assert.match(value.findings[0].message, /^Page "booking" has 2 Toast.Root, more than 1/);
+});
+
+/**
+ * The open project again, with a proposal moved to `approved` as the old
+ * two-step flow left one: approved by the person a moment after it was
+ * drafted, and never adopted. The app no longer has a way to stop there, so
+ * the project file is where such a proposal comes from. Returns when it was
+ * approved.
+ */
+async function importAsApproved(page, id) {
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export", exact: true }).click()]);
+  const exported = JSON.parse(readFileSync(await download.path(), "utf8"));
+  const drafted = exported.project.proposals.find((proposal) => proposal.id === id);
+  assert.equal(drafted?.status, "open", `there is an open proposal ${id} to approve`);
+  // The history is read in time order: after the draft, and before anything this test does next.
+  const at = new Date(Date.parse(drafted.history[0].at) + 1).toISOString();
+  const proposals = exported.project.proposals.map((proposal) => (proposal === drafted ? { ...proposal, status: "approved", history: [...proposal.history, { status: "approved", at, by: "you" }] } : proposal));
+  const file = join(mkdtempSync(join(tmpdir(), "design-harness-approved-")), "approved.design-harness.json");
+  writeFileSync(file, JSON.stringify({ ...exported, project: { ...exported.project, proposals } }));
+  await page.locator('[data-testid="import-file"]').setInputFiles(file);
+  await page.waitForFunction((count) => {
+    const cards = [...document.querySelectorAll(".board .frame-card")];
+    return cards.length === count && cards.every((card) => card.dataset.state === "measured") && document.querySelector(".checks[data-measured]") !== null;
+  }, FRAMES, { timeout: 60000 });
+  return at;
+}
+
+test("a proposal approved under the old two-step flow is accepted in one click: it waits for you like any other, Accept adopts it, and the history reads open, approved, adopted", async ({ browser, base, api }) => {
+  const { page, errors } = await openApp(browser, base);
+  await measured(page, 1);
+  await draftByAgent(page, api, toastDraft());
+  const approvedAt = await importAsApproved(page, "booking-toast");
+  assert.equal((await report(page)).rules.some((rule) => rule.rule === "one-toast-per-page"), false, "approved is not in force");
+
+  // It waits for the person, in the same words as an open one: no "approved" anywhere a designer reads.
+  await mainView(page, "Proposals").click();
+  const card = page.locator('.proposal-cards [data-proposal="booking-toast"]');
+  await card.waitFor();
+  assert.equal(await card.getAttribute("data-status"), "approved");
+  assert.equal(await card.getByTestId("proposal-standing").textContent(), "Waiting for you");
+  assert.match(await page.getByRole("group", { name: "Show proposals" }).textContent(), /Waiting for you \(1\)/);
+  await card.getByRole("button", { name: "A toast that confirms a booking" }).click();
+  const review = page.locator('.review[data-proposal="booking-toast"]');
+  await review.waitFor();
+  assert.equal(await reviewStatus(page), "approved");
+  assert.match(await review.getByTestId("review-standing").textContent(), /^Waiting for you · Suggested by the agent, /);
+  // One decision is left to take, and it is Accept: there is no Adopt button, and no asking the agent to revise what was already approved.
+  const actions = page.getByTestId("review-actions");
+  assert.deepEqual(await actions.getByRole("button").allTextContents(), ["Accept", "Decline"]);
+  assert.equal(await page.getByRole("button", { name: "Adopt", exact: true }).count(), 0);
+  // Its examples are judged as an open proposal's are.
+  await judged(page);
+  assert.deepEqual([await example(page, "one-toast").getAttribute("data-verdict"), await example(page, "two-toasts").getAttribute("data-verdict")], ["ok", "ok"]);
+  await openDetails(page);
+  assert.deepEqual(await page.locator('[data-testid="review-history"] [data-kind="status"]').evaluateAll((items) => items.map((item) => item.dataset.entryStatus)), ["open", "approved"]);
+
+  await approveAndAdopt(page);
+  assert.equal(await reviewStatus(page), "adopted");
+  assert.match(await page.getByTestId("review-standing").textContent(), /^Accepted /);
+  assert.match(await page.getByTestId("review-in-force").textContent(), /Accepted by you.*It is part of the project now\. Checked on every prototype: Each page holds at most 1 Toast\. /);
+  assert.equal(await page.getByTestId("review-actions").count(), 0, "an accepted proposal offers no action");
+  // Accept only adopted it: the approval is the one from before, with its own time, and it is recorded once.
+  const history = page.locator('[data-testid="review-history"] [data-kind="status"]');
+  assert.deepEqual(await history.evaluateAll((items) => items.map((item) => item.dataset.entryStatus)), ["open", "approved", "adopted"]);
+  assert.equal(await history.nth(1).locator("time").getAttribute("datetime"), approvedAt, "the earlier approval is kept as it was");
+  assert.notEqual(await history.nth(2).locator("time").getAttribute("datetime"), approvedAt);
+  assert.match(await page.getByTestId("review-history").textContent(), /Drafted by agent.*Approved by you.*Adopted by you/);
+  await shotOf(page.getByTestId("review-history"), "approved-accepted-history-light");
+
+  // The rule is in force, and stays so across a reload.
+  await showAllRules(page);
+  await page.waitForSelector('.checks[data-measured] .rule[data-rule="one-toast-per-page"][data-status="pass"]', { timeout: 60000, state: "attached" });
+  await page.reload();
+  await mainView(page, "Proposals").click();
+  assert.equal(await page.locator('.proposal-cards [data-proposal="booking-toast"]').getAttribute("data-status"), "adopted");
+  assert.match(await page.locator('.proposal-cards [data-proposal="booking-toast"]').getByTestId("proposal-standing").textContent(), /^Accepted /);
+  assert.deepEqual(errors, []);
 });
 
 test("a proposal whose not-allowed example is not caught cannot be accepted: the page says why in plain words, with core's refusal in the details", async ({ browser, base, api }) => {
@@ -1308,6 +1398,21 @@ test("a proposal whose not-allowed example is not caught cannot be accepted: the
   assert.equal(await page.getByTestId("review-ready").textContent(), "It can't be accepted as it is. The reason is under Decide.");
   // The not-allowed screen says so too.
   assert.equal(await page.locator('.proof-example[data-proof="only-one"]').getByTestId("proof-verdict").textContent(), "Nothing stops this yet");
+  // And in a sentence, on the card itself: the check did not catch it.
+  assert.equal(await page.locator('.proof-example[data-proof="only-one"]').getByTestId("proof-missed").textContent(), "The check did not catch this screen: it counts as allowed as it is, so nothing shows the rule working yet.");
+  assert.equal(await page.locator('.proof-example[data-proof="one-toast"]').getByTestId("proof-missed").count(), 0, "the allowed screen does its job");
+  // With nothing flagged there is no finding to choose the screen by. Both screens still open on the page the example changes, in the state the proposal names, not on the first scenario (the rooms list).
+  const uncaught = page.locator('[data-rule-proof="one-toast-per-page"]');
+  assert.deepEqual(await uncaught.locator(".proof-example .frame-viewport").evaluateAll((frames) => frames.map((frame) => frame.dataset.frameName)), ["one-toast, as proof: lantern-booked at phone", "only-one, as proof: lantern-booked at phone"]);
+  assert.deepEqual(await uncaught.locator(".proof-example").evaluateAll((items) => items.map((item) => item.querySelector(".proof-frame + p").textContent)), ["Booking, booked (Lantern booked), phone.", "Booking, booked (Lantern booked), phone."]);
+  const uncaughtFrame = page.frameLocator('iframe[title="only-one, as proof: lantern-booked at phone"]');
+  await uncaughtFrame.locator("h1").waitFor({ timeout: 60000 });
+  assert.notEqual((await uncaughtFrame.locator("h1").textContent()).trim(), "Rooms", "the screen shown is the booking page the example changes, not the rooms list");
+  await shotOf(uncaught, "review-not-caught-light");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.waitForTimeout(400);
+  await shotOf(uncaught, "review-not-caught-dark");
+  await page.emulateMedia({ colorScheme: "light" });
   // A click that gets through anyway changes nothing.
   await acceptButton.evaluate((button) => button.click());
   assert.equal(await reviewStatus(page), "open", "a refused proposal stays as it was: not approved, not adopted");
@@ -1323,6 +1428,15 @@ test("a proposal whose not-allowed example is not caught cannot be accepted: the
   assert.equal(await page.getByTestId("review-refusal-message").textContent(), 'failing example "only-one" is not flagged as it must be: "one-toast-per-page" passed it');
   assert.match(await technical.textContent(), /Not adopted: core refuses it.*Reason.*failing-example-passes.*Example.*Show Only one/);
   assert.match(await page.getByTestId("review-verdict").textContent(), /^Core's adoption dry run refuses it: \[failing-example-passes\]/);
+  // On a phone the card says the same, and fits.
+  await page.setViewportSize(PHONE);
+  await page.locator('.shell[data-width="phone"]').waitFor();
+  await uncaught.scrollIntoViewIfNeeded();
+  assert.equal(await uncaught.getByTestId("proof-missed").isVisible(), true);
+  await narrowIsUsable(page, page.locator(".review"), "a proposal whose example is not caught, on a phone");
+  await uncaught.getByTestId("proof-missed").evaluate((element) => element.scrollIntoView({ block: "center" }));
+  await page.waitForTimeout(300);
+  await shot(page, "review-not-caught-phone-light");
   await page.reload();
   await mainView(page, "Proposals").click();
   assert.equal(await page.locator('.proposal-cards [data-proposal="booking-toast"]').getAttribute("data-status"), "open", "nothing was saved");
@@ -4507,17 +4621,21 @@ test("a person removes a rule from its card: the proposal needs no examples, and
   assert.equal((await dialog.getByTestId("rule-words").textContent()).trim(), "Each page holds at most 1 primary action.");
   // Core's reading of every prototype in the project with the rule gone, each measured in frames.
   await dialog.getByTestId("rule-impact-summary").waitFor({ timeout: 60000 });
-  assert.equal(await dialog.getByTestId("rule-impact-summary").textContent(), "1 of 2 prototypes has findings from this rule now; 1 would stop failing.");
+  assert.equal(await dialog.getByTestId("rule-impact-summary").textContent(), "Nothing that works today would stop working. 1 of 2 prototypes would start passing.");
   assert.deepEqual(await dialog.locator(".rule-impact > li").evaluateAll((items) => items.map((item) => [item.dataset.prototype, item.dataset.effect])), [
     ["Booking", "clears"],
     ["Two questions", "same"],
   ]);
-  assert.match(await dialog.locator('.rule-impact > li[data-prototype="Booking"]').textContent(), /1 finding from this rule now\. It would stop failing\./);
+  assert.equal(await words(dialog.locator('.rule-impact > li[data-prototype="Booking"]')), "Booking Would start passing.");
+  // Two questions fails another rule today, which this leaves alone.
+  assert.equal(await words(dialog.locator('.rule-impact > li[data-prototype="Two questions"]')), "Two questions No change: it needs fixing today, and still would.");
+  assert.doesNotMatch(await dialog.getByTestId("rule-impact").textContent(), /one-primary-per-page|finding/, "the impact names no rule id");
   assert.equal(await dialog.getByTestId("rule-retired").count(), 0, "no adopted proposal keeps an example of a built-in rule");
   // A removal takes no examples: it adds nothing an example could show firing, and the impact above is what it does.
   assert.equal(await dialog.locator(".rule-examples > li").count(), 0);
   assert.match(await dialog.getByTestId("rule-no-examples").textContent(), /A removal needs none/);
   assert.equal(await dialog.getByTestId("rule-needs").count(), 0);
+  await shotOf(dialog.getByTestId("rule-impact"), "rule-remove-dialog-impact-light");
   await shot(page, "rule-remove-light");
   await shotDark(page, "rule-remove-dark");
 
@@ -4548,6 +4666,23 @@ test("a person removes a rule from its card: the proposal needs no examples, and
   assert.equal(await page.locator(".review .example").count(), 0);
   await eventually(page, () => page.getByTestId("review-verdict").textContent(), (text) => /it would be adopted/.test(text), "core's dry run adopts a removal with no examples");
   await review.getByTestId("review-impact").locator('[data-prototype="two-questions"]').waitFor({ timeout: 60000 });
+  // What it affects, in three states: Booking fails this rule today and would stop; Two questions fails another rule, and nothing changes for it. Neither is "still fine".
+  const affects = review.getByTestId("review-impact");
+  assert.equal(await affects.getByTestId("impact-none").textContent(), "Nothing that works today would stop working.");
+  assert.equal(await affects.getByTestId("impact-stops").textContent(), "1 of 2 prototypes would start passing.");
+  assert.deepEqual(await affects.locator(".impact-grid > li").evaluateAll((items) => items.map((item) => [item.dataset.prototype, item.dataset.impact, item.querySelector(".vis-verdict").textContent.trim()])), [
+    ["booking-spec", "fixed", "Would start passing"],
+    ["two-questions", "holds", "No change"],
+  ]);
+  assert.equal(await affects.locator('[data-prototype="booking-spec"]').getByTestId("impact-fixed").textContent(), "It goes against this today, and no longer would: Each page holds at most 1 primary action.");
+  assert.equal(await affects.locator('[data-prototype="booking-spec"] .vis-verdict').getAttribute("data-rules"), "one-primary-per-page");
+  assert.equal(await affects.locator('[data-prototype="two-questions"]').getByTestId("impact-same").textContent(), "It needs fixing today, and still would.");
+  assert.doesNotMatch(await affects.textContent(), /Still fine|one-primary-per-page/);
+  await shotOf(affects, "rule-remove-impact-light");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.waitForTimeout(400);
+  await shotOf(affects, "rule-remove-impact-dark");
+  await page.emulateMedia({ colorScheme: "light" });
   await shot(page, "rule-remove-review-light");
   await shotDark(page, "rule-remove-review-dark");
 
@@ -4613,11 +4748,12 @@ test("a person changes a count limit from 1 to 2: live before and after, classif
   assert.equal(await preview.getByTestId("proposal-class").getAttribute("data-class"), "loosens-or-removes");
   assert.match(await preview.textContent(), /moves max from 1 to 2, the looser way/);
   await dialog.getByTestId("rule-impact-summary").waitFor({ timeout: 60000 });
-  assert.equal(await dialog.getByTestId("rule-impact-summary").textContent(), "2 of 2 prototypes have findings from this rule now; 1 would stop failing.");
+  assert.equal(await dialog.getByTestId("rule-impact-summary").textContent(), "Nothing that works today would stop working. 1 of 2 prototypes would start passing.");
   assert.deepEqual(await dialog.locator(".rule-impact > li").evaluateAll((items) => items.map((item) => [item.dataset.prototype, item.dataset.effect])), [
     ["Booking", "clears"],
     ["Three ways to book", "still-fails"],
   ]);
+  assert.equal(await words(dialog.locator('.rule-impact > li[data-prototype="Three ways to book"]')), "Three ways to book Still needs fixing, as it does today.");
   // The changed rule's examples, from the project: the prototype with 2 passes it, the one with 3 is flagged by it alone.
   assert.deepEqual(await dialog.locator(".rule-examples > li").evaluateAll((items) => items.map((item) => [item.dataset.example, item.dataset.expect])), [
     ["booking", "pass"],
@@ -4642,6 +4778,16 @@ test("a person changes a count limit from 1 to 2: live before and after, classif
   assert.equal(await review.getByTestId("rule-removed").count(), 0, "a changed rule is not listed as removed");
   await judged(page);
   assert.deepEqual([await example(page, "booking").getAttribute("data-verdict"), await example(page, "three-ways-to-book").getAttribute("data-verdict")], ["ok", "ok"]);
+  // The prototype with 2 fails the rule today and would stop; the one with 3 is over the new limit too, so nothing changes for it.
+  const affects = review.getByTestId("review-impact");
+  await affects.getByTestId("impact-none").waitFor({ timeout: 60000 });
+  assert.deepEqual(await affects.locator(".impact-grid > li").evaluateAll((items) => items.map((item) => [item.dataset.prototype, item.dataset.impact, item.querySelector(".vis-verdict").textContent.trim()])), [
+    ["booking-spec", "fixed", "Would start passing"],
+    ["three-ways", "holds", "No change"],
+  ]);
+  assert.equal(await affects.locator('[data-prototype="booking-spec"]').getByTestId("impact-fixed").textContent(), "It goes against this today, and no longer would: Each page holds at most 1 primary action.");
+  assert.equal(await affects.locator('[data-prototype="three-ways"]').getByTestId("impact-same").textContent(), "It needs fixing today, and still would.");
+  await shotOf(affects, "rule-change-impact-light");
   await shot(page, "rule-change-review-light");
   await shotDark(page, "rule-change-review-dark");
 
@@ -4666,7 +4812,9 @@ test("a person changes a count limit from 1 to 2: live before and after, classif
   const back = await openRuleFlow(page, "one-primary-per-page", "Change");
   await setLimit(back, "max", 1);
   await back.getByTestId("rule-replaced").waitFor({ timeout: 60000 });
-  assert.match(await back.getByTestId("rule-replaced").textContent(), /It replaces an example kept from a change you accepted earlier: booking, of change-one-primary-per-page\./);
+  // The example it replaces is named as the review page names it, with the change that keeps it by its title, never its id.
+  assert.match(await back.getByTestId("rule-replaced").textContent(), /It replaces an example kept from a change you accepted earlier: “Booking”, from “Change “A page holds at most one primary action” to at most 2”\./);
+  assert.doesNotMatch(await back.getByTestId("rule-replaced").textContent(), /change-one-primary-per-page/);
   assert.equal(await back.getByTestId("rule-broken").count(), 0, "a change to the rule an earlier example is about does not break it");
   assert.equal(await back.getByTestId("rule-preview").getAttribute("data-class"), "tightens");
   assert.equal(api.requests.length, 0);
@@ -4694,8 +4842,10 @@ test("a person changes a limit the stricter way: classified tightens, proven on 
   await eventually(page, () => preview.getAttribute("data-class"), (value) => value === "tightens", "one less is stricter");
   assert.deepEqual([await preview.getByTestId("rule-move-before").textContent(), await preview.getByTestId("rule-move-after").textContent(), await preview.getByTestId("rule-move").getAttribute("data-direction")], ["at most 2", "at most 1", "stricter"]);
   await dialog.getByTestId("rule-impact-summary").waitFor({ timeout: 60000 });
-  assert.equal(await dialog.getByTestId("rule-impact-summary").textContent(), "None of the 2 prototypes has findings from this rule now; 1 would newly fail.");
-  assert.match(await dialog.locator('.rule-impact > li[data-effect="fails"]').textContent(), /Early booking.*It would newly fail one-primary-per-page: Page "booking" has 2 primary actions, more than 1/s);
+  assert.equal(await dialog.getByTestId("rule-impact-summary").textContent(), "1 of 2 prototypes would need fixing.");
+  // Which prototype, and the rule it would go against in the rule's own sentence under the new limit; no rule id.
+  assert.equal(await words(dialog.locator('.rule-impact > li[data-effect="fails"]')), "Early booking Would need fixing. It would go against: Each page holds at most 1 primary action.");
+  assert.doesNotMatch(await dialog.getByTestId("rule-impact").textContent(), /one-primary-per-page/);
   // Core adopts a changed rule only on a failing example it flags alone: the project has one, and the flow names it.
   assert.match(await dialog.getByTestId("rule-examples").textContent(), /one the changed rule stops and no other rule does/);
   assert.deepEqual(await dialog.locator(".rule-examples > li").evaluateAll((items) => items.map((item) => [item.dataset.example, item.dataset.expect])), [
@@ -4745,7 +4895,7 @@ test("a limit that reads a cap routes to set-cap, and names the other rules that
   assert.equal(await dialog.getByRole("textbox", { name: /own sentence/ }).count(), 0, "the rule itself does not change, so its sentence stays");
   await dialog.getByTestId("rule-impact-summary").waitFor({ timeout: 60000 });
   // Both readers are read: the open prototype's two questions stop failing.
-  assert.equal(await dialog.getByTestId("rule-impact-summary").textContent(), "1 of 2 prototypes has findings from these rules now; 1 would stop failing.");
+  assert.equal(await dialog.getByTestId("rule-impact-summary").textContent(), "Nothing that works today would stop working. 1 of 2 prototypes would start passing.");
   assert.deepEqual(await dialog.locator(".rule-examples > li").evaluateAll((items) => items.map((item) => [item.dataset.example, item.dataset.expect])), [
     ["booking", "pass"],
     ["early-booking", "fail"],
@@ -5062,8 +5212,10 @@ test("a person lowers a task's step budget from the Project view: live before an
   assert.equal(await preview.getByTestId("rule-class-reason").textContent(), "lowers max steps from 3 to 2.");
   // Core's reading of every prototype's routes with the budget lowered.
   await dialog.getByTestId("rule-impact-summary").waitFor({ timeout: 60000 });
-  assert.equal(await dialog.getByTestId("rule-impact-summary").textContent(), "None of the 2 prototypes has findings from the rule step-budget now; 1 would newly fail.");
-  assert.match(await dialog.locator('.rule-impact > li[data-effect="fails"]').textContent(), /Booking.*It would newly fail step-budget: The route open-room → hold → book takes 3 steps, which exceeds max steps 2 for "book-room"/s);
+  assert.equal(await dialog.getByTestId("rule-impact-summary").textContent(), "1 of 2 prototypes would need fixing.");
+  // The route that is over, by the task's and the steps' own names: the same 3 steps against the new 2, with no rule, task or step id.
+  assert.equal(await words(dialog.locator('.rule-impact > li[data-effect="fails"]')), "Booking Would need fixing. “Pick a free room and book it” can take 3 steps (Open room, then hold, then book), 1 more than the 2 allowed.");
+  assert.doesNotMatch(await dialog.getByTestId("rule-impact").textContent(), /step-budget|open-room|book-room/);
   assert.equal(await dialog.locator('.rule-impact > li[data-prototype="Straight to booking"]').getAttribute("data-effect"), "same");
   // A tightening is proven by a prototype the new budget flags: the project has one, and the flow names it.
   assert.match(await dialog.getByTestId("rule-examples").textContent(), /one whose route goes over the new budget and breaks no other rule/);
@@ -5078,6 +5230,7 @@ test("a person lowers a task's step budget from the Project view: live before an
   await dialog.getByRole("button", { name: "Open the proposal" }).click();
   assert.match(await dialog.getByRole("alert").textContent(), /Say why/);
   await dialog.getByRole("textbox", { name: "Why" }).fill("Two taps to a booked room is the promise.");
+  await shotOf(dialog.getByTestId("rule-impact"), "step-budget-dialog-impact-light");
   await shot(page, "step-budget-tighten-light");
   await shotDark(page, "step-budget-tighten-dark");
   await dialog.getByRole("button", { name: "Open the proposal" }).click();
@@ -5097,9 +5250,18 @@ test("a person lowers a task's step budget from the Project view: live before an
   assert.deepEqual(await pair.locator(".proof-example").evaluateAll((items) => items.map((item) => [item.dataset.proof, item.querySelector('[data-testid="proof-kind"]').textContent])), [["straight-to-booking", "Allowed"], ["booking", "Not allowed"]]);
   assert.equal(await pair.locator("iframe").count(), 0, "a rule about a whole flow draws no screen");
   assert.equal(await pair.locator('.proof-example[data-proof="booking"] [data-testid="evidence"]').getAttribute("data-evidence"), "route-vs-budget");
-  assert.match(await pair.getByTestId("proof-message").textContent(), /takes 3 steps, which exceeds max steps 2/);
+  // On the main path the route reads in words: the task and each step by name. Core's message, with its ids, is with the example in the details.
+  assert.equal(await pair.getByTestId("proof-message").textContent(), "“Pick a free room and book it” can take 3 steps (Open room, then hold, then book), 1 more than the 2 allowed.");
+  assert.deepEqual(await pair.locator(".flow-step-event").allTextContents(), ["Open room", "Hold", "Book"]);
+  assert.deepEqual(await pair.getByTestId("flow-step").evaluateAll((steps) => steps.map((step) => [step.querySelector('[data-testid="flow-step-number"]').textContent, step.hasAttribute("data-over")])), [["1", false], ["2", false], ["3", true]]);
+  assert.doesNotMatch(await pair.textContent(), /open-room|book-room|step-budget/);
+  assert.match(await example(page, "booking").getByTestId("example-figure-message").textContent(), /^The route open-room → hold → book takes 3 steps, which exceeds max steps 2 for "book-room"/);
+  assert.deepEqual(await example(page, "booking").locator(".flow-step-event").allTextContents(), ["open-room", "hold", "book"], "the details keep the ids");
   await review.getByTestId("impact-some").waitFor({ timeout: 60000 });
   assert.equal(await review.getByTestId("impact-some").textContent(), "1 of 2 prototypes would need fixing.");
+  assert.equal(await review.getByTestId("review-impact").locator('[data-prototype="booking-spec"]').getByTestId("impact-why").textContent(), "“Pick a free room and book it” can take 3 steps (Open room, then hold, then book), 1 more than the 2 allowed.");
+  assert.deepEqual(await review.getByTestId("review-impact").locator(".impact-grid > li").evaluateAll((items) => items.map((item) => [item.dataset.prototype, item.dataset.impact])), [["booking-spec", "fails"], ["straight", "holds"]]);
+  await shotOf(pair, "step-budget-route-light");
   await shot(page, "step-budget-review-light");
   await shotDark(page, "step-budget-review-dark");
   // The task says a proposal waits on its budget, and the list reads the same words.
@@ -5152,7 +5314,7 @@ test("a person raises a task's step budget: classified looser, with examples as 
   assert.equal(await preview.getByTestId("proposal-class").textContent(), "This is looser: something that is flagged today stops being flagged.");
   assert.equal(await preview.getByTestId("rule-class-reason").textContent(), "raises max steps from 2 to 3.");
   await dialog.getByTestId("rule-impact-summary").waitFor({ timeout: 60000 });
-  assert.equal(await dialog.getByTestId("rule-impact-summary").textContent(), "2 of 2 prototypes have findings from the rule step-budget now; 1 would stop failing.");
+  assert.equal(await dialog.getByTestId("rule-impact-summary").textContent(), "Nothing that works today would stop working. 1 of 2 prototypes would start passing.");
   assert.deepEqual(await dialog.locator(".rule-impact > li").evaluateAll((items) => items.map((item) => [item.dataset.prototype, item.dataset.effect])), [
     ["Booking", "clears"],
     ["Early booking", "still-fails"],
@@ -6338,6 +6500,18 @@ test("the Proposals view and a review page at phone width: nothing scrolls sidew
   await shotNarrow(page, "proposals");
   await headerIsLaidOut(page, "the Proposals view on a phone");
   await narrowIsUsable(page, page.getByRole("main"), "the Proposals view on a phone");
+  // The Project view's short history reads as these cards do, and fits a phone: each proposal's standing in words and its change in a plain sentence.
+  await mainView(page, "Project").click();
+  const projectHistory = page.getByTestId("project-history");
+  await projectHistory.scrollIntoViewIfNeeded();
+  assert.deepEqual(await projectHistory.locator(".history-line > li").evaluateAll((items) => items.map((item) => [item.dataset.proposal, item.querySelector('[data-testid="history-standing"]').textContent, item.querySelector('[data-testid="history-plain"]').textContent])), [
+    ["remove-one-primary-per-page", "Waiting for you", "Stop checking: Each page holds at most 1 primary action."],
+    ["booking-toast", "Waiting for you", "Add Toast to the parts screens can use. And 1 more change."],
+  ]);
+  await narrowIsUsable(page, projectHistory, "the Project view's proposals on a phone");
+  await shot(page, "narrow-project-history-phone-light");
+  await shotDark(page, "narrow-project-history-phone-dark");
+  await mainView(page, "Proposals").click();
   const ownTitle = page.locator('.proposal-cards [data-proposal="remove-one-primary-per-page"]').getByRole("button", { name: /^Remove the rule/ });
   await reachable(page, ownTitle, "a card's title");
   await ownTitle.click();

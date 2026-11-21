@@ -1,8 +1,9 @@
-import { Badge, Button, Card, Code, DataList, Disclosure, Stack, Table, Text, ToggleGroup, VisuallyHidden } from "@tounsoo/todae";
+import { Badge, Button, Card, Code, DataList, Disclosure, Link, Stack, Table, Text, ToggleGroup, VisuallyHidden } from "@tounsoo/todae";
 import { Pencil, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ROLE_NAMES, describeRule, flowFacts, rerunExamples, type ConfirmedRole, type ExampleRun, type ProjectConfig, type RoleMapping, type RuleSpec, type Task } from "@design-harness/core";
 import { budgetWaiting, budgetWaitingWords, taskName } from "../review/budget-change";
+import { fromWords, plainSentence, standingWords } from "../review/plain";
 import { waitingOn, waitingWords } from "../review/rule-change";
 import { formatTime } from "../review/timeline";
 import { isSpecRecord, type PrototypeRecord } from "../store/project-file";
@@ -15,7 +16,6 @@ import { LibraryVersionSection } from "./LibraryVersion";
 import { Palette } from "./Palette";
 import { MeasureFrames, useProjectExisting, type BoardSession } from "./project-measure";
 import { RuleFlowDialog, type RuleFlow } from "./RuleChange";
-import { StatusBadge } from "./proposal-parts";
 import { exampleLabel, humanize } from "./words";
 
 /**
@@ -513,31 +513,42 @@ function History({ config, onOpenProposal, onOpenProposals }: { readonly config:
       <SectionHead id="project-proposals" title={`Proposals (${config.proposals.length})`} text="How the project got like this: the newest changes proposed, by the agent or by you. The Proposals view is where you review them." />
       {items.length === 0 ? (
         <Text.Root as="p" tone="muted">
-          No proposals yet. A proposal carries an inventory change, the rule that governs it, and examples that must pass and fail; it is adopted only when its rules prove themselves on its examples.
+          No proposals yet. A proposal is a change to the project&apos;s rules or parts, with example screens that show what it allows and what it stops. Nothing changes until you accept it.
         </Text.Root>
       ) : (
         <ol className="history-line">
-          {items.map((item) => (
-            <li key={item.id} data-proposal={item.id} data-status={item.status} data-waiting={item.waiting ? "" : undefined}>
-              <i className="track-dot" aria-hidden="true" />
-              <div className="history-line-body">
-                <Stack.Root direction="row" align="center" gap="condensed" wrap>
-                  <Button.Root variant="ghost" className="proposals-title" onClick={() => onOpenProposal(item.id)}>
-                    {item.title}
-                  </Button.Root>
-                  <StatusBadge status={item.status} />
-                  {item.status === "open" && (
-                    <Text.Root as="span" weight="medium">
-                      Waiting for you
+          {items.map((item) => {
+            const proposal = config.proposals.find((entry) => entry.id === item.id);
+            if (!proposal) return null;
+            return (
+              <li key={item.id} data-proposal={item.id} data-status={item.status} data-waiting={item.waiting ? "" : undefined}>
+                <i className="track-dot" aria-hidden="true" />
+                <div className="history-line-body">
+                  <Stack.Root direction="row" align="center" gap="condensed" wrap>
+                    {/* As on the Proposals view's cards: a link in looks, a button in what it does, and a long title wraps. */}
+                    <Link.Root render={({ className, children }) => (
+                      <button type="button" className={`${className ?? ""} proposals-title`} onClick={() => onOpenProposal(item.id)}>
+                        {children}
+                      </button>
+                    )}>
+                      {item.title}
+                    </Link.Root>
+                    <Text.Root as="span" tone="muted" className="proposal-standing" data-testid="history-standing">
+                      <span className="standing" data-standing={item.waiting ? "waiting" : item.status}>
+                        {standingWords(proposal)}
+                      </span>
                     </Text.Root>
-                  )}
-                </Stack.Root>
-                <Text.Root as="p" tone="muted">
-                  {item.what} <time dateTime={item.at}>{formatTime(item.at)}</time>
-                </Text.Root>
-              </div>
-            </li>
-          ))}
+                  </Stack.Root>
+                  <Text.Root as="p" data-testid="history-plain">
+                    {plainSentence(proposal, config)}
+                  </Text.Root>
+                  <Text.Root as="p" tone="muted" className="review-small">
+                    {fromWords(proposal)}
+                  </Text.Root>
+                </div>
+              </li>
+            );
+          })}
         </ol>
       )}
       {(more > 0 || items.length > 0) && onOpenProposals && (

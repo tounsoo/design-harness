@@ -88,28 +88,31 @@ describe("a task's step budget, as the change form takes it", () => {
 });
 
 describe("what core reads in the project with the budget moved", () => {
-  const said = "the rule step-budget";
-
   it("names the rule that reads step budgets", () => {
     expect(stepBudgetRules(nook).map((rule) => rule.id)).toEqual(["step-budget"]);
     expect(stepBudgetRules({ ...nook, rules: nook.rules.filter((rule) => rule.id !== "step-budget") })).toEqual([]);
   });
 
-  it("lower: the prototype whose route is over the new budget would newly fail step-budget", () => {
+  it("lower: the prototype whose route is over the new budget would need fixing, said by the task's and the steps' names", () => {
     const { draft } = changed(previewBudget(nook, bookRoom, 2, ""));
-    const impact = impactOf(nook, draft, [booking, straight], ["step-budget"], said);
+    const impact = impactOf(nook, draft, [booking, straight], ["step-budget"]);
     if (!impact.ok) throw new Error(impact.refusal.message);
-    expect(impact.summary).toBe("None of the 2 prototypes has findings from the rule step-budget now; 1 would newly fail.");
+    expect(impact.summary).toBe("1 of 2 prototypes would need fixing.");
     expect(impact.rows.map((row) => [row.name, row.effect])).toEqual([["Booking", "fails"], ["Straight to booking", "same"]]);
-    expect(impact.rows[0]?.text).toBe('No finding from the rule step-budget now. It would newly fail step-budget: The route open-room → hold → book takes 3 steps, which exceeds max steps 2 for "book-room". Every route that finishes the task must fit, not only the shortest.');
+    expect(impact.rows[0]?.text).toBe("Would need fixing. “Pick a free room and book it” can take 3 steps (Open room, then hold, then book), 1 more than the 2 allowed.");
+    expect(impact.rows[1]?.text).toBe("No change.");
+    // What core found, word for word, is still what the sentence is written from.
+    expect(impact.impact.prototypes[0]?.rules).toEqual([{ rule: "step-budget", before: "pass", after: "fail" }]);
+    expect(impact.impact.prototypes[0]?.added[0]?.message).toBe('The route open-room → hold → book takes 3 steps, which exceeds max steps 2 for "book-room". Every route that finishes the task must fit, not only the shortest.');
   });
 
-  it("higher: the prototype that was over the budget would stop failing", () => {
+  it("higher: the prototype that was over the budget would start passing", () => {
     const tight = withBudget(2);
     const { draft } = changed(previewBudget(tight, taskOf(tight, "book-room"), 3, ""));
-    const impact = impactOf(tight, draft, [booking, straight], ["step-budget"], said);
+    const impact = impactOf(tight, draft, [booking, straight], ["step-budget"]);
     if (!impact.ok) throw new Error(impact.refusal.message);
-    expect(impact.summary).toBe("1 of 2 prototypes has findings from the rule step-budget now; 1 would stop failing.");
+    expect(impact.summary).toBe("Nothing that works today would stop working. 1 of 2 prototypes would start passing.");
+    expect(impact.rows.map((row) => row.now)).toEqual([1, 0]);
     expect(impact.rows.map((row) => [row.name, row.effect])).toEqual([["Booking", "clears"], ["Straight to booking", "same"]]);
   });
 });

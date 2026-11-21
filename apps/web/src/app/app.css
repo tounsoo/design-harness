@@ -347,7 +347,10 @@
   .history-previous { margin-block-start: var(--todae-space-1); }
 
   /* The Project view's layouts: parameters, then a preview frame under them. */
-  .layout-card-body { display: grid; gap: var(--todae-space-3); }
+  /* One column no wider than the card: a preview wider than a phone scrolls in its own box, and a parameter's long example wraps. */
+  .layout-card-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--todae-space-3); }
+  .layout-card-params .project-table { inline-size: 100%; }
+  .layout-card-params .project-table :is(th, td) { overflow-wrap: anywhere; }
   .layout-card-preview { display: grid; gap: var(--todae-space-1); justify-items: start; max-width: 100%; overflow-x: auto; padding: var(--todae-space-3); border-radius: var(--todae-radius-md); background-color: var(--todae-harness-canvas-bg); }
 
   /* Variants side by side: Todae's Card, Table, RadioGroup, Badge, Alert and EmptyState. This sheet places them, and adds what Todae has no part for: a grid of columns that hold scaled frames on the canvas colour, each source's views side by side as the board lays them out, with the scenarios not shown kept measuring out of sight. */
@@ -408,6 +411,7 @@
   .vis-text-halo { paint-order: stroke; stroke: var(--vis-halo); stroke-width: var(--todae-harness-annotation-label-padding); stroke-linejoin: round; }
   .vis-verdict { display: inline-flex; align-items: center; gap: var(--todae-space-1); color: var(--todae-color-status-critical-fg); font-weight: var(--todae-font-weight-bold); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .vis-verdict[data-ok] { color: var(--todae-color-status-success-fg); }
+  .vis-verdict[data-same] { color: var(--todae-color-fg-muted); }
   .vis-verdict-icon, .coverage-icon, .lens-words-icon { display: inline-grid; place-items: center; flex: none; }
   .vis-verdict-icon svg, .coverage-icon svg, .lens-words-icon svg { inline-size: 1em; block-size: 1em; }
 
@@ -455,6 +459,7 @@
   .flow-step-number { display: inline-grid; place-items: center; inline-size: var(--todae-space-5); block-size: var(--todae-space-5); border-radius: var(--todae-radius-full); background: var(--vis-ink); color: var(--vis-surface); font-weight: var(--todae-font-weight-bold); font-size: var(--todae-harness-annotation-label-size); flex: none; }
   .flow-step[data-over] .flow-step-number { border-radius: var(--todae-radius-sm); background: var(--vis-surface); color: var(--vis-fail); outline: var(--todae-harness-annotation-stroke-strong) solid var(--vis-fail); outline-offset: calc(-1 * var(--todae-harness-annotation-stroke-strong)); }
   .flow-step-event { font-family: var(--todae-font-family-mono); }
+  .flow-step-event[data-plain] { font-family: inherit; }
   .flow-step-over { color: var(--vis-fail); font-weight: var(--todae-font-weight-bold); }
   .flow-state-name { font-weight: var(--todae-font-weight-medium); }
   .flow-count { margin: 0; font-size: var(--todae-font-size-1); font-variant-numeric: tabular-nums; }
@@ -787,7 +792,7 @@
 
   .history-line { display: grid; gap: var(--todae-space-3); }
   .history-line > li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--todae-space-3); align-items: start; }
-  .history-line-body { display: grid; gap: var(--todae-space-1); }
+  .history-line-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--todae-space-1); }
   .track-dot { display: block; flex: none; inline-size: var(--todae-harness-figure-mark); block-size: var(--todae-harness-figure-mark); border-radius: var(--todae-radius-full); background: var(--todae-color-fg-default); box-sizing: border-box; }
   .history-line .track-dot { margin-block-start: var(--todae-space-2); }
   .history-line > li[data-waiting] .track-dot, .track-step[data-state="upcoming"] .track-dot { background: none; border: var(--todae-harness-annotation-stroke) solid var(--todae-color-fg-muted); }
@@ -841,6 +846,7 @@
   .proof-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--todae-space-2); }
   .proof-mark { display: inline-grid; place-items: center; color: var(--todae-color-status-success-fg); }
   .proof-mark[data-expect="fail"] { color: var(--todae-color-status-critical-fg); }
+  .proof-missed { color: var(--todae-color-status-critical-fg); font-weight: var(--todae-font-weight-medium); }
   .proof-example[data-expect="fail"] .proof-frame { box-shadow: 0 0 0 var(--todae-focus-ring-width) var(--todae-color-status-critical-border); }
   /* A fixed height: the frame inside is cut to what its page fills once measured, and the page below must not move when it is. */
   .proof-frame { justify-content: center; box-sizing: border-box; block-size: var(--todae-harness-size-stage-max); overflow: auto; }

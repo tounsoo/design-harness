@@ -26,6 +26,9 @@ import {
   type Result,
   type RuleSpec,
 } from "@design-harness/core";
+import { humanize } from "../app/words";
+import { prototypeEffect } from "./impact";
+import { prototypesOf, routeSentence, ruleSentence } from "./plain";
 import { REVIEWER } from "./timeline";
 
 /**
@@ -228,8 +231,9 @@ export type ImpactRow = {
   readonly name: string;
   /** Findings the prototype has now from the rules the draft is about. */
   readonly now: number;
-  /** `clears`: it stops failing altogether. `still-fails`: its findings change, and it still fails. `fails`: a rule it passes now would fail. `same`: nothing changes. */
+  /** `clears`: it stops failing altogether. `still-fails`: its findings change, and it still fails. `fails`: it would need fixing for something it does not today. `same`: nothing changes. */
   readonly effect: "clears" | "still-fails" | "fails" | "same";
+  /** What that means for the prototype, as a designer reads it: no rule id, and core's message only as its plain sentence. */
   readonly text: string;
 };
 
@@ -238,74 +242,65 @@ export type ImpactView =
   | {
       readonly ok: true;
       readonly rows: readonly ImpactRow[];
-      /** In a sentence: "2 of 3 prototypes have findings from this rule now; 1 would stop failing." At one prototype: "The one prototype has findings from this rule now". */
+      /** In the review page's voice: "1 of 2 prototypes would need fixing.", "Nothing that works today would stop working. 1 of 2 prototypes would start passing." */
       readonly summary: string;
-      /** Failing examples adopted proposals keep that the draft retires because it removes their rule. */
+      /** Failing examples adopted proposals keep that the draft retires, each by its name and its proposal's title. */
       readonly retired: readonly string[];
-      /** Examples adopted proposals keep that the draft's change supersedes, which adopting it retires. */
+      /** Examples adopted proposals keep that the draft's change supersedes, which adopting it retires, named the same way; core's own words are in `impact.retired`, with `changed` set. */
       readonly replaced: readonly string[];
-      /** Kept examples that would stop behaving: core refuses to adopt until they do. */
+      /** Kept examples that would stop behaving, named the same way: core refuses to adopt until they do, and its own words for each are in `impact.broken`. */
       readonly broken: readonly string[];
       readonly impact: ProposalImpact;
     };
 
 const count = (value: number, one: string, many = `${one}s`) => `${value} ${value === 1 ? one : many}`;
-/**
- * How many of the project's prototypes have findings, with the verb its count
- * takes: "The one prototype has no findings", "None of the 2 prototypes has
- * findings", "1 of 2 prototypes has findings", "2 of 3 prototypes have findings".
- */
-function having(some: number, all: number): string {
-  if (all === 1) return `The one prototype has ${some === 0 ? "no findings" : "findings"}`;
-  if (some === 0) return `None of the ${all} prototypes has findings`;
-  return `${some} of ${count(all, "prototype")} ${some === 1 ? "has" : "have"} findings`;
-}
-const list = (items: readonly string[]) => (items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`);
 
 /**
  * What a draft would do to every prototype in the project, from core's
- * `proposalImpact` and core's report on each as it is now. `rules` are the
- * rules the draft is about: the one removed or changed, or the readers of a
- * cap it moves, or the rules that read a step budget it moves; `said` is
- * what a line calls them.
+ * `proposalImpact`, which checks each as it is now and with the draft
+ * applied. `rules` are the rules the draft is about: the one removed or
+ * changed, or the readers of a cap it moves, or the rules that read a step
+ * budget it moves. Every sentence is in the words of the review page's "What
+ * it affects": which prototypes would need fixing and which would start
+ * passing, with each rule as its plain sentence and never its id.
  */
-export function impactOf(config: ProjectConfig, draft: ProposalDraft, existing: readonly ExistingPrototype[], rules: readonly string[], said: string = rules.length === 1 ? "this rule" : "these rules"): ImpactView {
+export function impactOf(config: ProjectConfig, draft: ProposalDraft, existing: readonly ExistingPrototype[], rules: readonly string[]): ImpactView {
   const impact = proposalImpact(config, draft, existing);
   if (!impact.ok) return { ok: false, refusal: impact.error };
   const about = new Set(rules);
+  const candidate = impact.value.config;
+  const sentenceOf = (id: string) => {
+    const rule = candidate.rules.find((item) => item.id === id) ?? config.rules.find((item) => item.id === id);
+    return rule ? [ruleSentence(rule, candidate)] : [];
+  };
+  // An earlier proposal by its title, as the Proposals view lists it.
+  const from = (id: string) => `“${config.proposals.find((proposal) => proposal.id === id)?.title ?? humanize(id)}”`;
   const rows = impact.value.prototypes.map((item): ImpactRow => {
     const record = existing.find((entry) => entry.name === item.name);
     const report = record ? checkPrototype({ config, prototype: record.prototype, ...(record.snapshots ? { snapshots: record.snapshots } : {}) }) : null;
     const now = report?.findings.filter((finding) => about.has(finding.rule)).length ?? 0;
-    const after = record ? checkPrototype({ config: impact.value.config, prototype: record.prototype, ...(record.snapshots ? { snapshots: record.snapshots } : {}) }) : null;
-    const stillFailing = after?.rules.filter((rule) => rule.status === "fail").map((rule) => rule.rule) ?? [];
-    const has = now === 0 ? `No finding from ${said} now.` : `${count(now, "finding")} from ${said} now.`;
-    const newly = item.rules.filter((rule) => rule.after === "fail" && rule.before !== "fail").map((rule) => rule.rule);
-    if (newly.length > 0) {
-      const first = item.added.find((finding) => newly.includes(finding.rule));
-      return { name: item.name, now, effect: "fails", text: `${has} It would newly fail ${list(newly)}${first ? `: ${first.message}` : "."}` };
+    const effect = prototypeEffect(item);
+    if (effect.state === "needs-fixing") {
+      // A route over its budget is said by its task and steps; any other rule by its own sentence.
+      const route = effect.added.flatMap((finding) => (effect.breaks.includes(finding.rule) && finding.evidence?.kind === "route-vs-budget" ? [finding.evidence] : []))[0];
+      const against = effect.breaks.flatMap(sentenceOf);
+      const why = route ? routeSentence(route, candidate) : against.length > 0 ? `It would go against: ${against.join(" ")}` : "It would have more to fix than it does today.";
+      return { name: item.name, now, effect: "fails", text: `Would need fixing. ${why}` };
     }
-    if (item.removed.length === 0 && item.added.length === 0) return { name: item.name, now, effect: "same", text: `${has} Nothing changes for it.` };
-    if (stillFailing.length === 0) return { name: item.name, now, effect: "clears", text: `${has} It would stop failing.` };
-    // A finding that only reads differently, such as "more than 2" for "more than 1", is the same failure.
-    const fewer = item.removed.length - item.added.length;
-    return { name: item.name, now, effect: "still-fails", text: `${has} ${fewer > 0 ? `${count(fewer, "finding")} would go, and it` : "It"} would still fail ${list(stillFailing)}.` };
+    if (item.removed.length === 0 && item.added.length === 0) return { name: item.name, now, effect: "same", text: effect.stillFails ? "No change: it needs fixing today, and still would." : "No change." };
+    if (!effect.stillFails) return { name: item.name, now, effect: "clears", text: "Would start passing." };
+    return { name: item.name, now, effect: "still-fails", text: effect.fixes.length > 0 ? "Would stop failing this check, and still need fixing for other reasons." : "Still needs fixing, as it does today." };
   });
-  const withFindings = rows.filter((row) => row.now > 0).length;
   const clears = rows.filter((row) => row.effect === "clears").length;
   const fails = rows.filter((row) => row.effect === "fails").length;
-  const parts = [
-    rows.length === 0 ? "The project has no prototype to read." : `${having(withFindings, rows.length)} from ${said} now`,
-    ...(rows.length > 0 && clears > 0 ? [`${rows.length === 1 ? "it" : clears} would stop failing`] : []),
-    ...(rows.length > 0 && fails > 0 ? [`${rows.length === 1 ? "it" : fails} would newly fail`] : []),
-  ];
+  const parts = [fails > 0 ? `${prototypesOf(fails, rows.length)} would need fixing.` : "Nothing that works today would stop working.", ...(clears > 0 ? [`${prototypesOf(clears, rows.length)} would start passing.`] : [])];
   return {
     ok: true,
     rows,
-    summary: rows.length === 0 ? (parts[0] ?? "") : `${parts.join("; ")}.`,
-    retired: impact.value.retired.filter((run) => run.changed === undefined).map((run) => `${run.example}, of ${run.proposal}`),
-    replaced: impact.value.retired.filter((run) => run.changed !== undefined).map((run) => `${run.example}, of ${run.proposal}`),
-    broken: impact.value.broken.map((run) => `${run.expect === "pass" ? "passing" : "failing"} example ${run.example} of ${run.proposal}: ${run.detail}`),
+    summary: rows.length === 0 ? "The project has no prototype to read." : parts.join(" "),
+    retired: impact.value.retired.filter((run) => run.changed === undefined).map((run) => `“${humanize(run.example)}”, from ${from(run.proposal)}`),
+    replaced: impact.value.retired.filter((run) => run.changed !== undefined).map((run) => `“${humanize(run.example)}”, from ${from(run.proposal)}`),
+    broken: impact.value.broken.map((run) => `the ${run.expect === "pass" ? "“Allowed”" : "“Not allowed”"} example “${humanize(run.example)}”, from ${from(run.proposal)}`),
     impact: impact.value,
   };
 }

@@ -6,6 +6,7 @@ import { nook } from "../../../../packages/core/examples/nook/project";
 import { renderedCases } from "../../../../packages/core/examples/nook/rendered-cases";
 import { seedSpec } from "../../test/nook";
 import { EvidenceFigure, FIGURES, drawsFigure } from "./figures";
+import { VisualContext } from "./parts";
 
 const legal = seedSpec();
 
@@ -119,6 +120,20 @@ describe("what each figure says", () => {
     expect(html).toContain("3 steps on the longest route, budget 2");
     expect(html).toContain("past the budget of 2");
     expect(html).not.toContain('class="pip"');
+  });
+
+  it("a route's map names each step by its id, and in words where a designer reads it", () => {
+    const route = { ...SAMPLES["route-vs-budget"], task: "hold-room", route: [{ from: "rooms", event: "open-room", to: "room-open" }, { from: "room-open", event: "book", to: "booked" }, { from: "booked", event: "hold", to: "held" }] };
+    const exact = draw(finding(route));
+    expect(exact).toContain(">open-room<");
+    expect(exact).toContain("The longest route of hold-room, step by step");
+    const plain = renderToStaticMarkup(createElement(VisualContext, { value: { plain: true } }, createElement(EvidenceFigure, { finding: finding(route), findings: [finding(route)], children: "caption" })));
+    expect(plain).toContain(">Open room<");
+    expect(plain).toContain("The longest route of hold room, step by step");
+    // No id is left in what is read: text, or a name read aloud. The task's id stays only as the map's own data attribute.
+    expect(plain).not.toMatch(/>[^<]*(?:open-room|hold-room)|aria-label="[^"]*(?:open-room|hold-room)/);
+    // The same map: only the names differ.
+    expect(plain.match(/data-testid="flow-step"/g)).toHaveLength(3);
   });
 });
 
