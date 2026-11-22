@@ -604,7 +604,7 @@ export class AgentController {
       const now = this.toolIndex(id, call.id);
       const current = now >= 0 ? this.turn(id)?.items[now] : undefined;
       if (current?.kind === "tool") this.setItem(id, now, { ...current, input, status: outcome.isError ? "error" : "done", title: outcome.title, result: content });
-      if (outcome.measured) this.addItem(id, { kind: "checks", revision: outcome.measured.revision, status: outcome.measured.report.status, title: checksTitle(outcome.measured.report), text: outcome.content, ...reportRules(outcome.measured.report) });
+      if (outcome.measured) this.addItem(id, { kind: "checks", revision: outcome.measured.revision, status: outcome.measured.report.status, title: checksTitle(outcome.measured.report), text: content, ...reportRules(outcome.measured.report) });
       if (outcome.proposal) this.addItem(id, { kind: "proposal", ...outcome.proposal });
       if (outcome.variants) this.addItem(id, { kind: "variants", page: outcome.variants.page, ids: outcome.variants.ids, action: call.name === "revise_variant" ? "revised" : "offered" });
     }
@@ -613,7 +613,8 @@ export class AgentController {
     if (changed && !checkedSinceChange && !signal.aborted) {
       try {
         const measured = await host.measured(signal);
-        const text = describeMeasured(measured);
+        // The report quotes frames' messages and the spec's values, so it is redacted like a tool's result.
+        const text = clean(describeMeasured(measured));
         notes.push(`The app re-rendered every frame after your changes and ran the checks.\n${text}`);
         this.addItem(id, { kind: "checks", revision: measured.revision, status: measured.report.status, title: checksTitle(measured.report), text, ...reportRules(measured.report) });
       } catch {
