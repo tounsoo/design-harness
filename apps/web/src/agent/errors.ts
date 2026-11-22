@@ -26,31 +26,27 @@ export function redact(text: string, key: string | null, tokens: readonly string
   let out = text;
   if (key && key.length >= 8) out = out.split(key).join("[your API key]");
   // Longest first, so a token that holds another is replaced whole.
-  for (const token of [...tokens].sort((a, b) => b.length - a.length)) if (token.length >= 4) out = out.split(token).join("[a docs server token]");
+  // Each also as it is written inside a JSON string, so a token with a quote or a backslash is caught in a tool's input as shown.
+  const forms = tokens.flatMap((token) => [token, JSON.stringify(token).slice(1, -1)]);
+  for (const token of [...new Set(forms)].sort((a, b) => b.length - a.length)) if (token.length >= 4) out = out.split(token).join("[a docs server token]");
   return out.replace(/sk-ant-[A-Za-z0-9_-]{8,}/g, "[an API key]");
 }
 
 /**
  * A reply's content with every secret `clean` finds replaced, before it is kept
- * in the conversation and saved with the chat: the text the model wrote and
- * what a docs server answered, which may echo its own token, and the strings in
- * a tool call's input. Thinking is kept
- * as it came, because the API checks its signature when it is sent back.
+ * in the conversation and saved with the chat: every string in every block,
+ * keys included, so the model's text, a tool call's input, what a docs server
+ * answered and what a page fetch returned are all covered. Thinking is kept as
+ * it came, because the API checks its signature when it is sent back.
  */
 export function redactContent(content: readonly BetaContentBlock[], clean: (text: string) => string): BetaContentBlock[] {
-  return content.map((block) => {
-    if (block.type === "text") return { ...block, text: clean(block.text) };
-    if (block.type === "mcp_tool_result") return { ...block, content: typeof block.content === "string" ? clean(block.content) : block.content.map((part) => ({ ...part, text: clean(part.text) })) };
-    // A tool call's input may copy a secret the model read; it is kept as data with every string redacted.
-    if (block.type === "tool_use" || block.type === "mcp_tool_use" || block.type === "server_tool_use") return { ...block, input: redactStrings(block.input, clean) } as typeof block;
-    return block;
-  });
+  return content.map((block) => (block.type === "thinking" || block.type === "redacted_thinking" ? block : (redactStrings(block, clean) as typeof block)));
 }
 
 function redactStrings(value: unknown, clean: (text: string) => string): unknown {
   if (typeof value === "string") return clean(value);
   if (Array.isArray(value)) return value.map((item) => redactStrings(item, clean));
-  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, redactStrings(item, clean)]));
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [clean(key), redactStrings(item, clean)]));
   return value;
 }
 

@@ -500,7 +500,9 @@ export class AgentController {
       const block = event.content_block;
       if (block.type === "server_tool_use" || block.type === "mcp_tool_use") {
         // A server tool runs at Anthropic: the app shows the call, and its result block follows in the same reply.
-        const input = block.input && typeof block.input === "object" && Object.keys(block.input).length > 0 ? clean(JSON.stringify(block.input)) : "";
+        const started = block.input && typeof block.input === "object" && Object.keys(block.input).length > 0 ? JSON.stringify(block.input) : "";
+        raw.set(event.index, started);
+        const input = clean(started);
         const item: TurnItem =
           block.type === "mcp_tool_use"
             ? { kind: "source", id: block.id, via: "mcp", name: block.name, server: block.server_name, status: "running", input }
@@ -516,8 +518,8 @@ export class AgentController {
           const content = block.content;
           if (content.type === "web_fetch_tool_result_error") this.setItem(id, index, { ...item, status: "error", problem: fetchProblem(content.error_code) });
           else {
-            const page = pageExcerpt(content);
-            this.setItem(id, index, { ...item, status: "done", url: content.url, ...(page.title ? { pageTitle: clean(page.title) } : {}), result: clean(page.text) });
+            const page = pageExcerpt(content, clean);
+            this.setItem(id, index, { ...item, status: "done", url: clean(content.url), ...(page.title ? { pageTitle: clean(page.title) } : {}), result: page.text });
           }
         } else {
           const text = mcpExcerpt(block.content, clean);
@@ -544,8 +546,8 @@ export class AgentController {
     const item = index === undefined ? undefined : this.turn(id)?.items[index];
     if (index === undefined || !item) return;
     const delta = event.delta;
-    // What is shown is redacted from the whole block as streamed so far, so a secret split across deltas, or one
-    // caught only by its shape once enough of it has come, is never shown in part.
+    // What is shown is redacted from the whole block as streamed so far. A secret still arriving shows in part for a
+    // moment, until it is whole; it is then replaced whole, and what is kept is always redacted.
     const grown = (more: string) => {
       const text = (raw.get(event.index) ?? "") + more;
       raw.set(event.index, text);
@@ -596,10 +598,12 @@ export class AgentController {
       if (outcome.measured) checkedSinceChange = true;
       const addressed = outcome.addressed;
       if (addressed) this.patchTurn(id, (turn) => ({ addressed: [...(turn.addressed ?? []), addressed] }));
-      results.push({ type: "tool_result", tool_use_id: call.id, content: outcome.content, ...(outcome.isError ? { is_error: true } : {}) });
+      // A result may quote the call's input, so it is redacted like the input.
+      const content = clean(outcome.content);
+      results.push({ type: "tool_result", tool_use_id: call.id, content, ...(outcome.isError ? { is_error: true } : {}) });
       const now = this.toolIndex(id, call.id);
       const current = now >= 0 ? this.turn(id)?.items[now] : undefined;
-      if (current?.kind === "tool") this.setItem(id, now, { ...current, input, status: outcome.isError ? "error" : "done", title: outcome.title, result: outcome.content });
+      if (current?.kind === "tool") this.setItem(id, now, { ...current, input, status: outcome.isError ? "error" : "done", title: outcome.title, result: content });
       if (outcome.measured) this.addItem(id, { kind: "checks", revision: outcome.measured.revision, status: outcome.measured.report.status, title: checksTitle(outcome.measured.report), text: outcome.content, ...reportRules(outcome.measured.report) });
       if (outcome.proposal) this.addItem(id, { kind: "proposal", ...outcome.proposal });
       if (outcome.variants) this.addItem(id, { kind: "variants", page: outcome.variants.page, ids: outcome.variants.ids, action: call.name === "revise_variant" ? "revised" : "offered" });

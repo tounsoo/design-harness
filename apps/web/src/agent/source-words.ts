@@ -45,10 +45,11 @@ export function fetchProblem(code: BetaWebFetchToolResultErrorCode | string): st
 }
 
 /** A fetched page's title and the start of its text; a PDF or other binary content has no text to show. */
-export function pageExcerpt(result: BetaWebFetchBlock): { readonly title: string | null; readonly text: string } {
+export function pageExcerpt(result: BetaWebFetchBlock, clean: (text: string) => string = (text) => text): { readonly title: string | null; readonly text: string } {
   const document = result.content;
   const source = document.source;
-  const text = source.type === "text" ? excerpt(source.data) : "";
+  // Cleaned whole before it is cut, so a secret across the cut is not left in part.
+  const text = source.type === "text" ? excerpt(clean(source.data)) : "";
   return { title: document.title ?? null, text };
 }
 
