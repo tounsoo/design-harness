@@ -99,6 +99,8 @@ function cjsEntry(specifier, { library }) {
   process.env.NODE_ENV = "production";
   const keys = library ? [...new Set(cjsExportNames(require.resolve(specifier)))] : Object.keys(require(specifier));
   const names = keys.filter((name) => /^[A-Za-z_$][\w$]*$/.test(name) && name !== "default");
+  // A library whose exports are made at run time has none its source shows; it is refused rather than served without them.
+  if (library && names.length === 0) throw new Error(`vendor: ${specifier} is CommonJS and its source names no exports that can be read without running it; serve it from esm.sh instead`);
   return `import mod from ${JSON.stringify(specifier)};\nexport default mod;\nexport const { ${names.join(", ")} } = mod;\n`;
 }
 

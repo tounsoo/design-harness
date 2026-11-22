@@ -1234,7 +1234,7 @@ test("the app is served with its Content-Security-Policy: it reaches only its ow
     await fetch("https://elsewhere.example/collect", { method: "POST", body: "x" }).catch(() => undefined);
     return seen;
   });
-  assert.equal(violated, "connect-src", "the page cannot send anything to another origin");
+  assert.equal(violated, "connect-src", "a script on the page cannot fetch from or post to another origin");
 });
 
 test("a docs server's token goes only to the address it was given for: an imported project that moves the server, or an edit of its address, sends none", async ({ browser, base, api }) => {

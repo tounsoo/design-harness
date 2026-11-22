@@ -406,6 +406,7 @@ export class AgentController {
     const sources = this.turnSources ?? [];
     // Every token held is redacted from what the chat shows, not only this project's.
     const tokens = () => context.tokens();
+    const clean = (text: string) => redact(text, key, tokens());
     let parseFailures = 0;
     try {
       for (;;) {
@@ -413,12 +414,14 @@ export class AgentController {
         const settings = this.options.settings();
         const startItems = this.turn(id)?.items.length ?? 0;
         const blocks = new Map<number, number>();
+        // Each block's text as streamed, before redaction: what is shown is redacted from the whole of it.
+        const raw = new Map<number, string>();
         let message: BetaMessage;
         try {
           // The agent writes specs, with the catalog's instructions, and reads the project's docs when it has any. Tokens are read for each request, so one the person just entered is used.
           const docs = { sources, token: (name: string, url: string) => this.options.docs?.().token(name, url) ?? null, rebound: this.rebound };
           const stream = client.stream(requestBody(settings, this.history.messages, specCatalogPrompt(this.options.host.config()), docs), { signal: abort.signal });
-          for await (const event of stream) this.onEvent(id, event, blocks, (text) => redact(text, key, tokens()));
+          for await (const event of stream) this.onEvent(id, event, blocks, raw, clean);
           message = await stream.finalMessage();
           parseFailures = 0;
         } catch (error) {
@@ -449,7 +452,7 @@ export class AgentController {
           return this.end(id, { status: "cut-off" });
         }
         // What the model wrote and what a docs server answered are kept, and saved with the chat, without any secret in them.
-        this.history.appendAssistant(redactContent(message.content, (text) => redact(text, key, tokens())));
+        this.history.appendAssistant(redactContent(message.content, clean));
         if (message.stop_reason === "pause_turn") {
           if (!this.nextRound(id, maxRounds)) return;
           continue;
@@ -459,7 +462,7 @@ export class AgentController {
           return this.end(id, { status: "done" });
         }
 
-        await this.runTools(id, calls, abort.signal);
+        await this.runTools(id, calls, abort.signal, clean);
         // The draft a streamed patch drew gives way to the prototype as the call left it.
         this.options.preview?.finish();
         await this.save();
@@ -492,12 +495,12 @@ export class AgentController {
   }
 
   /** Shows a streamed event as it arrives. */
-  private onEvent(id: string, event: BetaRawMessageStreamEvent, blocks: Map<number, number>, clean: (text: string) => string): void {
+  private onEvent(id: string, event: BetaRawMessageStreamEvent, blocks: Map<number, number>, raw: Map<number, string>, clean: (text: string) => string): void {
     if (event.type === "content_block_start") {
       const block = event.content_block;
       if (block.type === "server_tool_use" || block.type === "mcp_tool_use") {
         // A server tool runs at Anthropic: the app shows the call, and its result block follows in the same reply.
-        const input = block.input && typeof block.input === "object" && Object.keys(block.input).length > 0 ? JSON.stringify(block.input) : "";
+        const input = block.input && typeof block.input === "object" && Object.keys(block.input).length > 0 ? clean(JSON.stringify(block.input)) : "";
         const item: TurnItem =
           block.type === "mcp_tool_use"
             ? { kind: "source", id: block.id, via: "mcp", name: block.name, server: block.server_name, status: "running", input }
@@ -517,13 +520,18 @@ export class AgentController {
             this.setItem(id, index, { ...item, status: "done", url: content.url, ...(page.title ? { pageTitle: clean(page.title) } : {}), result: clean(page.text) });
           }
         } else {
-          const text = clean(mcpExcerpt(block.content));
+          const text = mcpExcerpt(block.content, clean);
           this.setItem(id, index, { ...item, status: block.is_error ? "error" : "done", result: text, ...(block.is_error ? { problem: "The docs server answered with an error." } : {}) });
         }
         return;
       }
-      if (block.type === "text") blocks.set(event.index, this.addItem(id, { kind: "text", text: clean(block.text) }));
-      else if (block.type === "thinking") blocks.set(event.index, this.addItem(id, { kind: "thinking", text: clean(block.thinking) }));
+      if (block.type === "text") {
+        raw.set(event.index, block.text);
+        blocks.set(event.index, this.addItem(id, { kind: "text", text: clean(block.text) }));
+      } else if (block.type === "thinking") {
+        raw.set(event.index, block.thinking);
+        blocks.set(event.index, this.addItem(id, { kind: "thinking", text: clean(block.thinking) }));
+      }
       else if (block.type === "tool_use") {
         this.options.preview?.start(block.name);
         blocks.set(event.index, this.addItem(id, { kind: "tool", id: block.id, name: block.name, status: "streaming", title: `Calling ${block.name}`, input: "" }));
@@ -536,13 +544,19 @@ export class AgentController {
     const item = index === undefined ? undefined : this.turn(id)?.items[index];
     if (index === undefined || !item) return;
     const delta = event.delta;
-    // Redacted as it grows, so a secret split across deltas is caught once it is whole.
-    if (delta.type === "text_delta" && item.kind === "text") this.setItem(id, index, { ...item, text: clean(item.text + delta.text) });
-    else if (delta.type === "thinking_delta" && item.kind === "thinking") this.setItem(id, index, { ...item, text: clean(item.text + delta.thinking) });
+    // What is shown is redacted from the whole block as streamed so far, so a secret split across deltas, or one
+    // caught only by its shape once enough of it has come, is never shown in part.
+    const grown = (more: string) => {
+      const text = (raw.get(event.index) ?? "") + more;
+      raw.set(event.index, text);
+      return clean(text);
+    };
+    if (delta.type === "text_delta" && item.kind === "text") this.setItem(id, index, { ...item, text: grown(delta.text) });
+    else if (delta.type === "thinking_delta" && item.kind === "thinking") this.setItem(id, index, { ...item, text: grown(delta.thinking) });
     else if (delta.type === "input_json_delta" && item.kind === "tool") {
       this.options.preview?.delta(delta.partial_json);
-      this.setItem(id, index, { ...item, input: item.input + delta.partial_json });
-    } else if (delta.type === "input_json_delta" && item.kind === "source") this.setItem(id, index, { ...item, input: item.input + delta.partial_json });
+      this.setItem(id, index, { ...item, input: grown(delta.partial_json) });
+    } else if (delta.type === "input_json_delta" && item.kind === "source") this.setItem(id, index, { ...item, input: grown(delta.partial_json) });
   }
 
   private toolIndex(id: string, callId: string): number {
@@ -550,7 +564,7 @@ export class AgentController {
   }
 
   /** Runs each call in order; every call gets a result, so the history stays valid however the round ends. */
-  private async runTools(id: string, calls: readonly { id: string; name: string; input: unknown }[], signal: AbortSignal): Promise<void> {
+  private async runTools(id: string, calls: readonly { id: string; name: string; input: unknown }[], signal: AbortSignal, clean: (text: string) => string): Promise<void> {
     const host = this.options.host;
     const results: BetaToolResultBlockParam[] = [];
     let changed = false;
@@ -558,7 +572,7 @@ export class AgentController {
     for (const call of calls) {
       const index = this.toolIndex(id, call.id);
       const item = index >= 0 ? this.turn(id)?.items[index] : undefined;
-      const input = JSON.stringify(call.input, null, 2);
+      const input = clean(JSON.stringify(call.input, null, 2));
       if (signal.aborted) {
         results.push({ type: "tool_result", tool_use_id: call.id, content: "Not run: the person stopped the agent.", is_error: true });
         if (item?.kind === "tool") this.setItem(id, index, { ...item, input, status: "error", title: `${call.name} not run: stopped`, result: "Not run: the person stopped the agent." });

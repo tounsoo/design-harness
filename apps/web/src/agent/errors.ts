@@ -33,15 +33,25 @@ export function redact(text: string, key: string | null, tokens: readonly string
 /**
  * A reply's content with every secret `clean` finds replaced, before it is kept
  * in the conversation and saved with the chat: the text the model wrote and
- * what a docs server answered, which may echo its own token. Thinking is kept
+ * what a docs server answered, which may echo its own token, and the strings in
+ * a tool call's input. Thinking is kept
  * as it came, because the API checks its signature when it is sent back.
  */
 export function redactContent(content: readonly BetaContentBlock[], clean: (text: string) => string): BetaContentBlock[] {
   return content.map((block) => {
     if (block.type === "text") return { ...block, text: clean(block.text) };
     if (block.type === "mcp_tool_result") return { ...block, content: typeof block.content === "string" ? clean(block.content) : block.content.map((part) => ({ ...part, text: clean(part.text) })) };
+    // A tool call's input may copy a secret the model read; it is kept as data with every string redacted.
+    if (block.type === "tool_use" || block.type === "mcp_tool_use" || block.type === "server_tool_use") return { ...block, input: redactStrings(block.input, clean) } as typeof block;
     return block;
   });
+}
+
+function redactStrings(value: unknown, clean: (text: string) => string): unknown {
+  if (typeof value === "string") return clean(value);
+  if (Array.isArray(value)) return value.map((item) => redactStrings(item, clean));
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, redactStrings(item, clean)]));
+  return value;
 }
 
 /** The docs servers a refused request named, so a 400 about one can say where to look. */

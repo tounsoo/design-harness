@@ -52,9 +52,9 @@ export function pageExcerpt(result: BetaWebFetchBlock): { readonly title: string
   return { title: document.title ?? null, text };
 }
 
-/** A docs server's answer, as text. */
-export function mcpExcerpt(content: string | readonly BetaTextBlock[]): string {
-  return excerpt(typeof content === "string" ? content : content.map((block) => block.text).join("\n"));
+/** A docs server's answer, as text, cleaned whole before it is cut, so a secret across the cut is not left in part. */
+export function mcpExcerpt(content: string | readonly BetaTextBlock[], clean: (text: string) => string = (text) => text): string {
+  return excerpt(clean(typeof content === "string" ? content : content.map((block) => block.text).join("\n")));
 }
 
 /** The address a web fetch call asked for, from its input as it streamed. */
