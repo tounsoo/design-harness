@@ -10,6 +10,7 @@ import {
   PermissionDeniedError,
   RateLimitError,
 } from "@anthropic-ai/sdk/core/error";
+import type { BetaContentBlock } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 
 /**
  * What went wrong with a request, said plainly, from the SDK's typed error
@@ -27,6 +28,20 @@ export function redact(text: string, key: string | null, tokens: readonly string
   // Longest first, so a token that holds another is replaced whole.
   for (const token of [...tokens].sort((a, b) => b.length - a.length)) if (token.length >= 4) out = out.split(token).join("[a docs server token]");
   return out.replace(/sk-ant-[A-Za-z0-9_-]{8,}/g, "[an API key]");
+}
+
+/**
+ * A reply's content with every secret `clean` finds replaced, before it is kept
+ * in the conversation and saved with the chat: the text the model wrote and
+ * what a docs server answered, which may echo its own token. Thinking is kept
+ * as it came, because the API checks its signature when it is sent back.
+ */
+export function redactContent(content: readonly BetaContentBlock[], clean: (text: string) => string): BetaContentBlock[] {
+  return content.map((block) => {
+    if (block.type === "text") return { ...block, text: clean(block.text) };
+    if (block.type === "mcp_tool_result") return { ...block, content: typeof block.content === "string" ? clean(block.content) : block.content.map((part) => ({ ...part, text: clean(part.text) })) };
+    return block;
+  });
 }
 
 /** The docs servers a refused request named, so a 400 about one can say where to look. */

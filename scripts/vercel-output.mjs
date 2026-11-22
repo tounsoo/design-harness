@@ -3,6 +3,7 @@
 // Usage: node scripts/vercel-output.mjs <built app dir> <output dir>
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { APP_HEADERS } from "./app-headers.mjs";
 
 const [from, to] = process.argv.slice(2);
 if (!from || !to) throw new Error("Usage: node scripts/vercel-output.mjs <built app dir> <output dir>");
@@ -17,11 +18,7 @@ const config = {
   routes: [
     {
       src: "/(.*)",
-      headers: {
-        "X-Content-Type-Options": "nosniff",
-        "Referrer-Policy": "no-referrer",
-        "X-Frame-Options": "DENY",
-      },
+      headers: APP_HEADERS,
       continue: true,
     },
     // Vite names these files by content hash, so they never change.

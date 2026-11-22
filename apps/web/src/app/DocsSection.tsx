@@ -193,7 +193,7 @@ function DocsManager({ projectId, sources, tokens, onSave }: DocsProps & { reado
 
 function SourceRow({ projectId, source, tokens, onEdit, onRemove }: { readonly projectId: string; readonly source: DocSource; readonly tokens: DocTokens; readonly onEdit: () => void; readonly onRemove: () => void }) {
   const title = sourceTitle(source);
-  const token = source.kind === "mcp" ? tokens.state(projectId, source.name) : null;
+  const token = source.kind === "mcp" ? tokens.state(projectId, source.name, source.url) : null;
   return (
     <div className="docs-row">
       <span className="docs-icon" aria-hidden="true">
@@ -259,7 +259,7 @@ function DocForm({
   const initialName = initial?.kind === "mcp" ? initial.name : "";
   const [name, setName] = useState(initialName);
   const [nameTouched, setNameTouched] = useState(initialName !== "");
-  const kept = initial?.kind === "mcp" ? tokens.state(projectId, initial.name) : null;
+  const kept = initial?.kind === "mcp" ? tokens.state(projectId, initial.name, initial.url) : null;
   const [token, setToken] = useState("");
   const [remember, setRemember] = useState(kept?.remembered ?? false);
   const [forgetToken, setForgetToken] = useState(false);
@@ -297,11 +297,13 @@ function DocForm({
     if (!(await onSave(next))) return;
     if (next.kind !== "mcp") return;
     if (initial?.kind === "mcp" && initial.name !== next.name) await tokens.rename(projectId, initial.name, next.name);
-    if (forgetToken) await tokens.forget(projectId, next.name);
-    else if (token !== "") await tokens.set(projectId, next.name, token, remember);
+    // A token never follows its server to a new address: one moved without a new token has none.
+    const moved = initial?.kind === "mcp" && initial.url !== next.url;
+    if (forgetToken || (moved && token === "")) await tokens.forget(projectId, next.name);
+    else if (token !== "") await tokens.set(projectId, next.name, next.url, token, remember);
     else if (kept?.present && remember !== kept.remembered) {
-      const current = tokens.get(projectId, next.name);
-      if (current) await tokens.set(projectId, next.name, current, remember);
+      const current = tokens.get(projectId, next.name, next.url);
+      if (current) await tokens.set(projectId, next.name, next.url, current, remember);
     }
   };
 

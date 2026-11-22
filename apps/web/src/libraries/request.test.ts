@@ -23,6 +23,7 @@ import {
   registryId,
   registryIds,
   reportText,
+  sameLockfile,
   requestFromEvent,
   rootCandidates,
   servedVersions,
@@ -243,6 +244,10 @@ describe("the edits the workflow makes", () => {
     expect(lockedVersion({ packages: { "node_modules/@acme/ui": { version: "1.2.3" } } }, "@acme/ui")).toBe("1.2.3");
     expect(lockedVersion({ packages: { "apps/web/node_modules/@acme/ui-1.2.3": { version: "1.2.3" } } }, "@acme/ui-1.2.3")).toBe("1.2.3");
     expect(lockedVersion({ packages: {} }, "@acme/ui")).toBeNull();
+    // The build's lockfile is only compared with the one the publish job resolves: key order aside, any difference stops it.
+    const lock = { name: "design-harness", packages: { "node_modules/@acme/ui": { version: "1.2.3", resolved: "https://registry.npmjs.org/@acme/ui/-/ui-1.2.3.tgz", integrity: "sha512-a" } } };
+    expect(sameLockfile(lock, { packages: { "node_modules/@acme/ui": { integrity: "sha512-a", resolved: "https://registry.npmjs.org/@acme/ui/-/ui-1.2.3.tgz", version: "1.2.3" } }, name: "design-harness" })).toBe(true);
+    expect(sameLockfile(lock, { ...lock, packages: { ...lock.packages, "node_modules/react": { version: "19.2.0", resolved: "https://evil.example/react.tgz", integrity: "sha512-b" } } })).toBe(false);
   });
 });
 

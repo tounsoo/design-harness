@@ -7,7 +7,7 @@ name: Library request
 # The logic is apps/web/scripts/library-request.mjs. The issue's text is never written into this file's
 # expressions or a shell: each job's script reads it from the event file and checks it again. The jobs that
 # install and test the requested package can only read the repository; the one that pushes installs nothing
-# from the request and takes only the description and the lockfile from the build.
+# from the request and takes only the description from the build; it resolves the lockfile itself and compares it.
 
 on:
   issues:

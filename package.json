@@ -22,6 +22,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@types/node": "^22.19.0",
+    "cjs-module-lexer": "2.3.0",
     "esbuild": "^0.27.0",
     "eslint": "^9.39.1",
     "playwright": "1.63.0",

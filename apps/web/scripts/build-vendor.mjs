@@ -20,6 +20,7 @@
  * version, the file for each module specifier and the package files
  * (stylesheets) copied as they are.
  */
+import { initSync as initCjsLexer, parse as parseCjs } from "cjs-module-lexer";
 import { build } from "esbuild";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -76,10 +77,28 @@ function versionOf(name) {
   return packageJson(name).json.version;
 }
 
-/** An entry that re-exports a CommonJS module's keys as ES named exports. */
-function cjsEntry(specifier) {
+/**
+ * A CommonJS module's export names, read from its source and the modules it
+ * re-exports, without running any of it. A library is the code of whoever
+ * asked for it (see scripts/library-request.mjs), so its code never runs in Node.
+ */
+function cjsExportNames(file, seen = new Set()) {
+  if (seen.has(file)) return [];
+  seen.add(file);
+  const { exports, reexports } = parseCjs(readFileSync(file, "utf8"));
+  const from = createRequire(file);
+  return [...exports, ...reexports.flatMap((specifier) => cjsExportNames(from.resolve(specifier), seen))];
+}
+
+/**
+ * An entry that re-exports a CommonJS module's keys as ES named exports. A
+ * library's names are read from its source; React's, which this repository
+ * pins, from the module itself, so its production build's names alone are exported.
+ */
+function cjsEntry(specifier, { library }) {
   process.env.NODE_ENV = "production";
-  const names = Object.keys(require(specifier)).filter((name) => /^[A-Za-z_$][\w$]*$/.test(name) && name !== "default");
+  const keys = library ? [...new Set(cjsExportNames(require.resolve(specifier)))] : Object.keys(require(specifier));
+  const names = keys.filter((name) => /^[A-Za-z_$][\w$]*$/.test(name) && name !== "default");
   return `import mod from ${JSON.stringify(specifier)};\nexport default mod;\nexport const { ${names.join(", ")} } = mod;\n`;
 }
 
@@ -110,6 +129,7 @@ function externals(specifiers) {
   };
 }
 
+initCjsLexer();
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 
@@ -130,7 +150,7 @@ for (const module of MODULES) {
   const version = module.version ?? versionOf(name);
   const file = module.file ?? fileName(name, version, ".js");
   const from = install + module.specifier.slice(name.length);
-  const entry = isCommonJs(from) ? cjsEntry(from) : `export * from ${JSON.stringify(from)};\n`;
+  const entry = isCommonJs(from) ? cjsEntry(from, { library: module.install !== undefined }) : `export * from ${JSON.stringify(from)};\n`;
   await build({
     stdin: { contents: entry, resolveDir: app, loader: "js" },
     bundle: true,

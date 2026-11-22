@@ -39,11 +39,11 @@ export function webFetchTool(sources: readonly DocSource[]): BetaWebFetchTool202
 }
 
 /** The `mcp_servers` entries and their toolsets, one each, with a server's token when the person gave one. */
-export function mcpParts(sources: readonly DocSource[], token: (name: string) => string | null): { readonly servers: BetaRequestMCPServerURLDefinition[]; readonly toolsets: BetaMCPToolset[] } {
+export function mcpParts(sources: readonly DocSource[], token: (name: string, url: string) => string | null): { readonly servers: BetaRequestMCPServerURLDefinition[]; readonly toolsets: BetaMCPToolset[] } {
   const list = servers(sources);
   return {
     servers: list.map((source) => {
-      const secret = token(source.name);
+      const secret = token(source.name, source.url);
       return { type: "url", url: source.url, name: source.name, ...(secret ? { authorization_token: secret } : {}) };
     }),
     toolsets: list.map((source) => ({ type: "mcp_toolset", mcp_server_name: source.name })),

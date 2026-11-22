@@ -294,7 +294,7 @@ describe("a turn that reads the project's docs", () => {
   const SITE: DocSource = { kind: "website", url: "https://todae.design/docs", label: "Todae docs" };
   const SERVER: DocSource = { kind: "mcp", url: "https://mcp.example.com/mcp", name: "design-docs" };
   const TOKEN = "mcp-secret-token-0123456789";
-  const docsOf = (sources: { current: readonly DocSource[] }): (() => DocContext) => () => ({ sources: sources.current, token: (name) => (name === "design-docs" ? TOKEN : null), tokens: () => [TOKEN] });
+  const docsOf = (sources: { current: readonly DocSource[] }): (() => DocContext) => () => ({ sources: sources.current, token: (name: string) => (name === "design-docs" ? TOKEN : null), tokens: () => [TOKEN] });
   const reading = {
     events: streamEvents({
       id: "msg_read",
@@ -337,6 +337,28 @@ describe("a turn that reads the project's docs", () => {
     expect(controller.undoable()?.id).toBe(turn().id);
     await controller.undo(turn().id);
     expect(turn().undone).toBe(true);
+  });
+
+  it("keeps no token a docs server or the model echoes: not in the conversation sent back, the chat shown or the chat saved", async () => {
+    const sources = { current: [SERVER] as readonly DocSource[] };
+    const echoing = {
+      events: streamEvents({
+        id: "msg_echo",
+        blocks: [
+          { type: "mcp_tool_use", id: "mcptoolu_echo", name: "search_docs", server: "design-docs", input: { query: "anything" } },
+          { type: "mcp_tool_result", id: "mcptoolu_echo", text: `invalid token ${TOKEN}` },
+          { type: "text", text: `The server said your token ${TOKEN} is invalid.` },
+        ],
+        stopReason: "end_turn",
+      }),
+    };
+    const { controller, fake, turn, saved } = setup([echoing, done("Sorry.")], { docs: docsOf(sources) });
+    await controller.send("Look it up");
+    await controller.send("Thanks");
+    expect(JSON.stringify(fake.requests[1]?.body.messages)).not.toContain(TOKEN);
+    expect(JSON.stringify(fake.requests[1]?.body.messages)).toContain("[a docs server token]");
+    expect(JSON.stringify(turn())).not.toContain(TOKEN);
+    expect(JSON.stringify(saved)).not.toContain(TOKEN);
   });
 
   it("tells the agent when the sources change, and from then on asks the API to drop the thinking from before", async () => {

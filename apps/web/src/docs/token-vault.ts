@@ -8,9 +8,17 @@ import { KEY_STORE, finished, keyHint, openKeyDb, request } from "../agent/key-v
  * export, a chat, a frame or a log. A token goes only into the
  * `authorization_token` of its server in a request to api.anthropic.com,
  * whose MCP connector passes it to that server; errors are redacted of it.
+ *
+ * A token is bound to the address it was given for. A server whose address
+ * has changed since, by an edit or by an imported project that reuses the
+ * project's id and the server's name, gets no token until one is given for
+ * the new address, so a token never follows its server's name somewhere else.
  */
 
 export type TokenState = { readonly present: boolean; readonly remembered: boolean; readonly hint: string | null };
+
+/** A token held, with the server address it was given for (null for one kept before tokens were bound to an address). */
+type Entry = { readonly token: string; readonly url: string | null; readonly remembered: boolean };
 
 const PREFIX = "mcp:";
 const idOf = (projectId: string, name: string) => `${PREFIX}${projectId}:${name}`;
@@ -24,7 +32,7 @@ export function tokenProblem(token: string): string | null {
 }
 
 export class DocTokens {
-  private readonly tokens = new Map<string, { readonly token: string; readonly remembered: boolean }>();
+  private readonly tokens = new Map<string, Entry>();
   private version = 0;
   private readonly listeners = new Set<() => void>();
 
@@ -37,9 +45,10 @@ export class DocTokens {
     try {
       const db = await openKeyDb(factory);
       try {
-        const rows = (await request(db.transaction(KEY_STORE).objectStore(KEY_STORE).getAll())) as { id?: unknown; token?: unknown }[];
+        const rows = (await request(db.transaction(KEY_STORE).objectStore(KEY_STORE).getAll())) as { id?: unknown; token?: unknown; url?: unknown }[];
         for (const row of rows) {
-          if (typeof row.id === "string" && row.id.startsWith(PREFIX) && typeof row.token === "string") vault.tokens.set(row.id, { token: row.token, remembered: true });
+          // A row kept before tokens were bound to an address has no `url`: it is read for redaction only, and never sent.
+          if (typeof row.id === "string" && row.id.startsWith(PREFIX) && typeof row.token === "string") vault.tokens.set(row.id, { token: row.token, url: typeof row.url === "string" ? row.url : null, remembered: true });
         }
       } finally {
         db.close();
@@ -63,14 +72,20 @@ export class DocTokens {
     for (const listener of this.listeners) listener();
   }
 
-  /** The token itself, for the request only. */
-  get(projectId: string, name: string): string | null {
-    return this.tokens.get(idOf(projectId, name))?.token ?? null;
+  /** The entry for a server at this address; one given for another address does not count. */
+  private entry(projectId: string, name: string, url: string): Entry | null {
+    const entry = this.tokens.get(idOf(projectId, name));
+    return entry && entry.url === url ? entry : null;
   }
 
-  state(projectId: string, name: string): TokenState {
-    const entry = this.tokens.get(idOf(projectId, name));
-    return { present: entry !== undefined, remembered: entry?.remembered ?? false, hint: entry ? keyHint(entry.token) : null };
+  /** The token itself, for the request only, and only for the address it was given for. */
+  get(projectId: string, name: string, url: string): string | null {
+    return this.entry(projectId, name, url)?.token ?? null;
+  }
+
+  state(projectId: string, name: string, url: string): TokenState {
+    const entry = this.entry(projectId, name, url);
+    return { present: entry !== null, remembered: entry?.remembered ?? false, hint: entry ? keyHint(entry.token) : null };
   }
 
   /** Every token held, for redaction: none is ever shown. */
@@ -78,27 +93,27 @@ export class DocTokens {
     return [...this.tokens.values()].map((entry) => entry.token);
   }
 
-  private async write(id: string, token: string | null): Promise<void> {
+  private async write(id: string, kept: { readonly token: string; readonly url: string } | null): Promise<void> {
     if (!this.factory) return;
     const db = await openKeyDb(this.factory);
     try {
       const tx = db.transaction(KEY_STORE, "readwrite");
-      if (token === null) tx.objectStore(KEY_STORE).delete(id);
-      else tx.objectStore(KEY_STORE).put({ id, token });
+      if (kept === null) tx.objectStore(KEY_STORE).delete(id);
+      else tx.objectStore(KEY_STORE).put({ id, token: kept.token, url: kept.url });
       await finished(tx);
     } finally {
       db.close();
     }
   }
 
-  /** Keeps a server's token for this session, and on this device too when `remember` is set; one not remembered is deleted from the device. */
-  async set(projectId: string, name: string, token: string, remember: boolean): Promise<void> {
+  /** Keeps a server's token for its address, for this session, and on this device too when `remember` is set; one not remembered is deleted from the device. */
+  async set(projectId: string, name: string, url: string, token: string, remember: boolean): Promise<void> {
     const problem = tokenProblem(token);
     if (problem) throw new Error(problem);
     const id = idOf(projectId, name);
-    this.tokens.set(id, { token, remembered: remember });
+    this.tokens.set(id, { token, url, remembered: remember });
     this.publish();
-    await this.write(id, remember ? token : null);
+    await this.write(id, remember ? { token, url } : null);
   }
 
   /** Deletes a server's token from memory and this device. */
@@ -109,12 +124,12 @@ export class DocTokens {
     await this.write(id, null);
   }
 
-  /** Moves a token when its server is renamed, kept where it was kept. */
+  /** Moves a token when its server is renamed, kept where it was kept and still bound to the address it was given for. */
   async rename(projectId: string, from: string, to: string): Promise<void> {
     if (from === to) return;
     const entry = this.tokens.get(idOf(projectId, from));
     if (!entry) return;
     await this.forget(projectId, from);
-    await this.set(projectId, to, entry.token, entry.remembered);
+    if (entry.url !== null) await this.set(projectId, to, entry.url, entry.token, entry.remembered);
   }
 }

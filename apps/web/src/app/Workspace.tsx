@@ -416,7 +416,7 @@ export function Workspace({ store, vault, tokens, docs: initialDocs, config: ini
         key: () => vault.get(),
         settings: () => settingsRef.current,
         preview,
-        docs: () => ({ sources: docsRef.current, token: (name) => tokens.get(initialConfig.id, name), tokens: () => tokens.all() }),
+        docs: () => ({ sources: docsRef.current, token: (name, url) => tokens.get(initialConfig.id, name, url), tokens: () => tokens.all() }),
       }),
     [host, store, vault, tokens, initialConfig.id, currentId, preview],
   );

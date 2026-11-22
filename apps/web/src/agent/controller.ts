@@ -3,7 +3,7 @@ import type { BetaMessage, BetaMessageParam, BetaRawMessageStreamEvent, BetaTool
 import type { CheckStatus, Prototype } from "@design-harness/core";
 import { docSignature, sourceTitle, type DocSource } from "../docs/sources";
 import { docsNote } from "./doc-request";
-import { describeError, isAbort, redact } from "./errors";
+import { describeError, isAbort, redact, redactContent } from "./errors";
 import { fetchProblem, mcpExcerpt, pageExcerpt } from "./source-words";
 import { History, toolCalls } from "./history";
 import { NO_USAGE, addUsage, requestCost, type AgentSettings, type Usage } from "./models";
@@ -87,7 +87,7 @@ export type Turn = {
 export type ChatRecord = { readonly version: 1; readonly history: readonly BetaMessageParam[]; readonly turns: readonly Turn[]; readonly pending: readonly string[]; readonly log?: readonly LoopEvent[]; readonly docs?: string; readonly rebound?: true };
 
 /** The project's doc sources as the agent reads them, and each docs server's token at request time. */
-export type DocContext = { readonly sources: readonly DocSource[]; readonly token: (name: string) => string | null; readonly tokens: () => readonly string[] };
+export type DocContext = { readonly sources: readonly DocSource[]; readonly token: (name: string, url: string) => string | null; readonly tokens: () => readonly string[] };
 
 const NO_DOC_CONTEXT: DocContext = { sources: [], token: () => null, tokens: () => [] };
 const NO_SOURCES = docSignature([]);
@@ -416,7 +416,7 @@ export class AgentController {
         let message: BetaMessage;
         try {
           // The agent writes specs, with the catalog's instructions, and reads the project's docs when it has any. Tokens are read for each request, so one the person just entered is used.
-          const docs = { sources, token: (name: string) => this.options.docs?.().token(name) ?? null, rebound: this.rebound };
+          const docs = { sources, token: (name: string, url: string) => this.options.docs?.().token(name, url) ?? null, rebound: this.rebound };
           const stream = client.stream(requestBody(settings, this.history.messages, specCatalogPrompt(this.options.host.config()), docs), { signal: abort.signal });
           for await (const event of stream) this.onEvent(id, event, blocks, (text) => redact(text, key, tokens()));
           message = await stream.finalMessage();
@@ -448,7 +448,8 @@ export class AgentController {
           this.dropItems(id, startItems);
           return this.end(id, { status: "cut-off" });
         }
-        this.history.appendAssistant(message.content);
+        // What the model wrote and what a docs server answered are kept, and saved with the chat, without any secret in them.
+        this.history.appendAssistant(redactContent(message.content, (text) => redact(text, key, tokens())));
         if (message.stop_reason === "pause_turn") {
           if (!this.nextRound(id, maxRounds)) return;
           continue;
@@ -521,8 +522,8 @@ export class AgentController {
         }
         return;
       }
-      if (block.type === "text") blocks.set(event.index, this.addItem(id, { kind: "text", text: block.text }));
-      else if (block.type === "thinking") blocks.set(event.index, this.addItem(id, { kind: "thinking", text: block.thinking }));
+      if (block.type === "text") blocks.set(event.index, this.addItem(id, { kind: "text", text: clean(block.text) }));
+      else if (block.type === "thinking") blocks.set(event.index, this.addItem(id, { kind: "thinking", text: clean(block.thinking) }));
       else if (block.type === "tool_use") {
         this.options.preview?.start(block.name);
         blocks.set(event.index, this.addItem(id, { kind: "tool", id: block.id, name: block.name, status: "streaming", title: `Calling ${block.name}`, input: "" }));
@@ -535,8 +536,9 @@ export class AgentController {
     const item = index === undefined ? undefined : this.turn(id)?.items[index];
     if (index === undefined || !item) return;
     const delta = event.delta;
-    if (delta.type === "text_delta" && item.kind === "text") this.setItem(id, index, { ...item, text: item.text + delta.text });
-    else if (delta.type === "thinking_delta" && item.kind === "thinking") this.setItem(id, index, { ...item, text: item.text + delta.thinking });
+    // Redacted as it grows, so a secret split across deltas is caught once it is whole.
+    if (delta.type === "text_delta" && item.kind === "text") this.setItem(id, index, { ...item, text: clean(item.text + delta.text) });
+    else if (delta.type === "thinking_delta" && item.kind === "thinking") this.setItem(id, index, { ...item, text: clean(item.text + delta.thinking) });
     else if (delta.type === "input_json_delta" && item.kind === "tool") {
       this.options.preview?.delta(delta.partial_json);
       this.setItem(id, index, { ...item, input: item.input + delta.partial_json });
