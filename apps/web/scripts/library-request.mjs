@@ -309,7 +309,7 @@ export function pullRequestBody({ request, issue, install, before, summary, runU
     "## What changed",
     "",
     install === request.package ? `- \`${WEB_PACKAGE}\`: \`"${request.package}": "${request.version}"\` in \`dependencies\`, and the version with its stylesheets under \`designHarness.libraries\`.` : `- \`${WEB_PACKAGE}\`: the npm alias \`"${install}": "npm:${request.package}@${request.version}"\` in \`dependencies\`, beside the version already served, and the version with its stylesheets under \`designHarness.libraries\`.`,
-    `- \`${LOCKFILE}\`: what \`npm install --ignore-scripts\` resolved for it.`,
+    `- \`${LOCKFILE}\`: what \`npm install --package-lock-only --ignore-scripts\` resolved for it on a clean checkout, the same lockfile the checks ran with.`,
     `- \`${files.description}\`: written by \`packages/core/scripts/describe-library.mjs\` from the package's own type declarations, installed alone with npm's \`--before=${before}\` (one second after the version was published), so the same file comes out on every run.`,
     `- \`${REGISTRY}\`: an entry for it, with what could be inferred and safe defaults, and a comment of what a person must check.`,
     `- Stylesheets: ${request.stylesheets.length > 0 ? request.stylesheets.map((path) => `\`${path}\``).join(", ") : "none"}.`,
@@ -645,6 +645,12 @@ export function allowedChanges(request) {
   return [WEB_PACKAGE, LOCKFILE, REGISTRY, descriptionPath(request)].sort();
 }
 
+/** Whether two lockfiles resolve the same packages, whatever their key order or formatting. */
+export function sameLockfile(a, b) {
+  const canonical = (value) => (Array.isArray(value) ? value.map(canonical) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])])) : value);
+  return JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
+}
+
 /** `git status --porcelain` lines as paths. */
 export function changedPaths(status) {
   return status
@@ -670,12 +676,15 @@ async function publishCommand() {
     if (!draft || problems.length > 0 || description.package !== request.package || description.version !== request.version) throw new Error(`the build's description is not one of ${request.package} ${request.version} that core drafts: ${problems.join(" ")}`);
     const files = { description: descriptionPath(request) };
     copyFileSync(join(from, "description.json"), join(REPO, files.description));
-    copyFileSync(join(from, "package-lock.json"), join(REPO, LOCKFILE));
     // The edits to package.json and the registry are made again here, from the request, not taken from the build.
     const { packageJson, install } = addToPackageJson(readJson(WEB_PACKAGE), request);
     writeJson(WEB_PACKAGE, packageJson);
     const registry = readFileSync(join(REPO, REGISTRY), "utf8");
     writeFileSync(join(REPO, REGISTRY), addRegistryEntry(registry, registryEntry(request, description, draft, { id: registryId(request, registryIds(registry)), issue, inherited: inheritedSetup(registry, request) })));
+    // So is the lockfile: npm resolves it here, installing and running nothing. The build ran the package's code
+    // (its end-to-end test draws it), so its lockfile is only compared, and a difference stops the request.
+    await runOrStop("npm", ["install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"], `npm could not resolve ${request.package} ${request.version} beside the app's dependencies.`);
+    if (!sameLockfile(readJson(LOCKFILE), JSON.parse(readFileSync(join(from, "package-lock.json"), "utf8")))) throw new Error("the build's lockfile is not the one npm resolves for this request on a clean checkout, so what the checks ran is not what would be committed");
     const status = await capture("git", ["status", "--porcelain", "--untracked-files=all"]);
     const changed = changedPaths(status.out);
     const allowed = allowedChanges(request);

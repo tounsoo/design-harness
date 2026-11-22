@@ -83,7 +83,7 @@ export const BINDING_BETA = "thinking-binding-controls-2026-08-01";
  * before, so from then on every request asks the API to drop those blocks
  * (`prefix_mismatch_behavior: "drop_block"`) instead of refusing them.
  */
-export type RequestDocs = { readonly sources: readonly DocSource[]; readonly token: (name: string) => string | null; readonly rebound: boolean };
+export type RequestDocs = { readonly sources: readonly DocSource[]; readonly token: (name: string, url: string) => string | null; readonly rebound: boolean };
 
 export const NO_DOCS: RequestDocs = { sources: [], token: () => null, rebound: false };
 

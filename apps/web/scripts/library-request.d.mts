@@ -43,4 +43,5 @@ export function lockedVersion(lock: { readonly packages?: Readonly<Record<string
 export function draftProblems(description: LibraryDescription, setup: { readonly react: string; readonly stylesheets: readonly string[] }, lib: unknown): { draft: RoleDraft | null; problems: string[] };
 export function allowedChanges(request: LibraryRequest): string[];
 export function changedPaths(status: string): string[];
+export function sameLockfile(a: unknown, b: unknown): boolean;
 export function reportText(input: { readonly parseReason?: string; readonly buildResult?: string; readonly outcome: unknown; readonly publishResult?: string; readonly publishReason?: string; readonly runUrl: string }): string | null;

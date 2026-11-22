@@ -3,7 +3,7 @@ import type { BetaMessage, BetaMessageParam, BetaRawMessageStreamEvent, BetaTool
 import type { CheckStatus, Prototype } from "@design-harness/core";
 import { docSignature, sourceTitle, type DocSource } from "../docs/sources";
 import { docsNote } from "./doc-request";
-import { describeError, isAbort, redact } from "./errors";
+import { describeError, isAbort, redact, redactContent } from "./errors";
 import { fetchProblem, mcpExcerpt, pageExcerpt } from "./source-words";
 import { History, toolCalls } from "./history";
 import { NO_USAGE, addUsage, requestCost, type AgentSettings, type Usage } from "./models";
@@ -87,7 +87,7 @@ export type Turn = {
 export type ChatRecord = { readonly version: 1; readonly history: readonly BetaMessageParam[]; readonly turns: readonly Turn[]; readonly pending: readonly string[]; readonly log?: readonly LoopEvent[]; readonly docs?: string; readonly rebound?: true };
 
 /** The project's doc sources as the agent reads them, and each docs server's token at request time. */
-export type DocContext = { readonly sources: readonly DocSource[]; readonly token: (name: string) => string | null; readonly tokens: () => readonly string[] };
+export type DocContext = { readonly sources: readonly DocSource[]; readonly token: (name: string, url: string) => string | null; readonly tokens: () => readonly string[] };
 
 const NO_DOC_CONTEXT: DocContext = { sources: [], token: () => null, tokens: () => [] };
 const NO_SOURCES = docSignature([]);
@@ -406,6 +406,7 @@ export class AgentController {
     const sources = this.turnSources ?? [];
     // Every token held is redacted from what the chat shows, not only this project's.
     const tokens = () => context.tokens();
+    const clean = (text: string) => redact(text, key, tokens());
     let parseFailures = 0;
     try {
       for (;;) {
@@ -413,12 +414,14 @@ export class AgentController {
         const settings = this.options.settings();
         const startItems = this.turn(id)?.items.length ?? 0;
         const blocks = new Map<number, number>();
+        // Each block's text as streamed, before redaction: what is shown is redacted from the whole of it.
+        const raw = new Map<number, string>();
         let message: BetaMessage;
         try {
           // The agent writes specs, with the catalog's instructions, and reads the project's docs when it has any. Tokens are read for each request, so one the person just entered is used.
-          const docs = { sources, token: (name: string) => this.options.docs?.().token(name) ?? null, rebound: this.rebound };
+          const docs = { sources, token: (name: string, url: string) => this.options.docs?.().token(name, url) ?? null, rebound: this.rebound };
           const stream = client.stream(requestBody(settings, this.history.messages, specCatalogPrompt(this.options.host.config()), docs), { signal: abort.signal });
-          for await (const event of stream) this.onEvent(id, event, blocks, (text) => redact(text, key, tokens()));
+          for await (const event of stream) this.onEvent(id, event, blocks, raw, clean);
           message = await stream.finalMessage();
           parseFailures = 0;
         } catch (error) {
@@ -448,7 +451,8 @@ export class AgentController {
           this.dropItems(id, startItems);
           return this.end(id, { status: "cut-off" });
         }
-        this.history.appendAssistant(message.content);
+        // What the model wrote and what a docs server answered are kept, and saved with the chat, without any secret in them.
+        this.history.appendAssistant(redactContent(message.content, clean));
         if (message.stop_reason === "pause_turn") {
           if (!this.nextRound(id, maxRounds)) return;
           continue;
@@ -458,7 +462,7 @@ export class AgentController {
           return this.end(id, { status: "done" });
         }
 
-        await this.runTools(id, calls, abort.signal);
+        await this.runTools(id, calls, abort.signal, clean);
         // The draft a streamed patch drew gives way to the prototype as the call left it.
         this.options.preview?.finish();
         await this.save();
@@ -491,12 +495,14 @@ export class AgentController {
   }
 
   /** Shows a streamed event as it arrives. */
-  private onEvent(id: string, event: BetaRawMessageStreamEvent, blocks: Map<number, number>, clean: (text: string) => string): void {
+  private onEvent(id: string, event: BetaRawMessageStreamEvent, blocks: Map<number, number>, raw: Map<number, string>, clean: (text: string) => string): void {
     if (event.type === "content_block_start") {
       const block = event.content_block;
       if (block.type === "server_tool_use" || block.type === "mcp_tool_use") {
         // A server tool runs at Anthropic: the app shows the call, and its result block follows in the same reply.
-        const input = block.input && typeof block.input === "object" && Object.keys(block.input).length > 0 ? JSON.stringify(block.input) : "";
+        const started = block.input && typeof block.input === "object" && Object.keys(block.input).length > 0 ? JSON.stringify(block.input) : "";
+        raw.set(event.index, started);
+        const input = clean(started);
         const item: TurnItem =
           block.type === "mcp_tool_use"
             ? { kind: "source", id: block.id, via: "mcp", name: block.name, server: block.server_name, status: "running", input }
@@ -512,17 +518,22 @@ export class AgentController {
           const content = block.content;
           if (content.type === "web_fetch_tool_result_error") this.setItem(id, index, { ...item, status: "error", problem: fetchProblem(content.error_code) });
           else {
-            const page = pageExcerpt(content);
-            this.setItem(id, index, { ...item, status: "done", url: content.url, ...(page.title ? { pageTitle: clean(page.title) } : {}), result: clean(page.text) });
+            const page = pageExcerpt(content, clean);
+            this.setItem(id, index, { ...item, status: "done", url: clean(content.url), ...(page.title ? { pageTitle: clean(page.title) } : {}), result: page.text });
           }
         } else {
-          const text = clean(mcpExcerpt(block.content));
+          const text = mcpExcerpt(block.content, clean);
           this.setItem(id, index, { ...item, status: block.is_error ? "error" : "done", result: text, ...(block.is_error ? { problem: "The docs server answered with an error." } : {}) });
         }
         return;
       }
-      if (block.type === "text") blocks.set(event.index, this.addItem(id, { kind: "text", text: block.text }));
-      else if (block.type === "thinking") blocks.set(event.index, this.addItem(id, { kind: "thinking", text: block.thinking }));
+      if (block.type === "text") {
+        raw.set(event.index, block.text);
+        blocks.set(event.index, this.addItem(id, { kind: "text", text: clean(block.text) }));
+      } else if (block.type === "thinking") {
+        raw.set(event.index, block.thinking);
+        blocks.set(event.index, this.addItem(id, { kind: "thinking", text: clean(block.thinking) }));
+      }
       else if (block.type === "tool_use") {
         this.options.preview?.start(block.name);
         blocks.set(event.index, this.addItem(id, { kind: "tool", id: block.id, name: block.name, status: "streaming", title: `Calling ${block.name}`, input: "" }));
@@ -535,12 +546,19 @@ export class AgentController {
     const item = index === undefined ? undefined : this.turn(id)?.items[index];
     if (index === undefined || !item) return;
     const delta = event.delta;
-    if (delta.type === "text_delta" && item.kind === "text") this.setItem(id, index, { ...item, text: item.text + delta.text });
-    else if (delta.type === "thinking_delta" && item.kind === "thinking") this.setItem(id, index, { ...item, text: item.text + delta.thinking });
+    // What is shown is redacted from the whole block as streamed so far. A secret still arriving shows in part for a
+    // moment, until it is whole; it is then replaced whole, and what is kept is always redacted.
+    const grown = (more: string) => {
+      const text = (raw.get(event.index) ?? "") + more;
+      raw.set(event.index, text);
+      return clean(text);
+    };
+    if (delta.type === "text_delta" && item.kind === "text") this.setItem(id, index, { ...item, text: grown(delta.text) });
+    else if (delta.type === "thinking_delta" && item.kind === "thinking") this.setItem(id, index, { ...item, text: grown(delta.thinking) });
     else if (delta.type === "input_json_delta" && item.kind === "tool") {
       this.options.preview?.delta(delta.partial_json);
-      this.setItem(id, index, { ...item, input: item.input + delta.partial_json });
-    } else if (delta.type === "input_json_delta" && item.kind === "source") this.setItem(id, index, { ...item, input: item.input + delta.partial_json });
+      this.setItem(id, index, { ...item, input: grown(delta.partial_json) });
+    } else if (delta.type === "input_json_delta" && item.kind === "source") this.setItem(id, index, { ...item, input: grown(delta.partial_json) });
   }
 
   private toolIndex(id: string, callId: string): number {
@@ -548,7 +566,7 @@ export class AgentController {
   }
 
   /** Runs each call in order; every call gets a result, so the history stays valid however the round ends. */
-  private async runTools(id: string, calls: readonly { id: string; name: string; input: unknown }[], signal: AbortSignal): Promise<void> {
+  private async runTools(id: string, calls: readonly { id: string; name: string; input: unknown }[], signal: AbortSignal, clean: (text: string) => string): Promise<void> {
     const host = this.options.host;
     const results: BetaToolResultBlockParam[] = [];
     let changed = false;
@@ -556,7 +574,7 @@ export class AgentController {
     for (const call of calls) {
       const index = this.toolIndex(id, call.id);
       const item = index >= 0 ? this.turn(id)?.items[index] : undefined;
-      const input = JSON.stringify(call.input, null, 2);
+      const input = clean(JSON.stringify(call.input, null, 2));
       if (signal.aborted) {
         results.push({ type: "tool_result", tool_use_id: call.id, content: "Not run: the person stopped the agent.", is_error: true });
         if (item?.kind === "tool") this.setItem(id, index, { ...item, input, status: "error", title: `${call.name} not run: stopped`, result: "Not run: the person stopped the agent." });
@@ -580,11 +598,13 @@ export class AgentController {
       if (outcome.measured) checkedSinceChange = true;
       const addressed = outcome.addressed;
       if (addressed) this.patchTurn(id, (turn) => ({ addressed: [...(turn.addressed ?? []), addressed] }));
-      results.push({ type: "tool_result", tool_use_id: call.id, content: outcome.content, ...(outcome.isError ? { is_error: true } : {}) });
+      // A result may quote the call's input, so it is redacted like the input.
+      const content = clean(outcome.content);
+      results.push({ type: "tool_result", tool_use_id: call.id, content, ...(outcome.isError ? { is_error: true } : {}) });
       const now = this.toolIndex(id, call.id);
       const current = now >= 0 ? this.turn(id)?.items[now] : undefined;
-      if (current?.kind === "tool") this.setItem(id, now, { ...current, input, status: outcome.isError ? "error" : "done", title: outcome.title, result: outcome.content });
-      if (outcome.measured) this.addItem(id, { kind: "checks", revision: outcome.measured.revision, status: outcome.measured.report.status, title: checksTitle(outcome.measured.report), text: outcome.content, ...reportRules(outcome.measured.report) });
+      if (current?.kind === "tool") this.setItem(id, now, { ...current, input, status: outcome.isError ? "error" : "done", title: outcome.title, result: content });
+      if (outcome.measured) this.addItem(id, { kind: "checks", revision: outcome.measured.revision, status: outcome.measured.report.status, title: checksTitle(outcome.measured.report), text: content, ...reportRules(outcome.measured.report) });
       if (outcome.proposal) this.addItem(id, { kind: "proposal", ...outcome.proposal });
       if (outcome.variants) this.addItem(id, { kind: "variants", page: outcome.variants.page, ids: outcome.variants.ids, action: call.name === "revise_variant" ? "revised" : "offered" });
     }
@@ -593,7 +613,8 @@ export class AgentController {
     if (changed && !checkedSinceChange && !signal.aborted) {
       try {
         const measured = await host.measured(signal);
-        const text = describeMeasured(measured);
+        // The report quotes frames' messages and the spec's values, so it is redacted like a tool's result.
+        const text = clean(describeMeasured(measured));
         notes.push(`The app re-rendered every frame after your changes and ran the checks.\n${text}`);
         this.addItem(id, { kind: "checks", revision: measured.revision, status: measured.report.status, title: checksTitle(measured.report), text, ...reportRules(measured.report) });
       } catch {

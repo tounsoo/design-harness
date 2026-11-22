@@ -45,16 +45,17 @@ export function fetchProblem(code: BetaWebFetchToolResultErrorCode | string): st
 }
 
 /** A fetched page's title and the start of its text; a PDF or other binary content has no text to show. */
-export function pageExcerpt(result: BetaWebFetchBlock): { readonly title: string | null; readonly text: string } {
+export function pageExcerpt(result: BetaWebFetchBlock, clean: (text: string) => string = (text) => text): { readonly title: string | null; readonly text: string } {
   const document = result.content;
   const source = document.source;
-  const text = source.type === "text" ? excerpt(source.data) : "";
+  // Cleaned whole before it is cut, so a secret across the cut is not left in part.
+  const text = source.type === "text" ? excerpt(clean(source.data)) : "";
   return { title: document.title ?? null, text };
 }
 
-/** A docs server's answer, as text. */
-export function mcpExcerpt(content: string | readonly BetaTextBlock[]): string {
-  return excerpt(typeof content === "string" ? content : content.map((block) => block.text).join("\n"));
+/** A docs server's answer, as text, cleaned whole before it is cut, so a secret across the cut is not left in part. */
+export function mcpExcerpt(content: string | readonly BetaTextBlock[], clean: (text: string) => string = (text) => text): string {
+  return excerpt(clean(typeof content === "string" ? content : content.map((block) => block.text).join("\n")));
 }
 
 /** The address a web fetch call asked for, from its input as it streamed. */

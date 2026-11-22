@@ -18,7 +18,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      # No dependency's install script runs, here or on a library request's branch.
+      - run: npm ci --ignore-scripts
       - run: npm run check
 
   # The built app in Chromium, with the fake Anthropic API: Playwright is the pinned dev dependency, and this installs its Chromium.
@@ -31,7 +32,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      # No dependency's install script runs, here or on a library request's branch.
+      - run: npm ci --ignore-scripts
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e
       # The deploy job ships exactly this build, the one the end-to-end tests just ran against.

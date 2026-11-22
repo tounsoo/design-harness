@@ -294,7 +294,7 @@ describe("a turn that reads the project's docs", () => {
   const SITE: DocSource = { kind: "website", url: "https://todae.design/docs", label: "Todae docs" };
   const SERVER: DocSource = { kind: "mcp", url: "https://mcp.example.com/mcp", name: "design-docs" };
   const TOKEN = "mcp-secret-token-0123456789";
-  const docsOf = (sources: { current: readonly DocSource[] }): (() => DocContext) => () => ({ sources: sources.current, token: (name) => (name === "design-docs" ? TOKEN : null), tokens: () => [TOKEN] });
+  const docsOf = (sources: { current: readonly DocSource[] }): (() => DocContext) => () => ({ sources: sources.current, token: (name: string) => (name === "design-docs" ? TOKEN : null), tokens: () => [TOKEN] });
   const reading = {
     events: streamEvents({
       id: "msg_read",
@@ -337,6 +337,36 @@ describe("a turn that reads the project's docs", () => {
     expect(controller.undoable()?.id).toBe(turn().id);
     await controller.undo(turn().id);
     expect(turn().undone).toBe(true);
+  });
+
+  it("keeps no token a docs server or the model echoes: not in the conversation sent back, the chat shown or the chat saved", async () => {
+    const sources = { current: [SERVER] as readonly DocSource[] };
+    const echoing = {
+      events: streamEvents({
+        id: "msg_echo",
+        blocks: [
+          { type: "mcp_tool_use", id: "mcptoolu_echo", name: "search_docs", server: "design-docs", input: { query: `token ${TOKEN}` } },
+          { type: "mcp_tool_result", id: "mcptoolu_echo", text: `invalid token ${TOKEN}` },
+          // A token across the shown excerpt's cut is redacted before the cut, so no part of it is left.
+          { type: "mcp_tool_use", id: "mcptoolu_long", name: "search_docs", server: "design-docs", input: { query: "long" } },
+          { type: "mcp_tool_result", id: "mcptoolu_long", text: `${"x".repeat(590)} ${TOKEN} tail` },
+          // Streamed in pieces: a key caught only by its shape is redacted whole, never with its tail shown.
+          { type: "text", text: `The server said your token ${TOKEN} is invalid, and sent sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUVWX too.` },
+        ],
+        stopReason: "end_turn",
+      }),
+    };
+    const { controller, fake, turn, saved } = setup([echoing, done("Sorry.")], { docs: docsOf(sources) });
+    await controller.send("Look it up");
+    await controller.send("Thanks");
+    expect(JSON.stringify(fake.requests[1]?.body.messages)).not.toContain(TOKEN);
+    expect(JSON.stringify(fake.requests[1]?.body.messages)).toContain("[a docs server token]");
+    expect(JSON.stringify(turn())).not.toContain(TOKEN);
+    expect(JSON.stringify(saved)).not.toContain(TOKEN);
+    const first = controller.getState().turns[0];
+    expect(JSON.stringify(first)).not.toContain(TOKEN);
+    for (const seen of [JSON.stringify(fake.requests[1]?.body.messages), JSON.stringify(first), JSON.stringify(saved)]) expect(seen).not.toMatch(/QRSTUVWX|mcp-secr/);
+    expect(first?.items.find((item) => item.kind === "text")).toMatchObject({ text: "The server said your token [a docs server token] is invalid, and sent [an API key] too." });
   });
 
   it("tells the agent when the sources change, and from then on asks the API to drop the thinking from before", async () => {
