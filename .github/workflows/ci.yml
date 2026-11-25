@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
 
@@ -45,10 +46,9 @@ jobs:
           retention-days: 7
 
   # Vercel never builds: CI builds and tests, then uploads that build as prebuilt output.
-  # Pull requests from this repository get a preview; a push to main deploys production.
   deploy:
     needs: [check, e2e]
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    if: "(github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name == 'push' || !github.event.pull_request.draft)"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:
