@@ -38,4 +38,4 @@ Everything runs in the browser: `npm run build` is a static site, and projects s
 
 ## Deploy
 
-CI builds the app, tests that build end to end, and deploys it to Vercel as prebuilt output: a pull request gets a preview, and a push to `main` deploys production. Vercel never builds. `AGENTS.md` says how.
+CI builds the app, tests that build end to end, and deploys it to Vercel as prebuilt output. A draft pull request skips the preview deploy. Marking a pull request ready, or pushing to a ready pull request, deploys a preview, and a push to `main` deploys production. Vercel never builds. `AGENTS.md` says how.
